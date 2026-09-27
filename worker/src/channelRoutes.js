@@ -5,7 +5,7 @@ import { agentTools } from "./agentTools.js";
 import { translateMessages } from "./translate.js";
 import { getSession, isMember, getUserByGithubId, saveCard, getCard, listBusinesses } from "./db.js";
 import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText } from "./dailyReport.js";
-import { providerFor } from "./orgAI.js";
+import { providerFor, readerEnvFor } from "./orgAI.js";
 import { groupsIn, toClientGroup, saveGroup, deleteGroup, getSidebar, saveSidebar } from "./people-groups.js";
 import { allowanceFor } from "./gate.js";
 import { enforce } from "./ratelimit.js";
@@ -362,7 +362,7 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
   if (provider && allowance?.allowed) {
     try {
       const urls = linksIn(row.body).length ? linksIn(row.body) : linksIn(transcript.slice(-6).join("\n"));
-      if (urls.length) links = linksBlock(await readLinks(urls, { language: locale, env }));
+      if (urls.length) links = linksBlock(await readLinks(urls, { language: locale, env: await readerEnvFor(env, orgId) }));
     } catch (err) {
       console.error("agent links failed", safe(err?.message));
     }

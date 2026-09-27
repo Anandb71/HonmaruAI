@@ -143,6 +143,7 @@ test("without Supadata, Gemini watches a YouTube video and writes down what it s
   });
   const read = await readLink("https://www.youtube.com/watch?v=abcdefghijk", { env: { GEMINI_API_KEY: "g" } });
   expect(asked.contents[0].parts[0]).toEqual({ file_data: { file_uri: "https://www.youtube.com/watch?v=abcdefghijk" } });
+  expect(asked.generationConfig.mediaResolution).toBe("MEDIA_RESOLUTION_LOW");
   expect(read).toMatchObject({ transcript: "[00:00] Grind fresh.", transcriptSource: "gemini" });
   expect(linksBlock([read])).toContain("written down by a model that watched the video");
 });
