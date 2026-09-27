@@ -379,6 +379,21 @@ const MCP_HEADERS = {
   "access-control-expose-headers": "mcp-session-id",
 };
 
+/// What this server offers, for a registry that lists it without signing
+/// in (Smithery's static server card, served at
+/// /.well-known/mcp/server-card.json). Names and schemas only; nothing
+/// about any workspace.
+export function serverCard() {
+  return {
+    serverInfo: { name: "honmaru", title: "Honmaru AI", version: "1.0.0" },
+    description: "Ask a person on your team for a decision from any agent: it lands in their Honmaru feed as a card, and the agent reads the answer back.",
+    authentication: { required: true, schemes: ["bearer"], header: "x-honmaru-token" },
+    tools: TOOLS.map(({ name, title, description, inputSchema }) => ({ name, title, description, inputSchema })),
+    resources: [],
+    prompts: [],
+  };
+}
+
 /// The whole endpoint. POST only; a GET (the server-to-client stream) is not
 /// offered, which the transport allows.
 export async function handleMcp(request, env, ctx = null) {
@@ -386,7 +401,10 @@ export async function handleMcp(request, env, ctx = null) {
     return new Response(null, { status: 405, headers: { allow: "POST", ...MCP_HEADERS } });
   }
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
-  const agent = await resolveApiToken(env.DB, request.headers.get("authorization"));
+  // Authorization: Bearer hm_… — or, through a gateway that keeps
+  // Authorization for its own sign-in (Smithery), x-honmaru-token: hm_….
+  const own = request.headers.get("x-honmaru-token");
+  const agent = await resolveApiToken(env.DB, own ? `Bearer ${own.trim()}` : request.headers.get("authorization"));
   if (!agent) {
     return new Response(JSON.stringify(rpcError(null, -32001, "A Honmaru access token is required: Authorization: Bearer hm_…  (You → Tools → Connect an agent).")), {
       status: 401,

@@ -8,7 +8,7 @@ import {
   runRoutine, publicRoutine, briefInstruction,
 } from "./routines.js";
 import { listMemories, getMemory, addMemory, updateMemory, deleteMemory, forgetMemories } from "./memory.js";
-import { createApiToken, listApiTokens, revokeApiToken, handleMcp, TOOLS, SCOPES } from "./mcp.js";
+import { createApiToken, listApiTokens, revokeApiToken, handleMcp, serverCard, TOOLS, SCOPES } from "./mcp.js";
 import { loadCopy } from "./copy.js";
 import { DAILY_KINDS } from "./dailyReport.js";
 
@@ -84,6 +84,9 @@ async function forClient(env, orgId, who, memories, admin) {
 export async function handleAutomation(request, env, url, ctx = null) {
   const path = url.pathname;
   if (path === "/mcp") return handleMcp(request, env, ctx);
+  if (path === "/.well-known/mcp/server-card.json" && request.method === "GET") {
+    return new Response(JSON.stringify(serverCard(), null, 2), { headers: { "content-type": "application/json", "cache-control": "public, max-age=3600", "access-control-allow-origin": "*" } });
+  }
   if (request.method === "OPTIONS") return null;
 
   // ---- Routines ----
