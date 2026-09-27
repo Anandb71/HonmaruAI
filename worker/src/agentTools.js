@@ -22,7 +22,7 @@ const query = (what) => ({
 export async function agentTools(env, { orgId, session, language = "en", personal = false }) {
   const tools = {
     read_url: {
-      description: "Open one web page and read its full text. Use it on the most relevant search results and on primary sources (official sites, filings, papers, the original post) before relying on them — search snippets are not enough. Also reads a YouTube video (title, description and transcript), a TikTok (caption, author) and a post on X (text, author, numbers). Returns the page's text, or says why it could not be read.",
+      description: "Open one web page and read its full text. Use it on the most relevant search results and on primary sources (official sites, filings, papers, the original post) before relying on them — search snippets are not enough. Also reads a YouTube video (title, channel, description and — when it can — the transcript), a TikTok (caption, author) and a post on X (text, author, numbers). Returns the page's text, or says why it could not be read.",
       parameters: {
         type: "object",
         properties: { url: { type: "string", description: "The full http(s) URL to open." } },
@@ -31,7 +31,7 @@ export async function agentTools(env, { orgId, session, language = "en", persona
       },
       run: async ({ url }) => {
         if (!isPublicUrl(url)) return "Could not open: only public http(s) pages can be read.";
-        const read = await readLink(String(url), { language }).catch(() => null);
+        const read = await readLink(String(url), { language, env }).catch(() => null);
         if (!read) return `Could not read ${url}: the site refused or had no readable text. Try another source.`;
         return linksBlock([read]).replace(/^\n<shared_links>\n|\n<\/shared_links>[\s\S]*$/g, "");
       },

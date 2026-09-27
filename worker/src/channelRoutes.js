@@ -362,7 +362,7 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
   if (provider && allowance?.allowed) {
     try {
       const urls = linksIn(row.body).length ? linksIn(row.body) : linksIn(transcript.slice(-6).join("\n"));
-      if (urls.length) links = linksBlock(await readLinks(urls, { language: locale }));
+      if (urls.length) links = linksBlock(await readLinks(urls, { language: locale, env }));
     } catch (err) {
       console.error("agent links failed", safe(err?.message));
     }
