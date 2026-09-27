@@ -84,3 +84,4 @@ ALTER TABLE sessions ADD COLUMN sso_subject TEXT;
 ALTER TABLE sessions ADD COLUMN sso_sid TEXT;
 ALTER TABLE sessions ADD COLUMN sso_refresh TEXT;
 ALTER TABLE sessions ADD COLUMN sso_checked_at TEXT;
+ALTER TABLE users ADD COLUMN translate_messages INTEGER NOT NULL DEFAULT 1;

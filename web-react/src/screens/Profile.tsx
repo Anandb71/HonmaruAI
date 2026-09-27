@@ -50,6 +50,8 @@ interface Me {
   /// The username @ finds you by; null until you choose one.
   handle?: string | null
   orgs?: Org[]
+  /// Messages in another language shown in yours. On unless turned off.
+  translateMessages?: boolean
 }
 
 // English keys, translated where they are read — see utils/i18n.
@@ -570,6 +572,29 @@ export const Profile: React.FC<Props> = ({
               <select className="row-select" value={primary(locale)} onChange={(e) => changeLocale(e.target.value)} aria-label={t('Language')}>
                 <LanguageOptions current={locale} />
               </select>
+            </div>
+            <div className="row static">
+              <span className="row-main">
+                {t('Translate messages')}
+                <span className="row-sub">{t('Messages in another language are shown in yours. Show original is one tap away.')}</span>
+              </span>
+              <button
+                type="button"
+                className="switch"
+                role="switch"
+                aria-checked={me?.translateMessages !== false}
+                aria-label={t('Translate messages')}
+                disabled={!me}
+                data-translate-messages="1"
+                onClick={() => {
+                  const next = me?.translateMessages === false
+                  setMe((prev) => (prev ? { ...prev, translateMessages: next } : prev))
+                  void fetch(`${httpBase}/me`, {
+                    method: 'PUT', headers: { 'content-type': 'application/json', 'x-session-token': sessionToken },
+                    body: JSON.stringify({ translateMessages: next }),
+                  }).catch(() => {})
+                }}
+              />
             </div>
           </div>
 

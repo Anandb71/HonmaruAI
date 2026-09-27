@@ -2,6 +2,7 @@ import { checkOutgoing } from "./dlp.js";
 import { attachedTexts } from "./dlpFiles.js";
 import { linksIn, readLinks, linksBlock } from "./links.js";
 import { agentTools } from "./agentTools.js";
+import { translateMessages } from "./translate.js";
 import { getSession, isMember, getUserByGithubId, saveCard, getCard, listBusinesses } from "./db.js";
 import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText } from "./dailyReport.js";
 import { providerFor } from "./orgAI.js";
@@ -809,6 +810,28 @@ export async function handleChannels(request, env, url, { route, after }) {
 
   // A private channel's members: anyone inside may bring somebody in, or
   // take somebody out; anyone may leave.
+  // Messages in another language, in this reader's: translated once per
+  // message and language and kept (translate.js). Only messages in this
+  // conversation; only for a reader who has not turned translation off.
+  if (path === "/channels/translate" && request.method === "POST") {
+    const limited = await enforce(env, request, "chat");
+    if (limited) return limited;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || !Array.isArray(body.ids)) return json({ message: "Invalid JSON body." }, 400);
+    const ctx = await inChannel(env, request, body);
+    if (ctx.denied) return ctx.denied;
+    const me = ctx.who.user;
+    const locale = String(me.locale || "en").slice(0, 2);
+    if (Number(me.translate_messages ?? 1) === 0) return json({ translations: {}, locale, off: true });
+    const ids = [...new Set(body.ids.map(String))].slice(0, 60);
+    const rows = (await Promise.all(ids.map((id) => getMessage(env.DB, body.orgId, id)))).filter((r) => r && r.channel === ctx.resolved.key);
+    const provider = await providerFor(env, body.orgId);
+    const allowance = provider ? await allowanceFor(env, body.orgId, { githubId: String(ctx.who.session.github_id) }) : null;
+    const { byId } = await translateMessages(env.DB, body.orgId, rows, { locale, provider, allowance });
+    if (provider) await settleUsage(env.DB, provider, { orgId: body.orgId, githubId: ctx.who.session.github_id });
+    return json({ translations: byId, locale });
+  }
+
   // An agent brought into a channel or a group, or taken out of it. Anyone
   // in it but a guest may do either; only an agent you can call yourself
   // can be brought in — your own personal one included.

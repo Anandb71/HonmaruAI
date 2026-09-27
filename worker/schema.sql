@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS users (
   notify_email  INTEGER NOT NULL DEFAULT 1,
   /* 1: push the phone even while at the app on another device. */
   push_while_active INTEGER NOT NULL DEFAULT 0,
+  /* 1: messages in another language are shown translated into this
+     person's (translate.js). On unless they turn it off. */
+  translate_messages INTEGER NOT NULL DEFAULT 1,
   /* Notifications paused until then ("Pause notifications"). */
   notify_paused_until TEXT,
   /* The hours notifications may come, as JSON (quiet.js): days, from, to,
@@ -917,6 +920,18 @@ CREATE TABLE IF NOT EXISTS channel_canvases (
   updated_by    TEXT,
   updated_at    TEXT NOT NULL,
   PRIMARY KEY (org_id, channel)
+);
+
+/* A message put into one reader's language: written once per message and
+   language, and again only when the message is edited (source_hash). */
+CREATE TABLE IF NOT EXISTS message_translations (
+  org_id       TEXT NOT NULL,
+  message_id   TEXT NOT NULL,
+  locale       TEXT NOT NULL,
+  source_hash  TEXT NOT NULL,
+  body         TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (org_id, message_id, locale)
 );
 
 /* A channel's context, written by the model for the record: kept with the

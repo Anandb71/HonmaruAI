@@ -318,6 +318,18 @@ final class ChatStore: ObservableObject {
             more[view] = list.count >= page
         } catch { self.error = error.localizedDescription }
         await markRead(view)
+        await translate(view, messages[view] ?? [])
+    }
+
+    /// Messages in another language, put into this reader's (translate.js).
+    func translate(_ channel: String, _ list: [ChatMessage]) async {
+        guard let orgId, let base else { return }
+        let reader = String((appState?.readerLanguageCode ?? "en").prefix(2)).lowercased()
+        let want = ChatTranslations.shared.wanted(list, reader: reader)
+        guard !want.isEmpty else { return }
+        guard let got = try? await ChatService.translate(orgId: orgId, channel: channel, ids: want.prefix(60).map(\.id), base: base) else { return }
+        if got.off == true { ChatTranslations.shared.off = true; return }
+        for m in want { if let text = got.translations[m.id] { ChatTranslations.shared.store(m.id, from: m.body, text: text) } }
     }
 
     func markRead(_ view: String) async {
@@ -453,6 +465,7 @@ final class ChatStore: ObservableObject {
         guard let orgId, let base else { return }
         thread = ChatThread(parent: m, replies: [])
         if let t = try? await ChatService.thread(orgId: orgId, channel: m.channel, messageId: m.id, base: base), thread?.parent.id == m.id { thread = t }
+        if let t = thread { await translate(m.channel, [t.parent] + t.replies) }
         // A thread opened is a thread read: Threads and Activity both stop
         // calling its replies new.
         inbox = inbox.map { var i = $0; if i.unread && i.message.parentId == m.id { i.unread = false }; return i }
@@ -537,6 +550,7 @@ final class ChatStore: ObservableObject {
         struct Envelope: Decodable { let message: ChatMessage }
         guard let data, let m = try? JSONDecoder().decode(Envelope.self, from: data).message else { return }
         upsert(m)
+        Task { await translate(m.channel, [m]) }
         if m.isAI { thinking[m.channel] = nil }
         if m.isAgent { agentTyping[m.channel] = nil }
         // Somebody started a group with you: it joins the list.

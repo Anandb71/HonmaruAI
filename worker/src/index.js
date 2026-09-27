@@ -1290,6 +1290,7 @@ async function handle(request, env, url, ctx) {
         aliases: parseAliases(user.aliases),
         notifyEmail: Number(user.notify_email ?? 1) !== 0,
         pushWhileActive: Boolean(user.push_while_active),
+        translateMessages: Number(user.translate_messages ?? 1) !== 0,
         ...quietFields(user),
         supportedLocales: SUPPORTED_LOCALES,
         // The words of the notification a browser tab shows by itself, in
@@ -1380,6 +1381,10 @@ async function handle(request, env, url, ctx) {
       // Push the phone even while at the app on another device.
       if (body.pushWhileActive !== undefined) {
         await env.DB.prepare("UPDATE users SET push_while_active = ?2 WHERE github_id = ?1").bind(String(session.github_id), body.pushWhileActive ? 1 : 0).run();
+      }
+      // Messages in another language, shown in yours. On by default.
+      if (body.translateMessages !== undefined) {
+        await env.DB.prepare("UPDATE users SET translate_messages = ?2 WHERE github_id = ?1").bind(String(session.github_id), body.translateMessages ? 1 : 0).run();
       }
       // What you are called, and the username @ finds you by.
       if (body.name !== undefined) {

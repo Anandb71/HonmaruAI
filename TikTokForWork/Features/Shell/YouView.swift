@@ -11,6 +11,7 @@ struct YouView: View {
     @EnvironmentObject private var push: PushService
     @EnvironmentObject private var subscription: SubscriptionService
     @State private var showEmail = false
+    @State private var translateMessages = true
     @State private var showGitHub = false
     @State private var confirmSignOut = false
     @State private var confirmReset = false
@@ -49,6 +50,20 @@ struct YouView: View {
                                 ForEach(AppLanguage.allCases) { Text($0.label).tag($0) }
                             }
                         } label: { row("Language", icon: "globe", value: appState.language.label) }
+                        separator
+                        // Messages in another language, shown in yours.
+                        Toggle(isOn: Binding(get: { translateMessages }, set: { on in
+                            translateMessages = on
+                            ChatTranslations.shared.off = !on
+                            if let base = appState.backendBaseURL { Task { await ProfileService.setTranslateMessages(on, backendBaseURL: base) } }
+                        })) {
+                            Label("Translate messages", systemImage: "character.bubble")
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .disabled(appState.isGuest)
+                        .task {
+                            if let base = appState.backendBaseURL, let on = await ProfileService.translateMessages(backendBaseURL: base) { translateMessages = on }
+                        }
                         separator
                         Button(action: openNotifications) { row("Notifications", icon: "bell", value: notificationStatus) }.disabled(!PushService.isEnabledInThisBuild || appState.isGuest)
                         separator

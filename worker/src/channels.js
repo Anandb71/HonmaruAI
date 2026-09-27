@@ -4,6 +4,7 @@ import { resolveMentions } from "./threads.js";
 import { filesFor, toFile } from "./files.js";
 import { accessFor, mayRead, membersOf, isGroupKey, hasGuests, publicAudience } from "./access.js";
 import { parseKeywords, keywordHit } from "./quiet.js";
+import { messageLanguage } from "./translate.js";
 
 // Channels you can talk in.
 //
@@ -132,6 +133,9 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     // A deleted message keeps its place (its thread hangs off it) and
     // loses its words.
     body: deleted ? "" : row.body,
+    // The language it is written in, for a reader in another to ask for it
+    // translated (translate.js). Null when there is nothing to translate.
+    lang: deleted ? null : messageLanguage(row.body),
     authorName: row.kind === "ai" ? null : (agent?.name || author?.name || row.author_name || null),
     authorRef: author ? author.ref : null,
     authorAvatar: author?.avatarUrl || null,

@@ -1190,6 +1190,65 @@ export const ClassicList: React.FC<Props> = ({
   const [toolsOpen, setToolsOpen] = useState<string | null>(null)
   const [pickerFor, setPickerFor] = useState<string | null>(null)
   const [thread, setThread] = useState<{ channel: string; parent: ChannelMessage; replies: ChannelMessage[] } | null>(null)
+
+  // Messages in another language, in yours: translated once on the server
+  // and kept; the words they were translated from, so an edit asks again.
+  // "Show original" per message. Off when the person turned it off.
+  const readerLang = locale.slice(0, 2).toLowerCase()
+  const [translations, setTranslations] = useState<Record<string, { from: string; text: string }>>({})
+  const [originals, setOriginals] = useState<Set<string>>(new Set())
+  const [translateOff, setTranslateOff] = useState(false)
+  const asking = useRef<Set<string>>(new Set())
+  const needsTranslation = (m: ChannelMessage) => !translateOff && !m.deleted && Boolean(m.lang) && m.lang !== readerLang
+    && translations[m.id]?.from !== m.body && !asking.current.has(`${m.id}:${m.body}`)
+  const translate = useCallback(async (channel: string, list: ChannelMessage[]) => {
+    const want = list.filter(needsTranslation).slice(0, 60)
+    if (!want.length) return
+    for (const m of want) asking.current.add(`${m.id}:${m.body}`)
+    const res = await fetch(`${api.httpBase}/channels/translate`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel, ids: want.map((m) => m.id) }),
+    }).catch(() => null)
+    const data = res?.ok ? await res.json().catch(() => null) : null
+    if (data?.off) { setTranslateOff(true); return }
+    if (data?.translations) {
+      setTranslations((prev) => {
+        const next = { ...prev }
+        for (const m of want) if (data.translations[m.id]) next[m.id] = { from: m.body, text: data.translations[m.id] }
+        return next
+      })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api.httpBase, api.orgId, authHeaders, translations, translateOff, readerLang])
+  // Whatever is on screen: the open conversation, and the thread beside it.
+  useEffect(() => {
+    if (!view) return
+    const id = setTimeout(() => { void translate(view, messages[view] || []) }, 250)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, messages[view || ''], translateOff])
+  useEffect(() => {
+    if (!thread) return
+    const id = setTimeout(() => { void translate(thread.channel, [thread.parent, ...thread.replies]) }, 250)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread, translateOff])
+  /// What to show for a message: its translation, unless asked for the original.
+  const shownBody = (m: ChannelMessage) => {
+    const tr = translations[m.id]
+    return tr && tr.from === m.body && !originals.has(m.id) ? { text: tr.text, translated: true } : { text: m.body, translated: false }
+  }
+  const translationNote = (m: ChannelMessage) => {
+    const tr = translations[m.id]
+    if (!tr || tr.from !== m.body) return null
+    const showing = !originals.has(m.id)
+    return (
+      <button type="button" className="slk-translated" data-translated={showing ? '1' : '0'}
+        onClick={() => setOriginals((prev) => { const n = new Set(prev); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n })}>
+        {showing ? t('Translated · Show original') : t('Show translation')}
+      </button>
+    )
+  }
   /// The thread open beside the conversation, whose agents write there.
   const threadOpenParent = thread?.parent.id || null
   const [threadDraft, setThreadDraft] = useState('')
@@ -1868,10 +1927,11 @@ export const ClassicList: React.FC<Props> = ({
       <>
         {(m.body || m.editedAt) && (
           <div className="slk-text">
-            {rich(m.body)}
+            {rich(shownBody(m).text)}
             {m.editedAt && <span className="slk-edited" title={new Date(m.editedAt).toLocaleString(locale)}> {t('(edited)')}</span>}
           </div>
         )}
+        {translationNote(m)}
         <MessageFiles files={m.files} base={api.httpBase} />
       </>
     )
@@ -2250,7 +2310,8 @@ export const ClassicList: React.FC<Props> = ({
           const card = m.cardId ? cardsById.get(m.cardId) : undefined
           out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m) },
             <>
-              <div className="slk-text">{rich(m.body)}</div>
+              <div className="slk-text">{rich(shownBody(m).text)}</div>
+              {translationNote(m)}
               {card && attachment(card)}
               {jams[thread.view!]?.messageId === m.id && jamCard(thread.view!, jams[thread.view!])}
               {underneath(thread.view!, m)}
