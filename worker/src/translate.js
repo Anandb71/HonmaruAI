@@ -24,22 +24,18 @@ export function messageLanguage(body) {
   if (words.replace(/\s/g, "").length < 2) return null;
   const lang = detectLanguage(words);
   // Latin letters too few to tell English from Spanish ("hello!", "ok
-  // thanks"): "latn". A reader of Japanese, Korean or Russian still has it
-  // translated; a reader of another Latin-script language is not asked.
+  // thanks"): "latn" — still translated for every reader.
   if (lang === "und" && /\p{Script=Latin}/u.test(words)) return "latn";
   return lang && lang !== "und" ? lang : null;
 }
 
-/// Languages written in Latin letters: a "latn" message is left as it is
-/// for their readers.
-const LATIN_READERS = new Set(["en", "es", "fr", "de", "it", "pt", "nl", "sv", "da", "no", "nb", "fi", "pl", "cs", "sk", "ro", "hu", "tr", "id", "ms", "vi", "tl", "ca", "hr", "sl", "et", "lv", "lt", "sw"]);
-
-/// Whether a reader of `reader` gets a message in `lang` translated.
+/// Whether a reader of `reader` gets a message in `lang` translated: any
+/// message not in their language — "latn" (too short to name) included; a
+/// message that turns out to be theirs already comes back unchanged and is
+/// shown as it was.
 export function wantsTranslation(lang, reader) {
   const to = String(reader || "en").slice(0, 2).toLowerCase();
-  if (!lang || lang === to) return false;
-  if (lang === "latn") return !LATIN_READERS.has(to);
-  return true;
+  return Boolean(lang) && lang !== to;
 }
 
 export function sourceHash(text) {

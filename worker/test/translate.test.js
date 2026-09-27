@@ -33,13 +33,26 @@ test("a message says the language it is in; names, links and emoji alone say non
   expect(messageLanguage("Autumn menu launches on the 1st")).toBe("en");
   expect(messageLanguage("ポスターの方向性をください")).toBe("ja");
   expect(messageLanguage("@hayao https://x.com/a 👍")).toBe(null);
-  // Too short to name: still not Japanese, so a Japanese reader gets it
-  // translated; a reader of English or Spanish is not asked.
+  // Too short to name: translated into whatever language the reader set.
   expect(messageLanguage("hello!")).toBe("latn");
   expect(wantsTranslation("latn", "ja")).toBe(true);
-  expect(wantsTranslation("latn", "en")).toBe(false);
+  expect(wantsTranslation("latn", "es")).toBe(true);
   expect(wantsTranslation("ja", "ja-JP")).toBe(false);
   expect(wantsTranslation("en", "ja")).toBe(true);
+});
+
+test("the language the reader's screen is set to wins over the profile's", async () => {
+  const said = (await (await post("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "hello!" })).json()).message;
+  expect(said.lang).toBe("latn");
+  let asked;
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/chat/completions", method: "POST" }).reply(200, (opts) => {
+    asked = JSON.parse(opts.body);
+    return { choices: [{ message: { content: JSON.stringify({ items: [{ id: said.id, text: "¡hola!" }] }) } }] };
+  });
+  // Toru's profile says Japanese; his screen says Spanish.
+  const out = await (await post("/channels/translate", toru, { orgId: ORG, channel: "b:cafe", ids: [said.id], locale: "es" })).json();
+  expect(out).toMatchObject({ locale: "es", translations: { [said.id]: "¡hola!" } });
+  expect(asked.messages[1].content).toContain("Reader language: es");
 });
 
 test("a message in another language is translated for its reader, once; edited, it is translated again; off, never", async () => {

@@ -103,7 +103,6 @@ enum ChatText {
 /// reader turned back to the original.
 final class ChatTranslations: ObservableObject {
     static let shared = ChatTranslations()
-    static let latinReaders: Set<String> = ["en", "es", "fr", "de", "it", "pt", "nl", "sv", "da", "no", "nb", "fi", "pl", "cs", "sk", "ro", "hu", "tr", "id", "ms", "vi", "tl", "ca", "hr", "sl", "et", "lv", "lt", "sw"]
     @Published private(set) var texts: [String: (from: String, text: String)] = [:]
     @Published var originals: Set<String> = []
     var off = false
@@ -111,19 +110,19 @@ final class ChatTranslations: ObservableObject {
 
     func store(_ id: String, from: String, text: String) { texts[id] = (from, text) }
     func shown(_ m: ChatMessage) -> (text: String, translated: Bool) {
-        if let t = texts[m.id], t.from == m.body, !originals.contains(m.id) { return (t.text, true) }
+        if let t = texts[m.id], t.from == m.body, t.text.trimmingCharacters(in: .whitespacesAndNewlines) != m.body.trimmingCharacters(in: .whitespacesAndNewlines), !originals.contains(m.id) { return (t.text, true) }
         return (m.body, false)
     }
-    func hasTranslation(_ m: ChatMessage) -> Bool { texts[m.id]?.from == m.body }
+    func hasTranslation(_ m: ChatMessage) -> Bool {
+        guard let t = texts[m.id], t.from == m.body else { return false }
+        return t.text.trimmingCharacters(in: .whitespacesAndNewlines) != m.body.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     func toggle(_ id: String) { if originals.contains(id) { originals.remove(id) } else { originals.insert(id) } }
     /// The ones still to ask for, marked as asked.
     func wanted(_ list: [ChatMessage], reader: String) -> [ChatMessage] {
         guard !off else { return [] }
         let out = list.filter { m in
             guard m.deleted != true, let lang = m.lang, lang != reader, texts[m.id]?.from != m.body else { return false }
-            // "latn": too few Latin letters to name the language — translated
-            // for a reader of Japanese, left alone for a Latin-script reader.
-            if lang == "latn", Self.latinReaders.contains(reader) { return false }
             return !asked.contains("\(m.id):\(m.body)")
         }
         for m in out { asked.insert("\(m.id):\(m.body)") }

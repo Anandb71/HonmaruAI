@@ -424,8 +424,8 @@ enum ChatService {
     /// Messages in this reader's language: `translations` by id, from what
     /// is kept or written now; `off` when the reader turned it off.
     struct Translations: Decodable { let translations: [String: String]; let off: Bool? }
-    static func translate(orgId: String, channel: String, ids: [String], base: URL) async throws -> Translations {
-        try await call("POST", "/channels/translate", base: base, body: ["orgId": orgId, "channel": channel, "ids": ids], timeout: 60, as: Translations.self)
+    static func translate(orgId: String, channel: String, ids: [String], locale: String, base: URL) async throws -> Translations {
+        try await call("POST", "/channels/translate", base: base, body: ["orgId": orgId, "channel": channel, "ids": ids, "locale": locale], timeout: 60, as: Translations.self)
     }
 
     static func messages(orgId: String, channel: String, before: String? = nil, base: URL) async throws -> [ChatMessage] {

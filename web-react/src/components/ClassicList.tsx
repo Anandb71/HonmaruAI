@@ -158,8 +158,6 @@ interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name:
 interface UserGroup { handle: string; name: string; refs: string[]; createdBy: string | null }
 interface ActivityItem { type: 'mention' | 'reply' | 'reaction' | 'keyword'; message: ChannelMessage; unread: boolean; at?: string; emoji?: string; by?: string | null; byAvatar?: string | null; keyword?: string }
 
-const LATIN_READERS = new Set(['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'nb', 'fi', 'pl', 'cs', 'sk', 'ro', 'hu', 'tr', 'id', 'ms', 'vi', 'tl', 'ca', 'hr', 'sl', 'et', 'lv', 'lt', 'sw'])
-
 async function hash16(text: string): Promise<string> {
   const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
@@ -1208,10 +1206,9 @@ export const ClassicList: React.FC<Props> = ({
   const [originals, setOriginals] = useState<Set<string>>(new Set())
   const [translateOff, setTranslateOff] = useState(false)
   const asking = useRef<Set<string>>(new Set())
-  // "latn": Latin letters, too few to name the language — translated for a
-  // reader of Japanese, left alone for a reader of another Latin language.
+  // Anything not in the language you set is translated into it — "latn"
+  // (Latin letters too few to name the language) included.
   const needsTranslation = (m: ChannelMessage) => !translateOff && !m.deleted && Boolean(m.lang) && m.lang !== readerLang
-    && !(m.lang === 'latn' && LATIN_READERS.has(readerLang))
     && translations[m.id]?.from !== m.body && !asking.current.has(`${m.id}:${m.body}`)
   const translate = useCallback(async (channel: string, list: ChannelMessage[]) => {
     const want = list.filter(needsTranslation).slice(0, 60)
@@ -1219,7 +1216,7 @@ export const ClassicList: React.FC<Props> = ({
     for (const m of want) asking.current.add(`${m.id}:${m.body}`)
     const res = await fetch(`${api.httpBase}/channels/translate`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel, ids: want.map((m) => m.id) }),
+      body: JSON.stringify({ orgId: api.orgId, channel, ids: want.map((m) => m.id), locale: readerLang }),
     }).catch(() => null)
     const data = res?.ok ? await res.json().catch(() => null) : null
     if (data?.off) { setTranslateOff(true); return }
@@ -1248,11 +1245,12 @@ export const ClassicList: React.FC<Props> = ({
   /// What to show for a message: its translation, unless asked for the original.
   const shownBody = (m: ChannelMessage) => {
     const tr = translations[m.id]
-    return tr && tr.from === m.body && !originals.has(m.id) ? { text: tr.text, translated: true } : { text: m.body, translated: false }
+    // A "translation" that is the message itself was yours already.
+    return tr && tr.from === m.body && tr.text.trim() !== m.body.trim() && !originals.has(m.id) ? { text: tr.text, translated: true } : { text: m.body, translated: false }
   }
   const translationNote = (m: ChannelMessage) => {
     const tr = translations[m.id]
-    if (!tr || tr.from !== m.body) return null
+    if (!tr || tr.from !== m.body || tr.text.trim() === m.body.trim()) return null
     const showing = !originals.has(m.id)
     return (
       <button type="button" className="slk-translated" data-translated={showing ? '1' : '0'}
