@@ -94,6 +94,16 @@ test("a deleted message takes its thread with it: nothing is left to see", async
   expect(await transcriptUpTo(env.DB, ORG, "b:cafe", new Date().toISOString())).toHaveLength(0);
 });
 
+test("the author takes a message's link cards off; nobody else can", async () => {
+  const m = await say(mika, "look https://blog.example.com/a");
+  const post = (token, body) => worker.fetch(new Request("https://example.com/channels/previews", { method: "POST", headers: { "content-type": "application/json", "x-session-token": token }, body: JSON.stringify(body) }), env, { waitUntil: () => {} });
+  expect((await post(toru, { orgId: ORG, channel: "b:cafe", messageId: m.id })).status).toBe(403);
+  const out = await (await post(mika, { orgId: ORG, channel: "b:cafe", messageId: m.id, hidden: true })).json();
+  expect(out.message.previewsHidden).toBe(true);
+  const [seen] = await list(toru);
+  expect(seen.previewsHidden).toBe(true);
+});
+
 test("replies go in a thread: off the main log, counted on the parent, readable together", async () => {
   const m = await say(mika, "Friday price change?");
   const r1 = await say(toru, "Yes, from Friday", { parentId: m.id });

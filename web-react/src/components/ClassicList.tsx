@@ -1936,7 +1936,10 @@ export const ClassicList: React.FC<Props> = ({
   /// What sits under a message's words: its reactions and its thread.
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
-      {!m.deleted && m.kind === 'message' && <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken} />}
+      {!m.deleted && m.kind === 'message' && !m.previewsHidden && (
+        <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken}
+          onHide={m.mine ? () => void act('POST', '/channels/previews', channel, { messageId: m.id, hidden: true }) : undefined} />
+      )}
       {!m.deleted && (
         <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(m.id)} />
       )}

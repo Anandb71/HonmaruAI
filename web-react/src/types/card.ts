@@ -172,6 +172,8 @@ export interface ChannelMessage {
   authorRef: string | null
   /// The author's photo, when they have one.
   authorAvatar?: string | null
+  /// Its author took the link cards off.
+  previewsHidden?: boolean
   mine: boolean
   cardId: string | null
   createdAt: string

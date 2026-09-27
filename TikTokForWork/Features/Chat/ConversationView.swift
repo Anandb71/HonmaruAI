@@ -235,6 +235,9 @@ struct ConversationView: View {
         if !m.mine {
             Button { Task { await store.markUnread(m) } } label: { Label("Mark unread", systemImage: "envelope.badge") }
         }
+        if m.mine, m.previewsHidden != true, ChatLinkMetadata.firstLink(in: m.body) != nil {
+            Button { Task { await store.hidePreviews(m) } } label: { Label("Remove preview", systemImage: "xmark.rectangle") }
+        }
         Button { Task { await store.togglePin(m) } } label: {
             Label(m.pinned == true ? LocalizedStringKey("Unpin") : LocalizedStringKey("Pin to channel"), systemImage: m.pinned == true ? "pin.slash" : "pin")
         }

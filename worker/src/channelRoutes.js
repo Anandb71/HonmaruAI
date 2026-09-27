@@ -22,7 +22,7 @@ import { custom as customEvent } from "./agui/events.js";
 import {
   resolveChannel, listMessages, postMessage, getMessage, linkCard, transcriptUpTo, channelActivity,
   viewOf, asksTheAI, withoutAI, MAX_MESSAGE_CHARS,
-  present, listThread, listPins, editMessage, deleteMessage, toggleReaction, setPinned,
+  present, listThread, listPins, editMessage, deleteMessage, toggleReaction, setPinned, setPreviewsHidden,
   markRead, markUnreadFrom, readsFor, activityFeed, searchMessages, threadsFor,
 } from "./channels.js";
 import { safe } from "./log.js";
@@ -1069,6 +1069,23 @@ export async function handleChannels(request, env, url, { route, after }) {
     const out = await setPinned(env.DB, { orgId: body.orgId, id: body.messageId, login: ctx.who.user.login, pinned: body.pinned !== false });
     if (out.error) return json({ message: out.error }, out.status || 400);
     after(() => broadcast(env, body.orgId, ctx.resolved, out.row, ctx.members));
+    const [message] = await present(env.DB, body.orgId, [out.row], ctx.who.user.login, ctx.view, ctx.members);
+    return json({ message });
+  }
+
+  // Its author takes a message's link cards off (or back on).
+  if (path === "/channels/previews" && request.method === "POST") {
+    const limited = await enforce(env, request, "chat");
+    if (limited) return limited;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") return json({ message: "Invalid JSON body." }, 400);
+    const ctx = await inChannel(env, request, body);
+    if (ctx.denied) return ctx.denied;
+    const current = typeof body.messageId === "string" ? await getMessage(env.DB, body.orgId, body.messageId) : null;
+    if (!current || current.channel !== ctx.resolved.key) return json({ message: "No such message." }, 404);
+    const out = await setPreviewsHidden(env.DB, { orgId: body.orgId, id: body.messageId, login: ctx.who.user.login, hidden: body.hidden !== false });
+    if (out.error) return json({ message: out.error }, out.status || 400);
+    after(() => broadcastWithParent(env, body.orgId, ctx.resolved, out.row, ctx.members));
     const [message] = await present(env.DB, body.orgId, [out.row], ctx.who.user.login, ctx.view, ctx.members);
     return json({ message });
   }

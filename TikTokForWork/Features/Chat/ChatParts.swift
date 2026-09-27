@@ -500,7 +500,7 @@ struct ChatMessageRow: View {
                         }
                     }
                     if let files = message.files, !files.isEmpty { ChatAttachments(files: files) }
-                    if message.kind == "message", let link = ChatLinkMetadata.firstLink(in: message.body) { ChatLinkPreview(url: link) }
+                    if message.kind == "message", message.previewsHidden != true, let link = ChatLinkMetadata.firstLink(in: message.body) { ChatLinkPreview(url: link) }
                     if message.editedAt != nil {
                         Text("(edited)").font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
                     }

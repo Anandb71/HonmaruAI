@@ -151,6 +151,7 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     lastReplyAt: extra.lastReplyAt || null,
     replyRefs: extra.replyRefs || [],
     pinned: !deleted && Boolean(row.pinned_at),
+    ...(row.previews_hidden ? { previewsHidden: true } : {}),
     reactions: deleted ? [] : reactions,
     files: deleted ? [] : (extra.files || []),
     ...(agent ? { agent: { id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji || null } } : {}),
@@ -334,6 +335,15 @@ export async function toggleReaction(db, { orgId, id, login, emoji }) {
       .bind(orgId, id, clean, login, new Date().toISOString()).run();
   }
   return { row };
+}
+
+/// The author takes a message's link cards off, or puts them back.
+export async function setPreviewsHidden(db, { orgId, id, login, hidden }) {
+  const row = await getMessage(db, orgId, id);
+  if (!row || row.deleted_at) return { error: "No such message.", status: 404 };
+  if (row.author_login !== login) return { error: "Only the person who wrote it can change its previews.", status: 403 };
+  await db.prepare("UPDATE channel_messages SET previews_hidden = ?3 WHERE org_id = ?1 AND id = ?2").bind(orgId, id, hidden ? 1 : 0).run();
+  return { row: await getMessage(db, orgId, id) };
 }
 
 export async function setPinned(db, { orgId, id, login, pinned }) {
