@@ -239,4 +239,19 @@ final class ChatTranslationTests: XCTestCase {
         XCTAssertFalse(t.hasTranslation(edited))
         XCTAssertEqual(t.wanted([edited], reader: "ja").map(\.id), ["a"])
     }
+
+    func testFormatMarksToggleSwapAndContinue() {
+        XCTAssertEqual(ChatFormat.toggleLine("hello", mark: "> "), "> hello")
+        XCTAssertEqual(ChatFormat.toggleLine("> hello", mark: "> "), "hello")
+        XCTAssertEqual(ChatFormat.toggleLine("> hello", mark: "- "), "- hello")
+        XCTAssertEqual(ChatFormat.toggleLine("a\n3. b", mark: "1. "), "a\nb")
+        XCTAssertEqual(ChatFormat.wrapLast("make this bold", "*"), "make this *bold*")
+        XCTAssertEqual(ChatFormat.wrapLast("", "_"), "__")
+        XCTAssertEqual(ChatFormat.continued(old: "- milk", new: "- milk\n"), "- milk\n- ")
+        XCTAssertEqual(ChatFormat.continued(old: "1. a", new: "1. a\n"), "1. a\n2. ")
+        XCTAssertEqual(ChatFormat.continued(old: "- milk\n- ", new: "- milk\n- \n"), "- milk\n")
+        XCTAssertNil(ChatFormat.continued(old: "hello", new: "hello\n"))
+        XCTAssertEqual(ChatRichText.numbered("12. twelve")?.n, 12)
+        XCTAssertNil(ChatRichText.numbered("1.5 million"))
+    }
 }

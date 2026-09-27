@@ -146,6 +146,12 @@ struct ChatRichText: View {
                         Text("•").foregroundStyle(Theme.Colors.textSecondary)
                         Text(ChatText.attributed(String(line.dropFirst(2))))
                     }
+                } else if let number = ChatRichText.numbered(line) {
+                    // "1. " — a numbered list keeps its numbers.
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(verbatim: "\(number.n).").foregroundStyle(Theme.Colors.textSecondary).monospacedDigit()
+                        Text(ChatText.attributed(number.rest))
+                    }
                 } else {
                     Text(ChatText.attributed(line))
                 }
@@ -154,6 +160,15 @@ struct ChatRichText: View {
         .font(.body)
         .foregroundStyle(Theme.Colors.textPrimary)
         .textSelection(.enabled)
+    }
+
+    /// "12. words" → (12, "words"); nil for anything else.
+    static func numbered(_ line: String) -> (n: Int, rest: String)? {
+        guard let dot = line.firstIndex(of: "."), dot > line.startIndex,
+              let n = Int(line[line.startIndex..<dot]), n < 1000 else { return nil }
+        let after = line.index(after: dot)
+        guard after < line.endIndex, line[after] == " " else { return nil }
+        return (n, String(line[line.index(after: after)...]))
     }
 }
 

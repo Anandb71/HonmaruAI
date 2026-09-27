@@ -115,7 +115,12 @@ struct ConversationView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
-        .onChange(of: draft) { _, text in store.setDraft(view, text) }
+        .onChange(of: draft) { old, text in
+            // A new line in a quote or a list carries its mark on; a new line
+            // on an empty marked line ends it — as on the web.
+            if let carried = ChatFormat.continued(old: old, new: text), carried != text { draft = carried; return }
+            store.setDraft(view, text)
+        }
         .sheet(item: $reactingTo) { m in ChatEmojiPicker { e in Task { await store.react(m, e) } } }
         .sheet(isPresented: $showThread) { ChatThreadSheet(store: store, onOpenCard: open(card:)) }
         .sheet(isPresented: $showPins) { pinsSheet }
@@ -360,6 +365,22 @@ struct ConversationView: View {
                         photoItems = []
                         Task { await attach(items) }
                     }
+                    // Quote, list, numbered list, bold and the rest, as on the web.
+                    Menu {
+                        Button { draft = ChatFormat.toggleLine(draft, mark: "> ") } label: { Label("Quote", systemImage: "text.quote") }
+                        Button { draft = ChatFormat.toggleLine(draft, mark: "- ") } label: { Label("Bulleted list", systemImage: "list.bullet") }
+                        Button { draft = ChatFormat.toggleLine(draft, mark: "1. ") } label: { Label("Numbered list", systemImage: "list.number") }
+                        Divider()
+                        Button { draft = ChatFormat.wrapLast(draft, "*") } label: { Label("Bold", systemImage: "bold") }
+                        Button { draft = ChatFormat.wrapLast(draft, "_") } label: { Label("Italic", systemImage: "italic") }
+                        Button { draft = ChatFormat.wrapLast(draft, "~") } label: { Label("Strikethrough", systemImage: "strikethrough") }
+                        Button { draft = ChatFormat.wrapLast(draft, "`") } label: { Label("Code", systemImage: "chevron.left.forwardslash.chevron.right") }
+                    } label: {
+                        Image(systemName: "textformat").font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .frame(width: 44, height: 44).glassCircle()
+                    }
+                    .accessibilityLabel("Formatting")
                     TextField(placeholder, text: $draft, axis: .vertical)
                         .lineLimit(1...6)
                         .focused($focused)
@@ -657,7 +678,14 @@ struct ConversationView: View {
                     .accessibilityLabel("Jam")
                     .accessibilityHint("Start or join a call in this conversation.")
             }
-            Button { Task { pins = await store.pins(view); showPins = true } } label: { Image(systemName: "pin") }
+            Button {
+                Task {
+                    let list = await store.pins(view)
+                    // In the language you set, before the sheet opens.
+                    await store.translate(view, list.filter { !$0.mine })
+                    pins = list; showPins = true
+                }
+            } label: { Image(systemName: "pin") }
                 .accessibilityLabel("Pinned messages")
             Menu {
                 Button { canvasOpen = true } label: { Label("Canvas", systemImage: "doc.richtext") }
@@ -711,7 +739,7 @@ struct ConversationView: View {
                 ForEach(pins) { m in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(m.isAI ? String(localized: "Your AI") : (m.mine ? String(localized: "You") : m.authorName ?? "")).font(.caption.weight(.semibold)).foregroundStyle(Theme.Colors.textSecondary)
-                        Text(m.body).font(.subheadline).lineLimit(3)
+                        Text(ChatTranslations.shared.shown(m).text).font(.subheadline).lineLimit(3)
                     }
                     .swipeActions { Button("Unpin") { Task { await store.togglePin(m); pins.removeAll { $0.id == m.id } } }.tint(.orange) }
                 }
