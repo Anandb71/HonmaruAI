@@ -675,6 +675,7 @@ const table: Record<string, string> = {
   'Try /schedule 30m …, /schedule 2h …, /schedule tomorrow … or /schedule monday …': 'Prueba /schedule 30m …, 2h …, tomorrow … o monday …',
   '/{name} is not a command. Try /decide, /remember, /routine, /schedule or /shortcuts.': '/{name} no es un comando. Prueba /decide, /remember, /routine, /schedule o /shortcuts.',
   'Enter to send · ⌘Enter sends and asks your AI for a decision · / for commands': 'Enter envía · ⌘Enter pide una decisión · / comandos',
+  'Enter to send · @AI or ✦ makes it a decision · / for commands': 'Enter envía · @AI o ✦ lo convierte en decisión · / comandos',
   'Clip': 'Clip',
   '{n} messages clipped': '{n} mensajes en el clip',
   'Make one decision': 'Hacer una decisión',

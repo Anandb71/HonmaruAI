@@ -463,6 +463,7 @@ const table: Record<string, string> = {
   'Try /schedule 30m …, /schedule 2h …, /schedule tomorrow … or /schedule monday …': '/schedule 30m …、/schedule 2h …、/schedule tomorrow …、/schedule monday … の形で書いてください。',
   '/{name} is not a command. Try /decide, /remember, /routine, /schedule or /shortcuts.': '/{name} というコマンドはありません。/decide、/remember、/routine、/schedule、/shortcuts が使えます。',
   'Enter to send · ⌘Enter sends and asks your AI for a decision · / for commands': 'Enterで送信 · ⌘Enterで決定カードに · / でコマンド',
+  'Enter to send · @AI or ✦ makes it a decision · / for commands': 'Enterで送信 · @AI か ✦ で決定カードに · / でコマンド',
   'Clip': 'クリップ',
   '{n} messages clipped': '{n}件をクリップ中',
   'Make one decision': '1つの決定にする',
