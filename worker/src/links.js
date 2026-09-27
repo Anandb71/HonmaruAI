@@ -150,7 +150,8 @@ function supadataText(content) {
 }
 
 /// Gemini watching a YouTube video: what is said, in order, with the
-/// times, and what is shown on screen when it matters.
+/// times, and what is shown on screen when it matters. Public videos only;
+/// the free tier takes up to eight hours of YouTube a day.
 async function geminiTranscript(watchUrl, language, env) {
   const model = env.GEMINI_MODEL || "gemini-2.5-flash";
   try {
@@ -163,7 +164,10 @@ async function geminiTranscript(watchUrl, language, env) {
           { file_data: { file_uri: watchUrl } },
           { text: `Write down what this video says, in order, as a transcript with [mm:ss] times — in the video's own language. Where slides, charts, code or text on screen carry information, note it in brackets. No commentary, no summary. (The reader's language is ${language}.)` },
         ] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 8000 },
+        // What is said is what matters: frames at low resolution cost a
+        // third of the tokens (about 100 a second instead of 300), so a long
+        // video fits the free tier's tokens-per-minute.
+        generationConfig: { temperature: 0.1, maxOutputTokens: 8000, mediaResolution: "MEDIA_RESOLUTION_LOW" },
       }),
     });
     if (!res.ok) {
