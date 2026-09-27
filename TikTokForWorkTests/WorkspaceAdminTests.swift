@@ -66,4 +66,18 @@ final class WorkspaceAdminTests: XCTestCase {
         XCTAssertEqual(AdminService.days(730), String(localized: "\(2) years"))
         XCTAssertEqual(AdminService.days(90), String(localized: "\(90) days"))
     }
+
+    func testAppsDecode() throws {
+        let apps = try decode(AdminService.Apps.self, """
+        {"configured":true,"canConnect":true,"canManage":false,"apps":[
+          {"server":"linear","name":"Linear","description":"Issues","iconUrl":null,"verified":true,"allowWrites":false,"addedAt":"2026-09-27T00:00:00Z","connection":{"state":"connected","since":"2026-09-27T00:00:00Z"}},
+          {"server":"jira","name":"Jira","description":null,"iconUrl":null,"verified":false,"allowWrites":true,"addedAt":"2026-09-27T00:00:00Z","connection":null}
+        ]}
+        """)
+        XCTAssertEqual(apps.apps.map(\.server), ["linear", "jira"])
+        XCTAssertEqual(apps.apps[0].connection?.state, "connected")
+        XCTAssertNil(apps.apps[1].connection)
+        let started = try decode(AdminService.Connecting.self, #"{"state":"auth_required","setupUrl":"https://auth.smithery.ai/setup/x"}"#)
+        XCTAssertEqual(started.setupUrl, "https://auth.smithery.ai/setup/x")
+    }
 }

@@ -1817,6 +1817,30 @@ const ja: Dict = {
   'So signing out there, or being switched off there, ends the session here at once, give your identity provider this back-channel logout address:': 'IDプロバイダでのサインアウトや利用停止をすぐにここにも反映するには、このバックチャネル・ログアウトのアドレスをIDプロバイダに登録してください:',
   'Back-channel logout': 'バックチャネル・ログアウト',
   'Where your provider gives a refresh token, it is also asked every 15 minutes whether each person may still sign in.': 'IDプロバイダがリフレッシュトークンを発行する場合は、15分ごとに各メンバーがまだサインインできるかも確認します。',
+  'Allow': '許可',
+  'Allowed': '許可済み',
+  'Allowed. People can connect it now.': '許可しました。メンバーが接続できるようになりました。',
+  'Can write': '書き込み可',
+  'Choose which apps people here may connect. What their AI reads from an app passes through Smithery (smithery.ai), a company in the United States; your data rules and audit log do not see inside it.': 'メンバーが接続できるアプリを選びます。AIがアプリから読む内容は米国の企業 Smithery（smithery.ai）を経由します。データルールと監査ログはその中身を見ません。',
+  'Connect again': '再接続が必要',
+  'Connected.': '接続しました。',
+  'Disconnected.': '接続を解除しました。',
+  'Finish signing in': 'サインインを完了する',
+  'Let the AI write (create, send, change)': 'AIに書き込みを許可（作成・送信・変更）',
+  'More apps, through Smithery': 'Smitheryで追加するアプリ',
+  'No apps are allowed in this workspace yet. An owner chooses them.': 'このワークスペースで許可されたアプリはまだありません。オーナーが選びます。',
+  'No apps are allowed yet. Choose some below.': '許可したアプリはまだありません。下から選んでください。',
+  'Not set up on this server yet.': 'このサーバーではまだ設定されていません。',
+  'Not working': '利用できません',
+  'Nothing found.': '見つかりませんでした。',
+  'Search': '検索',
+  'Search Smithery, e.g. Linear': 'Smitheryを検索（例: Linear）',
+  'Take away': '許可を外す',
+  'Take {app} away? Everyone’s connection to it ends.': '{app} の許可を外しますか？全員の接続が終了します。',
+  'Taken away.': '許可を外しました。',
+  'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'ここで接続したものはあなた専用です。読むのはあなたとAIの1対1の会話だけで、チャンネルや他の人には届きません。オーナーが許可しない限り、読むだけで書き込みはしません。',
+  'Show translation': '翻訳を表示',
+  'Translated · Show original': '翻訳済み · 原文を表示',
 }
 
 // Most keys are their own English text. A few sentences are too long to read
@@ -3608,6 +3632,30 @@ const es: Dict = {
   'So signing out there, or being switched off there, ends the session here at once, give your identity provider this back-channel logout address:': 'Para que cerrar sesión allí, o ser desactivado allí, cierre la sesión aquí al instante, da a tu proveedor de identidad esta dirección de cierre de sesión por canal secundario:',
   'Back-channel logout': 'Cierre de sesión por canal secundario',
   'Where your provider gives a refresh token, it is also asked every 15 minutes whether each person may still sign in.': 'Si tu proveedor entrega un token de actualización, también se le pregunta cada 15 minutos si cada persona aún puede iniciar sesión.',
+  'Allow': 'Permitir',
+  'Allowed': 'Permitida',
+  'Allowed. People can connect it now.': 'Permitida. Ya se puede conectar.',
+  'Can write': 'Puede escribir',
+  'Choose which apps people here may connect. What their AI reads from an app passes through Smithery (smithery.ai), a company in the United States; your data rules and audit log do not see inside it.': 'Elige qué apps puede conectar la gente de aquí. Lo que su IA lee de una app pasa por Smithery (smithery.ai), una empresa de Estados Unidos; tus reglas de datos y el registro de auditoría no ven su contenido.',
+  'Connect again': 'Vuelve a conectar',
+  'Connected.': 'Conectada.',
+  'Disconnected.': 'Desconectada.',
+  'Finish signing in': 'Termina de iniciar sesión',
+  'Let the AI write (create, send, change)': 'Dejar que la IA escriba (crear, enviar, cambiar)',
+  'More apps, through Smithery': 'Más apps, con Smithery',
+  'No apps are allowed in this workspace yet. An owner chooses them.': 'Aún no hay apps permitidas en este espacio. Las elige un propietario.',
+  'No apps are allowed yet. Choose some below.': 'Aún no hay apps permitidas. Elige abajo.',
+  'Not set up on this server yet.': 'Aún no está configurado en este servidor.',
+  'Not working': 'No funciona',
+  'Nothing found.': 'No se encontró nada.',
+  'Search': 'Buscar',
+  'Search Smithery, e.g. Linear': 'Buscar en Smithery, p. ej. Linear',
+  'Take away': 'Quitar',
+  'Take {app} away? Everyone’s connection to it ends.': '¿Quitar {app}? Terminan las conexiones de todos.',
+  'Taken away.': 'Quitada.',
+  'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'Lo que conectes aquí es solo tuyo: solo lo lee tu propia conversación con tu IA, nunca un canal ni nadie más. Lee y no escribe, salvo que un propietario lo permita.',
+  'Show translation': 'Mostrar traducción',
+  'Translated · Show original': 'Traducido · Ver original',
 }
 
 const fr: Dict = {
@@ -5349,6 +5397,30 @@ const fr: Dict = {
   'So signing out there, or being switched off there, ends the session here at once, give your identity provider this back-channel logout address:': 'Pour qu’une déconnexion là-bas, ou une désactivation là-bas, mette fin à la session ici aussitôt, donnez à votre fournisseur d’identité cette adresse de déconnexion back-channel :',
   'Back-channel logout': 'Déconnexion back-channel',
   'Where your provider gives a refresh token, it is also asked every 15 minutes whether each person may still sign in.': 'Si votre fournisseur délivre un jeton d’actualisation, on lui demande aussi toutes les 15 minutes si chaque personne peut encore se connecter.',
+  'Allow': 'Autoriser',
+  'Allowed': 'Autorisée',
+  'Allowed. People can connect it now.': 'Autorisée. Chacun peut maintenant la connecter.',
+  'Can write': 'Peut écrire',
+  'Choose which apps people here may connect. What their AI reads from an app passes through Smithery (smithery.ai), a company in the United States; your data rules and audit log do not see inside it.': 'Choisissez les apps que les membres peuvent connecter. Ce que leur IA lit dans une app passe par Smithery (smithery.ai), une entreprise américaine ; vos règles de données et le journal d’audit n’en voient pas le contenu.',
+  'Connect again': 'À reconnecter',
+  'Connected.': 'Connectée.',
+  'Disconnected.': 'Déconnectée.',
+  'Finish signing in': 'Terminer la connexion',
+  'Let the AI write (create, send, change)': 'Laisser l’IA écrire (créer, envoyer, modifier)',
+  'More apps, through Smithery': 'Plus d’apps, avec Smithery',
+  'No apps are allowed in this workspace yet. An owner chooses them.': 'Aucune app n’est encore autorisée ici. Un propriétaire les choisit.',
+  'No apps are allowed yet. Choose some below.': 'Aucune app autorisée pour l’instant. Choisissez-en ci-dessous.',
+  'Not set up on this server yet.': 'Pas encore configuré sur ce serveur.',
+  'Not working': 'Ne fonctionne pas',
+  'Nothing found.': 'Rien trouvé.',
+  'Search': 'Rechercher',
+  'Search Smithery, e.g. Linear': 'Rechercher sur Smithery, p. ex. Linear',
+  'Take away': 'Retirer',
+  'Take {app} away? Everyone’s connection to it ends.': 'Retirer {app} ? Les connexions de tous prennent fin.',
+  'Taken away.': 'Retirée.',
+  'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'Ce que vous connectez ici n’appartient qu’à vous : seule votre propre conversation avec votre IA le lit, jamais un canal ni quelqu’un d’autre. Elle lit sans écrire, sauf si un propriétaire l’a permis.',
+  'Show translation': 'Afficher la traduction',
+  'Translated · Show original': 'Traduit · Voir l’original',
 }
 
 const de: Dict = {
@@ -7090,6 +7162,30 @@ const de: Dict = {
   'So signing out there, or being switched off there, ends the session here at once, give your identity provider this back-channel logout address:': 'Damit eine Abmeldung oder Sperrung dort die Sitzung hier sofort beendet, gib deinem Identitätsanbieter diese Back-Channel-Logout-Adresse:',
   'Back-channel logout': 'Back-Channel-Logout',
   'Where your provider gives a refresh token, it is also asked every 15 minutes whether each person may still sign in.': 'Wenn dein Anbieter ein Refresh-Token ausgibt, wird er außerdem alle 15 Minuten gefragt, ob sich jede Person noch anmelden darf.',
+  'Allow': 'Erlauben',
+  'Allowed': 'Erlaubt',
+  'Allowed. People can connect it now.': 'Erlaubt. Alle können sie jetzt verbinden.',
+  'Can write': 'Darf schreiben',
+  'Choose which apps people here may connect. What their AI reads from an app passes through Smithery (smithery.ai), a company in the United States; your data rules and audit log do not see inside it.': 'Wähle, welche Apps die Leute hier verbinden dürfen. Was ihre KI aus einer App liest, läuft über Smithery (smithery.ai), ein US-Unternehmen; deine Datenregeln und das Audit-Log sehen den Inhalt nicht.',
+  'Connect again': 'Neu verbinden',
+  'Connected.': 'Verbunden.',
+  'Disconnected.': 'Getrennt.',
+  'Finish signing in': 'Anmeldung abschließen',
+  'Let the AI write (create, send, change)': 'Die KI schreiben lassen (erstellen, senden, ändern)',
+  'More apps, through Smithery': 'Weitere Apps über Smithery',
+  'No apps are allowed in this workspace yet. An owner chooses them.': 'In diesem Workspace sind noch keine Apps erlaubt. Ein Eigentümer wählt sie aus.',
+  'No apps are allowed yet. Choose some below.': 'Noch keine Apps erlaubt. Wähle unten welche aus.',
+  'Not set up on this server yet.': 'Auf diesem Server noch nicht eingerichtet.',
+  'Not working': 'Funktioniert nicht',
+  'Nothing found.': 'Nichts gefunden.',
+  'Search': 'Suchen',
+  'Search Smithery, e.g. Linear': 'Smithery durchsuchen, z. B. Linear',
+  'Take away': 'Entfernen',
+  'Take {app} away? Everyone’s connection to it ends.': '{app} entfernen? Alle Verbindungen dazu enden.',
+  'Taken away.': 'Entfernt.',
+  'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'Was du hier verbindest, gehört nur dir: Nur dein eigenes Gespräch mit deiner KI liest es, nie ein Kanal oder jemand anderes. Es wird nur gelesen, nicht geschrieben – außer ein Eigentümer erlaubt es.',
+  'Show translation': 'Übersetzung anzeigen',
+  'Translated · Show original': 'Übersetzt · Original anzeigen',
 }
 
 const TABLES: Record<string, Dict> = { en, ja, es, fr, de }
@@ -7124,6 +7220,11 @@ export function t(key: string, vars?: Record<string, string | number>): string {
 export function useT(): typeof t {
   useSyncExternalStore(subscribe, snapshot, snapshot)
   return useCallback(t, [])
+}
+
+/// The language the screen is in ("ja", "en", …), redrawn when it changes.
+export function useLanguage(): string {
+  return useSyncExternalStore(subscribe, snapshot, snapshot)
 }
 
 /// Change it everywhere: the store the rest of the app reads, this table, and

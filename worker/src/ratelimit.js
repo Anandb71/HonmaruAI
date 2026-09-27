@@ -27,6 +27,8 @@ export const LIMITS = {
   "invites/peek": { max: 30, windowSeconds: 300 },
   // A sync walks an inbox and can trigger many model calls.
   "connectors/sync": { max: 6, windowSeconds: 300 },
+  // Apps through Smithery: listing, connecting, the owner's registry search.
+  apps: { max: 60, windowSeconds: 300 },
   // Storage is the thing R2 bills for, and each of these is up to 12 MB.
   media: { max: 20, windowSeconds: 3600 },
   // Minting a nonce is cheap, but not free, and it writes a row.
