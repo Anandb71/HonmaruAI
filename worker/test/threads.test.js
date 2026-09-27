@@ -62,6 +62,26 @@ test("a mention resolves by name, first name, handle or alias — and only to me
   expect(resolveMentions("@everyone look", members)).toEqual([]);
 });
 
+test("@channel and @all call everyone — with a Japanese keyboard's ＠, and right after Japanese words too", () => {
+  const members = [
+    { login: "u:toru@x.jp", ref: "r1", name: "Toru Bando", aliases: [] },
+    { login: "u:mika@x.jp", ref: "r2", name: "Mika Sato", aliases: ["美香"] },
+  ];
+  const all = ["u:toru@x.jp", "u:mika@x.jp"];
+  for (const text of ["@channel 明日の件", "@all please read", "＠channel 確認お願いします", "＠all", "確認お願いします@channel", "@allの皆さん", "（@channel）", "今日は＠here"]) {
+    expect(resolveMentions(text, members).map((m) => m.login)).toEqual(all);
+  }
+  // @here: only whoever is at the app now.
+  expect(resolveMentions("@here now", members, { online: new Set(["u:mika@x.jp"]) }).map((m) => m.login)).toEqual(["u:mika@x.jp"]);
+  // Deciding who decides: nobody is named by a call to everyone.
+  expect(resolveMentions("@channel", members, { here: false })).toEqual([]);
+  // Not a call: another word, an address, a link.
+  for (const text of ["@alliance meeting", "@channels", "mail toru@all.jp", "https://youtube.com/@channel", "see x.com/@all"]) {
+    expect(resolveMentions(text, members)).toEqual([]);
+  }
+  expect(mentionTokens("＠美香 見て、@Kenjiも")).toEqual(["美香", "Kenjiも"]);
+});
+
 test("a comment lands in the thread, counts on the card, and reaches the people it concerns", async () => {
   const res = await post("/cards/c1/comments", toru, { orgId: ORG, body: "@Mika the supplier confirmed the price." }, { RESEND_API_KEY: "re_test", NOTIFY_EMAIL_FROM: "Honmaru <no-reply@x.jp>" });
   expect(res.status).toBe(201);

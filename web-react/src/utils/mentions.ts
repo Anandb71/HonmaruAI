@@ -77,16 +77,39 @@ export function agentMentionables(agents: AgentFace[], taken: Mentionable[] = []
 /// been typed so far. `null` when the caret is not in one.
 export function mentionQuery(text: string, caret: number): { start: number; query: string } | null {
   const before = text.slice(0, caret)
-  const at = before.lastIndexOf('@')
+  const at = Math.max(before.lastIndexOf('@'), before.lastIndexOf('＠'))
   if (at < 0) return null
-  if (at > 0 && !/[\s(（「]/.test(before[at - 1])) return null
+  if (at > 0 && !MENTION_BEFORE.test(before[at - 1])) return null
   const query = before.slice(at + 1)
-  if (/[\s@,，。、!?！？:;)）」]/.test(query)) return null
+  if (/[\s@＠,，。、!?！？:;)）」]/.test(query)) return null
   if (query.length > 40) return null
   return { start: at, query }
 }
 
 const fold = (s: string) => s.normalize('NFKC').toLowerCase()
+
+/// What may come right before an "@" for it to start a mention: a space, a
+/// bracket or quote, or any letter outside ASCII ("確認@channel") — never an
+/// ASCII letter, digit or URL character ("a@b.jp", "youtube.com/@channel").
+/// The same rule as the Worker's (threads.js).
+const MENTION_BEFORE = /[^\x21-\x7E]|[(\[{"']/
+const MENTION_RE = /(^|[^\x21-\x7E]|[(\[{"'])([@＠][^\s@＠,，。、!?！？:;)）」]+)/g
+
+/// "@channel" and "@all" (everyone in the conversation) or "@here" (those
+/// at the app now): a Japanese word may follow, an ASCII letter may not.
+export function broadcastOf(token: string): 'channel' | 'here' | null {
+  const m = /^(channel|all|here)(?![a-z0-9_.-])/.exec(fold(token.replace(/^[@＠]/, '')))
+  return m ? (m[1] === 'all' ? 'channel' : m[1] as 'channel' | 'here') : null
+}
+
+/// Whether a message calls everyone who reads it — so whoever reads it is
+/// mentioned. ("@here" too: a message that arrives live finds you at the app.)
+export function mentionsEveryone(text: string): boolean {
+  const re = new RegExp(MENTION_RE.source, 'g')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) if (broadcastOf(m[2])) return true
+  return false
+}
 
 /// Who matches what has been typed so far, best first: a name that starts
 /// with it, then one that contains it. Empty query: everyone.
@@ -128,10 +151,10 @@ export function insertMention(text: string, caret: number, member: Mentionable):
 /// The members a text names, by first name, whole name or alias.
 export function mentionedRefs(text: string, members: Mentionable[]): string[] {
   const refs = new Set<string>()
-  const re = /(^|[\s(（「])@([^\s@,，。、!?！？:;)）」]+)/g
+  const re = new RegExp(MENTION_RE.source, 'g')
   let m: RegExpExecArray | null
   while ((m = re.exec(text))) {
-    const want = fold(m[2])
+    const want = fold(m[2].replace(/^[@＠]/, ''))
     const hit = members.find((mem) => {
       const names = [mem.handle || '', mem.name, mem.name.split(/\s+/)[0], ...(mem.aliases || [])].filter(Boolean).map(fold)
       return names.includes(want)
@@ -144,7 +167,7 @@ export function mentionedRefs(text: string, members: Mentionable[]): string[] {
 /// A line of text split so every `@Name` can be drawn as a mention.
 export function splitMentions(text: string): Array<{ text: string; mention: boolean }> {
   const out: Array<{ text: string; mention: boolean }> = []
-  const re = /(^|[\s(（「])(@[^\s@,，。、!?！？:;)）」]+)/g
+  const re = new RegExp(MENTION_RE.source, 'g')
   let last = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(text))) {
@@ -218,6 +241,8 @@ export function useMembers(httpBase: string, orgId: string, sessionToken: string
 export type MentionKind = 'ai' | 'person' | 'group' | 'agent'
 export function mentionKind(token: string, list: Mentionable[]): MentionKind | null {
   const raw = token.replace(/^[@＠]/, '')
+  // Everyone in the conversation: drawn like a group.
+  if (broadcastOf(raw)) return 'group'
   for (const want of new Set([fold(raw), fold(raw.replace(/[にへ]$/, ''))])) {
     if (!want) continue
     if (want === 'ai') return 'ai'
@@ -237,7 +262,7 @@ export function mentionKind(token: string, list: Mentionable[]): MentionKind | n
 /// names (null: nobody). The pieces join back into the text exactly.
 export function mentionSegments(text: string, list: Mentionable[]): Array<{ text: string; kind: MentionKind | null; mention: boolean }> {
   const out: Array<{ text: string; kind: MentionKind | null; mention: boolean }> = []
-  const re = /(^|[\s(（「])([@＠][^\s@＠,，。、!?！？:;)）」]+)/g
+  const re = new RegExp(MENTION_RE.source, 'g')
   let last = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(text))) {
