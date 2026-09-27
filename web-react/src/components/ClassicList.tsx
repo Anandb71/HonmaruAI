@@ -1251,11 +1251,12 @@ export const ClassicList: React.FC<Props> = ({
     const add = (m: ChannelMessage) => { if (!m.mine) byChannel.set(m.channel, [...(byChannel.get(m.channel) || []), m]) }
     if (activityOpen) for (const i of activityItems || []) add(i.message)
     if (threadsOpen) for (const x of threadItems || []) { add(x.parent); for (const r of x.replies) add(r) }
+    if (laterOpen) for (const x of laterItems || []) add(x.message)
     if (!byChannel.size) return
     const id = setTimeout(() => { for (const [channel, list] of byChannel) void translate(channel, list) }, 300)
     return () => clearTimeout(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activityOpen, threadsOpen, activityItems, threadItems, translateOff])
+  }, [activityOpen, threadsOpen, laterOpen, activityItems, threadItems, laterItems, translateOff])
   // A preview that arrived live, in another language: translated too.
   useEffect(() => {
     const id = setTimeout(() => {
@@ -1286,6 +1287,14 @@ export const ClassicList: React.FC<Props> = ({
   const [threadDraft, setThreadDraft] = useState('')
   const threadComposer = useRef<HTMLTextAreaElement>(null)
   const [pins, setPins] = useState<ChannelMessage[] | null>(null)
+  // The pinned list, in your language too.
+  useEffect(() => {
+    if (!pins?.length) return
+    const byChannel = new Map<string, ChannelMessage[]>()
+    for (const m of pins) if (!m.mine) byChannel.set(m.channel, [...(byChannel.get(m.channel) || []), m])
+    for (const [channel, list] of byChannel) void translate(channel, list)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pins, translateOff])
   const [flash, setFlash] = useState<string | null>(null)
   // On a phone: a long press on a message brings up what you can do to it.
   const [sheet, setSheet] = useState<{ channel: string; m: ChannelMessage; inThread: boolean } | null>(null)
@@ -2117,7 +2126,7 @@ export const ClassicList: React.FC<Props> = ({
                 {remindAt && ` · ${remindedAt ? t('Reminded') : t('Reminder {when}', { when: new Date(remindAt).toLocaleString(locale, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) })}`}
               </span>
               <span className="slk-act-line"><b>{whoSaid(m)}</b><span className="slk-act-when">{when(m.createdAt)}</span></span>
-              <span className="slk-act-body">{m.body.slice(0, 280)}</span>
+              <span className="slk-act-body">{shownBody(m).text.slice(0, 280)}</span>
               <span className="slk-act-actions">
                 <button type="button" className="cl-nudge" onClick={() => openAt({ view: m.channel, id: m.id, parentId: m.parentId })}>{t('Open')}</button>
                 <button type="button" className="cl-nudge" onClick={() => void finishLater(id)}>{t('Done')}</button>
@@ -2285,7 +2294,8 @@ export const ClassicList: React.FC<Props> = ({
                       {picked.message.kind === 'agent' && <span className="slk-app-badge agent">{t('Agent')}</span>}
                       <time className="slk-time" dateTime={picked.message.createdAt}>{when(picked.message.createdAt)}</time>
                     </div>
-                    <div className="slk-text">{rich(picked.message.body)}</div>
+                    <div className="slk-text">{rich(shownBody(picked.message).text)}</div>
+                    {translationNote(picked.message)}
                     {(picked.message.reactions || []).length > 0 && (
                       <div className="slk-reactions">
                         {(picked.message.reactions || []).map((r) => (
@@ -2581,7 +2591,7 @@ export const ClassicList: React.FC<Props> = ({
                 <li key={m.id}>
                   <button type="button" className="slk-pin-row" onClick={() => jumpTo(m.id)}>
                     <span className="slk-pin-who">{whoSaid(m)} · {when(m.createdAt)}</span>
-                    <span className="slk-pin-body">{m.body.slice(0, 200)}</span>
+                    <span className="slk-pin-body">{shownBody(m).text.slice(0, 200)}</span>
                   </button>
                 </li>
               ))}
@@ -2814,7 +2824,9 @@ export const ClassicList: React.FC<Props> = ({
                 // arrow sends, as in every phone chat app.
                 // A new line in a quote or a list carries its mark on.
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, draft, setDraft)) { e.preventDefault(); return }
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.view!, e.metaKey || e.ctrlKey) }
+                // ⌘Enter sends too — as a message. A decision card comes only
+                // from "@AI" or the ✦ button, never from a key pressed by habit.
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.view!, false) }
               }}
               disabled={sending}
             />
@@ -2824,7 +2836,7 @@ export const ClassicList: React.FC<Props> = ({
               <button type="button" className="slk-attach" onClick={() => attachInput.current?.click()} aria-label={t('Attach files')} title={t('Attach files')}><Icon name="paperclip" size={17} /></button>
               <input ref={attachInput} type="file" multiple hidden data-attach="1" onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) uploads.add(files, thread.view!) }} />
               <FormatBar target={composer} value={draft} set={setDraft} />
-              <span className="slk-composer-hint">{t('Enter to send · ⌘Enter sends and asks your AI for a decision · / for commands')}</span>
+              <span className="slk-composer-hint">{t('Enter to send · @AI or ✦ makes it a decision · / for commands')}</span>
               <button type="button" className="slk-send ai" disabled={sending || !draft.trim()} onClick={() => void send(thread.view!, true)} aria-label={t('Send as a decision')} title={t('Send as a decision')}>
                 <Icon name="sparkle" size={15} /><span className="slk-send-label">{t('Send as a decision')}</span>
               </button>
@@ -3372,7 +3384,7 @@ export const ClassicList: React.FC<Props> = ({
               onKeyDown={(e) => {
                 if (threadMention.onKeyDown(e)) return
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, e.metaKey || e.ctrlKey, thread.parent.id) }
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
               }}
               disabled={sending}
             />
