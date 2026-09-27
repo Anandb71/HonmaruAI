@@ -1377,8 +1377,15 @@
 /* A link's card under the message that shares it. */
 .classic.slk.slk .link-cards { display: grid; gap: 8px; margin: 6px 0 2px; max-width: 520px; }
 .classic.slk.slk .link-card {
-  display: grid; gap: 3px; padding: 2px 0 2px 12px; border-left: 4px solid var(--slk-line); min-width: 0;
+  position: relative; display: grid; gap: 3px; padding: 2px 28px 2px 12px; border-left: 4px solid var(--slk-line); min-width: 0;
 }
+.classic.slk.slk .link-card-hide {
+  position: absolute; top: 0; right: 0; width: 22px; height: 22px; border: none; border-radius: 6px; background: none;
+  color: var(--slk-dim); font-size: 16px; line-height: 1; cursor: pointer; opacity: 0;
+}
+.classic.slk.slk .slk-msg:hover .link-card-hide, .classic.slk.slk .link-card-hide:focus-visible { opacity: 1; }
+.classic.slk.slk .link-card-hide:hover { background: var(--slk-hover); color: var(--slk-ink); }
+@media (hover: none) { .classic.slk.slk .link-card-hide { opacity: 1; } }
 .classic.slk.slk .link-card.youtube { border-left-color: #ff0033; }
 .classic.slk.slk .link-card-site { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--slk-dim); font-weight: 600; }
 .classic.slk.slk .link-card-icon { width: 14px; height: 14px; border-radius: 3px; object-fit: contain; }

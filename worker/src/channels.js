@@ -1,6 +1,8 @@
 import { listMembers } from "./team.js";
 import { businessSlug } from "./db.js";
 import { resolveMentions } from "./threads.js";
+
+const NOBODY = new Set();
 import { filesFor, toFile } from "./files.js";
 import { accessFor, mayRead, membersOf, isGroupKey, hasGuests, publicAudience } from "./access.js";
 import { parseKeywords, keywordHit } from "./quiet.js";
@@ -149,6 +151,7 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     lastReplyAt: extra.lastReplyAt || null,
     replyRefs: extra.replyRefs || [],
     pinned: !deleted && Boolean(row.pinned_at),
+    ...(row.previews_hidden ? { previewsHidden: true } : {}),
     reactions: deleted ? [] : reactions,
     files: deleted ? [] : (extra.files || []),
     ...(agent ? { agent: { id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji || null } } : {}),
@@ -283,7 +286,7 @@ export async function editMessage(db, { orgId, id, authorLogin, body }) {
 /// its place — and a thread under it goes with it: the replies, their
 /// reactions and pins. The rows stay only as tombstones nobody is shown.
 /// `replies` are the ids taken with it, for their files to go too.
-export async function deleteMessage(db, { orgId, id, authorLogin }) {
+export async function deleteMessage(db, { orgId, id, authorLogin, withThread = false }) {
   const row = await getMessage(db, orgId, id);
   if (!row || row.deleted_at) return { error: "No such message.", status: 404 };
   if (row.kind !== "message" || row.author_login !== authorLogin) return { error: "Only the person who wrote it can delete it.", status: 403 };
@@ -292,6 +295,9 @@ export async function deleteMessage(db, { orgId, id, authorLogin }) {
   const { results: under } = row.parent_id ? { results: [] } : await db.prepare(
     "SELECT * FROM channel_messages WHERE org_id = ?1 AND parent_id = ?2 AND deleted_at IS NULL"
   ).bind(orgId, id).all();
+  // Other people's words go with it only when that was said outright.
+  const others = (under || []).filter((r) => r.author_login !== authorLogin).length;
+  if (others && !withThread) return { error: "Others replied in this thread. Delete it with their replies?", status: 409, code: "thread_has_replies", others };
   for (const r of under || []) await keepIfHeld(db, orgId, r, "delete");
   const now = new Date().toISOString();
   const gone = [id, ...(under || []).map((r) => r.id)];
@@ -329,6 +335,15 @@ export async function toggleReaction(db, { orgId, id, login, emoji }) {
       .bind(orgId, id, clean, login, new Date().toISOString()).run();
   }
   return { row };
+}
+
+/// The author takes a message's link cards off, or puts them back.
+export async function setPreviewsHidden(db, { orgId, id, login, hidden }) {
+  const row = await getMessage(db, orgId, id);
+  if (!row || row.deleted_at) return { error: "No such message.", status: 404 };
+  if (row.author_login !== login) return { error: "Only the person who wrote it can change its previews.", status: 403 };
+  await db.prepare("UPDATE channel_messages SET previews_hidden = ?3 WHERE org_id = ?1 AND id = ?2").bind(orgId, id, hidden ? 1 : 0).run();
+  return { row: await getMessage(db, orgId, id) };
 }
 
 export async function setPinned(db, { orgId, id, login, pinned }) {
@@ -429,7 +444,7 @@ export async function recentBusinessTalk(db, orgId, slugs, { since, limit = 30 }
 export async function channelActivity(db, orgId, viewerLogin, members) {
   const { results } = await db
     .prepare(
-      `SELECT m.channel, m.body, m.kind, m.created_at, m.author_login, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name,
+      `SELECT m.id, m.channel, m.body, m.kind, m.created_at, m.author_login, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name,
               (SELECT f.name FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id ORDER BY f.created_at LIMIT 1) AS file_name
          FROM channel_messages m
          JOIN (SELECT channel, MAX(created_at) AS at FROM channel_messages
@@ -446,6 +461,8 @@ export async function channelActivity(db, orgId, viewerLogin, members) {
     const view = viewOf(r.channel, viewerLogin, members, access);
     if (!view) continue;
     out.push({
+      // For the caller to put the preview in the reader's language; not sent.
+      _row: { id: r.id, body: r.body },
       channel: view,
       lastAt: r.created_at,
       preview: (String(r.body).replace(/\s+/g, " ").trim() || (r.file_name ? `📎 ${r.file_name}` : "")).slice(0, 120),
@@ -525,7 +542,9 @@ export async function activityFeed(db, orgId, login, members, { days = 30, limit
   const keywords = parseKeywords(kw?.notify_keywords);
   const picked = [];
   for (const r of recent.results || []) {
-    const mention = r.body && resolveMentions(r.body, members).some((m) => m.login === login);
+    // "@here" was for whoever was at the app then — a push, not a later
+    // entry in Activity; "@channel" is for everyone.
+    const mention = r.body && resolveMentions(r.body, members, { online: NOBODY }).some((m) => m.login === login);
     const reply = r.parent_id && threads.has(r.parent_id);
     const keyword = !mention && !reply ? keywordHit(r.body, keywords) : null;
     if (!mention && !reply && !keyword) continue;
@@ -594,7 +613,7 @@ export async function threadsFor(db, orgId, login, members, { days = 30, limit =
     ).bind(orgId, login, new Date(Date.now() - 90 * 86400000).toISOString()).all(),
   ]);
   const inThread = new Set((mine.results || []).map((r) => r.thread));
-  const named = (row) => Boolean(row.body) && resolveMentions(row.body, members).some((m) => m.login === login);
+  const named = (row) => Boolean(row.body) && resolveMentions(row.body, members, { online: NOBODY }).some((m) => m.login === login);
   // Replies by thread, newest first, in the order their newest reply came.
   const byParent = new Map();
   for (const r of recent.results || []) {

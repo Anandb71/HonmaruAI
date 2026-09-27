@@ -22,7 +22,7 @@ import { custom as customEvent } from "./agui/events.js";
 import {
   resolveChannel, listMessages, postMessage, getMessage, linkCard, transcriptUpTo, channelActivity,
   viewOf, asksTheAI, withoutAI, MAX_MESSAGE_CHARS,
-  present, listThread, listPins, editMessage, deleteMessage, toggleReaction, setPinned,
+  present, listThread, listPins, editMessage, deleteMessage, toggleReaction, setPinned, setPreviewsHidden,
   markRead, markUnreadFrom, readsFor, activityFeed, searchMessages, threadsFor,
 } from "./channels.js";
 import { safe } from "./log.js";
@@ -388,7 +388,9 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
           onRound: () => progress(agent, "agent"),
         });
         if (result.called && allowance.metered) await allowance.consume();
-        text = result.answer || serverText(locale, "agent.failed");
+        // No answer: say why, so nobody waits on silence — the AI service
+        // turned it down (no call was paid for), or it ran out of time.
+        text = result.answer || serverText(locale, result.called ? "agent.failedEmpty" : "agent.failedService");
         if (result.answer) answered += 1;
       }
       const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: `agent:${agent.id}`, body: text, kind: "agent", parentId });
@@ -399,11 +401,35 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
       }
     } catch (err) {
       console.error("agent answer failed", safe(err?.message));
+      // Failed on the way: still a line in the thread, never silence.
+      try {
+        const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: `agent:${agent.id}`, body: serverText(locale, "agent.failedError"), kind: "agent", parentId });
+        if (out.row) await broadcastWithParent(env, orgId, resolved, out.row, members);
+      } catch { /* the database itself is down: nothing more to say */ }
     }
     await progress(agent, "done");
   }
   if (provider) await settleUsage(env.DB, provider, { orgId, githubId: session.github_id });
   return answered;
+}
+
+/// The sidebar's previews in the language the reader set: kept translations
+/// at once, new ones by the model in one batch.
+async function previewsInLanguage(env, orgId, user, items) {
+  const rows = items.map((i) => i._row).filter((r) => r?.body);
+  let byId = {};
+  if (rows.length && Number(user.translate_messages ?? 1) !== 0) {
+    try {
+      const provider = await providerFor(env, orgId);
+      ({ byId } = await translateMessages(env.DB, orgId, rows, { locale: String(user.locale || "en").slice(0, 2), provider }));
+    } catch (err) {
+      console.error("preview translation failed", safe(err?.message));
+    }
+  }
+  return items.map(({ _row, ...item }) => {
+    const text = _row && byId[_row.id];
+    return text && text.trim() !== String(_row.body).trim() ? { ...item, preview: text.replace(/\s+/g, " ").trim().slice(0, 120) } : item;
+  });
 }
 
 export async function handleChannels(request, env, url, { route, after }) {
@@ -429,7 +455,7 @@ export async function handleChannels(request, env, url, { route, after }) {
       groups: (await groupsOf(env.DB, orgId, who.user.login)).map((g) => ({
         view: g.key, refs: g.logins.filter((l) => l !== who.user.login).map(refOf).filter(Boolean),
       })),
-      activity: await channelActivity(env.DB, orgId, who.user.login, members),
+      activity: await previewsInLanguage(env, orgId, who.user, await channelActivity(env.DB, orgId, who.user.login, members)),
       prefs,
       // Your own away settings, with the delegate as a ref you can show.
       mine: me ? { status: me.status, awayUntil: me.awayUntil, delegateRef: members.find((m) => m.login === me.delegateLogin)?.ref || null } : null,
@@ -673,8 +699,8 @@ export async function handleChannels(request, env, url, { route, after }) {
     }
     const out = request.method === "PUT"
       ? await editMessage(env.DB, { orgId: body.orgId, id: body.messageId, authorLogin: ctx.who.user.login, body: body.body })
-      : await deleteMessage(env.DB, { orgId: body.orgId, id: body.messageId, authorLogin: ctx.who.user.login });
-    if (out.error) return json({ message: out.error }, out.status || 400);
+      : await deleteMessage(env.DB, { orgId: body.orgId, id: body.messageId, authorLogin: ctx.who.user.login, withThread: body.withThread === true });
+    if (out.error) return json({ message: out.error, ...(out.code ? { code: out.code, others: out.others } : {}) }, out.status || 400);
     // Unsent: its files go with its words.
     if (request.method === "DELETE") {
       for (const mid of [body.messageId, ...(out.replies || [])]) await dropFiles(env, body.orgId, mid);
@@ -1069,6 +1095,23 @@ export async function handleChannels(request, env, url, { route, after }) {
     const out = await setPinned(env.DB, { orgId: body.orgId, id: body.messageId, login: ctx.who.user.login, pinned: body.pinned !== false });
     if (out.error) return json({ message: out.error }, out.status || 400);
     after(() => broadcast(env, body.orgId, ctx.resolved, out.row, ctx.members));
+    const [message] = await present(env.DB, body.orgId, [out.row], ctx.who.user.login, ctx.view, ctx.members);
+    return json({ message });
+  }
+
+  // Its author takes a message's link cards off (or back on).
+  if (path === "/channels/previews" && request.method === "POST") {
+    const limited = await enforce(env, request, "chat");
+    if (limited) return limited;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") return json({ message: "Invalid JSON body." }, 400);
+    const ctx = await inChannel(env, request, body);
+    if (ctx.denied) return ctx.denied;
+    const current = typeof body.messageId === "string" ? await getMessage(env.DB, body.orgId, body.messageId) : null;
+    if (!current || current.channel !== ctx.resolved.key) return json({ message: "No such message." }, 404);
+    const out = await setPreviewsHidden(env.DB, { orgId: body.orgId, id: body.messageId, login: ctx.who.user.login, hidden: body.hidden !== false });
+    if (out.error) return json({ message: out.error }, out.status || 400);
+    after(() => broadcastWithParent(env, body.orgId, ctx.resolved, out.row, ctx.members));
     const [message] = await present(env.DB, body.orgId, [out.row], ctx.who.user.login, ctx.view, ctx.members);
     return json({ message });
   }

@@ -28,7 +28,7 @@ export interface Mentionable {
   /// Not in the conversation being written in: "@" says so.
   outside?: boolean
   /// "@here" (everyone in the conversation) or "@agents" (every agent in it).
-  special?: 'here' | 'agents'
+  special?: 'here' | 'channel' | 'agents'
   /// What a special entry does, said on its right.
   detail?: string
   /// For "@agents": the handles it writes out.

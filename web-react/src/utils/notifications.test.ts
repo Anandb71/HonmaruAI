@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { notifyNewDecision, setNotificationCopy } from './notifications'
-import { changeLocale } from './i18n'
+import { changeLocale, localeReady } from './i18n'
 
 // A tab's own notification, in the reader's language even when the page has
 // no table for it: the Worker wrote the words and /me carried them.
@@ -29,8 +29,9 @@ describe('in-tab notification', () => {
     expect(shown[0]).toEqual({ title: 'Bạn có quyết định mới', body: 'Phê duyệt ngân sách\nTừ Mai' })
   })
 
-  it('does not use words written for a language no longer being read', () => {
+  it('does not use words written for a language no longer being read', async () => {
     changeLocale('ja')
+    await localeReady()
     setNotificationCopy({ locale: 'vi', newDecision: 'Bạn có quyết định mới', from: 'Từ {name}' })
     notifyNewDecision('予算の承認', 'Mai')
     expect(shown[0]).toEqual({ title: '新しい決定が届きました', body: '予算の承認\nMaiから' })

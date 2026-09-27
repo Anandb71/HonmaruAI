@@ -37,6 +37,15 @@ export async function noteActivity(db, login, client = "web", now = Date.now()) 
   ).bind(login, new Date(now).toISOString(), String(client).slice(0, 16)).run();
 }
 
+const HERE_WINDOW_MS = 10 * 60_000;
+
+/// Who has been at the app in the last ten minutes: "@here" reaches them.
+export async function onlineLogins(db, now = Date.now()) {
+  const since = new Date(now - HERE_WINDOW_MS).toISOString();
+  const { results } = await db.prepare("SELECT login FROM user_activity WHERE last_active_at >= ?1").bind(since).all().catch(() => ({ results: [] }));
+  return new Set((results || []).map((r) => r.login));
+}
+
 async function lastActive(db, login) {
   const row = await db.prepare("SELECT last_active_at FROM user_activity WHERE login = ?1").bind(login).first().catch(() => null);
   return row?.last_active_at || "";
@@ -71,7 +80,9 @@ export async function recipientsOf(db, orgId, row, members) {
   if (key.startsWith("dm:") || key.startsWith("g:") || key.startsWith("ag:")) {
     for (const login of (await audienceOf(db, orgId, key)) || []) add(login, "direct");
   }
-  for (const m of resolveMentions(row.body || "", members)) add(m.login, "mention");
+  // "@here": the people at the app in the last ten minutes.
+  const online = /(^|[\s(（「])@here\b/i.test(row.body || "") ? await onlineLogins(db) : null;
+  for (const m of resolveMentions(row.body || "", members, { online })) add(m.login, "mention");
   // Words they asked to hear about, said anywhere they can read.
   for (const k of await keywordsIn(db, orgId)) if (keywordHit(row.body, k.keywords)) add(k.login, "keyword");
   if (row.parent_id) {
@@ -155,7 +166,10 @@ export async function sendDuePushes(env, now = Date.now()) {
       const who = msg.author_name || "Someone";
       const title = where ? `${who} · ${where}` : who;
       const files = msg.body ? "" : "📎";
-      const body = clip(msg.body || files, 180);
+      // In the language they set.
+      const { textFor } = await import("./translate.js");
+      const said = msg.body ? await textFor(env, job.org_id, msg, job.login).catch(() => msg.body) : "";
+      const body = clip(said || files, 180);
       const delivered = await pushMessage(env, job.login, { title, body, orgId: job.org_id, channel: view, messageId: msg.id, parentId: msg.parent_id || null });
       if (delivered) sent += 1; else skipped += 1;
     } catch (err) {

@@ -54,7 +54,16 @@ test("an invitation that names no channel: the team's first channel says who cam
   const made = await (await call("/invites/create", toru, { method: "POST", body: { orgId: ORG, role: "member" } })).json();
   expect((await call("/invites/accept", newcomer, { method: "POST", body: { code: made.code } })).status).toBe(200);
   const rows = (await env.DB.prepare("SELECT channel, kind, author_login FROM channel_messages WHERE org_id = ?1").bind(ORG).all()).results;
-  expect(rows).toEqual([{ channel: "b:cafe", kind: "joined", author_login: "u:gota@x.jp" }]);
+  // The line in the first channel, and a welcome from the AI in Gota's
+  // direct conversation with the owner — in Gota's language.
+  expect(rows).toEqual(expect.arrayContaining([
+    { channel: "b:cafe", kind: "joined", author_login: "u:gota@x.jp" },
+    { channel: "dm:u:gota@x.jp|u:toru@x.jp", kind: "ai", author_login: null },
+  ]));
+  expect(rows).toHaveLength(2);
+  const hello = await env.DB.prepare("SELECT body FROM channel_messages WHERE org_id = ?1 AND kind = 'ai'").bind(ORG).first();
+  expect(hello.body).toContain("Welcome to");
+  expect(hello.body).toContain("ask Toru");
   // The line is who came in; each reader's screen says it in its language.
   const list = await (await call(`/channels/messages?orgId=${encodeURIComponent(ORG)}&channel=b:cafe`, toru)).json();
   expect(list.messages[0]).toMatchObject({ kind: "joined", authorName: "Gota" });
