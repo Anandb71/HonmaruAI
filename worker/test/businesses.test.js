@@ -208,3 +208,21 @@ test("a channel can be renamed, and deleting one empties it for everyone", async
   expect(res.status).toBe(403);
   void ws;
 });
+
+test("channels nobody talks in are offered for tidying, and archiving hides them with their cards kept", async () => {
+  const { upsertBusiness, saveCard, listBusinesses } = await import("../src/db.js");
+  const { postMessage } = await import("../src/channels.js");
+  await upsertBusiness(env.DB, ORG, { name: "Research", createdBy: "6101" });
+  await upsertBusiness(env.DB, ORG, { name: "Food Truck", createdBy: "6101" });
+  await postMessage(env.DB, { orgId: ORG, key: "b:research", authorLogin: "owner", body: "Starting the YCS26 study" });
+  await saveCard(env.DB, ORG, { id: "ft1", recipientUserID: "member", senderUserID: "owner", status: "pending", title: "Permit", createdAt: new Date().toISOString(), business: "food-truck" });
+  const unused = await (await SELF.fetch(`https://example.com/businesses/unused?orgId=${encodeURIComponent(ORG)}`, { headers: headers(memberToken) })).json();
+  expect(unused.channels).toEqual([expect.objectContaining({ slug: "food-truck", name: "Food Truck", cards: 1 })]);
+  const archive = (token, slugs) => SELF.fetch("https://example.com/businesses/archive", { method: "POST", headers: headers(token), body: JSON.stringify({ orgId: ORG, slugs }) });
+  expect((await archive(outsiderToken, ["food-truck"])).status).toBe(403);
+  const done = await (await archive(memberToken, ["food-truck", "nope"])).json();
+  expect(done.archived).toBe(1);
+  expect((await listBusinesses(env.DB, ORG)).map((b) => b.slug)).toEqual(["research"]);
+  const card = await env.DB.prepare("SELECT json_extract(data, '$.business') AS b FROM cards WHERE card_id = 'ft1'").first();
+  expect(card.b).toBe("food-truck");
+});

@@ -1136,6 +1136,55 @@ async function handle(request, env, url, ctx) {
       await tellRoom(body.orgId);
       return json({ business: renamed, businesses: await listBusinesses(env.DB, body.orgId, { viewer: who }) });
     }
+    // Channels nobody talks in: no message from a person, no canvas, no
+    // bookmark — most of them made when cards were filed under names the
+    // AI made up, before it only chose among the team's own channels. The
+    // candidates to tidy away, with how many cards each holds.
+    if (url.pathname === "/businesses/unused" && request.method === "GET") {
+      const orgId = url.searchParams.get("orgId");
+      if (!orgId) return json({ message: "orgId is required" }, 400);
+      const denied = await requireMember(env, request, orgId);
+      if (denied) return denied;
+      const who = await viewerLogin();
+      const visible = (await listBusinesses(env.DB, orgId, { viewer: who })).filter((b) => !b.private);
+      const unused = [];
+      for (const b of visible) {
+        const key = `b:${b.slug}`;
+        const talk = await env.DB.prepare(
+          `SELECT (SELECT COUNT(*) FROM channel_messages WHERE org_id = ?1 AND channel = ?2 AND kind = 'message' AND deleted_at IS NULL)
+                + (SELECT COUNT(*) FROM channel_canvases WHERE org_id = ?1 AND channel = ?2)
+                + (SELECT COUNT(*) FROM channel_bookmarks WHERE org_id = ?1 AND channel = ?2) AS n,
+                  (SELECT COUNT(*) FROM cards WHERE org_id = ?1 AND json_extract(data, '$.business') = ?3) AS cards`
+        ).bind(orgId, key, b.slug).first().catch(() => null);
+        if (talk && Number(talk.n) === 0) unused.push({ slug: b.slug, name: b.name, createdAt: b.createdAt, cards: Number(talk.cards) || 0 });
+      }
+      return json({ channels: unused });
+    }
+    // Archive channels: out of every list, their cards and history kept.
+    // Anyone but a guest, as deleting one is.
+    if (url.pathname === "/businesses/archive" && request.method === "POST") {
+      const session = await getSession(env.DB, request.headers.get("x-session-token"));
+      if (!session) return json({ message: "invalid session" }, 401);
+      const body = await request.json().catch(() => ({}));
+      if (!body.orgId || !Array.isArray(body.slugs)) return json({ message: "orgId and slugs are required" }, 400);
+      const denied = await requireMember(env, request, body.orgId);
+      if (denied) return denied;
+      if (await isGuest(env.DB, body.orgId, session.github_id)) return json({ message: "A guest cannot archive channels." }, 403);
+      const who = await viewerLogin();
+      const me = await getUserByGithubId(env.DB, session.github_id);
+      const now = new Date().toISOString();
+      let archived = 0;
+      for (const slug of body.slugs.map(String).slice(0, 100)) {
+        if (!(await canTouchChannel(env.DB, body.orgId, slug, who))) continue;
+        const row = await env.DB.prepare("SELECT name FROM businesses WHERE org_id = ?1 AND slug = ?2 AND archived_at IS NULL").bind(body.orgId, slug).first();
+        if (!row) continue;
+        await env.DB.prepare("UPDATE businesses SET archived_at = ?3 WHERE org_id = ?1 AND slug = ?2").bind(body.orgId, slug, now).run();
+        await audit(env, request, { orgId: body.orgId, action: "channel.archived", actor: person(me), entity: { type: "channel", id: slug, name: `#${row.name}` } });
+        archived += 1;
+      }
+      if (archived) await tellRoom(body.orgId);
+      return json({ archived, businesses: await listBusinesses(env.DB, body.orgId, { viewer: who }) });
+    }
     if (url.pathname === "/businesses" && request.method === "DELETE") {
       const body = await request.json().catch(() => ({}));
       if (!body.orgId || !body.slug) return json({ message: "orgId and slug are required" }, 400);
