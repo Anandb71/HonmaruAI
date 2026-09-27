@@ -136,6 +136,39 @@ enum AdminService {
         return try await ChatService.call("GET", "/audit/streams", base: base, query: ["orgId": orgId], as: R.self).streams
     }
 
+    // MARK: Apps through Smithery (each person's own)
+
+    struct AppConnection: Decodable, Equatable { let state: String }
+    struct App: Identifiable, Decodable, Equatable {
+        let server: String
+        let name: String
+        let description: String?
+        let verified: Bool
+        let allowWrites: Bool
+        let connection: AppConnection?
+        var id: String { server }
+    }
+    struct Apps: Decodable {
+        let configured: Bool
+        let apps: [App]
+        let canConnect: Bool
+    }
+    struct Connecting: Decodable { let state: String; let setupUrl: String? }
+
+    static func apps(orgId: String, base: URL) async throws -> Apps {
+        try await ChatService.call("GET", "/orgs/apps", base: base, query: ["orgId": orgId], as: Apps.self)
+    }
+
+    /// Start (or finish) connecting your own account; the page to open, when
+    /// there is sign-in to do.
+    static func connectApp(_ server: String, orgId: String, base: URL) async throws -> Connecting {
+        try await ChatService.call("POST", "/apps/connect", base: base, body: ["orgId": orgId, "server": server], as: Connecting.self)
+    }
+
+    static func disconnectApp(_ server: String, orgId: String, base: URL) async throws {
+        _ = try await ChatService.call("DELETE", "/apps/connect", base: base, query: ["orgId": orgId, "server": server], as: Nothing.self)
+    }
+
     /// Days as a person reads them: "Forever", "30 days", "1 year".
     static func days(_ value: Int?) -> String {
         guard let value else { return String(localized: "Forever") }

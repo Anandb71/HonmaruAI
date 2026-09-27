@@ -58,7 +58,7 @@ export async function research({ provider, env, instructions, input, tools = {},
       ...(country ? { user_location: { type: "approximate", country } } : {}),
     }]),
     ...Object.entries(tools).map(([name, t]) => ({
-      type: "function", name, description: t.description, parameters: t.parameters, strict: true,
+      type: "function", name, description: t.description, parameters: t.parameters, strict: t.strict !== false,
     })),
   ];
   // What it cited in the answer, then the pages it read in full: the

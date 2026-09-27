@@ -44,6 +44,7 @@ import { handleScim } from "./scim.js";
 import { handleDlp } from "./dlp.js";
 import { handleDomains, recheckDomains } from "./domains.js";
 import { handleSso, checkSsoGrants } from "./sso.js";
+import { handleApps, sweepAppConnections, forgetAppConnections } from "./smitheryApps.js";
 import { requestContext } from "./requestContext.js";
 import { handleGovernance, pruneMessages, expireExports } from "./governance.js";
 import { sealPending, weeklyVerify } from "./auditArchive.js";
@@ -187,6 +188,8 @@ export default {
       return;
     }
     ctx.waitUntil(runScheduledSync(env, ctx));
+    // App connections whose person left or whose app was taken away, ended.
+    ctx.waitUntil(sweepAppConnections(env).catch((err) => console.error("app sweep failed", err?.message || err)));
     // SSO sign-ins the identity provider no longer stands behind, ended.
     ctx.waitUntil(checkSsoGrants(env, { now: event?.scheduledTime || Date.now(), limit: 200 }).catch((err) => console.error("sso grant check failed", err?.message || err)));
     // Phase 1 audit rows, a few workspaces at a time, into per-person
@@ -270,6 +273,9 @@ async function handle(request, env, url, ctx) {
     // Single sign-on: discovery, the round trip, and its settings.
     const sso = await handleSso(request, env, url);
     if (sso) return sso;
+    // Apps through Smithery: the owner's list, and each person's own.
+    const apps = await handleApps(request, env, url);
+    if (apps) return apps;
     // Retention, legal holds, compliance exports, networks, invitations.
     const governed = await handleGovernance(request, env, url);
     if (governed) return governed;
@@ -1535,6 +1541,9 @@ async function handle(request, env, url, ctx) {
         return json({ message: "Account deletion could not finish. Please try again shortly." }, 503,
           { "cache-control": "no-store" });
       }
+      // Their app connections, here and at Smithery, before the rows that
+      // say whose they were are gone.
+      await forgetAppConnections(env, { githubId: session.github_id }).catch((err) => console.error("app connections not ended", err?.message || err));
       await deleteAccount(env.DB, session.github_id, user?.login || null);
       // Their entries in every audit log become unreadable: the rows stay and
       // still verify, and who they were goes with the key.

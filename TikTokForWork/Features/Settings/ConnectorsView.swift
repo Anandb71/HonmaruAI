@@ -63,6 +63,9 @@ struct ConnectorsView: View {
                     }
                 }
 
+                // More apps, each person's own (Smithery).
+                SmitheryAppsSection()
+
                 if let message {
                     Text(message)
                         .font(Theme.TypeScale.label)

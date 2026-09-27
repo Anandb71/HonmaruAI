@@ -371,7 +371,12 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
   // What it may call while it researches: open any page; in its own
   // conversation, the team's decisions and this person's tools too.
   const tools = provider && allowance?.allowed
-    ? await agentTools(env, { orgId, session, language: locale, personal: resolved.kind === "agent" }).catch(() => ({}))
+    ? await agentTools(env, {
+      orgId, session, language: locale, personal: resolved.kind === "agent",
+      // An app that may write does so only for agents the person wrote
+      // themselves: a teammate's agent's instructions never steer it.
+      ownAgentsOnly: agents.every((a) => a.owner_login === user.login),
+    }).catch(() => ({}))
     : {};
   let answered = 0;
   for (const agent of agents) {

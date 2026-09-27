@@ -8,6 +8,7 @@ import { LoginRules } from '../components/LoginRules'
 import { WorkspaceKeys } from '../components/WorkspaceKeys'
 import { DataRules } from '../components/DataRules'
 import { Governance } from '../components/Governance'
+import { SmitheryApps } from '../components/SmitheryApps'
 import { DomainsSso } from '../components/DomainsSso'
 import { BrandLogo, isBrand } from '../components/BrandLogo'
 import { getAIKey } from '../utils/aiKey'
@@ -638,6 +639,7 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
         ))}
         {matches.length === 0 && connectors !== null && <p className="studio-empty">{search.trim() ? t('No app matches “{q}”.', { q: search.trim() }) : t('No connectors are available on this deployment.')}</p>}
       </div>
+      {orgId && sessionToken && <SmitheryApps httpBase={httpBase} orgId={orgId} sessionToken={sessionToken} />}
     </section>
   )
 

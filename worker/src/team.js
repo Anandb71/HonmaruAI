@@ -196,6 +196,9 @@ export async function removeMember(env, { orgId, actorId, targetId, ref }) {
     .prepare("DELETE FROM memberships WHERE org_id = ?1 AND user_github_id = ?2")
     .bind(orgId, target.userId)
     .run();
+  // Their app connections in this workspace end with them (smitheryApps.js).
+  const { forgetAppConnections } = await import("./smitheryApps.js");
+  await forgetAppConnections(env, { orgId, githubId: target.userId }).catch(() => {});
   // Out of this workspace's groups and private channels too: coming back
   // later is a new start, not the old doors reopening.
   if (target.login) {

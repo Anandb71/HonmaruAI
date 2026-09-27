@@ -20,8 +20,11 @@ const query = (what) => ({
   additionalProperties: false,
 });
 
-export async function agentTools(env, { orgId, session, language = "en", personal = false }) {
+export async function agentTools(env, { orgId, session, language = "en", personal = false, ownAgentsOnly = false }) {
   const reader = await readerEnvFor(env, orgId).catch(() => env);
+  // Set once one of the person's apps has answered: from then on no page is
+  // opened in this answer, so nothing an app said can leave inside a link.
+  const taint = { value: false };
   const tools = {
     read_url: {
       description: "Open one web page and read its full text. Use it on the most relevant search results and on primary sources (official sites, filings, papers, the original post) before relying on them — search snippets are not enough. Also reads a YouTube video (title, channel, description and — when it can — the transcript), a TikTok (caption, author) and a post on X (text, author, numbers). Returns the page's text, or says why it could not be read.",
@@ -32,6 +35,7 @@ export async function agentTools(env, { orgId, session, language = "en", persona
         additionalProperties: false,
       },
       run: async ({ url }) => {
+        if (taint.value) return "Not opened: after reading from the person's connected apps, no web pages are opened in this answer. Answer from what you have.";
         if (!isPublicUrl(url)) return "Could not open: only public http(s) pages can be read.";
         const read = await readLink(String(url), { language, env: reader }).catch(() => null);
         if (!read) return `Could not read ${url}: the site refused or had no readable text. Try another source.`;
@@ -65,5 +69,9 @@ export async function agentTools(env, { orgId, session, language = "en", persona
       run: async ({ query: q }) => formatSourcesForModel(await searchGithubIssues(session, orgId, String(q || ""), env).catch(() => [])),
     };
   }
+  // The apps this person connected through Smithery, theirs alone: only in
+  // this, their own conversation with the agent (smitheryApps.js).
+  const { appTools } = await import("./smitheryApps.js");
+  Object.assign(tools, await appTools(env, { orgId, session, taint, writes: ownAgentsOnly }).catch(() => ({})));
   return tools;
 }

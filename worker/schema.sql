@@ -1337,3 +1337,38 @@ CREATE TABLE IF NOT EXISTS sso_logout_tokens (
   id          TEXT PRIMARY KEY,
   expires_at  TEXT NOT NULL
 );
+
+/* Apps through Smithery Connect (smitheryApps.js, docs/smithery-apps.md).
+   The apps an owner allows in a workspace; none by default. */
+CREATE TABLE IF NOT EXISTS org_apps (
+  org_id        TEXT NOT NULL,
+  server        TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  description   TEXT,
+  icon_url      TEXT,
+  verified      INTEGER NOT NULL DEFAULT 0,
+  allow_writes  INTEGER NOT NULL DEFAULT 0,
+  added_by      TEXT,
+  added_at      TEXT NOT NULL,
+  PRIMARY KEY (org_id, server)
+);
+
+/* One person's connection to one allowed app, in one workspace. The ID is
+   random and never leaves the server; a route finds a row only by who asks. */
+CREATE TABLE IF NOT EXISTS app_connections (
+  id              TEXT PRIMARY KEY,
+  org_id          TEXT NOT NULL,
+  user_github_id  TEXT NOT NULL,
+  server          TEXT NOT NULL,
+  status          TEXT NOT NULL,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  UNIQUE (org_id, user_github_id, server)
+);
+
+/* Connections ended here whose deletion at Smithery has not gone through
+   yet; the sweep retries them. */
+CREATE TABLE IF NOT EXISTS app_connection_tombstones (
+  id          TEXT PRIMARY KEY,
+  created_at  TEXT NOT NULL
+);
