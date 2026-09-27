@@ -90,6 +90,8 @@ interface AIStatus {
   systemOne: boolean
   jev: 'workspace' | 'deployment' | 'none'
   jevHint: string | null
+  gemini?: 'workspace' | 'deployment' | 'none'
+  geminiHint?: string | null
   models: Array<{ id: string; priceIn: number; priceOut: number }>
 }
 
@@ -229,6 +231,7 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
   const [aiNote, setAINote] = useState<string | null>(null)
   const [openaiDraft, setOpenaiDraft] = useState('')
   const [jevDraft, setJevDraft] = useState('')
+  const [geminiDraft, setGeminiDraft] = useState('')
   useEffect(() => {
     let ignore = false
     fetch(`${httpBase}/orgs/ai?orgId=${encodeURIComponent(orgId)}`, { headers: { 'x-session-token': sessionToken } })
@@ -248,7 +251,7 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setAIError(data.message || t('That did not save.')); return }
       setAI(data)
-      setOpenaiDraft(''); setJevDraft('')
+      setOpenaiDraft(''); setJevDraft(''); setGeminiDraft('')
       setAINote(said)
     } catch (err) {
       setAIError(err instanceof Error ? err.message : String(err))
@@ -806,6 +809,30 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
               )}
             </span>
             <span className={`row-value ${ai.systemOne ? 'on' : ''}`}>{ai.systemOne ? t('On') : t('Off')}</span>
+          </div>
+          <div className="row static ai-key">
+            <span className="row-main">
+              {t('Gemini key for reading videos')}
+              <span className="row-sub">
+                {ai.gemini === 'workspace'
+                  ? t('Set ({hint}). Agents read YouTube videos with it; answers still run on OpenAI.', { hint: ai.geminiHint || '' })
+                  : ai.gemini === 'deployment'
+                    ? t('Not set. Videos are read with the deployment’s key.')
+                    : t('Off. YouTube does not give its captions to servers, so agents summarise a video from its description and what others wrote. A free key from Google AI Studio lets them read the video itself (public videos, up to 8 hours a day).')}
+              </span>
+              {ai.canEdit && (
+                <span className="ai-key-form">
+                  <input className="ai-key-input" type="password" autoComplete="off" value={geminiDraft} onChange={(e) => setGeminiDraft(e.target.value)}
+                    placeholder="AIza…" aria-label={t('Gemini key for reading videos')} disabled={aiBusy} />
+                  <button className="pill-btn" disabled={aiBusy || !geminiDraft.trim()} onClick={() => saveAI({ geminiKey: geminiDraft.trim() }, t('Gemini key saved. Agents can read YouTube videos now.'))}>{t('Save')}</button>
+                  {ai.gemini === 'workspace' && (
+                    <button className="btn-text danger" disabled={aiBusy} onClick={() => saveAI({ geminiKey: null }, t('Gemini key removed.'))}>{t('Remove')}</button>
+                  )}
+                  <a className="btn-text" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">{t('Get a free key')}</a>
+                </span>
+              )}
+            </span>
+            <span className={`row-value ${ai.gemini && ai.gemini !== 'none' ? 'on' : ''}`}>{ai.gemini && ai.gemini !== 'none' ? t('On') : t('Off')}</span>
           </div>
           {!ai.canEdit && <div className="form-note">{t('An admin of this workspace can change these.')}</div>}
           {aiNote && <div className="form-note">{aiNote}</div>}

@@ -423,6 +423,7 @@ CREATE TABLE IF NOT EXISTS org_ai_settings (
   model         TEXT,
   openai_key    TEXT,
   typesafe_key  TEXT,
+  gemini_key    TEXT,
   updated_by    TEXT,
   updated_at    TEXT NOT NULL
 );

@@ -533,7 +533,7 @@ async function handle(request, env, url, ctx) {
       if (request.method === "PUT") {
         if (!canEdit) return json({ message: "Only an admin of this workspace can change what its AI runs on." }, 403);
         const result = await saveAISettings(env.DB, orgId, {
-          model: body.model, openaiKey: body.openaiKey, typesafeKey: body.typesafeKey,
+          model: body.model, openaiKey: body.openaiKey, typesafeKey: body.typesafeKey, geminiKey: body.geminiKey,
         }, session.github_id);
         if (result.error) return json({ message: result.error }, 400);
         // What changed, never the key itself.
@@ -541,6 +541,7 @@ async function handle(request, env, url, ctx) {
           model: body.model ?? undefined,
           openaiKey: body.openaiKey === undefined ? undefined : (body.openaiKey ? "set" : "removed"),
           typesafeKey: body.typesafeKey === undefined ? undefined : (body.typesafeKey ? "set" : "removed"),
+          geminiKey: body.geminiKey === undefined ? undefined : (body.geminiKey ? "set" : "removed"),
         } });
       }
       return json({ orgId, canEdit, ...(await aiStatus(env, orgId)) });

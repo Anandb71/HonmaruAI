@@ -23,7 +23,7 @@ const settingsCache = new WeakMap();
 export async function loadAISettings(db, orgId) {
   if (!db || !orgId) return {};
   const row = await db
-    .prepare("SELECT model, openai_key, typesafe_key, updated_by, updated_at FROM org_ai_settings WHERE org_id = ?1")
+    .prepare("SELECT model, openai_key, typesafe_key, gemini_key, updated_by, updated_at FROM org_ai_settings WHERE org_id = ?1")
     .bind(orgId)
     .first()
     .catch(() => null);
@@ -32,6 +32,7 @@ export async function loadAISettings(db, orgId) {
     model: row.model || null,
     openaiKey: row.openai_key || null,
     typesafeKey: row.typesafe_key || null,
+    geminiKey: row.gemini_key || null,
     updatedBy: row.updated_by || null,
     updatedAt: row.updated_at || null,
   };
@@ -42,7 +43,7 @@ const looksLikeKey = (k) => typeof k === "string" && k.trim().length >= 16 && k.
 
 /// Change what the workspace runs on. `null` for a key removes it; leaving a
 /// field out leaves it alone; an empty model means "the deployment's".
-export async function saveAISettings(db, orgId, { model, openaiKey, typesafeKey }, byGithubId) {
+export async function saveAISettings(db, orgId, { model, openaiKey, typesafeKey, geminiKey }, byGithubId) {
   const current = await loadAISettings(db, orgId);
   let nextModel = current.model || null;
   if (model !== undefined) {
@@ -62,14 +63,21 @@ export async function saveAISettings(db, orgId, { model, openaiKey, typesafeKey 
     else if (!looksLikeKey(typesafeKey)) return { error: "That does not look like a TypeSafe API key." };
     else nextTypesafe = typesafeKey.trim();
   }
+  // Gemini reads YouTube videos for the agents — nothing else runs on it.
+  let nextGemini = current.geminiKey || null;
+  if (geminiKey !== undefined) {
+    if (geminiKey === null || geminiKey === "") nextGemini = null;
+    else if (!looksLikeKey(geminiKey)) return { error: "That does not look like a Gemini API key." };
+    else nextGemini = geminiKey.trim();
+  }
   await db
     .prepare(
-      `INSERT INTO org_ai_settings (org_id, model, openai_key, typesafe_key, updated_by, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+      `INSERT INTO org_ai_settings (org_id, model, openai_key, typesafe_key, gemini_key, updated_by, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
        ON CONFLICT(org_id) DO UPDATE SET model = excluded.model, openai_key = excluded.openai_key,
-         typesafe_key = excluded.typesafe_key, updated_by = excluded.updated_by, updated_at = excluded.updated_at`
+         typesafe_key = excluded.typesafe_key, gemini_key = excluded.gemini_key, updated_by = excluded.updated_by, updated_at = excluded.updated_at`
     )
-    .bind(orgId, nextModel, nextOpenai, nextTypesafe, String(byGithubId), new Date().toISOString())
+    .bind(orgId, nextModel, nextOpenai, nextTypesafe, nextGemini, String(byGithubId), new Date().toISOString())
     .run();
   return { ok: true };
 }
@@ -95,6 +103,14 @@ export async function jevFor(env, orgId) {
   return jevConfig({ ...env, TYPESAFE_API_KEY: settings.typesafeKey || env.TYPESAFE_API_KEY });
 }
 
+/// The keys a link reader uses, for one workspace: its own Gemini key over
+/// the deployment's. Answers still run on OpenAI; Gemini only watches a
+/// YouTube video the agent was asked about.
+export async function readerEnvFor(env, orgId) {
+  const settings = orgId ? await loadAISettings(env.DB, orgId) : {};
+  return { ...env, GEMINI_API_KEY: settings.geminiKey || env.GEMINI_API_KEY };
+}
+
 const hint = (key) => (key ? `…${String(key).slice(-4)}` : null);
 
 /// What the Tools screen shows: what runs, where each piece comes from, and
@@ -114,6 +130,8 @@ export async function aiStatus(env, orgId) {
     systemOne: Boolean(jev),
     jev: settings.typesafeKey ? "workspace" : (env.TYPESAFE_API_KEY ? "deployment" : "none"),
     jevHint: hint(settings.typesafeKey),
+    gemini: settings.geminiKey ? "workspace" : (env.GEMINI_API_KEY ? "deployment" : "none"),
+    geminiHint: hint(settings.geminiKey),
     models: MODELS,
     updatedAt: settings.updatedAt || null,
   };

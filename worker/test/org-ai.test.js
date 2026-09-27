@@ -3,7 +3,7 @@ import { beforeEach, afterEach, expect, test } from "vitest";
 import { fetchMock } from "./helpers/fetch-mock.js";
 import schemaSql from "../schema.sql?raw";
 import worker from "../src/index.js";
-import { providerFor, jevFor } from "../src/orgAI.js";
+import { providerFor, jevFor, readerEnvFor } from "../src/orgAI.js";
 
 // What a workspace runs its AI on is set from the Tools screen by its admin:
 // a model, a key of its own, System One. A member reads the status; nobody
@@ -67,6 +67,18 @@ test("a bad model, a key that is not one, and clearing", async () => {
   await put("/orgs/ai", toru, { orgId: ORG, openaiKey: "sk-workspace-abcdefghijkl1234" });
   const cleared = await (await put("/orgs/ai", toru, { orgId: ORG, openaiKey: null, model: "" }, { OPENAI_API_KEY: "sk-deploy-0000" })).json();
   expect(cleared).toMatchObject({ openai: "deployment", modelSource: "deployment", openaiHint: null });
+});
+
+test("the workspace's Gemini key reads YouTube for its agents, never shown back", async () => {
+  expect((await put("/orgs/ai", mika, { orgId: ORG, geminiKey: "AIzaSyWorkspaceGemini0000" })).status).toBe(403);
+  const res = await put("/orgs/ai", toru, { orgId: ORG, geminiKey: "AIzaSyWorkspaceGemini0000" });
+  expect(res.status).toBe(200);
+  const status = await res.json();
+  expect(status).toMatchObject({ gemini: "workspace", geminiHint: "…0000" });
+  expect(JSON.stringify(status)).not.toContain("AIzaSyWorkspaceGemini0000");
+  expect((await readerEnvFor(env, ORG)).GEMINI_API_KEY).toBe("AIzaSyWorkspaceGemini0000");
+  const cleared = await (await put("/orgs/ai", toru, { orgId: ORG, geminiKey: null })).json();
+  expect(cleared).toMatchObject({ gemini: "none", geminiHint: null });
 });
 
 test("another workspace neither reads nor writes it", async () => {
