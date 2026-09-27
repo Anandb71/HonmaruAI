@@ -303,7 +303,7 @@ export async function getUserByGithubId(db, githubId) {
   return (
     (await db
       .prepare(
-        "SELECT github_id, login, name, avatar_url, locale, email, notify_email, push_while_active, notify_paused_until, notify_schedule, notify_keywords, aliases, handle FROM users WHERE github_id = ?1"
+        "SELECT github_id, login, name, avatar_url, locale, email, notify_email, push_while_active, notify_paused_until, notify_schedule, notify_keywords, aliases, handle, translate_messages FROM users WHERE github_id = ?1"
       )
       .bind(String(githubId))
       .first()) || null
@@ -807,7 +807,8 @@ export async function listBusinesses(db, orgId, { viewer = null } = {}) {
   const { results } = await db
     .prepare(
       `SELECT b.slug, b.name, b.created_by, b.created_at, b.private,
-              CASE WHEN b.private = 1 THEN (SELECT COUNT(*) FROM conversation_members c2 WHERE c2.org_id = ?1 AND c2.channel = 'b:' || b.slug) END AS member_count
+              CASE WHEN b.private = 1 THEN (SELECT COUNT(*) FROM conversation_members c2 WHERE c2.org_id = ?1 AND c2.channel = 'b:' || b.slug) END AS member_count,
+              CASE WHEN b.private = 1 AND ?2 IS NOT NULL THEN (SELECT GROUP_CONCAT(c3.login, char(10)) FROM conversation_members c3 WHERE c3.org_id = ?1 AND c3.channel = 'b:' || b.slug) END AS member_logins
          FROM businesses b
         WHERE b.org_id = ?1 AND b.archived_at IS NULL AND ((b.private = 0 AND (?2 IS NULL OR NOT EXISTS (
           SELECT 1 FROM memberships gm JOIN users gu ON gu.github_id = gm.user_github_id
@@ -817,7 +818,18 @@ export async function listBusinesses(db, orgId, { viewer = null } = {}) {
     )
     .bind(orgId, viewer)
     .all();
-  return (results || []).map((r) => ({ slug: r.slug, name: r.name, createdBy: r.created_by, createdAt: r.created_at, ...(r.private ? { private: true, memberCount: r.member_count || 0 } : {}) }));
+  // A private channel's people, for someone inside it: by the same hash of
+  // their login that /members gives as `presence`, so "@" can say who is
+  // not in the channel without handing out logins.
+  const key = async (login) => {
+    const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(login))));
+    return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+  };
+  return Promise.all((results || []).map(async (r) => ({
+    slug: r.slug, name: r.name, createdBy: r.created_by, createdAt: r.created_at,
+    ...(r.private ? { private: true, memberCount: r.member_count || 0 } : {}),
+    ...(r.private && r.member_logins ? { memberKeys: await Promise.all(String(r.member_logins).split("\n").filter(Boolean).map(key)) } : {}),
+  })));
 }
 
 /// Whether the workspace has any private channel: a room told about the

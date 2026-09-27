@@ -119,10 +119,19 @@ export function useMentionMenu(
             onMouseEnter={() => setIndex(i)}
             data-mention-option={m.agent ? `agent:${m.handle}` : undefined}
           >
-            <span className={`mention-avatar${m.agent ? ' agent' : ''}`} aria-hidden="true">{m.agent ? (m.emoji || '🤖') : m.name.charAt(0).toUpperCase()}</span>
-            <span className="mention-name" title={m.title || undefined}>{m.name}</span>
-            {m.agent && <span className="mention-tag">{t('Agent')}</span>}
-            {m.handle && <span className="mention-handle">@{m.handle}</span>}
+            {m.special ? (
+              <span className="mention-at" aria-hidden="true">@</span>
+            ) : (
+              <span className={`mention-face${m.agent || m.ref === '__ai' ? ' agent' : ''}`} aria-hidden="true">
+                {m.avatarUrl ? <img src={m.avatarUrl} alt="" /> : <span className="mention-avatar">{m.agent ? (m.emoji || '🤖') : m.ref === '__ai' ? '✦' : m.name.charAt(0).toUpperCase()}</span>}
+                {m.ref !== '__ai' && <span className={`mention-dot${m.agent || m.online ? ' on' : ''}`} title={m.agent || m.online ? t('Online') : t('Offline')} />}
+              </span>
+            )}
+            <span className="mention-name" title={m.title || undefined}>{m.special ? m.handle : m.name}</span>
+            {!m.special && m.handle && <span className="mention-handle">@{m.handle}</span>}
+            <span className="mention-side">
+              {m.special ? m.detail : m.agent ? t('Agent') : m.outside ? t('Not in channel') : ''}
+            </span>
           </button>
         </li>
       ))}

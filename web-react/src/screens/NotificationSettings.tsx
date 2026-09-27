@@ -189,11 +189,11 @@ const SoundRows: React.FC = () => {
   const [s, setS] = useState<SoundSettings>(() => loadSoundSettings())
   const set = (patch: Partial<SoundSettings>) => { const next = { ...s, ...patch }; setS(next); saveSoundSettings(next) }
   const kinds: Array<{ key: keyof SoundSettings; label: string; sub: string; sample: SoundKind }> = [
-    { key: 'mentions', label: t('Direct messages and mentions'), sub: t('A knock when someone writes to you or @names you.'), sample: 'mention' },
-    { key: 'decisions', label: t('A decision for you'), sub: t('A chime when a decision lands in your feed.'), sample: 'decision' },
-    { key: 'channels', label: t('Every channel message'), sub: t('A soft drop for channels you have not muted. Off unless you want it.'), sample: 'message' },
-    { key: 'inConversation', label: t('In the conversation you are in'), sub: t('A tick, barely there, when you are already looking.'), sample: 'inConversation' },
-    { key: 'sent', label: t('Sending a direct message'), sub: t('A small swish when yours goes.'), sample: 'sent' },
+    { key: 'mentions', label: t('Direct messages and mentions'), sub: t('Two soft keys when someone writes to you or @names you.'), sample: 'mention' },
+    { key: 'decisions', label: t('A decision for you'), sub: t('A rising chord when a decision lands in your feed.'), sample: 'decision' },
+    { key: 'channels', label: t('Every channel message'), sub: t('One low key for channels you have not muted. Off unless you want it.'), sample: 'message' },
+    { key: 'inConversation', label: t('In the conversation you are in'), sub: t('A touch of a key, barely there, when you are already looking.'), sample: 'inConversation' },
+    { key: 'sent', label: t('Sending a direct message'), sub: t('The lightest tap when yours goes.'), sample: 'sent' },
     { key: 'jam', label: t('Jams'), sub: t('Someone joining or leaving, and the ring when you are called.'), sample: 'ring' },
   ]
   return (

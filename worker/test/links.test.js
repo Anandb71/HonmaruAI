@@ -1,6 +1,6 @@
 import { fetchMock } from "./helpers/fetch-mock.js";
 import { beforeEach, afterEach, expect, test } from "vitest";
-import { linksIn, isPublicUrl, classifyLink, pickTrack, transcriptText, readLink, readLinks, linksBlock } from "../src/links.js";
+import { linksIn, isPublicUrl, classifyLink, pickTrack, transcriptText, readLink, readLinks, linksBlock, supadataTranscript } from "../src/links.js";
 
 beforeEach(() => fetchMock.activate());
 afterEach(() => fetchMock.assertNoPendingInterceptors());
@@ -62,7 +62,8 @@ test("a YouTube video whose player is refused still has its title", async () => 
   yt.intercept({ path: "/youtubei/v1/player", method: "POST" }).reply(403, {});
   const read = await readLink("https://www.youtube.com/watch?v=abcdefghijk");
   expect(read).toMatchObject({ kind: "youtube", title: "Coffee 101", author: "Bean TV", transcript: "" });
-  expect(linksBlock([read])).toContain("Transcript: not available");
+  expect(linksBlock([read])).toContain("Transcript: could not be read");
+  expect(linksBlock([read])).toContain("search the web now");
 });
 
 test("a TikTok: its caption and who posted it", async () => {
@@ -105,4 +106,44 @@ test("what could not be read is left out, never thrown", async () => {
   fetchMock.get("https://down.example.com").intercept({ path: "/", method: "GET" }).reply(500, "x");
   expect(await readLinks(["https://down.example.com/", "http://localhost/x"])).toEqual([]);
   expect(linksBlock([])).toBe("");
+});
+
+test("a YouTube video YouTube will not give a server: Supadata reads its words", async () => {
+  const yt = fetchMock.get("https://www.youtube.com");
+  yt.intercept({ path: /^\/oembed\?/, method: "GET" }).reply(200, { title: "Coffee 101", author_name: "Bean TV" });
+  yt.intercept({ path: "/watch?v=abcdefghijk", method: "GET" }).reply(200, "Sign in to confirm you're not a bot");
+  let asked;
+  fetchMock.get("https://api.supadata.ai").intercept({ path: /^\/v1\/transcript\?/, method: "GET" }).reply(200, (opts) => {
+    asked = opts;
+    return { content: "Grind fresh. Water at 93 degrees.", lang: "en", availableLangs: ["en"] };
+  });
+  const read = await readLink("https://youtu.be/abcdefghijk", { language: "ja", env: { SUPADATA_API_KEY: "sd-key" } });
+  expect(read).toMatchObject({ kind: "youtube", title: "Coffee 101", transcript: "Grind fresh. Water at 93 degrees.", transcriptSource: "supadata" });
+  expect(asked.path).toContain("url=https%3A%2F%2Fyoutu.be%2Fabcdefghijk");
+  expect(asked.path).toContain("lang=ja");
+  expect(asked.headers["x-api-key"]).toBe("sd-key");
+  expect(linksBlock([read])).toContain("Transcript:\nGrind fresh.");
+});
+
+test("a long video is a Supadata job, asked again until it is done", async () => {
+  const sd = fetchMock.get("https://api.supadata.ai");
+  sd.intercept({ path: /^\/v1\/transcript\?/, method: "GET" }).reply(202, { jobId: "job-1" });
+  sd.intercept({ path: "/v1/transcript/job-1", method: "GET" }).reply(200, { status: "completed", content: [{ text: "Part one." }, { text: "Part two." }] });
+  expect(await supadataTranscript("https://youtu.be/abcdefghijk", "en", "k")).toBe("Part one. Part two.");
+});
+
+test("without Supadata, Gemini watches a YouTube video and writes down what it says", async () => {
+  const yt = fetchMock.get("https://www.youtube.com");
+  yt.intercept({ path: /^\/oembed\?/, method: "GET" }).reply(200, { title: "Coffee 101", author_name: "Bean TV" });
+  yt.intercept({ path: "/watch?v=abcdefghijk", method: "GET" }).reply(429, "no");
+  let asked;
+  fetchMock.get("https://generativelanguage.googleapis.com").intercept({ path: /generateContent$/, method: "POST" }).reply(200, (opts) => {
+    asked = JSON.parse(opts.body);
+    return { candidates: [{ content: { parts: [{ text: "[00:00] Grind fresh." }] } }] };
+  });
+  const read = await readLink("https://www.youtube.com/watch?v=abcdefghijk", { env: { GEMINI_API_KEY: "g" } });
+  expect(asked.contents[0].parts[0]).toEqual({ file_data: { file_uri: "https://www.youtube.com/watch?v=abcdefghijk" } });
+  expect(asked.generationConfig.mediaResolution).toBe("MEDIA_RESOLUTION_LOW");
+  expect(read).toMatchObject({ transcript: "[00:00] Grind fresh.", transcriptSource: "gemini" });
+  expect(linksBlock([read])).toContain("written down by a model that watched the video");
 });

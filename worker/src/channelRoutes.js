@@ -2,9 +2,10 @@ import { checkOutgoing } from "./dlp.js";
 import { attachedTexts } from "./dlpFiles.js";
 import { linksIn, readLinks, linksBlock } from "./links.js";
 import { agentTools } from "./agentTools.js";
+import { translateMessages } from "./translate.js";
 import { getSession, isMember, getUserByGithubId, saveCard, getCard, listBusinesses } from "./db.js";
 import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText } from "./dailyReport.js";
-import { providerFor } from "./orgAI.js";
+import { providerFor, readerEnvFor } from "./orgAI.js";
 import { groupsIn, toClientGroup, saveGroup, deleteGroup, getSidebar, saveSidebar } from "./people-groups.js";
 import { allowanceFor } from "./gate.js";
 import { enforce } from "./ratelimit.js";
@@ -162,7 +163,7 @@ export async function decideFromMessage(env, { orgId, session, user, resolved, r
 
     // Whoever the message names decides; in a direct conversation with
     // nobody named, the other person does.
-    const named = resolveMentions(instruction, members).filter((m) => m.login !== user.login);
+    const named = resolveMentions(instruction, members, { here: false }).filter((m) => m.login !== user.login);
     const mentions = named.length ? named.map((m) => m.ref) : (resolved.kind === "dm" ? [resolved.other.ref] : []);
     await progress("routing");
     const res = await route({
@@ -361,7 +362,7 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
   if (provider && allowance?.allowed) {
     try {
       const urls = linksIn(row.body).length ? linksIn(row.body) : linksIn(transcript.slice(-6).join("\n"));
-      if (urls.length) links = linksBlock(await readLinks(urls, { language: locale }));
+      if (urls.length) links = linksBlock(await readLinks(urls, { language: locale, env: await readerEnvFor(env, orgId) }));
     } catch (err) {
       console.error("agent links failed", safe(err?.message));
     }
@@ -680,7 +681,9 @@ export async function handleChannels(request, env, url, { route, after }) {
       : await deleteMessage(env.DB, { orgId: body.orgId, id: body.messageId, authorLogin: ctx.who.user.login });
     if (out.error) return json({ message: out.error }, out.status || 400);
     // Unsent: its files go with its words.
-    if (request.method === "DELETE") await dropFiles(env, body.orgId, body.messageId);
+    if (request.method === "DELETE") {
+      for (const mid of [body.messageId, ...(out.replies || [])]) await dropFiles(env, body.orgId, mid);
+    }
     after(async () => {
       await broadcastWithParent(env, body.orgId, ctx.resolved, out.row, ctx.members);
       await emitMessage(env, body.orgId, out.row, { updated: true });
@@ -812,8 +815,49 @@ export async function handleChannels(request, env, url, { route, after }) {
     return json({ view: key, refs: picked.map((m) => m.ref) }, 201);
   }
 
+  // A link's card under the message that shares it: title, a line, a
+  // picture, and for a video what it takes to play it here (preview.js).
+  // Members only, so this is nobody's open proxy.
+  if (path === "/channels/link-preview" && request.method === "GET") {
+    const limited = await enforce(env, request, "chat");
+    if (limited) return limited;
+    const session = await getSession(env.DB, request.headers.get("x-session-token"));
+    if (!session) return json({ message: "Please sign in." }, 401);
+    const orgId = url.searchParams.get("orgId") || "";
+    if (!orgId || !(await isMember(env.DB, orgId, session.github_id))) return json({ message: "not a member of this org" }, 403);
+    const target = String(url.searchParams.get("url") || "").slice(0, 2000);
+    const { cachedPreview } = await import("./preview.js");
+    const out = await cachedPreview(target);
+    return json(out);
+  }
+
   // A private channel's members: anyone inside may bring somebody in, or
   // take somebody out; anyone may leave.
+  // Messages in another language, in this reader's: translated once per
+  // message and language and kept (translate.js). Only messages in this
+  // conversation; only for a reader who has not turned translation off.
+  if (path === "/channels/translate" && request.method === "POST") {
+    const limited = await enforce(env, request, "chat");
+    if (limited) return limited;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || !Array.isArray(body.ids)) return json({ message: "Invalid JSON body." }, 400);
+    const ctx = await inChannel(env, request, body);
+    if (ctx.denied) return ctx.denied;
+    const me = ctx.who.user;
+    // The language the reader set: what their screen says it is, else
+    // what their profile holds.
+    const asked = String(body.locale || "").slice(0, 2).toLowerCase();
+    const locale = /^[a-z]{2}$/.test(asked) ? asked : String(me.locale || "en").slice(0, 2);
+    if (Number(me.translate_messages ?? 1) === 0) return json({ translations: {}, locale, off: true });
+    const ids = [...new Set(body.ids.map(String))].slice(0, 60);
+    const rows = (await Promise.all(ids.map((id) => getMessage(env.DB, body.orgId, id)))).filter((r) => r && r.channel === ctx.resolved.key);
+    const provider = await providerFor(env, body.orgId);
+    const allowance = provider ? await allowanceFor(env, body.orgId, { githubId: String(ctx.who.session.github_id) }) : null;
+    const { byId } = await translateMessages(env.DB, body.orgId, rows, { locale, provider, allowance });
+    if (provider) await settleUsage(env.DB, provider, { orgId: body.orgId, githubId: ctx.who.session.github_id });
+    return json({ translations: byId, locale });
+  }
+
   // An agent brought into a channel or a group, or taken out of it. Anyone
   // in it but a guest may do either; only an agent you can call yourself
   // can be brought in — your own personal one included.

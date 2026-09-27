@@ -10,6 +10,7 @@ import { Avatar } from '../components/Avatar'
 import { getSenderContext, setSenderContext, loadSenderContext, saveSenderContext, MAX_CONTEXT_CHARS } from '../utils/context'
 import { canInstall, promptInstall, onInstallChange } from '../utils/install'
 import { getAIKey, setAIKey } from '../utils/aiKey'
+import { TidyChannels } from '../components/TidyChannels'
 
 interface Props {
   httpBase: string
@@ -49,6 +50,8 @@ interface Me {
   /// The username @ finds you by; null until you choose one.
   handle?: string | null
   orgs?: Org[]
+  /// Messages in another language shown in yours. On unless turned off.
+  translateMessages?: boolean
 }
 
 // English keys, translated where they are read — see utils/i18n.
@@ -305,7 +308,7 @@ export const Profile: React.FC<Props> = ({
           <div className="profile-stats">
             <div><b>{pendingCount}</b><span>{t('waiting')}</span></div>
             <div><b>{decidedCount}</b><span>{t('decided')}</span></div>
-            <div><b>{businesses.length}</b><span>{t('businesses')}</span></div>
+            <div><b>{businesses.length}</b><span>{t('channels (count)')}</span></div>
           </div>
 
           </section>
@@ -339,7 +342,7 @@ export const Profile: React.FC<Props> = ({
             </button>
             <button className="row" onClick={() => onOpen('record')}>
               <span className="row-icon"><Icon name="record" size={18} /></span>
-              <span className="row-main">{t('The record')}<span className="row-sub">{t('Every decision, by business, written by nobody.')}</span></span>
+              <span className="row-main">{t('The record')}<span className="row-sub">{t('Every decision in a channel, and what led to it.')}</span></span>
               <span className="row-value">›</span>
             </button>
             <button className="row" onClick={() => onOpen('tools')}>
@@ -570,6 +573,29 @@ export const Profile: React.FC<Props> = ({
                 <LanguageOptions current={locale} />
               </select>
             </div>
+            <div className="row static">
+              <span className="row-main">
+                {t('Translate messages')}
+                <span className="row-sub">{t('Messages in another language are shown in yours. Show original is one tap away.')}</span>
+              </span>
+              <button
+                type="button"
+                className="switch"
+                role="switch"
+                aria-checked={me?.translateMessages !== false}
+                aria-label={t('Translate messages')}
+                disabled={!me}
+                data-translate-messages="1"
+                onClick={() => {
+                  const next = me?.translateMessages === false
+                  setMe((prev) => (prev ? { ...prev, translateMessages: next } : prev))
+                  void fetch(`${httpBase}/me`, {
+                    method: 'PUT', headers: { 'content-type': 'application/json', 'x-session-token': sessionToken },
+                    body: JSON.stringify({ translateMessages: next }),
+                  }).catch(() => {})
+                }}
+              />
+            </div>
           </div>
 
           </section>
@@ -598,20 +624,7 @@ export const Profile: React.FC<Props> = ({
           )}
 
           </section>
-          <section className="pf-sec pf-biz">
-          {businesses.length > 0 && (
-            <>
-              <div className="rows-title">{t('Businesses your AI has found')}</div>
-              <div className="chips">
-                {businesses.map((b) => <span key={b.slug} className="pill-tag">{b.name}</span>)}
-              </div>
-              <p className="hint" style={{ margin: '8px 4px 20px', color: 'var(--ash)', fontSize: 12.5 }}>
-                {t('businesses.blurb')}
-              </p>
-            </>
-          )}
-
-          </section>
+          <TidyChannels httpBase={httpBase} orgId={orgId} sessionToken={sessionToken} />
           <section className="pf-sec pf-acct">
           <SignedInSessions httpBase={httpBase} sessionToken={sessionToken} />
           <div className="rows">

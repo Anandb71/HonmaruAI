@@ -240,15 +240,68 @@ export function wrapSelection(el: HTMLTextAreaElement | null, value: string, set
   })
 }
 
-/// Start each selected line with a mark: a list, a quote.
+/// Start each selected line with a mark — a quote, a list — or, when every
+/// one of them already has it, take it off again. A numbered list counts.
 export function prefixLines(el: HTMLTextAreaElement | null, value: string, set: (v: string) => void, mark: string) {
   if (!el) return
-  const start = value.lastIndexOf('\n', (el.selectionStart ?? 0) - 1) + 1
-  const endRaw = value.indexOf('\n', el.selectionEnd ?? value.length)
+  const selStart = el.selectionStart ?? value.length
+  const selEnd = el.selectionEnd ?? value.length
+  const start = value.lastIndexOf('\n', selStart - 1) + 1
+  // A selection that ends at the start of a line does not take that line.
+  const endFrom = selEnd > selStart && value[selEnd - 1] === '\n' ? selEnd - 1 : selEnd
+  const endRaw = value.indexOf('\n', endFrom)
   const end = endRaw === -1 ? value.length : endRaw
-  const block = value.slice(start, end).split('\n').map((l) => (l.startsWith(mark) ? l : mark + l)).join('\n')
+  const lines = value.slice(start, end).split('\n')
+  const numbered = mark === '1. '
+  const has = (l: string) => (numbered ? /^\d+\.\s/.test(l) : l.startsWith(mark))
+  const strip = (l: string) => (numbered ? l.replace(/^\d+\.\s/, '') : l.slice(mark.length))
+  // Any other mark comes off first: a quoted line becomes a list, not both.
+  const bare = (l: string) => l.replace(/^(> ?|[-•] |\d+\.\s)/, '')
+  const filled = lines.filter((l) => l.trim())
+  const off = filled.length > 0 && filled.every(has)
+  let n = 0
+  const block = lines.map((l) => {
+    if (off) return has(l) ? strip(l) : l
+    if (lines.length > 1 && !l.trim()) return l
+    n += 1
+    return (numbered ? `${n}. ` : mark) + bare(l)
+  }).join('\n')
   set(value.slice(0, start) + block + value.slice(end))
-  requestAnimationFrame(() => { el.focus(); el.setSelectionRange(start + block.length, start + block.length) })
+  requestAnimationFrame(() => {
+    el.focus()
+    if (selStart === selEnd && lines.length === 1) {
+      // The caret stays where it was in the line's own words.
+      const caret = Math.max(start, Math.min(start + block.length, selStart + (block.length - (end - start))))
+      el.setSelectionRange(caret, caret)
+    } else el.setSelectionRange(start, start + block.length)
+  })
+}
+
+/// A new line inside a quote or a list carries its mark on, as every
+/// editor does; a new line on a marked line with nothing on it ends the
+/// quote or the list. True when it handled the key.
+export function continueBlock(el: HTMLTextAreaElement, value: string, set: (v: string) => void): boolean {
+  const a = el.selectionStart ?? value.length
+  const b = el.selectionEnd ?? value.length
+  if (a !== b) return false
+  const lineStart = value.lastIndexOf('\n', a - 1) + 1
+  const line = value.slice(lineStart, a)
+  const m = /^(> ?|\s*[-•] |\s*\d+\.\s)/.exec(line)
+  if (!m) return false
+  const mark = m[1]
+  if (!line.slice(mark.length).trim() && !value.slice(a).split('\n')[0].trim()) {
+    const next = value.slice(0, lineStart) + value.slice(a)
+    set(next)
+    requestAnimationFrame(() => el.setSelectionRange(lineStart, lineStart))
+    return true
+  }
+  const num = /^(\s*)(\d+)\.(\s)/.exec(mark)
+  const carry = num ? `${num[1]}${Number(num[2]) + 1}.${num[3]}` : mark === '>' ? '> ' : mark
+  const next = value.slice(0, a) + '\n' + carry + value.slice(b)
+  set(next)
+  const caret = a + 1 + carry.length
+  requestAnimationFrame(() => el.setSelectionRange(caret, caret))
+  return true
 }
 
 export const FormatBar: React.FC<{ target: React.RefObject<HTMLTextAreaElement>; value: string; set: (v: string) => void }> = ({ target, value, set }) => {
@@ -264,12 +317,13 @@ export const FormatBar: React.FC<{ target: React.RefObject<HTMLTextAreaElement>;
       {b(<Icon name="code" size={14} />, t('Code'), () => wrapSelection(target.current, value, set, '`'), 'code')}
       {b(<Icon name="quote" size={13} />, t('Quote'), () => prefixLines(target.current, value, set, '> '))}
       {b(<Icon name="list" size={14} />, t('Bulleted list'), () => prefixLines(target.current, value, set, '- '))}
+      {b(<Icon name="list-ordered" size={14} />, t('Numbered list'), () => prefixLines(target.current, value, set, '1. '))}
     </div>
   )
 }
 
 /// Slack's formatting, read back: *bold*, _italic_, ~strike~, `code`,
-/// ```blocks```, "> " quotes and "- " lists — plus links and @names.
+/// ```blocks```, "> " quotes, "- " and "1. " lists — plus links and @names.
 export function renderRich(text: string, mentionClass: (name: string) => string): React.ReactNode {
   const out: React.ReactNode[] = []
   const parts = text.split(/```/)
@@ -280,17 +334,46 @@ export function renderRich(text: string, mentionClass: (name: string) => string)
     }
     const lines = chunk.split('\n')
     let list: React.ReactNode[] = []
+    let ordered = false
+    let quote: React.ReactNode[] = []
     // A list or a quote ends its own line: the line after it needs no break
     // of its own, or a blank line after a list reads as two.
     let afterBlock = false
-    const flush = (k: string) => { if (list.length) { out.push(<ul key={`ul-${k}`} className="slk-ul">{list}</ul>); list = []; afterBlock = true } }
+    const flushList = (k: string) => {
+      if (!list.length) return
+      out.push(ordered ? <ol key={`ol-${k}`} className="slk-ol">{list}</ol> : <ul key={`ul-${k}`} className="slk-ul">{list}</ul>)
+      list = []; afterBlock = true
+    }
+    const flushQuote = (k: string) => {
+      if (!quote.length) return
+      out.push(<blockquote key={`q-${k}`} className="slk-quote">{quote}</blockquote>)
+      quote = []; afterBlock = true
+    }
+    const flush = (k: string) => { flushList(k); flushQuote(k) }
     lines.forEach((line, li) => {
       const key = `${ci}-${li}`
+      // Quoted lines, one after another, are one quote.
+      const q = /^(?:>|&gt;)\s?(.*)$/.exec(line)
+      if (q) {
+        flushList(key)
+        if (quote.length) quote.push(<br key={`qbr-${key}`} />)
+        quote.push(<React.Fragment key={key}>{inline(q[1], mentionClass)}</React.Fragment>)
+        return
+      }
+      flushQuote(key)
       const bullet = /^\s*[-•*]\s+(.*)$/.exec(line)
-      if (bullet && !/^\*[^*]+\*/.test(line.trim())) { list.push(<li key={key}>{inline(bullet[1], mentionClass)}</li>); return }
-      flush(key)
-      const quote = /^>\s?(.*)$/.exec(line)
-      if (quote) { out.push(<blockquote key={key} className="slk-quote">{inline(quote[1], mentionClass)}</blockquote>); afterBlock = true; return }
+      const number = /^\s*(\d+)[.)]\s+(.*)$/.exec(line)
+      if (bullet && !/^\*[^*]+\*/.test(line.trim())) {
+        if (list.length && ordered) flushList(key)
+        ordered = false
+        list.push(<li key={key}>{inline(bullet[1], mentionClass)}</li>); return
+      }
+      if (number) {
+        if (list.length && !ordered) flushList(key)
+        ordered = true
+        list.push(<li key={key} value={Number(number[1])}>{inline(number[2], mentionClass)}</li>); return
+      }
+      flushList(key)
       if (afterBlock) { afterBlock = false; out.push(<React.Fragment key={key}>{inline(line, mentionClass)}</React.Fragment>); return }
       if (li > 0 || (ci > 0 && line)) out.push(<br key={`br-${key}`} />)
       out.push(<React.Fragment key={key}>{inline(line, mentionClass)}</React.Fragment>)
@@ -412,4 +495,97 @@ export const SchedulePicker: React.FC<{ onPick: (at: string) => void; onClose: (
       </form>
     </div>
   )
+}
+
+// ---- Link cards ----
+//
+// A link in a message unfurls, as in Slack: the page's title, a line of
+// what it is and its picture; a YouTube video plays in place when its
+// thumbnail is pressed. Read through the Worker (/channels/link-preview),
+// once per link per page load.
+
+export interface LinkCard {
+  kind: 'page' | 'youtube' | 'tiktok' | 'x'
+  title: string
+  description?: string
+  image?: string | null
+  site?: string
+  icon?: string | null
+  videoId?: string
+}
+
+const cardCache = new Map<string, Promise<LinkCard | null>>()
+const LINK_RE = /https?:\/\/[^\s<>"'）」]+/g
+
+/// The links a message would unfurl: the first two, not the app's own
+/// recordings, trailing punctuation off.
+export function unfurlable(text: string): string[] {
+  const out: string[] = []
+  for (const raw of String(text || '').match(LINK_RE) || []) {
+    const url = raw.replace(/[.,!?;:)\]]+$/, '')
+    if (JAM_AUDIO.test(url) || out.includes(url)) continue
+    out.push(url)
+    if (out.length >= 2) break
+  }
+  return out
+}
+
+function loadCard(httpBase: string, orgId: string, token: string, url: string): Promise<LinkCard | null> {
+  if (!cardCache.has(url)) {
+    cardCache.set(url, fetch(`${httpBase}/channels/link-preview?orgId=${encodeURIComponent(orgId)}&url=${encodeURIComponent(url)}`, { headers: { 'x-session-token': token } })
+      .then((r) => (r.ok ? r.json() : null)).then((d) => (d?.card as LinkCard) || null).catch(() => null))
+  }
+  return cardCache.get(url)!
+}
+
+const LinkCardView: React.FC<{ url: string; httpBase: string; orgId: string; token: string }> = ({ url, httpBase, orgId, token }) => {
+  const t = useT()
+  const [card, setCard] = useState<LinkCard | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [imageOk, setImageOk] = useState(true)
+  useEffect(() => {
+    let live = true
+    void loadCard(httpBase, orgId, token, url).then((c) => { if (live) setCard(c) })
+    return () => { live = false }
+  }, [httpBase, orgId, token, url])
+  if (!card) return null
+  const video = card.kind === 'youtube' && card.videoId
+  return (
+    <div className={`link-card ${card.kind}`} data-link-card={card.kind}>
+      <div className="link-card-site">
+        {card.icon && <img className="link-card-icon" src={card.icon} alt="" width={14} height={14} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />}
+        <span>{card.site}</span>
+      </div>
+      <a className="link-card-title" href={url} target="_blank" rel="noopener noreferrer">{card.title}</a>
+      {card.description && <div className="link-card-desc">{card.description}</div>}
+      {video && playing ? (
+        <div className="link-card-player">
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${card.videoId}?autoplay=1&rel=0`}
+            title={card.title}
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            allowFullScreen
+          />
+        </div>
+      ) : card.image && imageOk ? (
+        video ? (
+          <button type="button" className="link-card-thumb video" onClick={() => setPlaying(true)} aria-label={t('Play {title}', { title: card.title })}>
+            <img src={card.image} alt="" loading="lazy" onError={() => setImageOk(false)} />
+            <span className="link-card-play" aria-hidden="true" />
+          </button>
+        ) : (
+          <a className="link-card-thumb" href={url} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
+            <img src={card.image} alt="" loading="lazy" onError={() => setImageOk(false)} />
+          </a>
+        )
+      ) : null}
+    </div>
+  )
+}
+
+/// The cards for the links in one message.
+export const LinkCards: React.FC<{ text: string; httpBase: string; orgId: string; token: string }> = ({ text, httpBase, orgId, token }) => {
+  const urls = unfurlable(text)
+  if (!urls.length) return null
+  return <div className="link-cards">{urls.map((u) => <LinkCardView key={u} url={u} httpBase={httpBase} orgId={orgId} token={token} />)}</div>
 }

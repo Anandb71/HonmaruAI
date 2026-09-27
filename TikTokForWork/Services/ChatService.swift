@@ -55,6 +55,9 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     var createdAt: String
     var editedAt: String?
     var deleted: Bool?
+    /// The language it is written in; nil when there is nothing to
+    /// translate. A reader in another language sees it translated.
+    var lang: String?
     var parentId: String?
     var replyCount: Int?
     var lastReplyAt: String?
@@ -333,7 +336,51 @@ enum ChatService {
     private struct DataRuleAnswer: Decodable { let code: String?; let rules: [String]?; let message: String? }
 
     /// One call to the Worker, with this device's session.
-    static func call<T: Decodable>(_ method: String, _ path: String, base: URL, query: [String: String] = [:], body: [String: Any]? = nil, as type: T.Type) async throws -> T {
+    // MARK: The record
+
+    /// One channel's record: its context, written out, and its decisions.
+    struct ChannelRecord: Decodable {
+        struct Entry: Decodable, Identifiable, Hashable {
+            let id: String
+            let title: String
+            let recipient: String?
+            let createdAt: String?
+            let actionLabel: String?
+            let actor: String?
+            let decidedAt: String?
+            let note: String?
+        }
+        struct Section: Decodable { let slug: String; let name: String?; let decided: [Entry]; let open: [Entry] }
+        let businesses: [Section]
+        let context: String?
+        let contextAt: String?
+        let contextNote: String?
+        var section: Section? { businesses.first }
+    }
+
+    static func channelRecord(orgId: String, channel: String, locale: String, refresh: Bool = false, base: URL) async throws -> ChannelRecord {
+        var q = ["orgId": orgId, "channel": channel, "locale": locale]
+        if refresh { q["refresh"] = "1" }
+        // Written the first time it is asked for: the model reads the channel.
+        return try await call("GET", "/record", base: base, query: q, timeout: 150, as: ChannelRecord.self)
+    }
+
+    /// The same record as Markdown, to paste anywhere.
+    static func channelRecordMarkdown(orgId: String, channel: String, locale: String, base: URL) async throws -> String {
+        guard let token = SessionStore.sessionToken else { throw Failure.notSignedIn }
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: true)
+        components?.path = "/record"
+        components?.queryItems = [URLQueryItem(name: "orgId", value: orgId), URLQueryItem(name: "channel", value: channel), URLQueryItem(name: "locale", value: locale), URLQueryItem(name: "format", value: "md")]
+        guard let url = components?.url else { throw Failure.server(0, nil) }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 120
+        request.setValue(token, forHTTPHeaderField: "x-session-token")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw Failure.server((response as? HTTPURLResponse)?.statusCode ?? 0, nil) }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func call<T: Decodable>(_ method: String, _ path: String, base: URL, query: [String: String] = [:], body: [String: Any]? = nil, timeout: TimeInterval = 20, as type: T.Type) async throws -> T {
         guard let token = SessionStore.sessionToken else { throw Failure.notSignedIn }
         var components = URLComponents(url: base, resolvingAgainstBaseURL: true)
         components?.path = path
@@ -341,7 +388,7 @@ enum ChatService {
         guard let url = components?.url else { throw Failure.server(0, nil) }
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.timeoutInterval = 20
+        request.timeoutInterval = timeout
         request.setValue(token, forHTTPHeaderField: "x-session-token")
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -372,6 +419,13 @@ enum ChatService {
     static func businesses(orgId: String, base: URL) async throws -> [ChatBusiness] {
         struct R: Decodable { let businesses: [ChatBusiness] }
         return try await call("GET", "/businesses", base: base, query: ["orgId": orgId], as: R.self).businesses
+    }
+
+    /// Messages in this reader's language: `translations` by id, from what
+    /// is kept or written now; `off` when the reader turned it off.
+    struct Translations: Decodable { let translations: [String: String]; let off: Bool? }
+    static func translate(orgId: String, channel: String, ids: [String], locale: String, base: URL) async throws -> Translations {
+        try await call("POST", "/channels/translate", base: base, body: ["orgId": orgId, "channel": channel, "ids": ids, "locale": locale], timeout: 60, as: Translations.self)
     }
 
     static func messages(orgId: String, channel: String, before: String? = nil, base: URL) async throws -> [ChatMessage] {

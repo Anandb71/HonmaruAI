@@ -196,3 +196,47 @@ final class ChannelAgentTests: XCTestCase {
         XCTAssertNil(older.channels)
     }
 }
+
+final class ChannelRecordTests: XCTestCase {
+    func testAChannelsRecordDecodesWithItsContext() throws {
+        let json = """
+        {"orgId":"o","channel":"research","businesses":[{"slug":"research","name":"Research",
+          "decided":[{"id":"c1","title":"Switch supplier","actionLabel":"承認","actor":"Mika","decidedAt":"2026-09-02T10:00:00Z","note":"cheaper"}],
+          "open":[{"id":"c2","title":"YCS26 research","recipient":"Gota","createdAt":"2026-09-26T00:00:00Z"}]}],
+         "context":"## 目的\\n- 調査","contextAt":"2026-09-26T10:00:00Z","contextNote":null}
+        """
+        let r = try JSONDecoder().decode(ChatService.ChannelRecord.self, from: Data(json.utf8))
+        XCTAssertEqual(r.section?.decided.first?.actor, "Mika")
+        XCTAssertEqual(r.section?.open.first?.recipient, "Gota")
+        XCTAssertEqual(r.context, "## 目的\n- 調査")
+    }
+
+    func testAnAgentCalledInATextIsFound() throws {
+        let agent = try JSONDecoder().decode(ChatAgent.self, from: Data(#"{"id":"a1","handle":"hayao","name":"Hayao"}"#.utf8))
+        ChatMentionDirectory.shared.update(members: [], groups: [], agents: [agent])
+        XCTAssertEqual(ChatMentionDirectory.shared.agentCalled(in: "@hayao YCS26を調べて")?.id, "a1")
+        XCTAssertEqual(ChatMentionDirectory.shared.agentCalled(in: "＠hayaoに頼む")?.id, "a1")
+        XCTAssertNil(ChatMentionDirectory.shared.agentCalled(in: "@gota 見て"))
+    }
+}
+
+final class ChatTranslationTests: XCTestCase {
+    func testOnlyMessagesInAnotherLanguageAreAskedForOnceAndAnEditAsksAgain() throws {
+        let t = ChatTranslations()
+        func msg(_ id: String, _ body: String, _ lang: String?) throws -> ChatMessage {
+            let json: [String: Any] = ["id": id, "channel": "b:cafe", "kind": "message", "body": body, "mine": false, "createdAt": "2026-09-27T00:00:00Z", "lang": lang as Any]
+            return try JSONDecoder().decode(ChatMessage.self, from: JSONSerialization.data(withJSONObject: json.compactMapValues { $0 is NSNull ? nil : $0 }))
+        }
+        let en = try msg("a", "The menu starts Monday", "en")
+        let ja = try msg("b", "月曜から始まります", "ja")
+        XCTAssertEqual(t.wanted([en, ja], reader: "ja").map(\.id), ["a"])
+        XCTAssertTrue(t.wanted([en], reader: "ja").isEmpty)
+        t.store("a", from: en.body, text: "メニューは月曜から")
+        XCTAssertEqual(t.shown(en).text, "メニューは月曜から")
+        t.toggle("a")
+        XCTAssertEqual(t.shown(en).text, "The menu starts Monday")
+        let edited = try msg("a", "The menu starts Tuesday", "en")
+        XCTAssertFalse(t.hasTranslation(edited))
+        XCTAssertEqual(t.wanted([edited], reader: "ja").map(\.id), ["a"])
+    }
+}

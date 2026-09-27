@@ -116,6 +116,8 @@ npx wrangler tail                              # live logs
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | pending | Web Push. `node scripts/vapid-keys.mjs` prints a pair — [docs/notifications.md](../docs/notifications.md) |
 | `MAILGUN_API_KEY` / `MAILGUN_DOMAIN` | pending | Email, the floor when no push reaches someone. `NOTIFY_EMAIL_FROM`, `MAILGUN_API_BASE`, `APP_WEB_URL` optional |
 | `CF_TURN_KEY_ID` / `CF_TURN_API_TOKEN` | optional | Jam (voice in a channel): Cloudflare TURN, for networks where browsers cannot reach each other directly. Or a fixed server: `JAM_TURN_URLS` (comma-separated), `JAM_TURN_USERNAME`, `JAM_TURN_CREDENTIAL`. Without either, STUN only |
+| `SUPADATA_API_KEY` | optional | Video transcripts for agents (YouTube, TikTok, X). YouTube refuses captions to server IPs ("Sign in to confirm you're not a bot"), so without this or `GEMINI_API_KEY` an agent summarises a video from its title, description and what others wrote about it |
+| `GEMINI_API_KEY` | optional | Second way to read a YouTube video: Gemini watches it (low media resolution, ~100 tokens a second) and writes down what it says. Free tier: public videos, up to 8 hours of YouTube a day. Key from https://aistudio.google.com. `GEMINI_MODEL` optional (default `gemini-2.5-flash`) |
 
 GitHub OAuth App: callback `tiktokforwork://oauth/callback`, homepage the base
 URL above.

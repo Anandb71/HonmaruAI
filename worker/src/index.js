@@ -539,7 +539,7 @@ async function handle(request, env, url, ctx) {
       if (request.method === "PUT") {
         if (!canEdit) return json({ message: "Only an admin of this workspace can change what its AI runs on." }, 403);
         const result = await saveAISettings(env.DB, orgId, {
-          model: body.model, openaiKey: body.openaiKey, typesafeKey: body.typesafeKey,
+          model: body.model, openaiKey: body.openaiKey, typesafeKey: body.typesafeKey, geminiKey: body.geminiKey,
         }, session.github_id);
         if (result.error) return json({ message: result.error }, 400);
         // What changed, never the key itself.
@@ -547,6 +547,7 @@ async function handle(request, env, url, ctx) {
           model: body.model ?? undefined,
           openaiKey: body.openaiKey === undefined ? undefined : (body.openaiKey ? "set" : "removed"),
           typesafeKey: body.typesafeKey === undefined ? undefined : (body.typesafeKey ? "set" : "removed"),
+          geminiKey: body.geminiKey === undefined ? undefined : (body.geminiKey ? "set" : "removed"),
         } });
       }
       return json({ orgId, canEdit, ...(await aiStatus(env, orgId)) });
@@ -1142,6 +1143,55 @@ async function handle(request, env, url, ctx) {
       await tellRoom(body.orgId);
       return json({ business: renamed, businesses: await listBusinesses(env.DB, body.orgId, { viewer: who }) });
     }
+    // Channels nobody talks in: no message from a person, no canvas, no
+    // bookmark — most of them made when cards were filed under names the
+    // AI made up, before it only chose among the team's own channels. The
+    // candidates to tidy away, with how many cards each holds.
+    if (url.pathname === "/businesses/unused" && request.method === "GET") {
+      const orgId = url.searchParams.get("orgId");
+      if (!orgId) return json({ message: "orgId is required" }, 400);
+      const denied = await requireMember(env, request, orgId);
+      if (denied) return denied;
+      const who = await viewerLogin();
+      const visible = (await listBusinesses(env.DB, orgId, { viewer: who })).filter((b) => !b.private);
+      const unused = [];
+      for (const b of visible) {
+        const key = `b:${b.slug}`;
+        const talk = await env.DB.prepare(
+          `SELECT (SELECT COUNT(*) FROM channel_messages WHERE org_id = ?1 AND channel = ?2 AND kind = 'message' AND deleted_at IS NULL)
+                + (SELECT COUNT(*) FROM channel_canvases WHERE org_id = ?1 AND channel = ?2)
+                + (SELECT COUNT(*) FROM channel_bookmarks WHERE org_id = ?1 AND channel = ?2) AS n,
+                  (SELECT COUNT(*) FROM cards WHERE org_id = ?1 AND json_extract(data, '$.business') = ?3) AS cards`
+        ).bind(orgId, key, b.slug).first().catch(() => null);
+        if (talk && Number(talk.n) === 0) unused.push({ slug: b.slug, name: b.name, createdAt: b.createdAt, cards: Number(talk.cards) || 0 });
+      }
+      return json({ channels: unused });
+    }
+    // Archive channels: out of every list, their cards and history kept.
+    // Anyone but a guest, as deleting one is.
+    if (url.pathname === "/businesses/archive" && request.method === "POST") {
+      const session = await getSession(env.DB, request.headers.get("x-session-token"));
+      if (!session) return json({ message: "invalid session" }, 401);
+      const body = await request.json().catch(() => ({}));
+      if (!body.orgId || !Array.isArray(body.slugs)) return json({ message: "orgId and slugs are required" }, 400);
+      const denied = await requireMember(env, request, body.orgId);
+      if (denied) return denied;
+      if (await isGuest(env.DB, body.orgId, session.github_id)) return json({ message: "A guest cannot archive channels." }, 403);
+      const who = await viewerLogin();
+      const me = await getUserByGithubId(env.DB, session.github_id);
+      const now = new Date().toISOString();
+      let archived = 0;
+      for (const slug of body.slugs.map(String).slice(0, 100)) {
+        if (!(await canTouchChannel(env.DB, body.orgId, slug, who))) continue;
+        const row = await env.DB.prepare("SELECT name FROM businesses WHERE org_id = ?1 AND slug = ?2 AND archived_at IS NULL").bind(body.orgId, slug).first();
+        if (!row) continue;
+        await env.DB.prepare("UPDATE businesses SET archived_at = ?3 WHERE org_id = ?1 AND slug = ?2").bind(body.orgId, slug, now).run();
+        await audit(env, request, { orgId: body.orgId, action: "channel.archived", actor: person(me), entity: { type: "channel", id: slug, name: `#${row.name}` } });
+        archived += 1;
+      }
+      if (archived) await tellRoom(body.orgId);
+      return json({ archived, businesses: await listBusinesses(env.DB, body.orgId, { viewer: who }) });
+    }
     if (url.pathname === "/businesses" && request.method === "DELETE") {
       const body = await request.json().catch(() => ({}));
       if (!body.orgId || !body.slug) return json({ message: "orgId and slug are required" }, 400);
@@ -1173,13 +1223,23 @@ async function handle(request, env, url, ctx) {
       const session = await getSession(env.DB, request.headers.get("x-session-token"));
       const me = await getUserByGithubId(env.DB, session.github_id);
       const locale = normalizeLocale(url.searchParams.get("locale")) || me?.locale || "en";
-      const record = await buildRecord(env.DB, orgId, { locale, viewer: me?.login || null });
+      // ?channel=b:slug: that channel only, with its context written out.
+      const wanted = String(url.searchParams.get("channel") || "");
+      const channel = /^b:[^\s]+$/.test(wanted) ? wanted.slice(2) : null;
+      const record = await buildRecord(env.DB, orgId, { locale, viewer: me?.login || null, channel });
+      let context = null;
+      if (channel && record.businesses.length) {
+        const { channelContext } = await import("./channelContext.js");
+        context = await channelContext(env, { orgId, key: `b:${channel}`, locale, githubId: session.github_id, refresh: url.searchParams.get("refresh") === "1" })
+          .catch((err) => { console.error("channel context failed", err?.message || err); return null; });
+      }
+      if (channel && !record.businesses.length) return json({ message: "No such channel." }, 404);
       if (url.searchParams.get("format") === "md") {
-        return new Response(recordToMarkdown(record, locale), {
+        return new Response(recordToMarkdown(record, locale, { context: context?.markdown || null }), {
           headers: { "content-type": "text/markdown; charset=utf-8", "access-control-allow-origin": "*" },
         });
       }
-      return json(record);
+      return json(context ? { ...record, context: context.markdown, contextAt: context.generatedAt, contextNote: context.noModel ? "noModel" : context.quota ? "quota" : null } : record);
     }
 
     // What this account can spend, and what there is to buy. Read by the
@@ -1237,6 +1297,7 @@ async function handle(request, env, url, ctx) {
         aliases: parseAliases(user.aliases),
         notifyEmail: Number(user.notify_email ?? 1) !== 0,
         pushWhileActive: Boolean(user.push_while_active),
+        translateMessages: Number(user.translate_messages ?? 1) !== 0,
         ...quietFields(user),
         supportedLocales: SUPPORTED_LOCALES,
         // The words of the notification a browser tab shows by itself, in
@@ -1327,6 +1388,10 @@ async function handle(request, env, url, ctx) {
       // Push the phone even while at the app on another device.
       if (body.pushWhileActive !== undefined) {
         await env.DB.prepare("UPDATE users SET push_while_active = ?2 WHERE github_id = ?1").bind(String(session.github_id), body.pushWhileActive ? 1 : 0).run();
+      }
+      // Messages in another language, shown in yours. On by default.
+      if (body.translateMessages !== undefined) {
+        await env.DB.prepare("UPDATE users SET translate_messages = ?2 WHERE github_id = ?1").bind(String(session.github_id), body.translateMessages ? 1 : 0).run();
       }
       // What you are called, and the username @ finds you by.
       if (body.name !== undefined) {

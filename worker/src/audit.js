@@ -67,6 +67,7 @@ export const AUDIT_ACTIONS = {
   "workspace.session_policy_applied": { category: "workspace", severity: "warning", text: "{actor} signed out everyone the login rules no longer allow" },
   "workspace.ai_settings_changed": { category: "workspace", severity: "warning", text: "{actor} changed the workspace AI settings" },
   "channel.created": { category: "channel", severity: "notice", text: "{actor} created {entity}" },
+  "channel.archived": { category: "channel", severity: "notice", text: "{actor} archived {entity}" },
   "channel.member_added": { category: "channel", severity: "notice", text: "{actor} added {entity} to a channel" },
   "channel.member_removed": { category: "channel", severity: "notice", text: "{actor} removed {entity} from a channel" },
   "channel.agent_added": { category: "channel", severity: "notice", text: "{actor} added the agent {entity} to a channel" },
@@ -162,9 +163,29 @@ function canonical(value) {
 
 /// Record one event. `actor` and `entity` are { type, id, name }; `id` is a
 /// login for a person. Never throws.
+const MEMBERSHIP_CHANGES = new Set([
+  "member.joined", "member.removed", "member.left", "member.join_approved",
+  "scim.user_provisioned", "scim.user_activated", "scim.user_deactivated", "scim.user_deleted",
+]);
+
+async function tellTeamChanged(env, orgId) {
+  try {
+    const [{ announceEvents }, { custom }] = await Promise.all([import("./announce.js"), import("./agui/events.js")]);
+    await announceEvents(env, orgId, [custom("members_changed", {})]);
+  } catch { /* a screen still finds them on its next look */ }
+}
+
 export async function audit(env, request, { orgId, action, actor, entity = null, details = null, outcome = "success", severity = null }) {
   try {
     if (!env?.DB || !orgId || !action) return null;
+    // Whoever joined, left or was let in: every open screen reads the team
+    // again, so "@" finds a new member without a reload.
+    if (MEMBERSHIP_CHANGES.has(action) && outcome === "success") await tellTeamChanged(env, orgId);
+    // Somebody new is in: the team hears it in its first channel.
+    const joiner = action === "member.joined" ? actor?.id : (action === "member.join_approved" || action === "scim.user_provisioned" || action === "scim.user_activated") ? entity?.id : null;
+    if (joiner && outcome === "success") {
+      try { const { announceJoin } = await import("./joins.js"); await announceJoin(env, orgId, String(joiner)); } catch { /* the member list still shows them */ }
+    }
     const known = AUDIT_ACTIONS[action] || { category: action.split(".")[0], severity: "info" };
     const now = Date.now();
     const id = `aud_${now.toString(36)}${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;

@@ -278,11 +278,13 @@ test("an agent researches with a reasoning model, web search and its own tools, 
 
   const { messages } = await (await get(`/channels/messages?${q({ orgId: ORG, channel: `ag:${made.agent.id}` })}`, mika)).json();
   expect(messages[1].body).toBe("*結論*\n*Blue Bottle* has 3 Kyoto cafes; the newest opened in 2025.\n\n*Sources*\n- Kyoto cafes: https://bluebottle.example/kyoto");
-  const calls = await env.DB.prepare("SELECT purpose FROM ai_calls WHERE org_id = ?1").bind(ORG).all();
-  expect(calls.results.map((r) => r.purpose)).toEqual(["agent", "agent"]);
+  // Two model rounds, and the one web search the first ran, at its own price.
+  const calls = await env.DB.prepare("SELECT purpose, model, usd FROM ai_calls WHERE org_id = ?1 ORDER BY rowid").bind(ORG).all();
+  expect(calls.results.map((r) => r.model)).toEqual(["gpt-5-mini", "web_search", "gpt-5-mini"]);
+  expect(calls.results[1]).toMatchObject({ purpose: "agent", usd: 0.01 });
 });
 
-test("in a channel an agent reads the web but not the team's decisions; a model that refuses the full call is tried bare", async () => {
+test("in a channel an agent reads the web but not the team's decisions; a model that refuses the full call is tried bare, its tools kept", async () => {
   await send("POST", "/channels/agents", toru, { orgId: ORG, markdown: HAYAO });
   const asked = [];
   fetchMock.get("https://api.openai.com").intercept({ path: "/v1/responses", method: "POST" }).reply(400, (opts) => {
@@ -295,7 +297,7 @@ test("in a channel an agent reads the web but not the team's decisions; a model 
   });
   const sent = await (await send("POST", "/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "@hayao autumn colours?" }, { OPENAI_API_KEY: "sk-test" })).json();
   expect(asked[0].tools.map((t) => t.name || t.type)).toEqual(["web_search", "read_url"]);
-  expect(asked[1]).toMatchObject({ model: "gpt-4o-mini", tools: [{ type: "web_search" }] });
+  expect(asked[1]).toMatchObject({ model: "gpt-4o-mini", tools: [{ type: "web_search" }, { type: "function", name: "read_url" }] });
   expect(asked[1].reasoning).toBeUndefined();
   const thread = await (await get(`/channels/thread?${q({ orgId: ORG, channel: "b:cafe", messageId: sent.message.id })}`, mika)).json();
   expect(thread.replies[0].body).toBe("Chestnut and amber.");
@@ -403,6 +405,7 @@ test("talk with the agents is left out of what a decision reads: calling one, an
   expect(kept.some((l) => l.includes("Autumn menu launches on the 1st"))).toBe(true);
   expect(kept.some((l) => l.includes("hayao") || l.includes("Hayao"))).toBe(false);
   expect(skip({ kind: "message", channel: "b:cafe", body: "@hayaoに 調べて" })).toBe(true);
+  expect(skip({ kind: "message", channel: "b:cafe", body: "@hayaoにお願い" })).toBe(true);
   expect(skip({ kind: "message", channel: "ag:x|mika", body: "hi" })).toBe(true);
   expect(skip({ kind: "message", channel: "b:cafe", body: "@AI ask Toru" })).toBe(false);
 });
@@ -417,4 +420,20 @@ test("a message to an agent never becomes a card for a person, even with @AI or 
   expect(cards.n).toBe(0);
   expect(routed.every((p) => p === "/v1/responses")).toBe(true);
   fetchMock.get("https://api.openai.com").interceptors = [];
+});
+
+test("an agent added from a preset and never changed follows the preset's current version; an edited one keeps its words", async () => {
+  const { textHash, upgradedInstructions } = await import("../src/agentPresets.js");
+  const EARLIER = "# 壁打ち相手\n\n反論することで、チームのアイデアを強くする役です。\n\n## 進め方\n- まずアイデアを一番良い形で一文にまとめる。\n- 次に: 懐疑的な人がする厳しい質問を3つ、最大のリスク、うまくいくために成り立っていなければならない前提。\n- 間違っていたら分かる、一番安い検証方法を提案する。\n- 率直に、でも親切に。反対するのはアイデアで、人ではない。";
+  const current = PRESETS.find((p) => p.id === "sparring").instructions.ja;
+  expect(upgradedInstructions(EARLIER)).toBe(current);
+  expect(upgradedInstructions(`${EARLIER}\n- うちの業界に合わせて`)).toBe(null);
+  expect(textHash("a  b\n c")).toBe(textHash("a b c"));
+  // Stored with the earlier words, it reads — and is written back — as the current ones.
+  const made = await (await send("POST", "/channels/agents", toru, { orgId: ORG, name: "壁打ち相手", handle: "sparring", instructions: "x", preset: "sparring" })).json();
+  await env.DB.prepare("UPDATE custom_agents SET instructions = ?1 WHERE id = ?2").bind(EARLIER, made.agent.id).run();
+  const { agents } = await (await get(`/channels/agents?${q({ orgId: ORG })}`, toru)).json();
+  expect(agents.find((a) => a.handle === "sparring").instructions).toBe(current);
+  const row = await env.DB.prepare("SELECT instructions FROM custom_agents WHERE id = ?1").bind(made.agent.id).first();
+  expect(row.instructions).toBe(current);
 });

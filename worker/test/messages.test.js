@@ -79,12 +79,15 @@ test("unsend: the message goes, for everyone, and only its author can", async ()
   expect((await del("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", messageId: m.id })).status).toBe(404);
 });
 
-test("a deleted message with a thread under it stays as a tombstone, without its words", async () => {
+test("a deleted message takes its thread with it: nothing is left to see", async () => {
   const m = await say(mika, "Which roaster?");
-  await say(toru, "The one on 3rd", { parentId: m.id });
-  await del("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", messageId: m.id });
-  const [seen] = await list(toru);
-  expect(seen).toMatchObject({ id: m.id, deleted: true, body: "", replyCount: 1 });
+  const r = await say(toru, "The one on 3rd", { parentId: m.id });
+  expect((await del("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", messageId: m.id })).status).toBe(200);
+  expect(await list(toru)).toHaveLength(0);
+  const reply = await env.DB.prepare("SELECT body, deleted_at FROM channel_messages WHERE id = ?1").bind(r.id).first();
+  expect(reply).toMatchObject({ body: "" });
+  expect(reply.deleted_at).toBeTruthy();
+  expect(await transcriptUpTo(env.DB, ORG, "b:cafe", new Date().toISOString())).toHaveLength(0);
 });
 
 test("replies go in a thread: off the main log, counted on the parent, readable together", async () => {

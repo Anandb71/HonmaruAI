@@ -47,6 +47,15 @@ export function noteUsage(provider, purpose, data) {
   provider.usage.push({ purpose, provider: provider.providerName || "OpenAI", model, input, output, usd: costOf(model, { input, output }) });
 }
 
+/// Searches the model ran with the hosted web search tool, which OpenAI
+/// bills per call on top of the tokens: $10 per thousand for a reasoning
+/// model, $25 for the others. One entry per response that searched.
+export function noteSearches(provider, purpose, model, count) {
+  if (!provider || !Array.isArray(provider.usage) || !(count > 0)) return;
+  const each = /^(gpt-5|gpt-6|o\d)/i.test(String(model || "")) ? 0.01 : 0.025;
+  provider.usage.push({ purpose, provider: provider.providerName || "OpenAI", model: "web_search", input: 0, output: 0, usd: Math.round(count * each * 1e6) / 1e6 });
+}
+
 /// A System One answer, in the same list.
 export function jevEntry(purpose, usage, model = "jev-latest") {
   const input = Number(usage?.input_tokens) || 0;

@@ -23,7 +23,7 @@ export type IconName =
   | 'repeat' | 'book' | 'terminal' | 'send'
   | 'pin' | 'bookmark' | 'chevron-left' | 'headphones' | 'chevron-down' | 'chevron-right' | 'more'
   | 'smile' | 'message' | 'paperclip' | 'clock' | 'edit' | 'x' | 'check'
-  | 'bell-off' | 'zap' | 'settings' | 'external' | 'list' | 'quote' | 'code' | 'sparkle' | 'refresh' | 'grid' | 'key' | 'link' | 'copy'
+  | 'bell-off' | 'zap' | 'settings' | 'external' | 'list' | 'list-ordered' | 'quote' | 'code' | 'sparkle' | 'refresh' | 'grid' | 'key' | 'link' | 'copy'
   | 'mic-off' | 'video' | 'video-off' | 'monitor' | 'phone-off' | 'maximize' | 'minimize'
   | 'trash' | 'image' | 'file' | 'lock' | 'users' | 'download' | 'camera' | 'at' | 'star' | 'folder' | 'shield' | 'devices' | 'log-out' | 'crown' | 'eye'
 
@@ -278,13 +278,22 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <line x1="4" y1="18" x2="4.01" y2="18" />
     </>
   ),
-  // A block quote as the composer means it: a rule, and the lines it holds.
+  // Numbers down the side: a numbered list, not the bullets beside it.
+  'list-ordered': (
+    <>
+      <line x1="10" y1="6" x2="21" y2="6" />
+      <line x1="10" y1="12" x2="21" y2="12" />
+      <line x1="10" y1="18" x2="21" y2="18" />
+      <path d="M4 6h1v4" />
+      <path d="M4 10h2" />
+      <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+    </>
+  ),
+  // Quotation marks: a quote, which a rule beside lines read as a list.
   quote: (
     <>
-      <line x1="4" y1="5" x2="4" y2="19" />
-      <line x1="9" y1="7" x2="20" y2="7" />
-      <line x1="9" y1="12" x2="20" y2="12" />
-      <line x1="9" y1="17" x2="16" y2="17" />
+      <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z" />
+      <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z" />
     </>
   ),
   code: (

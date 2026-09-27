@@ -19,6 +19,8 @@ enum ChatMentionKind: Equatable { case ai, person, group, agent
 final class ChatMentionDirectory {
     static let shared = ChatMentionDirectory()
     private(set) var names: [String: ChatMentionKind] = [:]
+    /// The agents by folded handle: who "@hayao" is.
+    private(set) var agents: [String: ChatAgent] = [:]
 
     static func fold(_ s: String) -> String { s.precomposedStringWithCompatibilityMapping.lowercased() }
 
@@ -31,6 +33,7 @@ final class ChatMentionDirectory {
         for g in groups { out[Self.fold(g.handle)] = .group }
         for a in agents { out[Self.fold(a.handle)] = .agent }
         names = out
+        self.agents = Dictionary(agents.map { (Self.fold($0.handle), $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// What "@token" (or "＠token", or "@tokenに") names, or nil for nobody.
@@ -44,6 +47,23 @@ final class ChatMentionDirectory {
     }
 
     var isLoaded: Bool { names.count > 1 }
+
+    /// The first agent a text calls, "@hayao" or "@hayaoに" — an agent's
+    /// work is the agent's, never a card for a person.
+    func agentCalled(in text: String) -> ChatAgent? {
+        guard let regex = try? NSRegularExpression(pattern: #"[@＠]([^\s@＠,，。、!?！？:;)）」]+)"#) else { return nil }
+        let ns = text as NSString
+        for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let want = Self.fold(ns.substring(with: m.range(at: 1)))
+            if let a = agents[want] { return a }
+            // "@hayaoに頼む": the name, then a particle, then the rest.
+            for (handle, a) in agents where want.hasPrefix(handle) {
+                let next = want.dropFirst(handle.count).first
+                if next == "に" || next == "へ" { return a }
+            }
+        }
+        return nil
+    }
 }
 
 /// Slack's formatting, read back natively: *bold*, _italic_, ~strike~ and
@@ -74,6 +94,38 @@ enum ChatText {
                 out[r].font = .body.weight(.semibold)
             }
         }
+        return out
+    }
+}
+
+/// Messages in another language, in the reader's: kept per message with the
+/// words they were translated from (an edit asks again), and which ones the
+/// reader turned back to the original.
+final class ChatTranslations: ObservableObject {
+    static let shared = ChatTranslations()
+    @Published private(set) var texts: [String: (from: String, text: String)] = [:]
+    @Published var originals: Set<String> = []
+    var off = false
+    private var asked: Set<String> = []
+
+    func store(_ id: String, from: String, text: String) { texts[id] = (from, text) }
+    func shown(_ m: ChatMessage) -> (text: String, translated: Bool) {
+        if let t = texts[m.id], t.from == m.body, t.text.trimmingCharacters(in: .whitespacesAndNewlines) != m.body.trimmingCharacters(in: .whitespacesAndNewlines), !originals.contains(m.id) { return (t.text, true) }
+        return (m.body, false)
+    }
+    func hasTranslation(_ m: ChatMessage) -> Bool {
+        guard let t = texts[m.id], t.from == m.body else { return false }
+        return t.text.trimmingCharacters(in: .whitespacesAndNewlines) != m.body.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    func toggle(_ id: String) { if originals.contains(id) { originals.remove(id) } else { originals.insert(id) } }
+    /// The ones still to ask for, marked as asked.
+    func wanted(_ list: [ChatMessage], reader: String) -> [ChatMessage] {
+        guard !off else { return [] }
+        let out = list.filter { m in
+            guard m.deleted != true, let lang = m.lang, lang != reader, texts[m.id]?.from != m.body else { return false }
+            return !asked.contains("\(m.id):\(m.body)")
+        }
+        for m in out { asked.insert("\(m.id):\(m.body)") }
         return out
     }
 }
@@ -388,6 +440,7 @@ struct ChatMessageRow: View {
     let onProfile: (String) -> Void
 
     @Environment(\.chatAssets) private var assets
+    @ObservedObject private var translations = ChatTranslations.shared
     /// A message that is nothing but this workspace's emoji: drawn large.
     private var onlyEmoji: [String]? {
         let parts = message.body.split(whereSeparator: \.isWhitespace).map(String.init)
@@ -438,9 +491,16 @@ struct ChatMessageRow: View {
                     if let big = onlyEmoji {
                         HStack(spacing: 4) { ForEach(Array(big.enumerated()), id: \.offset) { _, e in ChatEmojiGlyph(emoji: e, size: 34) } }
                     } else if !message.body.isEmpty {
-                        ChatRichText(text: message.body)
+                        ChatRichText(text: translations.shown(message).text)
+                        if translations.hasTranslation(message) {
+                            Button { translations.toggle(message.id) } label: {
+                                Text(translations.shown(message).translated ? LocalizedStringKey("Translated · Show original") : LocalizedStringKey("Show translation"))
+                                    .font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
+                            }.buttonStyle(.plain)
+                        }
                     }
                     if let files = message.files, !files.isEmpty { ChatAttachments(files: files) }
+                    if message.kind == "message", let link = ChatLinkMetadata.firstLink(in: message.body) { ChatLinkPreview(url: link) }
                     if message.editedAt != nil {
                         Text("(edited)").font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -458,7 +518,14 @@ struct ChatMessageRow: View {
                         HStack(spacing: 6) {
                             HStack(spacing: -6) {
                                 ForEach(Array((message.replyRefs ?? []).prefix(3)), id: \.self) { ref in
-                                    ChatAvatar(name: nameOf(ref), size: 20, url: assets.avatars[ref])
+                                    // The AI and the team's agents answer in threads too.
+                                    if ref == "ai" {
+                                        ChatAvatar(name: String(localized: "Your AI"), isAI: true, size: 20)
+                                    } else if ref.hasPrefix("agent:") {
+                                        ChatAvatar(name: String(localized: "Agent"), size: 20, agentEmoji: "🤖")
+                                    } else {
+                                        ChatAvatar(name: nameOf(ref), size: 20, url: assets.avatars[ref])
+                                    }
                                 }
                             }
                             Text(n == 1 ? String(localized: "1 reply") : String(localized: "\(n) replies"))
@@ -492,6 +559,22 @@ struct ChatDayDivider: View {
                 .glassCapsule()
             VStack { Divider() }
         }.padding(.horizontal, 16).padding(.vertical, 6)
+    }
+}
+
+/// Somebody new came into the workspace: one quiet line, in your words.
+struct ChatJoinedRow: View {
+    let message: ChatMessage
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("👋").font(.body)
+            Text(String(localized: "\(message.authorName ?? String(localized: "Someone")) joined the workspace. Say hello!"))
+                .font(.subheadline).foregroundStyle(Theme.Colors.textPrimary)
+            Text(message.date, style: .time).font(.caption).foregroundStyle(Theme.Colors.textTertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -25,6 +25,31 @@ enum ProfileService {
         _ = try? await URLSession.shared.data(for: request)
     }
 
+    /// Whether messages in another language are shown translated. Nil when
+    /// it cannot be read; on is the default.
+    static func translateMessages(backendBaseURL: URL) async -> Bool? {
+        guard let token = SessionStore.sessionToken, !token.isEmpty else { return nil }
+        var request = URLRequest(url: backendBaseURL.appending(path: "me"))
+        request.timeoutInterval = 15
+        request.setValue(token, forHTTPHeaderField: "x-session-token")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return (json["translateMessages"] as? Bool) ?? true
+    }
+
+    static func setTranslateMessages(_ on: Bool, backendBaseURL: URL) async {
+        guard let token = SessionStore.sessionToken, !token.isEmpty,
+              let url = URL(string: "me", relativeTo: backendBaseURL) else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 15
+        request.setValue(token, forHTTPHeaderField: "x-session-token")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["translateMessages": on])
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
     /// The account's language as the Worker has it — the one every device
     /// follows. Nil when it cannot be read; the app keeps what it has.
     static func locale(backendBaseURL: URL) async -> String? {

@@ -8,7 +8,7 @@
 /// or when the budget is spent — then it is asked to answer from what it
 /// has, saying what it could not check.
 
-import { noteUsage } from "./ledger.js";
+import { noteUsage, noteSearches } from "./ledger.js";
 
 /// The research model when the workspace's own is not a reasoning one:
 /// gpt-4o-mini searches once and summarises the snippets; a reasoning model
@@ -16,7 +16,8 @@ import { noteUsage } from "./ledger.js";
 export const DEFAULT_AGENT_MODEL = "gpt-5-mini";
 const MAX_ROUNDS = 8;
 const MAX_FUNCTION_CALLS = 16;
-const MAX_TOOL_OUTPUT = 12000;
+// Room for a whole video transcript (links.js keeps those to 16,000).
+const MAX_TOOL_OUTPUT = 20000;
 const CALL_TIMEOUT_MS = 150000;
 
 /// A reasoning model: the ones that plan tool calls themselves and take
@@ -42,19 +43,20 @@ const COUNTRY = { ja: "JP", en: "US", es: "ES", fr: "FR", de: "DE", ko: "KR", zh
 /// The loop. `tools` are ours: { name: { description, parameters, run } }.
 /// Returns { called, answer, sources, rounds, calls } — `called` is whether
 /// any model was paid for; `answer` null when none came back.
-/// `plain`: the workspace's own model, the search tool bare, nothing a
-/// model might refuse — the retry when the full call is turned down.
-export async function research({ provider, env, instructions, input, tools = {}, language = "en", deadline = Date.now() + 240000, effort, plain = false, onRound = null }) {
+/// `plain`: the workspace's own model, the search tool bare, no reasoning
+/// settings — nothing a model might refuse — the retry when the full call
+/// is turned down. Our own tools stay.
+export async function research({ provider, env, instructions, input, tools = {}, language = "en", deadline = Date.now() + 240000, effort, plain = false, onRound = null, webSearch = true, maxOutput = null, mustLook = false }) {
   const endpoint = provider.endpoint.replace(/\/chat\/completions$/, "/responses");
   const model = plain ? provider.model : agentModelFor(env, provider);
   const reasoning = isReasoningModel(model);
   const country = COUNTRY[String(language || "").slice(0, 2).toLowerCase()];
   const definitions = [
-    plain ? { type: "web_search" } : {
+    ...(!webSearch ? [] : [plain ? { type: "web_search" } : {
       type: "web_search",
       search_context_size: "high",
       ...(country ? { user_location: { type: "approximate", country } } : {}),
-    },
+    }]),
     ...Object.entries(tools).map(([name, t]) => ({
       type: "function", name, description: t.description, parameters: t.parameters, strict: t.strict !== false,
     })),
@@ -83,10 +85,11 @@ export async function research({ provider, env, instructions, input, tools = {},
       model,
       instructions,
       input: next,
-      tools: definitions,
-      tool_choice: finalOnly ? "none" : "auto",
-      parallel_tool_calls: true,
-      max_output_tokens: reasoning ? 12000 : 3000,
+      ...(definitions.length ? { tools: definitions } : {}),
+      // `mustLook`: something the answer depends on could not be read, so
+      // the first round goes looking instead of answering from nothing.
+      ...(definitions.length ? { tool_choice: finalOnly ? "none" : (mustLook && rounds === 1 ? "required" : "auto"), parallel_tool_calls: true } : {}),
+      max_output_tokens: maxOutput || (reasoning ? 12000 : 3000),
       ...(previous ? { previous_response_id: previous } : {}),
       ...(reasoning ? { reasoning: { effort: effort || env?.AGENT_REASONING || "medium" } } : {}),
       // Verbosity is the GPT-5 family's; an o-series model refuses it.
@@ -116,6 +119,7 @@ export async function research({ provider, env, instructions, input, tools = {},
     }
     called = true;
     noteUsage(provider, "agent", data);
+    noteSearches(provider, "agent", data.model || model, (Array.isArray(data.output) ? data.output : []).filter((i) => i?.type === "web_search_call").length);
     last = data;
     previous = data.id || null;
 

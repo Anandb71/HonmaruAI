@@ -62,3 +62,20 @@ test("a tool that throws, or one that does not exist, is told to the model rathe
     { type: "function_call_output", call_id: "c2", output: "No tool named nope." },
   ]);
 });
+
+test("each web search is on the ledger at OpenAI's per-call price, beside the tokens", async () => {
+  const p = provider();
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/responses", method: "POST" }).reply(200, {
+    id: "r1", model: "gpt-5-mini", output_text: "Found it.",
+    output: [{ type: "web_search_call" }, { type: "web_search_call" }, { type: "web_search_call" }],
+    usage: { input_tokens: 1000, output_tokens: 200 },
+  });
+  await research({ provider: p, env: {}, instructions: "i", input: "q" });
+  const search = p.usage.find((u) => u.model === "web_search");
+  expect(search).toMatchObject({ purpose: "agent", input: 0, output: 0, usd: 0.03 });
+  expect(p.usage.find((u) => u.model === "gpt-5-mini")).toMatchObject({ input: 1000, output: 200 });
+  const { noteSearches } = await import("../src/ledger.js");
+  const q = { usage: [] };
+  noteSearches(q, "agent", "gpt-4o-mini", 2);
+  expect(q.usage[0].usd).toBe(0.05);
+});

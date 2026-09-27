@@ -406,6 +406,17 @@
 .mention-tag { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; background: rgba(124, 58, 237, .12); color: #7c3aed; flex: none; }
 .mention-option.on .mention-tag { background: rgba(255,255,255,.25); color: #fff; }
 .mention-emoji { width: 22px; height: 22px; object-fit: contain; flex: none; }
+.mention-menu:not(.emoji) { min-width: 300px; max-width: min(460px, calc(100vw - 32px)); }
+.mention-face { position: relative; width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
+.mention-face img { width: 24px; height: 24px; border-radius: 6px; object-fit: cover; display: block; }
+.mention-face .mention-avatar { width: 24px; height: 24px; }
+.mention-dot { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; background: #fff; border: 2px solid #9aa0a6; box-sizing: border-box; }
+.mention-dot.on { background: #2bac76; border-color: #fff; }
+.mention-option.on .mention-dot { border-color: #1264a3; }
+.mention-option.on .mention-dot:not(.on) { background: #1264a3; border-color: #fff; }
+.mention-at { width: 24px; height: 24px; display: grid; place-items: center; font-size: 16px; opacity: .75; flex: none; }
+.mention-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mention-side { margin-left: auto; padding-left: 12px; font-size: 12px; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .create-decision { position: relative; }
 @media (prefers-color-scheme: dark) {
   .thread-comment { color: #f2f2f2; }
@@ -423,6 +434,8 @@
   .mention-avatar { background: #2a2a2a; color: #f2f2f2; }
   .mention-avatar.agent { background: #2b2340; }
   .mention-tag { background: rgba(167, 139, 250, .18); color: #c4b5fd; }
+  .mention-dot { background: #1a1a1a; border-color: #7b8087; }
+  .mention-dot.on { background: #2bac76; border-color: #1a1a1a; }
 }
 
 /* A routine's report: a document inside the card. Its words can be selected
@@ -525,7 +538,7 @@
   .card.swipeable { animation: none; }
 }
 .swipe-hint-desk { margin-left: 8px; font-size: 12.5px; color: #838383; }
-.mention-handle { margin-left: auto; font-size: 12px; opacity: .7; }
+.mention-handle { font-size: 12px; opacity: .6; white-space: nowrap; }
 
 /* A daily report's draft: the words to post, editable in place. */
 .daily-text {

@@ -5,6 +5,12 @@
 /// Reader for everything else — so an agent can summarise what was shared
 /// instead of guessing from the URL. Every read is best effort: a site
 /// that refuses leaves what the others found, never an error.
+///
+/// YouTube shows a server "Sign in to confirm you're not a bot" instead of
+/// a video's captions, so from a Worker its own player rarely gives them.
+/// When the workspace has a transcript service's key, that reads them
+/// instead: Supadata (SUPADATA_API_KEY) for YouTube, TikTok and X, or
+/// Gemini (GEMINI_API_KEY), which watches a YouTube video itself.
 
 const TIMEOUT_MS = 8000;
 const MAX_LINKS = 3;
@@ -68,20 +74,112 @@ export function classifyLink(value) {
 }
 
 /// Read up to three links, in parallel. Never throws.
-export async function readLinks(urls, { language = "en" } = {}) {
+export async function readLinks(urls, { language = "en", env = null } = {}) {
   const list = (urls || []).slice(0, MAX_LINKS);
-  const read = await Promise.all(list.map((url) => readLink(url, { language }).catch(() => null)));
+  const read = await Promise.all(list.map((url) => readLink(url, { language, env }).catch(() => null)));
   return read.filter(Boolean);
 }
 
 /// One link: { url, kind, title, author, meta, text, transcript }.
-export async function readLink(url, { language = "en" } = {}) {
+export async function readLink(url, { language = "en", env = null } = {}) {
   if (!isPublicUrl(url)) return null;
   const link = classifyLink(url);
-  if (link.kind === "youtube") return readYouTube(url, link.id, language);
-  if (link.kind === "tiktok") return readTikTok(url);
+  if (link.kind === "youtube") return withTranscript(await readYouTube(url, link.id, language), url, { language, env, id: link.id });
+  if (link.kind === "tiktok") return withTranscript(await readTikTok(url), url, { language, env });
   if (link.kind === "x") return readPost(url, link);
   return readPage(url);
+}
+
+/// A video read without what is said in it: a transcript service fills it
+/// in when the workspace has one. Supadata gives the words; Gemini, for
+/// YouTube, watches the video and writes down what is said and shown.
+async function withTranscript(read, url, { language, env, id = null }) {
+  if (read?.transcript || !env) return read;
+  let transcript = "";
+  let source = "";
+  if (env.SUPADATA_API_KEY) {
+    transcript = await supadataTranscript(url, language, env.SUPADATA_API_KEY);
+    if (transcript) source = "supadata";
+  }
+  if (!transcript && id && env.GEMINI_API_KEY) {
+    transcript = await geminiTranscript(`https://www.youtube.com/watch?v=${id}`, language, env);
+    if (transcript) source = "gemini";
+  }
+  if (!transcript) return read;
+  const base = read || { url, kind: classifyLink(url).kind, title: "", author: "", meta: "", text: "" };
+  return { ...base, transcript: transcript.slice(0, MAX_TRANSCRIPT), transcriptSource: source };
+}
+
+const SUPADATA = "https://api.supadata.ai/v1/transcript";
+
+/// Supadata's transcript of a video, as plain text. A long video is a job
+/// it answers later: asked again for a while, then given up on.
+export async function supadataTranscript(url, language, key, { waitMs = 45000 } = {}) {
+  const headers = { "x-api-key": key };
+  try {
+    const q = new URLSearchParams({ url, text: "true", mode: "auto" });
+    if (language) q.set("lang", String(language).slice(0, 2));
+    const res = await fetch(`${SUPADATA}?${q}`, { headers, signal: AbortSignal.timeout(60000) });
+    if (!res.ok && res.status !== 202) {
+      console.error("supadata transcript failed", res.status);
+      return "";
+    }
+    let data = await res.json();
+    if (data?.jobId && !data.content) {
+      const until = Date.now() + waitMs;
+      while (Date.now() < until) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const poll = await fetch(`${SUPADATA}/${encodeURIComponent(data.jobId)}`, { headers, signal: AbortSignal.timeout(15000) });
+        if (!poll.ok) return "";
+        const job = await poll.json();
+        if (job?.status === "completed") { data = job; break; }
+        if (job?.status === "failed") return "";
+      }
+    }
+    return supadataText(data?.content);
+  } catch (err) {
+    console.error("supadata transcript failed", err?.message || err);
+    return "";
+  }
+}
+
+function supadataText(content) {
+  if (typeof content === "string") return content.replace(/\s+\n/g, "\n").trim();
+  if (Array.isArray(content)) return content.map((c) => String(c?.text || "")).join(" ").replace(/\s+/g, " ").trim();
+  return "";
+}
+
+/// Gemini watching a YouTube video: what is said, in order, with the
+/// times, and what is shown on screen when it matters. Public videos only;
+/// the free tier takes up to eight hours of YouTube a day.
+async function geminiTranscript(watchUrl, language, env) {
+  const model = env.GEMINI_MODEL || "gemini-2.5-flash";
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(120000),
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { file_data: { file_uri: watchUrl } },
+          { text: `Write down what this video says, in order, as a transcript with [mm:ss] times — in the video's own language. Where slides, charts, code or text on screen carry information, note it in brackets. No commentary, no summary. (The reader's language is ${language}.)` },
+        ] }],
+        // What is said is what matters: frames at low resolution cost a
+        // third of the tokens (about 100 a second instead of 300), so a long
+        // video fits the free tier's tokens-per-minute.
+        generationConfig: { temperature: 0.1, maxOutputTokens: 8000, mediaResolution: "MEDIA_RESOLUTION_LOW" },
+      }),
+    });
+    if (!res.ok) {
+      console.error("gemini transcript failed", res.status);
+      return "";
+    }
+    const data = await res.json();
+    return (data?.candidates?.[0]?.content?.parts || []).map((p) => p?.text || "").join("").trim();
+  } catch (err) {
+    console.error("gemini transcript failed", err?.message || err);
+    return "";
+  }
 }
 
 async function get(url, init = {}) {
@@ -272,6 +370,10 @@ function decodeEntities(s) {
 
 const LABEL = { youtube: "YouTube video", tiktok: "TikTok video", x: "Post on X", page: "Web page" };
 
+/// What an agent does when a video's words could not be read: it does not
+/// stop, and it does not ask. It finds what others wrote about the video.
+const NO_TRANSCRIPT = "Transcript: could not be read (the site blocks automated reading). Do not stop here and do not ask for permission: search the web now for the video's exact title (and channel) plus words like summary, transcript, notes or 要約, read the best results with read_url, and answer from them together with the title and description above. Say briefly that the summary is based on the description and on what others wrote about the video, not on the video itself. Never claim to have watched or listened to it.";
+
 /// What was read, for the model: each link, labelled, inside one block
 /// that says it is data.
 export function linksBlock(links) {
@@ -284,8 +386,8 @@ export function linksBlock(links) {
     if (l.author) lines.push(`By: ${l.author}`);
     if (l.meta) lines.push(`Details: ${l.meta}`);
     if (l.text) lines.push(`${l.kind === "page" ? "Content" : l.kind === "youtube" ? "Description" : "Text"}:\n${l.text}`);
-    if (l.transcript) lines.push(`Transcript:\n${l.transcript}`);
-    else if (l.kind === "youtube" || l.kind === "tiktok") lines.push("Transcript: not available — say so if the request needs what is said in the video.");
+    if (l.transcript) lines.push(`Transcript${l.transcriptSource === "gemini" ? " (written down by a model that watched the video)" : ""}:\n${l.transcript}`);
+    else if (l.kind === "youtube" || l.kind === "tiktok") lines.push(NO_TRANSCRIPT);
     let block = lines.join("\n");
     if (total + block.length > MAX_TOTAL) block = block.slice(0, Math.max(0, MAX_TOTAL - total));
     total += block.length;

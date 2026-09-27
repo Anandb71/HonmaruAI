@@ -14,7 +14,7 @@ import type { AgentFace } from '../utils/mentions'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, renderRich, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
 import type { DetailsTab, JournalCite } from './ChannelPanes'
 import { JamCall } from '../utils/jam'
@@ -63,6 +63,10 @@ interface Props {
   onTellAI: (text: string) => void
   /// Take a card back: the sender before it is decided, the recipient any time.
   onDeleteCard?: (cardId: string) => void
+  /// The conversation open now, for what shows beside it (the record).
+  onViewChange?: (view: string | null, name: string | null) => void
+  /// Open the record of the channel open now: its context and decisions.
+  onOpenRecord?: () => void
   /// A conversation (or a decision) fills a phone's screen: the shell hides
   /// its own chrome while this is true.
   onImmersive: (on: boolean) => void
@@ -199,7 +203,7 @@ function when(iso?: string): string {
 /// sidebar, then the conversation with a way back.
 export const ClassicList: React.FC<Props> = ({
   userId, orgName, pending, sent, decided, businesses, presence,
-  onOpen, onNudge, onDecide, api, onSearch, onCompose, onTellAI, onDeleteCard, onImmersive, renderCard, onWorkspace, workspaceMenu,
+  onOpen, onNudge, onDecide, api, onSearch, onCompose, onTellAI, onDeleteCard, onViewChange, onOpenRecord, onImmersive, renderCard, onWorkspace, workspaceMenu,
   onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen,
 }) => {
   const t = useT()
@@ -305,6 +309,12 @@ export const ClassicList: React.FC<Props> = ({
     window.addEventListener('honmaru:agents-changed', on)
     return () => window.removeEventListener('honmaru:agents-changed', on)
   }, [api.httpBase, api.orgId, authHeaders])
+  // Somebody joined or left: the people in the sidebar are read again too.
+  useEffect(() => {
+    const on = () => setChannelsTick((n) => n + 1)
+    window.addEventListener('honmaru:members-changed', on)
+    return () => window.removeEventListener('honmaru:members-changed', on)
+  }, [])
   useEffect(() => {
     fetch(`${api.httpBase}/channels/usergroups?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
       .then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.groups) setUserGroups(d.groups) }).catch(() => {})
@@ -489,7 +499,7 @@ export const ClassicList: React.FC<Props> = ({
     const called = agentsIn(agents, null).find((a) => {
       const h = a.handle.normalize('NFKC').toLowerCase()
       return (text.match(/[@＠][^\s@＠,，。、!?！？:;]+/g) || [])
-        .some((tok) => { const w = tok.slice(1).normalize('NFKC').toLowerCase(); return w === h || w.replace(/[にへ]$/, '') === h })
+        .some((tok) => { const w = tok.slice(1).normalize('NFKC').toLowerCase(); return w === h || w.replace(/[にへ]$/, '') === h || w.startsWith(`${h}に`) || w.startsWith(`${h}へ`) })
     })
     if (!called) { onTellAI(text); return }
     openAgent(called.id)
@@ -829,6 +839,7 @@ export const ClassicList: React.FC<Props> = ({
   }, [])
   const composer = useRef<HTMLTextAreaElement>(null)
   const view = current?.view
+  useEffect(() => { onViewChange?.(current?.view || null, current?.name || null) }, [current?.view, current?.name, onViewChange])
   // Whether there is more above what is loaded, per conversation.
   const [more, setMore] = useState<Record<string, boolean>>({})
   const PAGE = 150
@@ -888,6 +899,9 @@ export const ClassicList: React.FC<Props> = ({
         method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
         body: JSON.stringify({ orgId: api.orgId, channel: view }),
       }).then(() => setServerReads((prev) => ({ ...prev, [view]: now }))).catch(() => { /* this device still remembers */ })
+      // Read here, so no longer new in Activity: what was said in this
+      // conversation (a reply waits for its thread).
+      setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === view && !i.message.parentId && (i.at || i.message.createdAt) <= now ? { ...i, unread: false } : i)))
     }, 600)
     return () => clearTimeout(id)
   }, [view, api.orgId, messages[view || '']?.length])
@@ -933,10 +947,11 @@ export const ClassicList: React.FC<Props> = ({
         if (!list) return prev
         const has = list.some((x) => x.id === m.id)
         isNew = !has
-        if (m.deleted && !m.replyCount) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
+        // Deleted is gone — its thread with it — never a "was deleted" line.
+        if (m.deleted) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
         return { ...prev, [m.channel]: has ? list.map((x) => (x.id === m.id ? msg : x)) : [...list, msg] }
       })
-      setThread((prev) => (prev && prev.parent.id === m.id ? { ...prev, parent: msg } : prev))
+      setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
       if (!m.deleted && !m.editedAt && (isNew || !messagesRef.current[m.channel])) {
         setActivity((prev) => ({ ...prev, [m.channel]: { channel: m.channel, lastAt: m.createdAt, preview: m.body.slice(0, 120), lastBy: mine ? 'me' : m.authorName } }))
       }
@@ -1182,6 +1197,68 @@ export const ClassicList: React.FC<Props> = ({
   const [toolsOpen, setToolsOpen] = useState<string | null>(null)
   const [pickerFor, setPickerFor] = useState<string | null>(null)
   const [thread, setThread] = useState<{ channel: string; parent: ChannelMessage; replies: ChannelMessage[] } | null>(null)
+
+  // Messages in another language, in yours: translated once on the server
+  // and kept; the words they were translated from, so an edit asks again.
+  // "Show original" per message. Off when the person turned it off.
+  const readerLang = locale.slice(0, 2).toLowerCase()
+  const [translations, setTranslations] = useState<Record<string, { from: string; text: string }>>({})
+  const [originals, setOriginals] = useState<Set<string>>(new Set())
+  const [translateOff, setTranslateOff] = useState(false)
+  const asking = useRef<Set<string>>(new Set())
+  // Anything not in the language you set is translated into it — "latn"
+  // (Latin letters too few to name the language) included.
+  const needsTranslation = (m: ChannelMessage) => !translateOff && !m.deleted && Boolean(m.lang) && m.lang !== readerLang
+    && translations[m.id]?.from !== m.body && !asking.current.has(`${m.id}:${m.body}`)
+  const translate = useCallback(async (channel: string, list: ChannelMessage[]) => {
+    const want = list.filter(needsTranslation).slice(0, 60)
+    if (!want.length) return
+    for (const m of want) asking.current.add(`${m.id}:${m.body}`)
+    const res = await fetch(`${api.httpBase}/channels/translate`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel, ids: want.map((m) => m.id), locale: readerLang }),
+    }).catch(() => null)
+    const data = res?.ok ? await res.json().catch(() => null) : null
+    if (data?.off) { setTranslateOff(true); return }
+    if (data?.translations) {
+      setTranslations((prev) => {
+        const next = { ...prev }
+        for (const m of want) if (data.translations[m.id]) next[m.id] = { from: m.body, text: data.translations[m.id] }
+        return next
+      })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api.httpBase, api.orgId, authHeaders, translations, translateOff, readerLang])
+  // Whatever is on screen: the open conversation, and the thread beside it.
+  useEffect(() => {
+    if (!view) return
+    const id = setTimeout(() => { void translate(view, messages[view] || []) }, 250)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, messages[view || ''], translateOff])
+  useEffect(() => {
+    if (!thread) return
+    const id = setTimeout(() => { void translate(thread.channel, [thread.parent, ...thread.replies]) }, 250)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread, translateOff])
+  /// What to show for a message: its translation, unless asked for the original.
+  const shownBody = (m: ChannelMessage) => {
+    const tr = translations[m.id]
+    // A "translation" that is the message itself was yours already.
+    return tr && tr.from === m.body && tr.text.trim() !== m.body.trim() && !originals.has(m.id) ? { text: tr.text, translated: true } : { text: m.body, translated: false }
+  }
+  const translationNote = (m: ChannelMessage) => {
+    const tr = translations[m.id]
+    if (!tr || tr.from !== m.body || tr.text.trim() === m.body.trim()) return null
+    const showing = !originals.has(m.id)
+    return (
+      <button type="button" className="slk-translated" data-translated={showing ? '1' : '0'}
+        onClick={() => setOriginals((prev) => { const n = new Set(prev); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n })}>
+        {showing ? t('Translated · Show original') : t('Show translation')}
+      </button>
+    )
+  }
   /// The thread open beside the conversation, whose agents write there.
   const threadOpenParent = thread?.parent.id || null
   const [threadDraft, setThreadDraft] = useState('')
@@ -1276,9 +1353,14 @@ export const ClassicList: React.FC<Props> = ({
     if (done) setEditing(null)
   }
   const remove = async (channel: string, m: ChannelMessage) => {
-    if (!window.confirm(t('Delete this message? This cannot be undone.'))) return
-    await act('DELETE', '/channels/messages', channel, { messageId: m.id })
+    if (!window.confirm(m.replyCount ? t('Delete this message and its thread? This cannot be undone.') : t('Delete this message? This cannot be undone.'))) return
+    const done = await act('DELETE', '/channels/messages', channel, { messageId: m.id })
     if (editing?.id === m.id) setEditing(null)
+    // Gone here at once, and its thread with it.
+    if (done && !m.parentId) {
+      setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
+      setThread((prev) => (prev && prev.parent.id === m.id ? null : prev))
+    }
   }
   const togglePin = (channel: string, m: ChannelMessage) => void act('POST', '/channels/pins', channel, { messageId: m.id, pinned: !m.pinned })
   const openThread = async (channel: string, m: ChannelMessage) => {
@@ -1296,6 +1378,7 @@ export const ClassicList: React.FC<Props> = ({
   /// calling it unread.
   const markThreadRead = (channel: string, parentId: string) => {
     setThreadItems((prev) => prev && prev.map((x) => (x.parent.id === parentId ? { ...x, unread: false } : x)))
+    setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.parentId === parentId ? { ...i, unread: false } : i)))
     void fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, channel, thread: parentId }),
@@ -1631,12 +1714,36 @@ export const ClassicList: React.FC<Props> = ({
 
   // "@" in the composer offers the team — and the AI.
   const mentionable = useMembers(api.httpBase, api.orgId, api.sessionToken)
-  const withAI = useMemo(() => [
-    { ref: '__ai', name: 'AI' } as (typeof mentionable)[number],
-    ...mentionable,
-    ...userGroups.map((g) => ({ ref: `group:${g.handle}`, name: g.name, handle: g.handle, title: t('{n} people', { n: g.refs.length }) }) as (typeof mentionable)[number]),
-    ...agentMentionables(agentsIn(agents, current?.view), mentionable),
-  ], [mentionable, userGroups, agents, current?.view, t])
+  // Who is online, by the hash of their login the member list carries.
+  const onlineKeys = useMemo(() => {
+    const on = new Set<string>()
+    for (const [login, state] of Object.entries(presence)) if (state === 'online' && hashes.get(login)) on.add(hashes.get(login)!)
+    return on
+  }, [presence, hashes])
+  const withAI = useMemo(() => {
+    const view = current?.view || ''
+    // Who is in the conversation being written in: everyone, in a public
+    // channel; its people, in a private one, a group or a DM.
+    const privateKeys = current?.kind === 'channel' && current.private ? new Set(businesses.find((b) => b.slug === current.slug)?.memberKeys || []) : null
+    const inside = (m: (typeof mentionable)[number]) => {
+      if (m.mine) return true
+      if (current?.kind === 'channel') return privateKeys ? Boolean(m.presence && privateKeys.has(m.presence)) : true
+      if (view.startsWith('dm:')) return view === `dm:${m.ref}`
+      if (current?.kind === 'group') return Boolean(current.refs?.includes(m.ref))
+      return true
+    }
+    const people = mentionable.map((m) => ({ ...m, online: Boolean(m.presence && onlineKeys.has(m.presence)), outside: privateKeys && !privateKeys.size ? false : !inside(m) }))
+    const here = agentMentionables(agentsIn(agents, view), mentionable)
+    const everyone = people.filter((m) => !m.outside && !m.mine).length
+    return [
+      { ref: '__here', name: 'here', handle: 'here', special: 'here', detail: t('Notifies the {n} people in this conversation', { n: everyone }) } as (typeof mentionable)[number],
+      ...(here.length ? [{ ref: '__agents', name: 'agents', handle: 'agents', special: 'agents', handles: here.map((a) => a.handle!), detail: t('Calls all {n} agents in this conversation', { n: here.length }) } as (typeof mentionable)[number]] : []),
+      { ref: '__ai', name: 'AI' } as (typeof mentionable)[number],
+      ...people,
+      ...userGroups.map((g) => ({ ref: `group:${g.handle}`, name: g.name, handle: g.handle, title: t('{n} people', { n: g.refs.length }) }) as (typeof mentionable)[number]),
+      ...here,
+    ]
+  }, [mentionable, userGroups, agents, current, businesses, onlineKeys, t])
   const mention = useMentionMenu(composer, draft, setDraft, withAI)
   const threadMention = useMentionMenu(threadComposer, threadDraft, setThreadDraft, withAI)
   // @names that reach somebody light up as they are typed.
@@ -1808,9 +1915,22 @@ export const ClassicList: React.FC<Props> = ({
     return `slk-mention${kind === 'group' ? ' group' : ''}`
   })
 
+  /// One face beside "3 replies": the AI's mark, an agent's emoji, your own
+  /// photo, or a teammate's.
+  const replyFace = (r: string) => {
+    if (r === 'ai') return <img key={r} className="slk-face slk-face-ai" src="/icon.svg" alt="" width={20} height={20} />
+    if (r.startsWith('agent:')) {
+      const a = agents.find((x) => `agent:${x.id}` === r)
+      return <span key={r} className="slk-face slk-face-agent">{a?.emoji || '🤖'}</span>
+    }
+    const mine = r === myRef
+    return <Avatar key={r} className="slk-face" name={mine ? (myName || t('You')) : nameOfRef(r)} url={mine ? myAvatar : memberByRef(r)?.avatarUrl} size={20} />
+  }
+
   /// What sits under a message's words: its reactions and its thread.
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
+      {!m.deleted && m.kind === 'message' && <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken} />}
       {!m.deleted && (
         <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(m.id)} />
       )}
@@ -1818,7 +1938,7 @@ export const ClassicList: React.FC<Props> = ({
       {!inThread && (m.replyCount || 0) > 0 && (
         <button type="button" className="slk-thread-link" onClick={() => void openThread(channel, m)}>
           <span className="slk-thread-faces" aria-hidden="true">
-            {(m.replyRefs || []).slice(0, 3).map((r) => <Avatar key={r} className="slk-face" name={nameOfRef(r)} url={memberByRef(r)?.avatarUrl} size={20} />)}
+            {(m.replyRefs || []).slice(0, 3).map((r) => replyFace(r))}
           </span>
           <b>{m.replyCount === 1 ? t('1 reply') : t('{n} replies', { n: m.replyCount! })}</b>
           {m.lastReplyAt && <span className="slk-thread-last">{t('Last reply {when}', { when: when(m.lastReplyAt) })}</span>}
@@ -1859,10 +1979,11 @@ export const ClassicList: React.FC<Props> = ({
       <>
         {(m.body || m.editedAt) && (
           <div className="slk-text">
-            {rich(m.body)}
+            {rich(shownBody(m).text)}
             {m.editedAt && <span className="slk-edited" title={new Date(m.editedAt).toLocaleString(locale)}> {t('(edited)')}</span>}
           </div>
         )}
+        {translationNote(m)}
         <MessageFiles files={m.files} base={api.httpBase} />
       </>
     )
@@ -2237,11 +2358,24 @@ export const ClassicList: React.FC<Props> = ({
         prevWho = `card:${who.name}`
       } else {
         const m = item.msg
+        if (m.kind === 'joined') {
+          // Somebody new came into the workspace: one quiet line, in your words.
+          out.push(
+            <div key={m.id} className="slk-joined" data-joined={m.id}>
+              <span className="slk-joined-face" aria-hidden="true">{m.authorAvatar ? <img src={m.authorAvatar} alt="" /> : '👋'}</span>
+              <span className="slk-joined-text">{t('{name} joined the workspace. Say hello!', { name: m.authorName || t('Someone') })}</span>
+              <time className="slk-joined-time" dateTime={m.createdAt}>{new Date(Date.parse(m.createdAt)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+            </div>,
+          )
+          prevWho = ''
+          continue
+        }
         if (m.kind === 'ai') {
           const card = m.cardId ? cardsById.get(m.cardId) : undefined
           out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m) },
             <>
-              <div className="slk-text">{rich(m.body)}</div>
+              <div className="slk-text">{rich(shownBody(m).text)}</div>
+              {translationNote(m)}
               {card && attachment(card)}
               {jams[thread.view!]?.messageId === m.id && jamCard(thread.view!, jams[thread.view!])}
               {underneath(thread.view!, m)}
@@ -2468,6 +2602,7 @@ export const ClassicList: React.FC<Props> = ({
                   ))}
                 </span>
                 <button type="button" className="cl-nudge" onClick={() => void dailySummary(thread)}>{t('Daily summary to me')}</button>
+                {onOpenRecord && <button type="button" className="cl-nudge" onClick={() => { setSettings(false); onOpenRecord() }} data-open-record="1">{t('Record (Markdown)')}</button>}
                 {thread.private && <button type="button" className="cl-nudge" onClick={() => setAddingTo(thread.view!)} data-add-people="1">{t('Add people')}</button>}
                 {thread.private && <button type="button" className="cl-nudge" onClick={() => void leaveChannel(thread)} data-leave="1">{t('Leave channel')}</button>}
                 <button type="button" className="cl-nudge" onClick={() => { setRenaming(thread.slug!); setRenameTo(thread.name) }}>{t('Rename')}</button>
@@ -2646,6 +2781,8 @@ export const ClassicList: React.FC<Props> = ({
                 // Japanese owns Enter until it is done.
                 // On a phone the keyboard's return is a new line and the
                 // arrow sends, as in every phone chat app.
+                // A new line in a quote or a list carries its mark on.
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, draft, setDraft)) { e.preventDefault(); return }
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.view!, e.metaKey || e.ctrlKey) }
               }}
               disabled={sending}
@@ -3016,6 +3153,7 @@ export const ClassicList: React.FC<Props> = ({
               <SheetRow icon="folder" label={t('Move to a section')} hint={sectionOf(th.view!)?.name} onClick={close(() => setMoveSheet(th.view!))} data="move" />
               <SheetRow icon="file" label={t('Canvas')} onClick={close(() => openSide({ kind: 'canvas' }))} data="canvas" />
               <SheetRow icon="book" label={t('Context')} onClick={close(() => openSide({ kind: 'journal' }))} data="context" />
+              {th.kind === 'channel' && th.slug && onOpenRecord && <SheetRow icon="record" label={t('Record (Markdown)')} onClick={close(() => onOpenRecord())} data="record" />}
               <SheetRow icon="pin" label={t('Pinned messages')} onClick={close(() => void loadPins(th.view!))} data="pins" />
               {th.kind === 'channel' && <SheetRow icon="repeat" label={t('Automations')} hint={String(automationCount[th.view!] ?? 0)} onClick={close(() => openSide({ kind: 'details', tab: 'automations' }))} data="automations" />}
               {th.kind === 'channel' && th.slug && <SheetRow icon="settings" label={t('Channel settings')} onClick={close(() => { setSettings(true); setRenaming(null) })} data="settings" />}
@@ -3202,6 +3340,7 @@ export const ClassicList: React.FC<Props> = ({
               onClick={threadMention.track}
               onKeyDown={(e) => {
                 if (threadMention.onKeyDown(e)) return
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, e.metaKey || e.ctrlKey, thread.parent.id) }
               }}
               disabled={sending}
