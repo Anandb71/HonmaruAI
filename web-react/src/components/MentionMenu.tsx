@@ -128,7 +128,7 @@ export function useMentionMenu(
               </span>
             )}
             <span className="mention-name" title={m.title || undefined}>{m.special ? m.handle : m.name}</span>
-            {!m.special && m.handle && m.handle !== m.name && <span className="mention-handle">@{m.handle}</span>}
+            {!m.special && m.handle && <span className="mention-handle">@{m.handle}</span>}
             <span className="mention-side">
               {m.special ? m.detail : m.agent ? t('Agent') : m.outside ? t('Not in channel') : ''}
             </span>
