@@ -327,7 +327,7 @@ final class ChatStore: ObservableObject {
         let reader = String((appState?.readerLanguageCode ?? "en").prefix(2)).lowercased()
         let want = ChatTranslations.shared.wanted(list, reader: reader)
         guard !want.isEmpty else { return }
-        guard let got = try? await ChatService.translate(orgId: orgId, channel: channel, ids: want.prefix(60).map(\.id), base: base) else { return }
+        guard let got = try? await ChatService.translate(orgId: orgId, channel: channel, ids: want.prefix(60).map(\.id), locale: reader, base: base) else { return }
         if got.off == true { ChatTranslations.shared.off = true; return }
         for m in want { if let text = got.translations[m.id] { ChatTranslations.shared.store(m.id, from: m.body, text: text) } }
     }

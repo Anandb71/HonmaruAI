@@ -839,7 +839,10 @@ export async function handleChannels(request, env, url, { route, after }) {
     const ctx = await inChannel(env, request, body);
     if (ctx.denied) return ctx.denied;
     const me = ctx.who.user;
-    const locale = String(me.locale || "en").slice(0, 2);
+    // The language the reader set: what their screen says it is, else
+    // what their profile holds.
+    const asked = String(body.locale || "").slice(0, 2).toLowerCase();
+    const locale = /^[a-z]{2}$/.test(asked) ? asked : String(me.locale || "en").slice(0, 2);
     if (Number(me.translate_messages ?? 1) === 0) return json({ translations: {}, locale, off: true });
     const ids = [...new Set(body.ids.map(String))].slice(0, 60);
     const rows = (await Promise.all(ids.map((id) => getMessage(env.DB, body.orgId, id)))).filter((r) => r && r.channel === ctx.resolved.key);
