@@ -8,7 +8,7 @@
 /// or when the budget is spent — then it is asked to answer from what it
 /// has, saying what it could not check.
 
-import { noteUsage } from "./ledger.js";
+import { noteUsage, noteSearches } from "./ledger.js";
 
 /// The research model when the workspace's own is not a reasoning one:
 /// gpt-4o-mini searches once and summarises the snippets; a reasoning model
@@ -115,6 +115,7 @@ export async function research({ provider, env, instructions, input, tools = {},
     }
     called = true;
     noteUsage(provider, "agent", data);
+    noteSearches(provider, "agent", data.model || model, (Array.isArray(data.output) ? data.output : []).filter((i) => i?.type === "web_search_call").length);
     last = data;
     previous = data.id || null;
 
