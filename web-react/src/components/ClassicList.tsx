@@ -1705,12 +1705,36 @@ export const ClassicList: React.FC<Props> = ({
 
   // "@" in the composer offers the team — and the AI.
   const mentionable = useMembers(api.httpBase, api.orgId, api.sessionToken)
-  const withAI = useMemo(() => [
-    { ref: '__ai', name: 'AI' } as (typeof mentionable)[number],
-    ...mentionable,
-    ...userGroups.map((g) => ({ ref: `group:${g.handle}`, name: g.name, handle: g.handle, title: t('{n} people', { n: g.refs.length }) }) as (typeof mentionable)[number]),
-    ...agentMentionables(agentsIn(agents, current?.view), mentionable),
-  ], [mentionable, userGroups, agents, current?.view, t])
+  // Who is online, by the hash of their login the member list carries.
+  const onlineKeys = useMemo(() => {
+    const on = new Set<string>()
+    for (const [login, state] of Object.entries(presence)) if (state === 'online' && hashes.get(login)) on.add(hashes.get(login)!)
+    return on
+  }, [presence, hashes])
+  const withAI = useMemo(() => {
+    const view = current?.view || ''
+    // Who is in the conversation being written in: everyone, in a public
+    // channel; its people, in a private one, a group or a DM.
+    const privateKeys = current?.kind === 'channel' && current.private ? new Set(businesses.find((b) => b.slug === current.slug)?.memberKeys || []) : null
+    const inside = (m: (typeof mentionable)[number]) => {
+      if (m.mine) return true
+      if (current?.kind === 'channel') return privateKeys ? Boolean(m.presence && privateKeys.has(m.presence)) : true
+      if (view.startsWith('dm:')) return view === `dm:${m.ref}`
+      if (current?.kind === 'group') return Boolean(current.refs?.includes(m.ref))
+      return true
+    }
+    const people = mentionable.map((m) => ({ ...m, online: Boolean(m.presence && onlineKeys.has(m.presence)), outside: privateKeys && !privateKeys.size ? false : !inside(m) }))
+    const here = agentMentionables(agentsIn(agents, view), mentionable)
+    const everyone = people.filter((m) => !m.outside && !m.mine).length
+    return [
+      { ref: '__here', name: 'here', handle: 'here', special: 'here', detail: t('Notifies the {n} people in this conversation', { n: everyone }) } as (typeof mentionable)[number],
+      ...(here.length ? [{ ref: '__agents', name: 'agents', handle: 'agents', special: 'agents', handles: here.map((a) => a.handle!), detail: t('Calls all {n} agents in this conversation', { n: here.length }) } as (typeof mentionable)[number]] : []),
+      { ref: '__ai', name: 'AI' } as (typeof mentionable)[number],
+      ...people,
+      ...userGroups.map((g) => ({ ref: `group:${g.handle}`, name: g.name, handle: g.handle, title: t('{n} people', { n: g.refs.length }) }) as (typeof mentionable)[number]),
+      ...here,
+    ]
+  }, [mentionable, userGroups, agents, current, businesses, onlineKeys, t])
   const mention = useMentionMenu(composer, draft, setDraft, withAI)
   const threadMention = useMentionMenu(threadComposer, threadDraft, setThreadDraft, withAI)
   // @names that reach somebody light up as they are typed.

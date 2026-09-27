@@ -45,6 +45,21 @@ test("a DM, a mention, a thread: each person once, never the author", async () =
   expect(await recipientsOf(env.DB, ORG, { id: "x3", kind: "message", channel: "b:cafe", author_login: "toru", body: "morning" }, members)).toEqual([]);
 });
 
+test("@here reaches everyone who can read the conversation, never its author", async () => {
+  const members = await listMembers(env.DB, ORG, null);
+  const got = await recipientsOf(env.DB, ORG, { id: "h1", kind: "message", channel: "b:cafe", author_login: "toru", body: "@here standup in 5" }, members);
+  expect(got.map((r) => r.login).sort()).toEqual(["kenji", "mika"]);
+  expect(got.every((r) => r.reason === "mention")).toBe(true);
+});
+
+test("the member list carries a presence key that matches the relay's login, and no login", async () => {
+  const res = await (await call(`/members?orgId=${encodeURIComponent(ORG)}`, toru)).json();
+  const mika = res.members.find((m) => m.name === "Mika");
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("mika")));
+  expect(mika.presence).toBe([...bytes].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16));
+  expect(JSON.stringify(res.members)).not.toContain('"login"');
+});
+
 test("a mention through the API is queued, and sent after a minute", async () => {
   const res = await call("/channels/messages", toru, { method: "POST", body: { orgId: ORG, channel: "b:cafe", body: "@Mika the order?" } });
   expect(res.status).toBe(201);

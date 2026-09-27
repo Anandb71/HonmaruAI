@@ -128,6 +128,8 @@ export interface Business {
   /// Only its members see it; how many there are.
   private?: boolean
   memberCount?: number
+  /// A private channel's people, by the hash /members gives as `presence`.
+  memberKeys?: string[]
 }
 
 export interface AppState {

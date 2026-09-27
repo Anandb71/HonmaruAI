@@ -163,7 +163,7 @@ export async function decideFromMessage(env, { orgId, session, user, resolved, r
 
     // Whoever the message names decides; in a direct conversation with
     // nobody named, the other person does.
-    const named = resolveMentions(instruction, members).filter((m) => m.login !== user.login);
+    const named = resolveMentions(instruction, members, { here: false }).filter((m) => m.login !== user.login);
     const mentions = named.length ? named.map((m) => m.ref) : (resolved.kind === "dm" ? [resolved.other.ref] : []);
     await progress("routing");
     const res = await route({

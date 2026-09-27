@@ -140,7 +140,12 @@ export async function listMembers(db, orgId, viewerId) {
 /// taken off it.
 export async function listMembersForClient(db, orgId, viewerId) {
   const members = await listMembers(db, orgId, viewerId);
-  return members.map(({ userId, login, delegateLogin, ...shown }) => shown);
+  // `presence` matches the relay's online/offline events, which name a
+  // login, without handing the login itself to the client: the same hash
+  // the browser takes of the login an event names.
+  return Promise.all(members.map(async ({ userId, login, delegateLogin, ...shown }) => ({
+    ...shown, presence: (await sha256Hex(String(login || ""))).slice(0, 16),
+  })));
 }
 
 /// Take someone out of a workspace, or leave it yourself.

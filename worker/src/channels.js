@@ -682,7 +682,7 @@ export async function searchMessages(db, orgId, login, members, raw, { limit = 3
   const where = [`m.org_id = ?1`, VISIBLE, `m.deleted_at IS NULL`];
   const binds = [orgId, login];
   const add = (sql, value) => { binds.push(value); where.push(sql.replace("?", `?${binds.length}`)); };
-  const person = (name) => name === "me" ? members.find((m) => m.login === login) : resolveMentions(`@${name}`, members)[0];
+  const person = (name) => name === "me" ? members.find((m) => m.login === login) : resolveMentions(`@${name}`, members, { here: false })[0];
   if (q.text) add("m.body LIKE ? ESCAPE '\\'", likeOf(q.text));
   for (const phrase of q.phrases) add("m.body LIKE ? ESCAPE '\\'", likeOf(phrase));
   for (const word of q.not) add("m.body NOT LIKE ? ESCAPE '\\'", likeOf(word));
