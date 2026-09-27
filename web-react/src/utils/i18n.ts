@@ -1877,8 +1877,6 @@ const ja: Dict = {
   'Take {app} away? Everyone’s connection to it ends.': '{app} の許可を外しますか？全員の接続が終了します。',
   'Taken away.': '許可を外しました。',
   'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'ここで接続したものはあなた専用です。読むのはあなたとAIの1対1の会話だけで、チャンネルや他の人には届きません。オーナーが許可しない限り、読むだけで書き込みはしません。',
-  'Show translation': '翻訳を表示',
-  'Translated · Show original': '翻訳済み · 原文を表示',
 }
 
 // Most keys are their own English text. A few sentences are too long to read
@@ -3733,8 +3731,6 @@ const es: Dict = {
   'Take {app} away? Everyone’s connection to it ends.': '¿Quitar {app}? Terminan las conexiones de todos.',
   'Taken away.': 'Quitada.',
   'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'Lo que conectes aquí es solo tuyo: solo lo lee tu propia conversación con tu IA, nunca un canal ni nadie más. Lee y no escribe, salvo que un propietario lo permita.',
-  'Show translation': 'Mostrar traducción',
-  'Translated · Show original': 'Traducido · Ver original',
 }
 
 const fr: Dict = {
@@ -5536,8 +5532,6 @@ const fr: Dict = {
   'Take {app} away? Everyone’s connection to it ends.': 'Retirer {app} ? Les connexions de tous prennent fin.',
   'Taken away.': 'Retirée.',
   'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'Ce que vous connectez ici n’appartient qu’à vous : seule votre propre conversation avec votre IA le lit, jamais un canal ni quelqu’un d’autre. Elle lit sans écrire, sauf si un propriétaire l’a permis.',
-  'Show translation': 'Afficher la traduction',
-  'Translated · Show original': 'Traduit · Voir l’original',
 }
 
 const de: Dict = {
@@ -7339,8 +7333,6 @@ const de: Dict = {
   'Take {app} away? Everyone’s connection to it ends.': '{app} entfernen? Alle Verbindungen dazu enden.',
   'Taken away.': 'Entfernt.',
   'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'Was du hier verbindest, gehört nur dir: Nur dein eigenes Gespräch mit deiner KI liest es, nie ein Kanal oder jemand anderes. Es wird nur gelesen, nicht geschrieben – außer ein Eigentümer erlaubt es.',
-  'Show translation': 'Übersetzung anzeigen',
-  'Translated · Show original': 'Übersetzt · Original anzeigen',
 }
 
 const TABLES: Record<string, Dict> = { en, ja, es, fr, de }
