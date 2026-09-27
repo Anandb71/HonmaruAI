@@ -1358,3 +1358,6 @@
 .classic.slk.slk .mention-hl.m-agent { color: var(--slk-agent); background: color-mix(in srgb, var(--slk-agent) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--slk-agent) 16%, transparent); }
 .classic.slk.slk .slk-mention.group { color: #0f7b6c; background: rgba(15, 123, 108, 0.12); }
 .classic.slk.slk .mention-hl.m-group { color: #0f7b6c; background: rgba(15, 123, 108, 0.14); box-shadow: 0 0 0 1px rgba(15, 123, 108, 0.14); }
+/* An agent's or the AI's reply shown in the reader's language: a quiet way back to the words as written. */
+.classic.slk.slk .slk-translated { display: block; margin-top: 2px; padding: 0; border: 0; background: none; font-size: 12px; color: var(--slk-faint); cursor: pointer; }
+.classic.slk.slk .slk-translated:hover { color: var(--slk-text, inherit); text-decoration: underline; }

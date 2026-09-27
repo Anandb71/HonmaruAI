@@ -52,7 +52,7 @@ final class ChatStore: ObservableObject {
         let me = members.first { $0.mine }
         var avatars: [String: String] = [:]
         for m in members { if let a = m.avatarUrl, !a.isEmpty { avatars[m.ref] = a } }
-        return ChatAssets(emoji: emoji, base: baseURL, avatars: avatars, myAvatar: me?.avatarUrl, myName: me?.name)
+        return ChatAssets(emoji: emoji, base: baseURL, avatars: avatars, myAvatar: me?.avatarUrl, myName: me?.name, orgId: orgId)
     }
     /// A member's photo, by ref.
     func avatar(of ref: String?) -> String? {

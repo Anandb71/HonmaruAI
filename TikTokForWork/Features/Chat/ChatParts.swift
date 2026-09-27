@@ -161,6 +161,14 @@ struct ChatAssets {
     var avatars: [String: String] = [:]
     var myAvatar: String?
     var myName: String?
+    var orgId: String?
+    /// The language this screen is read in ("ja", "en", …): the one chosen
+    /// in the app, or the phone's own.
+    var readerLanguage: String {
+        let chosen = UserDefaults.standard.string(forKey: "appLanguage") ?? "system"
+        let code = chosen == "system" ? (Locale.preferredLanguages.first ?? "en") : chosen
+        return String(code.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first ?? "en")
+    }
     /// The photo to draw for a message's author.
     func avatar(of message: ChatMessage) -> String? {
         if let a = message.authorAvatar, !a.isEmpty { return a }
@@ -438,7 +446,7 @@ struct ChatMessageRow: View {
                     if let big = onlyEmoji {
                         HStack(spacing: 4) { ForEach(Array(big.enumerated()), id: \.offset) { _, e in ChatEmojiGlyph(emoji: e, size: 34) } }
                     } else if !message.body.isEmpty {
-                        ChatRichText(text: message.body)
+                        ChatReplyText(message: message)
                     }
                     if let files = message.files, !files.isEmpty { ChatAttachments(files: files) }
                     if message.editedAt != nil {
@@ -504,3 +512,48 @@ struct ChatNewLine: View {
         }.padding(.horizontal, 16).padding(.vertical, 4).accessibilityLabel("New messages")
     }
 }
+
+/// A message's words — and, for an agent's or the AI's reply written in
+/// another language than this reader's, the same reply in theirs, with the
+/// original a tap away. Someone asked in their language; each reader reads
+/// the answer in their own.
+struct ChatReplyText: View {
+    let message: ChatMessage
+    @Environment(\.chatAssets) private var assets
+    @State private var fetched: ChatTranslation?
+    @State private var showOriginal = false
+
+    private var reader: String { assets.readerLanguage }
+    private var differs: Bool {
+        guard message.isAgent || message.isAI, let lang = message.lang, !lang.isEmpty else { return false }
+        return lang != reader
+    }
+    private var translation: ChatTranslation? {
+        if let t = message.translation, t.lang == reader { return t }
+        if let f = fetched, f.lang == reader { return f }
+        return nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if differs, let translation, !showOriginal {
+                ChatRichText(text: translation.body)
+            } else {
+                ChatRichText(text: message.body)
+            }
+            if differs, translation != nil {
+                Button(showOriginal ? String(localized: "Show translation") : String(localized: "Translated · Show original")) { showOriginal.toggle() }
+                    .font(.caption2).foregroundStyle(Theme.Colors.textTertiary).buttonStyle(.plain)
+            }
+        }
+        .task(id: "\(message.id)|\(message.body.count)|\(reader)") {
+            guard differs, translation == nil, let base = assets.base, let orgId = assets.orgId else { return }
+            // A reply only just written is usually being translated already.
+            if Date().timeIntervalSince(message.date) < 20 { try? await Task.sleep(for: .seconds(4)) }
+            if let made = try? await ChatService.translate(orgId: orgId, channel: message.channel, messageId: message.id, locale: reader, base: base) {
+                fetched = made
+            }
+        }
+    }
+}
+
