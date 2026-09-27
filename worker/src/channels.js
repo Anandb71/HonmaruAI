@@ -1,6 +1,8 @@
 import { listMembers } from "./team.js";
 import { businessSlug } from "./db.js";
 import { resolveMentions } from "./threads.js";
+
+const NOBODY = new Set();
 import { filesFor, toFile } from "./files.js";
 import { accessFor, mayRead, membersOf, isGroupKey, hasGuests, publicAudience } from "./access.js";
 import { parseKeywords, keywordHit } from "./quiet.js";
@@ -525,7 +527,9 @@ export async function activityFeed(db, orgId, login, members, { days = 30, limit
   const keywords = parseKeywords(kw?.notify_keywords);
   const picked = [];
   for (const r of recent.results || []) {
-    const mention = r.body && resolveMentions(r.body, members).some((m) => m.login === login);
+    // "@here" was for whoever was at the app then — a push, not a later
+    // entry in Activity; "@channel" is for everyone.
+    const mention = r.body && resolveMentions(r.body, members, { online: NOBODY }).some((m) => m.login === login);
     const reply = r.parent_id && threads.has(r.parent_id);
     const keyword = !mention && !reply ? keywordHit(r.body, keywords) : null;
     if (!mention && !reply && !keyword) continue;
@@ -594,7 +598,7 @@ export async function threadsFor(db, orgId, login, members, { days = 30, limit =
     ).bind(orgId, login, new Date(Date.now() - 90 * 86400000).toISOString()).all(),
   ]);
   const inThread = new Set((mine.results || []).map((r) => r.thread));
-  const named = (row) => Boolean(row.body) && resolveMentions(row.body, members).some((m) => m.login === login);
+  const named = (row) => Boolean(row.body) && resolveMentions(row.body, members, { online: NOBODY }).some((m) => m.login === login);
   // Replies by thread, newest first, in the order their newest reply came.
   const byParent = new Map();
   for (const r of recent.results || []) {

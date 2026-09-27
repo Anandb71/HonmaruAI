@@ -1735,8 +1735,10 @@ export const ClassicList: React.FC<Props> = ({
     const people = mentionable.map((m) => ({ ...m, online: Boolean(m.presence && onlineKeys.has(m.presence)), outside: privateKeys && !privateKeys.size ? false : !inside(m) }))
     const here = agentMentionables(agentsIn(agents, view), mentionable)
     const everyone = people.filter((m) => !m.outside && !m.mine).length
+    const onlineHere = people.filter((m) => !m.outside && !m.mine && m.online).length
     return [
-      { ref: '__here', name: 'here', handle: 'here', special: 'here', detail: t('Notifies the {n} people in this conversation', { n: everyone }) } as (typeof mentionable)[number],
+      { ref: '__here', name: 'here', handle: 'here', special: 'here', detail: t('Notifies the {n} people online here', { n: onlineHere }) } as (typeof mentionable)[number],
+      { ref: '__channel', name: 'channel', handle: 'channel', special: 'channel', detail: t('Notifies all {n} people in this conversation', { n: everyone }) } as (typeof mentionable)[number],
       ...(here.length ? [{ ref: '__agents', name: 'agents', handle: 'agents', special: 'agents', handles: here.map((a) => a.handle!), detail: t('Calls all {n} agents in this conversation', { n: here.length }) } as (typeof mentionable)[number]] : []),
       { ref: '__ai', name: 'AI' } as (typeof mentionable)[number],
       ...people,

@@ -45,11 +45,14 @@ test("a DM, a mention, a thread: each person once, never the author", async () =
   expect(await recipientsOf(env.DB, ORG, { id: "x3", kind: "message", channel: "b:cafe", author_login: "toru", body: "morning" }, members)).toEqual([]);
 });
 
-test("@here reaches everyone who can read the conversation, never its author", async () => {
+test("@channel reaches everyone who can read the conversation; @here only who is at the app", async () => {
   const members = await listMembers(env.DB, ORG, null);
-  const got = await recipientsOf(env.DB, ORG, { id: "h1", kind: "message", channel: "b:cafe", author_login: "toru", body: "@here standup in 5" }, members);
-  expect(got.map((r) => r.login).sort()).toEqual(["kenji", "mika"]);
-  expect(got.every((r) => r.reason === "mention")).toBe(true);
+  const all = await recipientsOf(env.DB, ORG, { id: "h1", kind: "message", channel: "b:cafe", author_login: "toru", body: "@channel standup in 5" }, members);
+  expect(all.map((r) => r.login).sort()).toEqual(["kenji", "mika"]);
+  expect(all.every((r) => r.reason === "mention")).toBe(true);
+  await noteActivity(env.DB, "mika");
+  const here = await recipientsOf(env.DB, ORG, { id: "h2", kind: "message", channel: "b:cafe", author_login: "toru", body: "@here standup in 5" }, members);
+  expect(here.map((r) => r.login)).toEqual(["mika"]);
 });
 
 test("the member list carries a presence key that matches the relay's login, and no login", async () => {
