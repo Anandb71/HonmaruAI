@@ -836,4 +836,5 @@ enum ChatService {
 extension Notification.Name {
     static let chatMessageEvent = Notification.Name("honmaru.chat.message")
     static let chatProgressEvent = Notification.Name("honmaru.chat.progress")
+    static let chatMembersChanged = Notification.Name("honmaru.chat.members")
 }

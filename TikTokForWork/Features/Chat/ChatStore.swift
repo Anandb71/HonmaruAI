@@ -99,6 +99,11 @@ final class ChatStore: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] note in self?.receiveProgress(note.object as? Data) }
             .store(in: &bag)
+        // Somebody joined or left: "@" and the people list know them now.
+        NotificationCenter.default.publisher(for: .chatMembersChanged)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in Task { await self?.refresh(); await self?.appState?.refreshWorkspaceMembers() } }
+            .store(in: &bag)
     }
 
     func bind(_ appState: AppState) { self.appState = appState }

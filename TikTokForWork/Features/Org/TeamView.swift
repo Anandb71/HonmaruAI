@@ -226,10 +226,9 @@ struct TeamView: View {
 
     private func inviteSubtitle(_ invite: TeamInvite) -> String {
         let who = invite.mine ? String(localized: "yours") : invite.creator
-        if invite.maxUses > 1 {
-            return "\(roleLabel(invite.role)) · \(who) · \(invite.uses)/\(invite.maxUses)"
-        }
-        return "\(roleLabel(invite.role)) · \(who)"
+        // Every link lets in whoever it reaches while it lives.
+        let reach = invite.uses > 0 ? String(localized: "\(invite.uses) joined") : String(localized: "anyone with the link")
+        return "\(roleLabel(invite.role)) · \(who) · \(reach)"
     }
 
     private func load() async {

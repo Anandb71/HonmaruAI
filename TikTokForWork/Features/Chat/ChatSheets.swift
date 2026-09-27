@@ -208,6 +208,7 @@ struct ChatActivityView: View {
 /// Later: messages saved to come back to.
 struct ChatLaterView: View {
     @ObservedObject var store: ChatStore
+    @ObservedObject private var translations = ChatTranslations.shared
     var body: some View {
         List {
             if store.saved.isEmpty {
@@ -222,7 +223,7 @@ struct ChatLaterView: View {
                                 .font(.caption).foregroundStyle(.orange)
                         }
                         Text(item.message.isAI ? String(localized: "Your AI") : (item.message.mine ? String(localized: "You") : item.message.authorName ?? "")).font(.subheadline.weight(.semibold))
-                        Text(item.message.body).font(.subheadline).lineLimit(3)
+                        Text(translations.shown(item.message).text).font(.subheadline).lineLimit(3)
                     }.padding(.vertical, 4)
                 }
                 .swipeActions {
@@ -233,7 +234,13 @@ struct ChatLaterView: View {
         .listStyle(.plain)
         .navigationTitle("Later")
         .refreshable { await store.loadLater() }
-        .task { await store.loadLater() }
+        .task {
+            await store.loadLater()
+            // In the language you set, by the conversation each came from.
+            for (channel, list) in Dictionary(grouping: store.saved.map(\.message).filter { !$0.mine }, by: \.channel) {
+                await store.translate(channel, list)
+            }
+        }
     }
 }
 
