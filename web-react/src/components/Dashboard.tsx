@@ -10,16 +10,6 @@ import type { PaletteAction } from './Palette'
 import { Icon } from './Icon'
 import { CreateDecision } from './CreateDecision'
 import { RecordSheet } from './RecordSheet'
-import { Team } from '../screens/Team'
-import { Tools } from '../screens/Tools'
-import { History } from '../screens/History'
-import { NotificationSettings } from '../screens/NotificationSettings'
-import { Plans } from '../screens/Plans'
-import { Profile } from '../screens/Profile'
-import { Insights } from '../screens/Insights'
-import { Automations } from '../screens/Automations'
-import { Playbook } from '../screens/Playbook'
-import { Agents } from '../screens/Agents'
 import type { FlagReason, Answer } from './Feed'
 import { NotificationsButton } from './NotificationsBanner'
 import { notifyNewDecision, setNotificationCopy, setTabBadge } from '../utils/notifications'
@@ -36,6 +26,20 @@ import type { Screen, Mode } from '../utils/route'
 import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
 import { loadMembers, mentionedRefs } from '../utils/mentions'
 import type { ChannelMessage } from '../types/card'
+
+// The screens a person opens now and then load when they are opened: the
+// first page is the conversation, not the settings behind it.
+const Team = React.lazy(() => import('../screens/Team').then((m) => ({ default: m.Team })))
+const Tools = React.lazy(() => import('../screens/Tools').then((m) => ({ default: m.Tools })))
+const History = React.lazy(() => import('../screens/History').then((m) => ({ default: m.History })))
+const NotificationSettings = React.lazy(() => import('../screens/NotificationSettings').then((m) => ({ default: m.NotificationSettings })))
+const Plans = React.lazy(() => import('../screens/Plans').then((m) => ({ default: m.Plans })))
+const Profile = React.lazy(() => import('../screens/Profile').then((m) => ({ default: m.Profile })))
+const Insights = React.lazy(() => import('../screens/Insights').then((m) => ({ default: m.Insights })))
+const Automations = React.lazy(() => import('../screens/Automations').then((m) => ({ default: m.Automations })))
+const Playbook = React.lazy(() => import('../screens/Playbook').then((m) => ({ default: m.Playbook })))
+const Agents = React.lazy(() => import('../screens/Agents').then((m) => ({ default: m.Agents })))
+
 
 interface Props {
   userId: string
@@ -947,6 +951,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
 
       {/* The design's own screens. Each takes the viewport while it is open,
           which is what makes them screens and not sheets. */}
+      <React.Suspense fallback={null}>
       {screen === 'team' && (
         <Team
           httpBase={relayHttpUrl}
@@ -1021,6 +1026,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           onClose={closeScreen}
         />
       )}
+      </React.Suspense>
 
       {showDebug && (
         <div className="debug-log">
