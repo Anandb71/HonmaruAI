@@ -388,7 +388,9 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
           onRound: () => progress(agent, "agent"),
         });
         if (result.called && allowance.metered) await allowance.consume();
-        text = result.answer || serverText(locale, "agent.failed");
+        // No answer: say why, so nobody waits on silence — the AI service
+        // turned it down (no call was paid for), or it ran out of time.
+        text = result.answer || serverText(locale, result.called ? "agent.failedEmpty" : "agent.failedService");
         if (result.answer) answered += 1;
       }
       const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: `agent:${agent.id}`, body: text, kind: "agent", parentId });
@@ -399,6 +401,11 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
       }
     } catch (err) {
       console.error("agent answer failed", safe(err?.message));
+      // Failed on the way: still a line in the thread, never silence.
+      try {
+        const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: `agent:${agent.id}`, body: serverText(locale, "agent.failedError"), kind: "agent", parentId });
+        if (out.row) await broadcastWithParent(env, orgId, resolved, out.row, members);
+      } catch { /* the database itself is down: nothing more to say */ }
     }
     await progress(agent, "done");
   }
