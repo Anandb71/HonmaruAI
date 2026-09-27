@@ -175,6 +175,11 @@ export async function audit(env, request, { orgId, action, actor, entity = null,
     // Whoever joined, left or was let in: every open screen reads the team
     // again, so "@" finds a new member without a reload.
     if (MEMBERSHIP_CHANGES.has(action) && outcome === "success") await tellTeamChanged(env, orgId);
+    // Somebody new is in: the team hears it in its first channel.
+    const joiner = action === "member.joined" ? actor?.id : (action === "member.join_approved" || action === "scim.user_provisioned" || action === "scim.user_activated") ? entity?.id : null;
+    if (joiner && outcome === "success") {
+      try { const { announceJoin } = await import("./joins.js"); await announceJoin(env, orgId, String(joiner)); } catch { /* the member list still shows them */ }
+    }
     const known = AUDIT_ACTIONS[action] || { category: action.split(".")[0], severity: "info" };
     const now = Date.now();
     const id = `aud_${now.toString(36)}${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;

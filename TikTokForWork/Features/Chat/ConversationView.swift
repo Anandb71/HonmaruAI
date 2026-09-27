@@ -192,6 +192,9 @@ struct ConversationView: View {
                 ChatDayDivider(date: m.date)
             }
             if index == firstNew { ChatNewLine() }
+            if m.kind == "joined" {
+                ChatJoinedRow(message: m).id(m.id)
+            } else {
             let joined = previous.map { $0.authorRef == m.authorRef && $0.kind == m.kind && m.date.timeIntervalSince($0.date) < 300 && Calendar.current.isDate($0.date, inSameDayAs: m.date) && m.pinned != true } ?? false
             ChatMessageRow(
                 message: m, joined: joined, highlighted: highlight == m.id,
@@ -209,6 +212,7 @@ struct ConversationView: View {
                 }
             }
             .contextMenu { if !m.isDeleted { menu(for: m) } }
+            }
         }
     }
 

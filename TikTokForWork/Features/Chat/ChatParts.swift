@@ -551,6 +551,22 @@ struct ChatDayDivider: View {
     }
 }
 
+/// Somebody new came into the workspace: one quiet line, in your words.
+struct ChatJoinedRow: View {
+    let message: ChatMessage
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("👋").font(.body)
+            Text(String(localized: "\(message.authorName ?? String(localized: "Someone")) joined the workspace. Say hello!"))
+                .font(.subheadline).foregroundStyle(Theme.Colors.textPrimary)
+            Text(message.date, style: .time).font(.caption).foregroundStyle(Theme.Colors.textTertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Where you left off.
 struct ChatNewLine: View {
     var body: some View {

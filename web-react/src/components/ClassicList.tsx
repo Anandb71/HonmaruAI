@@ -2342,6 +2342,18 @@ export const ClassicList: React.FC<Props> = ({
         prevWho = `card:${who.name}`
       } else {
         const m = item.msg
+        if (m.kind === 'joined') {
+          // Somebody new came into the workspace: one quiet line, in your words.
+          out.push(
+            <div key={m.id} className="slk-joined" data-joined={m.id}>
+              <span className="slk-joined-face" aria-hidden="true">{m.authorAvatar ? <img src={m.authorAvatar} alt="" /> : '👋'}</span>
+              <span className="slk-joined-text">{t('{name} joined the workspace. Say hello!', { name: m.authorName || t('Someone') })}</span>
+              <time className="slk-joined-time" dateTime={m.createdAt}>{new Date(Date.parse(m.createdAt)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+            </div>,
+          )
+          prevWho = ''
+          continue
+        }
         if (m.kind === 'ai') {
           const card = m.cardId ? cardsById.get(m.cardId) : undefined
           out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m) },

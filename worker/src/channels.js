@@ -382,7 +382,7 @@ export async function transcriptUpTo(db, orgId, key, createdAt, { limit = 24, sk
               (SELECT group_concat(f.name, ', ') FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id) AS file_names
          FROM channel_messages m
          LEFT JOIN users u ON u.login = m.author_login
-        WHERE m.org_id = ?1 AND m.channel = ?2 AND m.created_at <= ?3 AND m.deleted_at IS NULL
+        WHERE m.org_id = ?1 AND m.channel = ?2 AND m.created_at <= ?3 AND m.deleted_at IS NULL AND m.kind != 'joined'
         ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?4`
     )
     .bind(orgId, key, createdAt, skip ? limit * 3 : limit)
@@ -430,10 +430,10 @@ export async function channelActivity(db, orgId, viewerLogin, members) {
               (SELECT f.name FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id ORDER BY f.created_at LIMIT 1) AS file_name
          FROM channel_messages m
          JOIN (SELECT channel, MAX(created_at) AS at FROM channel_messages
-                WHERE org_id = ?1 AND deleted_at IS NULL AND parent_id IS NULL GROUP BY channel) latest
+                WHERE org_id = ?1 AND deleted_at IS NULL AND parent_id IS NULL AND kind != 'joined' GROUP BY channel) latest
            ON latest.channel = m.channel AND latest.at = m.created_at
          LEFT JOIN users u ON u.login = m.author_login
-        WHERE m.org_id = ?1 AND m.deleted_at IS NULL AND m.parent_id IS NULL`
+        WHERE m.org_id = ?1 AND m.deleted_at IS NULL AND m.parent_id IS NULL AND m.kind != 'joined'`
     )
     .bind(orgId)
     .all();
@@ -679,7 +679,7 @@ function span(value, unit) {
 
 export async function searchMessages(db, orgId, login, members, raw, { limit = 30 } = {}) {
   const q = parseQuery(raw);
-  const where = [`m.org_id = ?1`, VISIBLE, `m.deleted_at IS NULL`];
+  const where = [`m.org_id = ?1`, VISIBLE, `m.deleted_at IS NULL`, `m.kind != 'joined'`];
   const binds = [orgId, login];
   const add = (sql, value) => { binds.push(value); where.push(sql.replace("?", `?${binds.length}`)); };
   const person = (name) => name === "me" ? members.find((m) => m.login === login) : resolveMentions(`@${name}`, members, { here: false })[0];

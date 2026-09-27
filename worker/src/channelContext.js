@@ -52,7 +52,7 @@ async function gather(db, orgId, key, locale) {
       `SELECT data FROM cards WHERE org_id = ?1 AND json_extract(data, '$.business') = ?2 ORDER BY created_at ASC LIMIT 200`
     ).bind(orgId, key.slice(2)).all().catch(() => ({ results: [] })),
   ]);
-  const kept = (messages.results || []).filter((m) => !skip({ ...m, channel: key })).reverse();
+  const kept = (messages.results || []).filter((m) => m.kind !== "joined" && !skip({ ...m, channel: key })).reverse();
   const names = new Map();
   const nameOf = async (login) => {
     if (!login) return "someone";
