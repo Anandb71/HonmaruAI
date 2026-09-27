@@ -157,9 +157,24 @@ function canonical(value) {
 
 /// Record one event. `actor` and `entity` are { type, id, name }; `id` is a
 /// login for a person. Never throws.
+const MEMBERSHIP_CHANGES = new Set([
+  "member.joined", "member.removed", "member.left", "member.join_approved",
+  "scim.user_provisioned", "scim.user_activated", "scim.user_deactivated", "scim.user_deleted",
+]);
+
+async function tellTeamChanged(env, orgId) {
+  try {
+    const [{ announceEvents }, { custom }] = await Promise.all([import("./announce.js"), import("./agui/events.js")]);
+    await announceEvents(env, orgId, [custom("members_changed", {})]);
+  } catch { /* a screen still finds them on its next look */ }
+}
+
 export async function audit(env, request, { orgId, action, actor, entity = null, details = null, outcome = "success", severity = null }) {
   try {
     if (!env?.DB || !orgId || !action) return null;
+    // Whoever joined, left or was let in: every open screen reads the team
+    // again, so "@" finds a new member without a reload.
+    if (MEMBERSHIP_CHANGES.has(action) && outcome === "success") await tellTeamChanged(env, orgId);
     const known = AUDIT_ACTIONS[action] || { category: action.split(".")[0], severity: "info" };
     const now = Date.now();
     const id = `aud_${now.toString(36)}${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;

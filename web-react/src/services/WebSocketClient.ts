@@ -376,6 +376,9 @@ export class WebSocketClient {
       this.onChannelProgress?.(event.value)
     } else if (typeof event.name === 'string' && (event.name.startsWith('jam_') || event.name === 'channel_described' || event.name === 'channel_bookmarks' || event.name === 'channel_canvas') && event.value) {
       this.onJam?.(event.name, event.value)
+    } else if (event.name === 'members_changed') {
+      // Somebody joined or left: every list of the team is read again.
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('honmaru:members-changed'))
     } else if (event.name === 'reaction' && event.value) {
       this.onReaction?.(event.value.cardId, event.value.emoji, Boolean(event.value.on), event.value.by, event.value.reactions || {})
     }

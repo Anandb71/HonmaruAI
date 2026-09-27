@@ -309,6 +309,12 @@ export const ClassicList: React.FC<Props> = ({
     window.addEventListener('honmaru:agents-changed', on)
     return () => window.removeEventListener('honmaru:agents-changed', on)
   }, [api.httpBase, api.orgId, authHeaders])
+  // Somebody joined or left: the people in the sidebar are read again too.
+  useEffect(() => {
+    const on = () => setChannelsTick((n) => n + 1)
+    window.addEventListener('honmaru:members-changed', on)
+    return () => window.removeEventListener('honmaru:members-changed', on)
+  }, [])
   useEffect(() => {
     fetch(`${api.httpBase}/channels/usergroups?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
       .then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.groups) setUserGroups(d.groups) }).catch(() => {})
