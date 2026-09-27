@@ -405,6 +405,7 @@ test("talk with the agents is left out of what a decision reads: calling one, an
   expect(kept.some((l) => l.includes("Autumn menu launches on the 1st"))).toBe(true);
   expect(kept.some((l) => l.includes("hayao") || l.includes("Hayao"))).toBe(false);
   expect(skip({ kind: "message", channel: "b:cafe", body: "@hayaoに 調べて" })).toBe(true);
+  expect(skip({ kind: "message", channel: "b:cafe", body: "@hayaoにお願い" })).toBe(true);
   expect(skip({ kind: "message", channel: "ag:x|mika", body: "hi" })).toBe(true);
   expect(skip({ kind: "message", channel: "b:cafe", body: "@AI ask Toru" })).toBe(false);
 });

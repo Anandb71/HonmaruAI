@@ -56,7 +56,11 @@ final class ChatMentionDirectory {
         for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
             let want = Self.fold(ns.substring(with: m.range(at: 1)))
             if let a = agents[want] { return a }
-            if want.hasSuffix("に") || want.hasSuffix("へ"), let a = agents[String(want.dropLast())] { return a }
+            // "@hayaoに頼む": the name, then a particle, then the rest.
+            for (handle, a) in agents where want.hasPrefix(handle) {
+                let next = want.dropFirst(handle.count).first
+                if next == "に" || next == "へ" { return a }
+            }
         }
         return nil
     }

@@ -303,7 +303,9 @@ export function agentsCalled(text, agents) {
   for (const token of mentionTokens(text)) {
     // "@hayaoに…": the particle goes with the name, as with @AI.
     const want = fold(token).replace(/[にへ]$/u, "");
-    const hit = byHandle.get(fold(token)) || byHandle.get(want);
+    // "@hayaoに頼む": the name, a particle, then the rest of the sentence.
+    const particle = fold(token).match(/^(.+?)[にへ]/u)?.[1];
+    const hit = byHandle.get(fold(token)) || byHandle.get(want) || (particle && byHandle.get(particle));
     if (hit && !out.includes(hit)) out.push(hit);
     if (out.length >= MAX_CALLED) break;
   }

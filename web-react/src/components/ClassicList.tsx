@@ -493,7 +493,7 @@ export const ClassicList: React.FC<Props> = ({
     const called = agentsIn(agents, null).find((a) => {
       const h = a.handle.normalize('NFKC').toLowerCase()
       return (text.match(/[@＠][^\s@＠,，。、!?！？:;]+/g) || [])
-        .some((tok) => { const w = tok.slice(1).normalize('NFKC').toLowerCase(); return w === h || w.replace(/[にへ]$/, '') === h })
+        .some((tok) => { const w = tok.slice(1).normalize('NFKC').toLowerCase(); return w === h || w.replace(/[にへ]$/, '') === h || w.startsWith(`${h}に`) || w.startsWith(`${h}へ`) })
     })
     if (!called) { onTellAI(text); return }
     openAgent(called.id)
