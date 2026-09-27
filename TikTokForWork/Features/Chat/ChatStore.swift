@@ -323,6 +323,8 @@ final class ChatStore: ObservableObject {
     func markRead(_ view: String) async {
         guard let orgId, let base else { return }
         reads[view] = ChatDates.string(.now)
+        // Read here, so no longer new in Activity (a reply waits for its thread).
+        inbox = inbox.map { var i = $0; if i.unread && i.message.channel == view && i.message.parentId == nil { i.unread = false }; return i }
         await ChatService.markRead(orgId: orgId, channel: view, base: base)
     }
 
@@ -451,6 +453,11 @@ final class ChatStore: ObservableObject {
         guard let orgId, let base else { return }
         thread = ChatThread(parent: m, replies: [])
         if let t = try? await ChatService.thread(orgId: orgId, channel: m.channel, messageId: m.id, base: base), thread?.parent.id == m.id { thread = t }
+        // A thread opened is a thread read: Threads and Activity both stop
+        // calling its replies new.
+        inbox = inbox.map { var i = $0; if i.unread && i.message.parentId == m.id { i.unread = false }; return i }
+        if let i = threads.firstIndex(where: { $0.parent.id == m.id }) { threads[i].unread = false }
+        await ChatService.markThreadRead(orgId: orgId, channel: m.channel, parentId: m.id, base: base)
     }
     func pins(_ view: String) async -> [ChatMessage] {
         guard let orgId, let base else { return [] }

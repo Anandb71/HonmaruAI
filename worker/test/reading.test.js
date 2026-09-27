@@ -101,3 +101,16 @@ test("search finds what was said, with from:, in:, before:, and never across a D
   expect(await s(toru, "100%_")).toHaveLength(0);
   expect(parseQuery("price from:@mika in:#cafe is:pinned")).toMatchObject({ text: "price", from: "mika", in: "cafe", is: "pinned" });
 });
+
+test("what you read where it was said is no longer new in Activity: the conversation for a message, the thread for a reply", async () => {
+  const mine = await say(mika, "Which roaster should we use?");
+  await say(toru, "Answering", { parentId: mine.id });
+  await say(kenji, "@Mika the lease, please");
+  const unread = async () => (await (await get(`/channels/activity?${q({ orgId: ORG })}`, mika)).json()).items.filter((i) => i.unread).map((i) => i.message.body);
+  expect((await unread()).sort()).toEqual(["@Mika the lease, please", "Answering"]);
+  // Reading the channel clears the mention; the reply waits for its thread.
+  await post("/channels/read", mika, { orgId: ORG, channel: "b:cafe", at: new Date(Date.now() + 1000).toISOString() });
+  expect(await unread()).toEqual(["Answering"]);
+  await post("/channels/read", mika, { orgId: ORG, channel: "b:cafe", thread: mine.id, at: new Date(Date.now() + 1000).toISOString() });
+  expect(await unread()).toEqual([]);
+});
