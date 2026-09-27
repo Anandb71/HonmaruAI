@@ -24,7 +24,7 @@ import { needsLocalizing } from '../utils/language'
 import { aiHeaders } from '../utils/aiKey'
 import type { Screen, Mode } from '../utils/route'
 import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
-import { loadMembers, mentionedRefs } from '../utils/mentions'
+import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
 import type { ChannelMessage } from '../types/card'
 
 // The screens a person opens now and then load when they are opened: the
@@ -87,7 +87,8 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     const people = await loadMembers(relayUrl.replace(/^ws/, 'http'), orgId, sessionToken).catch(() => [])
     const me = people.find((p) => p.mine)
     const mine = message.mine || Boolean(me && message.authorRef === me.ref)
-    const mentionsMe = Boolean(me) && mentionedRefs(message.body || '', people).includes(me!.ref)
+    // Named, or everyone called with @channel / @all / @here.
+    const mentionsMe = Boolean(me) && (mentionedRefs(message.body || '', people).includes(me!.ref) || mentionsEveryone(message.body || ''))
     const open = getOpenView() === message.channel && document.visibilityState === 'visible' && document.hasFocus()
     const kind = soundForMessage({ mine, channel: message.channel, mentionsMe, kind: message.kind, parentId: message.parentId }, { level: levelOf(orgId, message.channel), open })
     if (kind) playSound(kind)

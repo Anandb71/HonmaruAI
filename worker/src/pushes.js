@@ -18,7 +18,7 @@ import { devicesForLogin, removeDevice, subscriptionsForLogin, removeSubscriptio
 import { sendPush, isDeadToken, isConfigured as apnsConfigured } from "./apns.js";
 import { sendWebPush, isWebPushConfigured, isDeadSubscription } from "./webpush.js";
 import { audienceOf } from "./access.js";
-import { resolveMentions } from "./threads.js";
+import { resolveMentions, mentionTokens, broadcastOf } from "./threads.js";
 import { viewOf } from "./channels.js";
 import { listMembers } from "./team.js";
 import { quietFor, keywordsIn, keywordHit } from "./quiet.js";
@@ -81,7 +81,7 @@ export async function recipientsOf(db, orgId, row, members) {
     for (const login of (await audienceOf(db, orgId, key)) || []) add(login, "direct");
   }
   // "@here": the people at the app in the last ten minutes.
-  const online = /(^|[\s(（「])@here\b/i.test(row.body || "") ? await onlineLogins(db) : null;
+  const online = mentionTokens(row.body || "").some((t) => broadcastOf(t) === "here") ? await onlineLogins(db) : null;
   for (const m of resolveMentions(row.body || "", members, { online })) add(m.login, "mention");
   // Words they asked to hear about, said anywhere they can read.
   for (const k of await keywordsIn(db, orgId)) if (keywordHit(row.body, k.keywords)) add(k.login, "keyword");

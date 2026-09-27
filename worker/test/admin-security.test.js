@@ -243,6 +243,22 @@ test("a webhook's deliveries are kept, can be sent again, and its secret replace
   expect(actions).toEqual(expect.arrayContaining(["webhook.created", "webhook.redelivered", "webhook.secret_rotated"]));
 });
 
+test("@channel and ＠all reach everyone in a channel — pushed and in Activity", async () => {
+  const members = await listMembers(env.DB, ORG, null);
+  for (const [id, body] of [["b1", "＠all 明日は9時集合です"], ["b2", "確認お願いします@channel"]]) {
+    const row = { id, org_id: ORG, channel: "b:hotel", author_login: "toru", body, kind: "message", created_at: new Date().toISOString() };
+    await env.DB.prepare("INSERT INTO channel_messages (id, org_id, channel, author_login, body, kind, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'message', ?6)").bind(row.id, ORG, row.channel, row.author_login, row.body, row.created_at).run();
+    const to = await recipientsOf(env.DB, ORG, row, members);
+    expect(to.map((r) => r.login)).toContain("mika");
+    expect(to.find((r) => r.login === "mika").reason).toBe("mention");
+    expect(to.map((r) => r.login)).not.toContain("toru");
+    // A guest not let into #hotel is not reached by a call to everyone there.
+    expect(to.map((r) => r.login)).not.toContain("gus");
+  }
+  const activity = await (await call(`/channels/activity?${q({ orgId: ORG })}`, mika)).json();
+  expect(activity.items.filter((i) => i.type === "mention").map((i) => i.message.body)).toEqual(expect.arrayContaining(["＠all 明日は9時集合です", "確認お願いします@channel"]));
+});
+
 test("keywords reach a person wherever they are said, and appear in Activity", async () => {
   expect(cleanKeywords(["Invoice", "invoice", " 見積 ", "a", ""])).toEqual(["Invoice", "見積"]);
   expect(keywordHit("Where is the invoice?", ["invoice"])).toBe("invoice");

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mentionQuery, matchMembers, insertMention, mentionedRefs, splitMentions, mentionKind, mentionSegments } from './mentions'
+import { mentionQuery, matchMembers, insertMention, mentionedRefs, splitMentions, mentionKind, mentionSegments, mentionsEveryone, broadcastOf } from './mentions'
 
 const team = [
   { ref: 'r1', name: 'Toru Bando' },
@@ -30,6 +30,23 @@ describe('mentions', () => {
   it('reads the refs of whoever was named, by first name, full name or alias', () => {
     expect(mentionedRefs('@Mika and @Toru: look. @美香 too, @nobody not', team)).toEqual(['r2', 'r1'])
     expect(mentionedRefs('nothing here', team)).toEqual([])
+  })
+
+  it('hears @channel, @all and @here as everyone — with ＠, and after Japanese words', () => {
+    for (const text of ['@channel 見て', '@all', '＠all 確認', '確認お願いします@channel', '@allの皆さん', '@here']) expect(mentionsEveryone(text)).toBe(true)
+    for (const text of ['@alliance', '@channels', 'toru@all.jp', 'https://youtube.com/@channel', '@Mika']) expect(mentionsEveryone(text)).toBe(false)
+    expect(broadcastOf('@all')).toBe('channel')
+    expect(broadcastOf('＠here')).toBe('here')
+    expect(mentionKind('@all', team)).toBe('group')
+    // A decision is still asked of the people named, not everyone.
+    expect(mentionedRefs('@channel please decide', team)).toEqual([])
+    expect(mentionedRefs('確認@Mika', team)).toEqual(['r2'])
+  })
+
+  it('offers names after ＠ and right after Japanese words', () => {
+    expect(mentionQuery('確認@Mi', 5)).toEqual({ start: 2, query: 'Mi' })
+    expect(mentionQuery('＠ch', 3)).toEqual({ start: 0, query: 'ch' })
+    expect(mentionQuery('mail a@b', 8)).toBeNull()
   })
 
   it('splits a line so each @Name can be drawn', () => {

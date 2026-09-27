@@ -14,24 +14,38 @@ import { appendCardEvent } from "./events.js";
 export const MAX_COMMENT_CHARS = 2000;
 export const REACTIONS = ["👍", "✅", "👀", "🙏", "🎉", "❓"];
 
-/// `@name` tokens in a text, as written: "@Kenji", "@kenji.t", "@美香".
-/// A mention runs to the next space or punctuation that is not part of a
-/// handle; the resolver decides which of these name anyone.
+/// `@name` tokens in a text, as written: "@Kenji", "@kenji.t", "@美香",
+/// "＠channel" typed with a Japanese keyboard. A mention runs to the next
+/// space or punctuation that is not part of a handle; the resolver decides
+/// which of these name anyone. What comes before the "@" is the start, a
+/// space, a bracket or quote, or any letter outside ASCII ("確認@channel") —
+/// never an ASCII letter, digit or URL character, so "a@b.jp" and
+/// "youtube.com/@channel" are not mentions.
+export const MENTION_RE = /(^|[^\x21-\x7E]|[(\[{"'])[@＠]([^\s@＠,，。、!?！？:;)）」]+)/g;
 export function mentionTokens(text) {
   const out = [];
-  const re = /(^|[\s(（「])@([^\s@,，。、!?！？:;)）」]+)/g;
+  const re = new RegExp(MENTION_RE.source, "g");
   let m;
   while ((m = re.exec(String(text || "")))) out.push(m[2]);
   return out;
 }
 
 const fold = (s) => String(s || "").normalize("NFKC").toLowerCase();
+
+/// Whether a token calls everyone: "@channel" and "@all" everyone in the
+/// conversation, "@here" those at the app now. A Japanese word may follow
+/// ("@allの皆さん", "@channelへ"); an ASCII letter may not ("@alliance").
+export function broadcastOf(token) {
+  const m = /^(channel|all|here)(?![a-z0-9_.\-])/.exec(fold(token));
+  return m ? (m[1] === "all" ? "channel" : m[1]) : null;
+}
 const handleOf = (login) => fold(login).replace(/^(u:|email:)/, "").split("@")[0];
 
 /// Which members a text names. Matched by name (whole, or its first word),
 /// by handle (the part of the login before the @), by ref, or by alias when
 /// the member list carries them — case-folded, so "@kenji" finds "Kenji
 /// Tanaka". Unmatched tokens are left alone: "@everyone" is just a word.
+/// "@channel" and "@all" name everyone in `members`, "@here" those online.
 export function resolveMentions(text, members, { here = true, online = null } = {}) {
   const tokens = mentionTokens(text);
   if (!tokens.length) return [];
@@ -43,8 +57,9 @@ export function resolveMentions(text, members, { here = true, online = null } = 
     // logins, when the caller knows it. For a closed conversation the caller
     // keeps only the people in it. Deciding who decides, they name nobody
     // (`here: false`).
-    if (want === "channel" || want === "here") {
-      if (here) for (const m of members) if (want !== "here" || !online || online.has(m.login)) found.set(m.login, m);
+    const wide = broadcastOf(token);
+    if (wide) {
+      if (here) for (const m of members) if (wide !== "here" || !online || online.has(m.login)) found.set(m.login, m);
       continue;
     }
     for (const m of members) {
