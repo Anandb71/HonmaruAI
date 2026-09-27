@@ -142,7 +142,9 @@ interface Member {
   status?: { emoji: string | null; text: string | null; until: string | null } | null
   awayUntil?: string | null
 }
-interface Activity { channel: string; lastAt: string; preview: string; lastBy: string | null }
+/// `last`: the message the preview is, as it arrived live — for its preview
+/// to be put into the reader's language.
+interface Activity { channel: string; lastAt: string; preview: string; lastBy: string | null; last?: ChannelMessage }
 /// One of the team's agents answering somewhere.
 interface AgentWriting { id: string; name: string; emoji: string | null; parentId: string | null; at?: number }
 /// Whose face goes beside something: a name, and their photo if they have one.
@@ -953,7 +955,7 @@ export const ClassicList: React.FC<Props> = ({
       })
       setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
       if (!m.deleted && !m.editedAt && (isNew || !messagesRef.current[m.channel])) {
-        setActivity((prev) => ({ ...prev, [m.channel]: { channel: m.channel, lastAt: m.createdAt, preview: m.body.slice(0, 120), lastBy: mine ? 'me' : m.authorName } }))
+        setActivity((prev) => ({ ...prev, [m.channel]: { channel: m.channel, lastAt: m.createdAt, preview: m.body.slice(0, 120), lastBy: mine ? 'me' : m.authorName, last: msg } }))
       }
       if (m.kind === 'ai') {
         setThinking((prev) => ({ ...prev, [m.channel]: false }))
@@ -1242,6 +1244,26 @@ export const ClassicList: React.FC<Props> = ({
     return () => clearTimeout(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, translateOff])
+  // Activity and Threads, when they are open: their messages too, by
+  // the conversation each is in.
+  useEffect(() => {
+    const byChannel = new Map<string, ChannelMessage[]>()
+    const add = (m: ChannelMessage) => { if (!m.mine) byChannel.set(m.channel, [...(byChannel.get(m.channel) || []), m]) }
+    if (activityOpen) for (const i of activityItems || []) add(i.message)
+    if (threadsOpen) for (const x of threadItems || []) { add(x.parent); for (const r of x.replies) add(r) }
+    if (!byChannel.size) return
+    const id = setTimeout(() => { for (const [channel, list] of byChannel) void translate(channel, list) }, 300)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activityOpen, threadsOpen, activityItems, threadItems, translateOff])
+  // A preview that arrived live, in another language: translated too.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      for (const a of Object.values(activity)) if (a.last && !a.last.mine) void translate(a.channel, [a.last])
+    }, 400)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activity, translateOff])
   /// What to show for a message: its translation, unless asked for the original.
   const shownBody = (m: ChannelMessage) => {
     const tr = translations[m.id]
@@ -2144,7 +2166,7 @@ export const ClassicList: React.FC<Props> = ({
                   <span className="slk-thread-face" aria-hidden="true">{avatarFor(m.kind === 'ai' ? 'ai' : '', faceOfMessage(m))}</span>
                   <span className="slk-thread-text">
                     <span className="slk-act-line"><b>{who(m)}</b><span className="slk-act-when">{when(m.createdAt)}</span></span>
-                    <span className="slk-text">{rich(m.body.length > 400 ? `${m.body.slice(0, 400)}…` : m.body)}</span>
+                    <span className="slk-text">{(() => { const b = shownBody(m).text; return rich(b.length > 400 ? `${b.slice(0, 400)}…` : b) })()}</span>
                   </span>
                   {i === 0 && x.replyCount > x.replies.length && (
                     <button type="button" className="slk-thread-more" onClick={open}>{t('{n} more replies', { n: x.replyCount - x.replies.length })}</button>
@@ -2223,7 +2245,7 @@ export const ClassicList: React.FC<Props> = ({
                       <span className="slk-act-when">{when(i.at || m.createdAt)}</span>
                     </span>
                     {where(m.channel)}
-                    <span className="slk-act-body">{i.type === 'reaction' ? <>{t('You')}: </> : null}{m.body.slice(0, 280)}</span>
+                    <span className="slk-act-body">{i.type === 'reaction' ? <>{t('You')}: </> : null}{shownBody(m).text.slice(0, 280)}</span>
                     {i.type === 'reaction' && i.emoji && <span className="slk-note-reaction"><span><EmojiGlyph emoji={i.emoji} /></span> 1</span>}
                   </span>
                 </button>
@@ -2908,7 +2930,7 @@ export const ClassicList: React.FC<Props> = ({
             const a = th.view ? activity[th.view] : undefined
             const face = th.kind === 'person' ? members.find((m) => th.view === `dm:${m.ref}`) : undefined
             const at = a?.lastAt || (th.latest ? stamp(th.latest) : '')
-            const said = a ? `${a.lastBy === 'me' ? `${t('You')}: ` : ''}${a.preview}` : th.latest ? titleOf(th.latest) : (th.app === 'ai' ? t('Tell your AI…') : th.kind === 'agent' ? `@${th.agent?.handle || ''}` : t('Say hello'))
+            const said = a ? `${a.lastBy === 'me' ? `${t('You')}: ` : ''}${a.last ? shownBody(a.last).text.replace(/\s+/g, ' ').slice(0, 120) : a.preview}` : th.latest ? titleOf(th.latest) : (th.app === 'ai' ? t('Tell your AI…') : th.kind === 'agent' ? `@${th.agent?.handle || ''}` : t('Say hello'))
             return (
               <li key={th.key}>
                 <button type="button" className={`cl-dm${th.unread || th.fresh ? ' unread' : ''}`} onClick={() => choose(th.key)}>

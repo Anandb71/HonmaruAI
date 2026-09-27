@@ -166,7 +166,10 @@ export async function sendDuePushes(env, now = Date.now()) {
       const who = msg.author_name || "Someone";
       const title = where ? `${who} · ${where}` : who;
       const files = msg.body ? "" : "📎";
-      const body = clip(msg.body || files, 180);
+      // In the language they set.
+      const { textFor } = await import("./translate.js");
+      const said = msg.body ? await textFor(env, job.org_id, msg, job.login).catch(() => msg.body) : "";
+      const body = clip(said || files, 180);
       const delivered = await pushMessage(env, job.login, { title, body, orgId: job.org_id, channel: view, messageId: msg.id, parentId: msg.parent_id || null });
       if (delivered) sent += 1; else skipped += 1;
     } catch (err) {

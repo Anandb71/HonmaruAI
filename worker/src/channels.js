@@ -444,7 +444,7 @@ export async function recentBusinessTalk(db, orgId, slugs, { since, limit = 30 }
 export async function channelActivity(db, orgId, viewerLogin, members) {
   const { results } = await db
     .prepare(
-      `SELECT m.channel, m.body, m.kind, m.created_at, m.author_login, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name,
+      `SELECT m.id, m.channel, m.body, m.kind, m.created_at, m.author_login, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name,
               (SELECT f.name FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id ORDER BY f.created_at LIMIT 1) AS file_name
          FROM channel_messages m
          JOIN (SELECT channel, MAX(created_at) AS at FROM channel_messages
@@ -461,6 +461,8 @@ export async function channelActivity(db, orgId, viewerLogin, members) {
     const view = viewOf(r.channel, viewerLogin, members, access);
     if (!view) continue;
     out.push({
+      // For the caller to put the preview in the reader's language; not sent.
+      _row: { id: r.id, body: r.body },
       channel: view,
       lastAt: r.created_at,
       preview: (String(r.body).replace(/\s+/g, " ").trim() || (r.file_name ? `📎 ${r.file_name}` : "")).slice(0, 120),

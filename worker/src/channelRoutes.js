@@ -413,6 +413,25 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
   return answered;
 }
 
+/// The sidebar's previews in the language the reader set: kept translations
+/// at once, new ones by the model in one batch.
+async function previewsInLanguage(env, orgId, user, items) {
+  const rows = items.map((i) => i._row).filter((r) => r?.body);
+  let byId = {};
+  if (rows.length && Number(user.translate_messages ?? 1) !== 0) {
+    try {
+      const provider = await providerFor(env, orgId);
+      ({ byId } = await translateMessages(env.DB, orgId, rows, { locale: String(user.locale || "en").slice(0, 2), provider }));
+    } catch (err) {
+      console.error("preview translation failed", safe(err?.message));
+    }
+  }
+  return items.map(({ _row, ...item }) => {
+    const text = _row && byId[_row.id];
+    return text && text.trim() !== String(_row.body).trim() ? { ...item, preview: text.replace(/\s+/g, " ").trim().slice(0, 120) } : item;
+  });
+}
+
 export async function handleChannels(request, env, url, { route, after }) {
   const path = url.pathname;
 
@@ -436,7 +455,7 @@ export async function handleChannels(request, env, url, { route, after }) {
       groups: (await groupsOf(env.DB, orgId, who.user.login)).map((g) => ({
         view: g.key, refs: g.logins.filter((l) => l !== who.user.login).map(refOf).filter(Boolean),
       })),
-      activity: await channelActivity(env.DB, orgId, who.user.login, members),
+      activity: await previewsInLanguage(env, orgId, who.user, await channelActivity(env.DB, orgId, who.user.login, members)),
       prefs,
       // Your own away settings, with the delegate as a ref you can show.
       mine: me ? { status: me.status, awayUntil: me.awayUntil, delegateRef: members.find((m) => m.login === me.delegateLogin)?.ref || null } : null,
