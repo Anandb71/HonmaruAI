@@ -424,7 +424,7 @@ export const Team: React.FC<Props> = ({ httpBase, orgId, sessionToken, onLeft, o
                       {i.expiresAt && ` · ${t('until {when}', { when: new Date(i.expiresAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) })}`}
                       {/* A link is for whoever it is shared with, so it says who came
                           in by it, not a quota. */}
-                      {i.maxUses > 1 ? (i.uses > 0 ? ` · ${t('{n} joined', { n: i.uses })}` : ` · ${t('anyone with the link')}`) : ` · ${t('one person')}`}
+                      {i.uses > 0 ? ` · ${t('{n} joined', { n: i.uses })}` : ` · ${t('anyone with the link')}`}
                     </span>
                   </span>
                   {i.link && (

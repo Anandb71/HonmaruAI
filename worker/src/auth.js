@@ -14,11 +14,11 @@ const INVITE_TTL_DAYS = 3;
 /// How many people one link can let in while it lives: in effect, anyone it
 /// is shared with, bounded so a leaked link is not a door forever.
 export const LINK_MAX_USES = 500;
-/// Links made before then were made for one person, and the second person a
-/// shared link reached was told it had expired. Until they expire — three
-/// days — they let in everyone they were shared with, like a link made now.
-const LEGACY_LINKS_BEFORE = "2026-09-24T09:00:00Z";
-const legacyLink = (row) => Number(row.max_uses) === 1 && String(row.created_at || "") < LEGACY_LINKS_BEFORE;
+/// A "one person" invitation — the emailed kind — is forwarded too, and the
+/// second person it reached was told it had expired. Now none is made that
+/// way, and one already made lets in whoever it reaches while it lives,
+/// like any link. A count someone asked for (more than one) still holds.
+const openLink = (row) => Number(row.max_uses) === 1;
 
 /// The code inside whatever was pasted: a bare code, the link the app
 /// hands out (`…#/join/<code>`), or a code with spaces around it. A person
@@ -253,8 +253,8 @@ async function readInvite(db, code) {
 async function spendInvite(db, code) {
   const { meta } = await db
     .prepare(`UPDATE invites SET uses = uses + 1 WHERE code = ?1
-                AND (uses < max_uses OR (max_uses = 1 AND created_at < ?2))`)
-    .bind(inviteCodeFrom(code), LEGACY_LINKS_BEFORE)
+                AND (uses < max_uses OR (max_uses = 1 AND uses < ?2))`)
+    .bind(inviteCodeFrom(code), LINK_MAX_USES)
     .run();
   return Boolean(meta?.changes);
 }
@@ -314,7 +314,8 @@ export async function createInvite(env, { orgId, createdBy, role, uses, channels
   // told it had expired. A count still applies when one is asked for — an
   // emailed invite is one person's, and asks for one.
   const asked = parseInt(uses, 10);
-  const maxUses = Number.isFinite(asked) && asked > 0 ? Math.min(asked, LINK_MAX_USES) : LINK_MAX_USES;
+  // One is never a limit: a link is forwarded. Two or more is kept.
+  const maxUses = Number.isFinite(asked) && asked > 1 ? Math.min(asked, LINK_MAX_USES) : LINK_MAX_USES;
   const now = new Date();
   const expires = new Date(now.getTime() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
   // The non-secret name for this code, written now rather than derived on
@@ -365,7 +366,7 @@ export async function peekInvite(env, code) {
     .first();
   if (!row) return null;
   if (row.expires_at && new Date(row.expires_at) < new Date()) return null;
-  if (Number(row.uses) >= Number(row.max_uses) && !legacyLink(row)) return null;
+  if (Number(row.uses) >= Number(row.max_uses) && !(openLink(row) && Number(row.uses) < LINK_MAX_USES)) return null;
   return {
     orgId: row.org_id,
     team: row.team || null,

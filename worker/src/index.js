@@ -465,7 +465,7 @@ async function handle(request, env, url, ctx) {
         return json({ message: "You are not a member of this organization." }, 403);
       }
       { const held = await policyDenial(env, session, body.orgId); if (held) return json(held.body, held.status); }
-      const minted = await createInvite(env, { orgId: body.orgId, createdBy: session.github_id, role: body.role, uses: 1, channels: body.channels });
+      const minted = await createInvite(env, { orgId: body.orgId, createdBy: session.github_id, role: body.role, channels: body.channels });
       if (minted.error) return json({ message: minted.error }, 400);
       const sender = await getUserByGithubId(env.DB, session.github_id);
       const mail = composeInviteEmail({

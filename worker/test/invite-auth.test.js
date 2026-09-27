@@ -138,19 +138,22 @@ test("signup will not redeem an expired invite either", async () => {
   expect(await isMember(env.DB, VICTIM_ORG, result.userId)).toBe(false);
 });
 
-test("a code is spent after its permitted number of uses", async () => {
+test("\"one person\" is not a limit: a link lets in whoever it reaches while it lives", async () => {
   const { acceptInvite } = await import("../src/auth.js");
   const { upsertUser } = await import("../src/db.js");
   await upsertUser(env.DB, { githubId: "7101", login: "first", name: "First", avatarUrl: null, locale: "en" });
   await upsertUser(env.DB, { githubId: "7102", login: "second", name: "Second", avatarUrl: null, locale: "en" });
 
-  // Asked for one — an emailed invite is — it admits one.
+  // Asked for one, it is made for anyone it is forwarded to.
   const res = await worker.fetch(createInviteReq(ownerToken, { orgId: VICTIM_ORG, uses: 1 }), env);
   const { code, maxUses } = await res.json();
-  expect(maxUses).toBe(1);
-
+  expect(maxUses).toBeGreaterThan(1);
   expect((await acceptInvite(env, { code, userId: "7101" })).error).toBeUndefined();
-  expect((await acceptInvite(env, { code, userId: "7102" })).error).toBeTruthy();
+  expect((await acceptInvite(env, { code, userId: "7102" })).error).toBeUndefined();
+  // One made for one person before, still alive: it lets in the next too.
+  await env.DB.prepare("UPDATE invites SET max_uses = 1 WHERE code = ?1").bind(code).run();
+  await upsertUser(env.DB, { githubId: "7103", login: "third", name: "Third", avatarUrl: null, locale: "en" });
+  expect((await acceptInvite(env, { code, userId: "7103" })).error).toBeUndefined();
 });
 
 test("a code can be issued for several people when asked", async () => {
@@ -177,11 +180,12 @@ test("an already-member redemption does not spend the code", async () => {
   await upsertUser(env.DB, { githubId: "8100", login: "already", name: "Already", avatarUrl: null, locale: "en" });
   await upsertMembership(env.DB, VICTIM_ORG, "8100", "member");
 
-  const { code } = await createInvite(env, { orgId: VICTIM_ORG, createdBy: "7001", role: "member", uses: 1 });
+  const { code } = await createInvite(env, { orgId: VICTIM_ORG, createdBy: "7001", role: "member", uses: 2 });
   expect((await acceptInvite(env, { code, userId: "8100" })).error).toBeUndefined();
 
-  // Still good for the person it was for.
+  // Still good for the two it was for.
   expect((await acceptInvite(env, { code, userId: "8101" })).error).toBeUndefined();
+  expect((await acceptInvite(env, { code, userId: "8103" })).error).toBeUndefined();
   expect((await acceptInvite(env, { code, userId: "8102" })).error).toBeTruthy();
 });
 

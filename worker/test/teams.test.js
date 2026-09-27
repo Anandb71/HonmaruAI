@@ -117,16 +117,18 @@ test("an invitation by email carries the link and the code, in the sender's lang
   expect(link).not.toBeNull();
   expect(sent[0].text).toContain(link[1]);
 
-  // The code in the mail is a real, single-use invitation.
+  // The code in the mail is a real invitation — and a forwarded mail lets
+  // the next person in too, while it lives.
   res = await post("/invites/accept", mika, { code: link[1] });
   expect(res.status).toBe(200);
   expect((await res.json()).orgId).toBe("personal:toru");
-  expect((await post("/invites/accept", outsider, { code: link[1] })).status).toBe(400);
 
   // Refusals: no mail on this deployment, not an address, not a member.
   expect((await post("/invites/email", toru, { orgId: "personal:toru", email: "a@b.co" }, WEB)).status).toBe(503);
   expect((await post("/invites/email", toru, { orgId: "personal:toru", email: "not-mail" }, MAIL)).status).toBe(400);
   expect((await post("/invites/email", outsider, { orgId: "personal:toru", email: "a@b.co" }, MAIL)).status).toBe(403);
+  // And the forwarded mail lets the next person in.
+  expect((await post("/invites/accept", outsider, { code: link[1] })).status).toBe(200);
   expect(sent).toHaveLength(1);
 });
 
