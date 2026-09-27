@@ -589,6 +589,8 @@
 .classic.slk.slk .slk-thread-link b { color: var(--slk-accent); }
 .classic.slk.slk .slk-thread-last { color: var(--slk-dim); font-size: 12px; }
 .classic.slk.slk .slk-thread-faces { display: inline-flex; gap: 2px; }
+.classic.slk.slk .slk-thread-faces .slk-face-ai { border-radius: 5px; display: block; background: #111; }
+.classic.slk.slk .slk-thread-faces .slk-face-agent { display: grid; place-items: center; font-size: 13px; line-height: 1; border-radius: 5px; background: var(--slk-hover); }
 .classic.slk.slk .slk-face {
   width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center;
   background: var(--slk-on); color: var(--slk-ink); font-size: 10px; font-weight: 700;

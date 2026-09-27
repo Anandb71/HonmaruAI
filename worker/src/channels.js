@@ -178,7 +178,7 @@ export async function hydrate(db, orgId, rows) {
     const chunk = ids.slice(i, i + 90);
     const marks = chunk.map((_, j) => `?${j + 2}`).join(", ");
     const [replies, reactions] = await Promise.all([
-      db.prepare(`SELECT parent_id, author_login, created_at FROM channel_messages
+      db.prepare(`SELECT parent_id, author_login, kind, created_at FROM channel_messages
                    WHERE org_id = ?1 AND deleted_at IS NULL AND parent_id IN (${marks}) ORDER BY created_at`)
         .bind(orgId, ...chunk).all(),
       db.prepare(`SELECT message_id, emoji, login FROM message_reactions
@@ -190,7 +190,10 @@ export async function hydrate(db, orgId, rows) {
       if (!slot) continue;
       slot.replyCount += 1;
       slot.lastReplyAt = r.created_at;
-      if (r.author_login && !slot.replyLogins.includes(r.author_login)) slot.replyLogins.push(r.author_login);
+      // Who answered, for the faces beside "3 replies": a person by login,
+      // the AI as "ai", an agent as "agent:<id>".
+      const who = r.kind === "ai" ? "ai" : r.author_login;
+      if (who && !slot.replyLogins.includes(who)) slot.replyLogins.push(who);
     }
     for (const r of reactions.results || []) out.get(r.message_id)?.reactions.push({ emoji: r.emoji, login: r.login });
   }
@@ -204,7 +207,7 @@ export async function present(db, orgId, rows, viewerLogin, view, members) {
   const now = Date.now();
   return Promise.all(rows.map(async (r) => {
     const x = extras.get(r.id) || {};
-    const replyRefs = (x.replyLogins || []).map((l) => members.find((m) => m.login === l)?.ref).filter(Boolean).slice(0, 5);
+    const replyRefs = (x.replyLogins || []).map((l) => (l === "ai" || String(l).startsWith("agent:") ? l : members.find((m) => m.login === l)?.ref)).filter(Boolean).slice(0, 5);
     const own = await Promise.all((files.get(r.id) || []).map((f) => toFile(db, f, now)));
     return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null });
   }));

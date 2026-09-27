@@ -23,7 +23,23 @@ export function messageLanguage(body) {
     .trim();
   if (words.replace(/\s/g, "").length < 2) return null;
   const lang = detectLanguage(words);
+  // Latin letters too few to tell English from Spanish ("hello!", "ok
+  // thanks"): "latn". A reader of Japanese, Korean or Russian still has it
+  // translated; a reader of another Latin-script language is not asked.
+  if (lang === "und" && /\p{Script=Latin}/u.test(words)) return "latn";
   return lang && lang !== "und" ? lang : null;
+}
+
+/// Languages written in Latin letters: a "latn" message is left as it is
+/// for their readers.
+const LATIN_READERS = new Set(["en", "es", "fr", "de", "it", "pt", "nl", "sv", "da", "no", "nb", "fi", "pl", "cs", "sk", "ro", "hu", "tr", "id", "ms", "vi", "tl", "ca", "hr", "sl", "et", "lv", "lt", "sw"]);
+
+/// Whether a reader of `reader` gets a message in `lang` translated.
+export function wantsTranslation(lang, reader) {
+  const to = String(reader || "en").slice(0, 2).toLowerCase();
+  if (!lang || lang === to) return false;
+  if (lang === "latn") return !LATIN_READERS.has(to);
+  return true;
 }
 
 export function sourceHash(text) {
@@ -51,7 +67,7 @@ Reply with JSON only: {"items":[{"id":"...","text":"..."}]} — one item for eve
 export async function translateMessages(db, orgId, rows, { locale, provider, allowance = null }) {
   const lang = String(locale || "en").slice(0, 2).toLowerCase();
   const byId = {};
-  const wanted = rows.filter((r) => r && !r.deleted_at && r.body && messageLanguage(r.body) && messageLanguage(r.body) !== lang);
+  const wanted = rows.filter((r) => r && !r.deleted_at && r.body && wantsTranslation(messageLanguage(r.body), lang));
   if (!wanted.length) return { byId, called: false };
   const ids = wanted.map((r) => r.id);
   const { results: kept } = await db.prepare(

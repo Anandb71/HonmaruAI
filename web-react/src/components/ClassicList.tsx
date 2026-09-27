@@ -158,6 +158,8 @@ interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name:
 interface UserGroup { handle: string; name: string; refs: string[]; createdBy: string | null }
 interface ActivityItem { type: 'mention' | 'reply' | 'reaction' | 'keyword'; message: ChannelMessage; unread: boolean; at?: string; emoji?: string; by?: string | null; byAvatar?: string | null; keyword?: string }
 
+const LATIN_READERS = new Set(['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'nb', 'fi', 'pl', 'cs', 'sk', 'ro', 'hu', 'tr', 'id', 'ms', 'vi', 'tl', 'ca', 'hr', 'sl', 'et', 'lv', 'lt', 'sw'])
+
 async function hash16(text: string): Promise<string> {
   const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
@@ -1206,7 +1208,10 @@ export const ClassicList: React.FC<Props> = ({
   const [originals, setOriginals] = useState<Set<string>>(new Set())
   const [translateOff, setTranslateOff] = useState(false)
   const asking = useRef<Set<string>>(new Set())
+  // "latn": Latin letters, too few to name the language — translated for a
+  // reader of Japanese, left alone for a reader of another Latin language.
   const needsTranslation = (m: ChannelMessage) => !translateOff && !m.deleted && Boolean(m.lang) && m.lang !== readerLang
+    && !(m.lang === 'latn' && LATIN_READERS.has(readerLang))
     && translations[m.id]?.from !== m.body && !asking.current.has(`${m.id}:${m.body}`)
   const translate = useCallback(async (channel: string, list: ChannelMessage[]) => {
     const want = list.filter(needsTranslation).slice(0, 60)
@@ -1912,6 +1917,18 @@ export const ClassicList: React.FC<Props> = ({
     return `slk-mention${kind === 'group' ? ' group' : ''}`
   })
 
+  /// One face beside "3 replies": the AI's mark, an agent's emoji, your own
+  /// photo, or a teammate's.
+  const replyFace = (r: string) => {
+    if (r === 'ai') return <img key={r} className="slk-face slk-face-ai" src="/icon.svg" alt="" width={20} height={20} />
+    if (r.startsWith('agent:')) {
+      const a = agents.find((x) => `agent:${x.id}` === r)
+      return <span key={r} className="slk-face slk-face-agent">{a?.emoji || '🤖'}</span>
+    }
+    const mine = r === myRef
+    return <Avatar key={r} className="slk-face" name={mine ? (myName || t('You')) : nameOfRef(r)} url={mine ? myAvatar : memberByRef(r)?.avatarUrl} size={20} />
+  }
+
   /// What sits under a message's words: its reactions and its thread.
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
@@ -1922,7 +1939,7 @@ export const ClassicList: React.FC<Props> = ({
       {!inThread && (m.replyCount || 0) > 0 && (
         <button type="button" className="slk-thread-link" onClick={() => void openThread(channel, m)}>
           <span className="slk-thread-faces" aria-hidden="true">
-            {(m.replyRefs || []).slice(0, 3).map((r) => <Avatar key={r} className="slk-face" name={nameOfRef(r)} url={memberByRef(r)?.avatarUrl} size={20} />)}
+            {(m.replyRefs || []).slice(0, 3).map((r) => replyFace(r))}
           </span>
           <b>{m.replyCount === 1 ? t('1 reply') : t('{n} replies', { n: m.replyCount! })}</b>
           {m.lastReplyAt && <span className="slk-thread-last">{t('Last reply {when}', { when: when(m.lastReplyAt) })}</span>}

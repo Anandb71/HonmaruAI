@@ -103,6 +103,7 @@ enum ChatText {
 /// reader turned back to the original.
 final class ChatTranslations: ObservableObject {
     static let shared = ChatTranslations()
+    static let latinReaders: Set<String> = ["en", "es", "fr", "de", "it", "pt", "nl", "sv", "da", "no", "nb", "fi", "pl", "cs", "sk", "ro", "hu", "tr", "id", "ms", "vi", "tl", "ca", "hr", "sl", "et", "lv", "lt", "sw"]
     @Published private(set) var texts: [String: (from: String, text: String)] = [:]
     @Published var originals: Set<String> = []
     var off = false
@@ -120,6 +121,9 @@ final class ChatTranslations: ObservableObject {
         guard !off else { return [] }
         let out = list.filter { m in
             guard m.deleted != true, let lang = m.lang, lang != reader, texts[m.id]?.from != m.body else { return false }
+            // "latn": too few Latin letters to name the language — translated
+            // for a reader of Japanese, left alone for a Latin-script reader.
+            if lang == "latn", Self.latinReaders.contains(reader) { return false }
             return !asked.contains("\(m.id):\(m.body)")
         }
         for m in out { asked.insert("\(m.id):\(m.body)") }
@@ -514,7 +518,14 @@ struct ChatMessageRow: View {
                         HStack(spacing: 6) {
                             HStack(spacing: -6) {
                                 ForEach(Array((message.replyRefs ?? []).prefix(3)), id: \.self) { ref in
-                                    ChatAvatar(name: nameOf(ref), size: 20, url: assets.avatars[ref])
+                                    // The AI and the team's agents answer in threads too.
+                                    if ref == "ai" {
+                                        ChatAvatar(name: String(localized: "Your AI"), isAI: true, size: 20)
+                                    } else if ref.hasPrefix("agent:") {
+                                        ChatAvatar(name: String(localized: "Agent"), size: 20, agentEmoji: "🤖")
+                                    } else {
+                                        ChatAvatar(name: nameOf(ref), size: 20, url: assets.avatars[ref])
+                                    }
                                 }
                             }
                             Text(n == 1 ? String(localized: "1 reply") : String(localized: "\(n) replies"))
