@@ -676,7 +676,9 @@ export async function handleChannels(request, env, url, { route, after }) {
       : await deleteMessage(env.DB, { orgId: body.orgId, id: body.messageId, authorLogin: ctx.who.user.login });
     if (out.error) return json({ message: out.error }, out.status || 400);
     // Unsent: its files go with its words.
-    if (request.method === "DELETE") await dropFiles(env, body.orgId, body.messageId);
+    if (request.method === "DELETE") {
+      for (const mid of [body.messageId, ...(out.replies || [])]) await dropFiles(env, body.orgId, mid);
+    }
     after(async () => {
       await broadcastWithParent(env, body.orgId, ctx.resolved, out.row, ctx.members);
       await emitMessage(env, body.orgId, out.row, { updated: true });

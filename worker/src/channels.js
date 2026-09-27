@@ -222,8 +222,9 @@ export async function listMessages(db, orgId, resolved, viewerLogin, view, membe
     .all();
   const rows = (results || []).reverse();
   const shown = await present(db, orgId, rows, viewerLogin, view, members);
-  // A deleted message with nothing under it is simply gone, as in Slack.
-  return shown.filter((m) => !m.deleted || m.replyCount > 0);
+  // A deleted message is simply gone. (Before its thread went with it, one
+  // could be left with replies under it; those are not shown either.)
+  return shown.filter((m) => !m.deleted);
 }
 
 /// A thread: the message it hangs off, and every reply under it, oldest first.
@@ -275,20 +276,28 @@ export async function editMessage(db, { orgId, id, authorLogin, body }) {
   return { row: await getMessage(db, orgId, id) };
 }
 
-/// Unsend. The words go at once; the row stays as a tombstone so a thread
-/// under it still has somewhere to hang, and its reactions and pin go too.
+/// Unsend. The message is gone — no "this message was deleted" left in
+/// its place — and a thread under it goes with it: the replies, their
+/// reactions and pins. The rows stay only as tombstones nobody is shown.
+/// `replies` are the ids taken with it, for their files to go too.
 export async function deleteMessage(db, { orgId, id, authorLogin }) {
   const row = await getMessage(db, orgId, id);
   if (!row || row.deleted_at) return { error: "No such message.", status: 404 };
   if (row.kind !== "message" || row.author_login !== authorLogin) return { error: "Only the person who wrote it can delete it.", status: 403 };
   const { keepIfHeld } = await import("./governance.js");
   await keepIfHeld(db, orgId, row, "delete");
-  await db.batch([
+  const { results: under } = row.parent_id ? { results: [] } : await db.prepare(
+    "SELECT * FROM channel_messages WHERE org_id = ?1 AND parent_id = ?2 AND deleted_at IS NULL"
+  ).bind(orgId, id).all();
+  for (const r of under || []) await keepIfHeld(db, orgId, r, "delete");
+  const now = new Date().toISOString();
+  const gone = [id, ...(under || []).map((r) => r.id)];
+  await db.batch(gone.flatMap((mid) => [
     db.prepare("UPDATE channel_messages SET body = '', deleted_at = ?3, pinned_at = NULL, pinned_by = NULL WHERE org_id = ?1 AND id = ?2")
-      .bind(orgId, id, new Date().toISOString()),
-    db.prepare("DELETE FROM message_reactions WHERE org_id = ?1 AND message_id = ?2").bind(orgId, id),
-  ]);
-  return { row: await getMessage(db, orgId, id) };
+      .bind(orgId, mid, now),
+    db.prepare("DELETE FROM message_reactions WHERE org_id = ?1 AND message_id = ?2").bind(orgId, mid),
+  ]));
+  return { row: await getMessage(db, orgId, id), replies: gone.slice(1) };
 }
 
 /// The emoji a reaction may be: one grapheme of pictograph, or a short

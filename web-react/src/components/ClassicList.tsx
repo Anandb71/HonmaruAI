@@ -941,10 +941,11 @@ export const ClassicList: React.FC<Props> = ({
         if (!list) return prev
         const has = list.some((x) => x.id === m.id)
         isNew = !has
-        if (m.deleted && !m.replyCount) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
+        // Deleted is gone — its thread with it — never a "was deleted" line.
+        if (m.deleted) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
         return { ...prev, [m.channel]: has ? list.map((x) => (x.id === m.id ? msg : x)) : [...list, msg] }
       })
-      setThread((prev) => (prev && prev.parent.id === m.id ? { ...prev, parent: msg } : prev))
+      setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
       if (!m.deleted && !m.editedAt && (isNew || !messagesRef.current[m.channel])) {
         setActivity((prev) => ({ ...prev, [m.channel]: { channel: m.channel, lastAt: m.createdAt, preview: m.body.slice(0, 120), lastBy: mine ? 'me' : m.authorName } }))
       }
@@ -1343,9 +1344,14 @@ export const ClassicList: React.FC<Props> = ({
     if (done) setEditing(null)
   }
   const remove = async (channel: string, m: ChannelMessage) => {
-    if (!window.confirm(t('Delete this message? This cannot be undone.'))) return
-    await act('DELETE', '/channels/messages', channel, { messageId: m.id })
+    if (!window.confirm(m.replyCount ? t('Delete this message and its thread? This cannot be undone.') : t('Delete this message? This cannot be undone.'))) return
+    const done = await act('DELETE', '/channels/messages', channel, { messageId: m.id })
     if (editing?.id === m.id) setEditing(null)
+    // Gone here at once, and its thread with it.
+    if (done && !m.parentId) {
+      setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
+      setThread((prev) => (prev && prev.parent.id === m.id ? null : prev))
+    }
   }
   const togglePin = (channel: string, m: ChannelMessage) => void act('POST', '/channels/pins', channel, { messageId: m.id, pinned: !m.pinned })
   const openThread = async (channel: string, m: ChannelMessage) => {
