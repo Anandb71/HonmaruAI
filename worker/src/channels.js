@@ -518,12 +518,23 @@ export async function activityFeed(db, orgId, login, members, { days = 30, limit
   }
   const lastRead = read?.last_read_at || "";
   const access = await accessFor(db, orgId, login);
+  // Seen where it was said: read up to it in its conversation, or — a
+  // reply — in its thread. Such an item is no longer new in Activity
+  // either; nobody should have to tick it off twice.
+  const { results: readRows } = await db.prepare("SELECT channel, last_read_at FROM channel_reads WHERE org_id = ?1 AND login = ?2")
+    .bind(orgId, login).all().catch(() => ({ results: [] }));
+  const readAt = new Map((readRows || []).map((r) => [r.channel, r.last_read_at || ""]));
+  const seen = (row, at) => {
+    const inConversation = readAt.get(row.channel) || "";
+    const inThread = row.parent_id ? (readAt.get(`t:${row.parent_id}`) || "") : "";
+    return row.parent_id ? inThread >= at : inConversation >= at;
+  };
   const out = [];
   for (const { row, type, keyword } of picked) {
     const view = viewOf(row.channel, login, members, access);
     if (!view) continue;
     const [message] = await present(db, orgId, [row], login, view, members);
-    out.push({ type, message, unread: row.created_at > lastRead, at: row.created_at, ...(keyword ? { keyword } : {}) });
+    out.push({ type, message, unread: row.created_at > lastRead && !seen(row, row.created_at), at: row.created_at, ...(keyword ? { keyword } : {}) });
   }
   // What others said with a reaction to what you wrote: one entry each, as
   // a notification — who, which, on what.
@@ -542,7 +553,7 @@ export async function activityFeed(db, orgId, login, members, { days = 30, limit
     if (!view) continue;
     const { r_emoji: emoji, r_at: at, r_name: by, r_avatar: byAvatar, ...row } = r;
     const [message] = await present(db, orgId, [row], login, view, members);
-    out.push({ type: "reaction", message, unread: at > lastRead, at, emoji, by: by || null, byAvatar: byAvatar || null });
+    out.push({ type: "reaction", message, unread: at > lastRead && !seen(row, at), at, emoji, by: by || null, byAvatar: byAvatar || null });
   }
   out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
   return { items: out.slice(0, limit), lastRead };

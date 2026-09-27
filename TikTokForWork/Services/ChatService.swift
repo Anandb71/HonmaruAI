@@ -333,7 +333,51 @@ enum ChatService {
     private struct DataRuleAnswer: Decodable { let code: String?; let rules: [String]?; let message: String? }
 
     /// One call to the Worker, with this device's session.
-    static func call<T: Decodable>(_ method: String, _ path: String, base: URL, query: [String: String] = [:], body: [String: Any]? = nil, as type: T.Type) async throws -> T {
+    // MARK: The record
+
+    /// One channel's record: its context, written out, and its decisions.
+    struct ChannelRecord: Decodable {
+        struct Entry: Decodable, Identifiable, Hashable {
+            let id: String
+            let title: String
+            let recipient: String?
+            let createdAt: String?
+            let actionLabel: String?
+            let actor: String?
+            let decidedAt: String?
+            let note: String?
+        }
+        struct Section: Decodable { let slug: String; let name: String?; let decided: [Entry]; let open: [Entry] }
+        let businesses: [Section]
+        let context: String?
+        let contextAt: String?
+        let contextNote: String?
+        var section: Section? { businesses.first }
+    }
+
+    static func channelRecord(orgId: String, channel: String, locale: String, refresh: Bool = false, base: URL) async throws -> ChannelRecord {
+        var q = ["orgId": orgId, "channel": channel, "locale": locale]
+        if refresh { q["refresh"] = "1" }
+        // Written the first time it is asked for: the model reads the channel.
+        return try await call("GET", "/record", base: base, query: q, timeout: 150, as: ChannelRecord.self)
+    }
+
+    /// The same record as Markdown, to paste anywhere.
+    static func channelRecordMarkdown(orgId: String, channel: String, locale: String, base: URL) async throws -> String {
+        guard let token = SessionStore.sessionToken else { throw Failure.notSignedIn }
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: true)
+        components?.path = "/record"
+        components?.queryItems = [URLQueryItem(name: "orgId", value: orgId), URLQueryItem(name: "channel", value: channel), URLQueryItem(name: "locale", value: locale), URLQueryItem(name: "format", value: "md")]
+        guard let url = components?.url else { throw Failure.server(0, nil) }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 120
+        request.setValue(token, forHTTPHeaderField: "x-session-token")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw Failure.server((response as? HTTPURLResponse)?.statusCode ?? 0, nil) }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func call<T: Decodable>(_ method: String, _ path: String, base: URL, query: [String: String] = [:], body: [String: Any]? = nil, timeout: TimeInterval = 20, as type: T.Type) async throws -> T {
         guard let token = SessionStore.sessionToken else { throw Failure.notSignedIn }
         var components = URLComponents(url: base, resolvingAgainstBaseURL: true)
         components?.path = path
@@ -341,7 +385,7 @@ enum ChatService {
         guard let url = components?.url else { throw Failure.server(0, nil) }
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.timeoutInterval = 20
+        request.timeoutInterval = timeout
         request.setValue(token, forHTTPHeaderField: "x-session-token")
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

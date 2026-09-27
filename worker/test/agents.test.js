@@ -278,8 +278,10 @@ test("an agent researches with a reasoning model, web search and its own tools, 
 
   const { messages } = await (await get(`/channels/messages?${q({ orgId: ORG, channel: `ag:${made.agent.id}` })}`, mika)).json();
   expect(messages[1].body).toBe("*結論*\n*Blue Bottle* has 3 Kyoto cafes; the newest opened in 2025.\n\n*Sources*\n- Kyoto cafes: https://bluebottle.example/kyoto");
-  const calls = await env.DB.prepare("SELECT purpose FROM ai_calls WHERE org_id = ?1").bind(ORG).all();
-  expect(calls.results.map((r) => r.purpose)).toEqual(["agent", "agent"]);
+  // Two model rounds, and the one web search the first ran, at its own price.
+  const calls = await env.DB.prepare("SELECT purpose, model, usd FROM ai_calls WHERE org_id = ?1 ORDER BY rowid").bind(ORG).all();
+  expect(calls.results.map((r) => r.model)).toEqual(["gpt-5-mini", "web_search", "gpt-5-mini"]);
+  expect(calls.results[1]).toMatchObject({ purpose: "agent", usd: 0.01 });
 });
 
 test("in a channel an agent reads the web but not the team's decisions; a model that refuses the full call is tried bare", async () => {
@@ -403,6 +405,7 @@ test("talk with the agents is left out of what a decision reads: calling one, an
   expect(kept.some((l) => l.includes("Autumn menu launches on the 1st"))).toBe(true);
   expect(kept.some((l) => l.includes("hayao") || l.includes("Hayao"))).toBe(false);
   expect(skip({ kind: "message", channel: "b:cafe", body: "@hayaoに 調べて" })).toBe(true);
+  expect(skip({ kind: "message", channel: "b:cafe", body: "@hayaoにお願い" })).toBe(true);
   expect(skip({ kind: "message", channel: "ag:x|mika", body: "hi" })).toBe(true);
   expect(skip({ kind: "message", channel: "b:cafe", body: "@AI ask Toru" })).toBe(false);
 });

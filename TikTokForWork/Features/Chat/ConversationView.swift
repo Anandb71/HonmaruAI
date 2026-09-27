@@ -46,6 +46,7 @@ struct ConversationView: View {
     @State private var askingSectionName = false
     @State private var canvasOpen = false
     @State private var agentsOpen = false
+    @State private var recordOpen = false
 
     private var conversation: ChatConversation? { store.conversation(for: view) }
     private var title: String {
@@ -120,10 +121,17 @@ struct ConversationView: View {
         .sheet(isPresented: $showPins) { pinsSheet }
         .sheet(isPresented: $canvasOpen) { ChatCanvasSheet(view: view, title: title).environmentObject(appState) }
         .sheet(isPresented: $agentsOpen) { ChatChannelAgentsSheet(store: store, view: view, title: title) }
+        .sheet(isPresented: $recordOpen) { ChannelRecordSheet(view: view, title: title).environmentObject(appState) }
         .sheet(item: Binding(get: { profileRef.map { IdentifiedRef(ref: $0) } }, set: { profileRef = $0?.ref })) { r in
             ChatProfileSheet(store: store, ref: r.ref)
         }
-        .sheet(item: $openCard) { CardDetailSheet(card: $0).environmentObject(appState) }
+        .sheet(item: $openCard) { card in
+            // Whoever may take it back does it here too, as on the feed.
+            let me = appState.currentUser?.id ?? ""
+            CardDetailSheet(card: card, onDelete: card.canBeDeleted(by: me) ? {
+                Task { try? await appState.cardService.delete(cardID: card.id, actorUserID: me) }
+            } : nil).environmentObject(appState)
+        }
         .sheet(isPresented: $customTime) { customTimeSheet }
         .sheet(item: $forwarding) { m in ChatForwardSheet(store: store, message: m) }
         .modifier(DataRuleAlerts(store: store) { draft = "" })
@@ -576,6 +584,9 @@ struct ConversationView: View {
                 Button { canvasOpen = true } label: { Label("Canvas", systemImage: "doc.richtext") }
                 if let c = conversation, c.kind == .channel || c.kind == .group {
                     Button { agentsOpen = true } label: { Label("Agents in this conversation", systemImage: "sparkles.rectangle.stack") }
+                }
+                if let c = conversation, c.kind == .channel {
+                    Button { recordOpen = true } label: { Label("Record (Markdown)", systemImage: "doc.text.magnifyingglass") }
                 }
                 Button { Task { await store.toggleStar(view) } } label: {
                     Label(store.isStarred(view) ? LocalizedStringKey("Unstar") : LocalizedStringKey("Star"), systemImage: store.isStarred(view) ? "star.slash" : "star")

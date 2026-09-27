@@ -493,7 +493,7 @@ export const ClassicList: React.FC<Props> = ({
     const called = agentsIn(agents, null).find((a) => {
       const h = a.handle.normalize('NFKC').toLowerCase()
       return (text.match(/[@＠][^\s@＠,，。、!?！？:;]+/g) || [])
-        .some((tok) => { const w = tok.slice(1).normalize('NFKC').toLowerCase(); return w === h || w.replace(/[にへ]$/, '') === h })
+        .some((tok) => { const w = tok.slice(1).normalize('NFKC').toLowerCase(); return w === h || w.replace(/[にへ]$/, '') === h || w.startsWith(`${h}に`) || w.startsWith(`${h}へ`) })
     })
     if (!called) { onTellAI(text); return }
     openAgent(called.id)
@@ -893,6 +893,9 @@ export const ClassicList: React.FC<Props> = ({
         method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
         body: JSON.stringify({ orgId: api.orgId, channel: view }),
       }).then(() => setServerReads((prev) => ({ ...prev, [view]: now }))).catch(() => { /* this device still remembers */ })
+      // Read here, so no longer new in Activity: what was said in this
+      // conversation (a reply waits for its thread).
+      setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === view && !i.message.parentId && (i.at || i.message.createdAt) <= now ? { ...i, unread: false } : i)))
     }, 600)
     return () => clearTimeout(id)
   }, [view, api.orgId, messages[view || '']?.length])
@@ -1301,6 +1304,7 @@ export const ClassicList: React.FC<Props> = ({
   /// calling it unread.
   const markThreadRead = (channel: string, parentId: string) => {
     setThreadItems((prev) => prev && prev.map((x) => (x.parent.id === parentId ? { ...x, unread: false } : x)))
+    setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.parentId === parentId ? { ...i, unread: false } : i)))
     void fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, channel, thread: parentId }),
