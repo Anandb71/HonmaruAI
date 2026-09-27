@@ -82,7 +82,11 @@ test("unsend: the message goes, for everyone, and only its author can", async ()
 test("a deleted message takes its thread with it: nothing is left to see", async () => {
   const m = await say(mika, "Which roaster?");
   const r = await say(toru, "The one on 3rd", { parentId: m.id });
-  expect((await del("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", messageId: m.id })).status).toBe(200);
+  // Toru's reply is his: it goes only when Mika says so outright.
+  const asked = await del("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", messageId: m.id });
+  expect(asked.status).toBe(409);
+  expect(await asked.json()).toMatchObject({ code: "thread_has_replies", others: 1 });
+  expect((await del("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", messageId: m.id, withThread: true })).status).toBe(200);
   expect(await list(toru)).toHaveLength(0);
   const reply = await env.DB.prepare("SELECT body, deleted_at FROM channel_messages WHERE id = ?1").bind(r.id).first();
   expect(reply).toMatchObject({ body: "" });

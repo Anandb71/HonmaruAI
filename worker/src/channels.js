@@ -285,7 +285,7 @@ export async function editMessage(db, { orgId, id, authorLogin, body }) {
 /// its place — and a thread under it goes with it: the replies, their
 /// reactions and pins. The rows stay only as tombstones nobody is shown.
 /// `replies` are the ids taken with it, for their files to go too.
-export async function deleteMessage(db, { orgId, id, authorLogin }) {
+export async function deleteMessage(db, { orgId, id, authorLogin, withThread = false }) {
   const row = await getMessage(db, orgId, id);
   if (!row || row.deleted_at) return { error: "No such message.", status: 404 };
   if (row.kind !== "message" || row.author_login !== authorLogin) return { error: "Only the person who wrote it can delete it.", status: 403 };
@@ -294,6 +294,9 @@ export async function deleteMessage(db, { orgId, id, authorLogin }) {
   const { results: under } = row.parent_id ? { results: [] } : await db.prepare(
     "SELECT * FROM channel_messages WHERE org_id = ?1 AND parent_id = ?2 AND deleted_at IS NULL"
   ).bind(orgId, id).all();
+  // Other people's words go with it only when that was said outright.
+  const others = (under || []).filter((r) => r.author_login !== authorLogin).length;
+  if (others && !withThread) return { error: "Others replied in this thread. Delete it with their replies?", status: 409, code: "thread_has_replies", others };
   for (const r of under || []) await keepIfHeld(db, orgId, r, "delete");
   const now = new Date().toISOString();
   const gone = [id, ...(under || []).map((r) => r.id)];

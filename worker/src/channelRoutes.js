@@ -673,8 +673,8 @@ export async function handleChannels(request, env, url, { route, after }) {
     }
     const out = request.method === "PUT"
       ? await editMessage(env.DB, { orgId: body.orgId, id: body.messageId, authorLogin: ctx.who.user.login, body: body.body })
-      : await deleteMessage(env.DB, { orgId: body.orgId, id: body.messageId, authorLogin: ctx.who.user.login });
-    if (out.error) return json({ message: out.error }, out.status || 400);
+      : await deleteMessage(env.DB, { orgId: body.orgId, id: body.messageId, authorLogin: ctx.who.user.login, withThread: body.withThread === true });
+    if (out.error) return json({ message: out.error, ...(out.code ? { code: out.code, others: out.others } : {}) }, out.status || 400);
     // Unsent: its files go with its words.
     if (request.method === "DELETE") {
       for (const mid of [body.messageId, ...(out.replies || [])]) await dropFiles(env, body.orgId, mid);

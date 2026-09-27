@@ -1353,8 +1353,12 @@ export const ClassicList: React.FC<Props> = ({
     if (done) setEditing(null)
   }
   const remove = async (channel: string, m: ChannelMessage) => {
-    if (!window.confirm(m.replyCount ? t('Delete this message and its thread? This cannot be undone.') : t('Delete this message? This cannot be undone.'))) return
-    const done = await act('DELETE', '/channels/messages', channel, { messageId: m.id })
+    // Somebody else's words in the thread go only when you say so outright.
+    const others = !m.parentId && (m.replyRefs || []).some((r) => r !== myRef)
+    const ask = others ? t('Delete this message and its thread? Replies from others will be deleted too. This cannot be undone.')
+      : m.replyCount ? t('Delete this message and its thread? This cannot be undone.') : t('Delete this message? This cannot be undone.')
+    if (!window.confirm(ask)) return
+    const done = await act('DELETE', '/channels/messages', channel, { messageId: m.id, withThread: true })
     if (editing?.id === m.id) setEditing(null)
     // Gone here at once, and its thread with it.
     if (done && !m.parentId) {

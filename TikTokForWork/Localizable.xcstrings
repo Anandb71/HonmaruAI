@@ -37414,6 +37414,35 @@
           }
         }
       }
+    },
+    "Delete this message and its thread? Replies from others will be deleted too. This cannot be undone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このメッセージとスレッドを削除しますか？ほかの人の返信も削除されます。元に戻せません。"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar este mensaje y su hilo? También se eliminarán las respuestas de otras personas. No se puede deshacer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer ce message et son fil ? Les réponses des autres seront aussi supprimées. C’est définitif."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Nachricht und ihren Thread löschen? Auch die Antworten anderer werden gelöscht. Das lässt sich nicht rückgängig machen."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

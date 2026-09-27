@@ -148,7 +148,9 @@ struct ConversationView: View {
         .fullScreenCover(isPresented: $jamOpen) {
             ChatJamSheet(view: view, title: title, base: store.baseURL, orgId: appState.currentUser?.teamID)
         }
-        .confirmationDialog("Delete this message? This cannot be undone.", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
+        .confirmationDialog(LocalizedStringKey((confirmDelete?.replyCount ?? 0) > 0 && confirmDelete?.parentId == nil
+                            ? "Delete this message and its thread? Replies from others will be deleted too. This cannot be undone."
+                            : "Delete this message? This cannot be undone."), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
             Button("Delete message", role: .destructive) { if let m = confirmDelete { Task { await store.delete(m) } }; confirmDelete = nil }
         }
     }
