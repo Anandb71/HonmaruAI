@@ -38,12 +38,12 @@ export function resolveMentions(text, members, { here = true, online = null } = 
   const found = new Map();
   for (const token of tokens) {
     const want = fold(token);
-    // "@channel" (or "@everyone") reaches everyone the conversation's
+    // "@channel" reaches everyone the conversation's
     // `members` are; "@here" only those at the app now — `online`, a set of
     // logins, when the caller knows it. For a closed conversation the caller
     // keeps only the people in it. Deciding who decides, they name nobody
     // (`here: false`).
-    if (want === "channel" || want === "everyone" || want === "here") {
+    if (want === "channel" || want === "here") {
       if (here) for (const m of members) if (want !== "here" || !online || online.has(m.login)) found.set(m.login, m);
       continue;
     }
