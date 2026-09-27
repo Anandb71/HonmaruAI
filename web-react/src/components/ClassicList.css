@@ -603,7 +603,9 @@
 .classic.slk.slk .slk-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; padding: 1px 4px; border-radius: 4px; background: var(--slk-field); color: #e01e5a; border: 1px solid var(--slk-line); }
 .classic.slk.slk .slk-pre { margin: 6px 0; padding: 8px 10px; border-radius: 6px; background: var(--slk-field); border: 1px solid var(--slk-line); overflow-x: auto; font-size: 12.5px; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
 .classic.slk.slk .slk-quote { margin: 2px 0; padding-left: 10px; border-left: 4px solid var(--slk-line); color: var(--slk-dim); }
-.classic.slk.slk .slk-ul { margin: 2px 0; padding-left: 22px; }
+.classic.slk.slk .slk-ul { margin: 2px 0; padding-left: 22px; list-style: disc; }
+.classic.slk.slk .slk-ol { margin: 2px 0; padding-left: 26px; list-style: decimal; }
+.classic.slk.slk .slk-ul li, .classic.slk.slk .slk-ol li { display: list-item; }
 .classic.slk.slk .slk-format { display: flex; gap: 2px; flex: none; }
 .classic.slk.slk .slk-fmt {
   width: 28px; height: 26px; border: none; background: none; border-radius: 5px; cursor: pointer;

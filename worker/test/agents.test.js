@@ -284,7 +284,7 @@ test("an agent researches with a reasoning model, web search and its own tools, 
   expect(calls.results[1]).toMatchObject({ purpose: "agent", usd: 0.01 });
 });
 
-test("in a channel an agent reads the web but not the team's decisions; a model that refuses the full call is tried bare", async () => {
+test("in a channel an agent reads the web but not the team's decisions; a model that refuses the full call is tried bare, its tools kept", async () => {
   await send("POST", "/channels/agents", toru, { orgId: ORG, markdown: HAYAO });
   const asked = [];
   fetchMock.get("https://api.openai.com").intercept({ path: "/v1/responses", method: "POST" }).reply(400, (opts) => {
@@ -297,7 +297,7 @@ test("in a channel an agent reads the web but not the team's decisions; a model 
   });
   const sent = await (await send("POST", "/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "@hayao autumn colours?" }, { OPENAI_API_KEY: "sk-test" })).json();
   expect(asked[0].tools.map((t) => t.name || t.type)).toEqual(["web_search", "read_url"]);
-  expect(asked[1]).toMatchObject({ model: "gpt-4o-mini", tools: [{ type: "web_search" }] });
+  expect(asked[1]).toMatchObject({ model: "gpt-4o-mini", tools: [{ type: "web_search" }, { type: "function", name: "read_url" }] });
   expect(asked[1].reasoning).toBeUndefined();
   const thread = await (await get(`/channels/thread?${q({ orgId: ORG, channel: "b:cafe", messageId: sent.message.id })}`, mika)).json();
   expect(thread.replies[0].body).toBe("Chestnut and amber.");

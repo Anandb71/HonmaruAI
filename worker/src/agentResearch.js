@@ -16,7 +16,8 @@ import { noteUsage, noteSearches } from "./ledger.js";
 export const DEFAULT_AGENT_MODEL = "gpt-5-mini";
 const MAX_ROUNDS = 8;
 const MAX_FUNCTION_CALLS = 16;
-const MAX_TOOL_OUTPUT = 12000;
+// Room for a whole video transcript (links.js keeps those to 16,000).
+const MAX_TOOL_OUTPUT = 20000;
 const CALL_TIMEOUT_MS = 150000;
 
 /// A reasoning model: the ones that plan tool calls themselves and take
@@ -42,9 +43,10 @@ const COUNTRY = { ja: "JP", en: "US", es: "ES", fr: "FR", de: "DE", ko: "KR", zh
 /// The loop. `tools` are ours: { name: { description, parameters, run } }.
 /// Returns { called, answer, sources, rounds, calls } — `called` is whether
 /// any model was paid for; `answer` null when none came back.
-/// `plain`: the workspace's own model, the search tool bare, nothing a
-/// model might refuse — the retry when the full call is turned down.
-export async function research({ provider, env, instructions, input, tools = {}, language = "en", deadline = Date.now() + 240000, effort, plain = false, onRound = null, webSearch = true, maxOutput = null }) {
+/// `plain`: the workspace's own model, the search tool bare, no reasoning
+/// settings — nothing a model might refuse — the retry when the full call
+/// is turned down. Our own tools stay.
+export async function research({ provider, env, instructions, input, tools = {}, language = "en", deadline = Date.now() + 240000, effort, plain = false, onRound = null, webSearch = true, maxOutput = null, mustLook = false }) {
   const endpoint = provider.endpoint.replace(/\/chat\/completions$/, "/responses");
   const model = plain ? provider.model : agentModelFor(env, provider);
   const reasoning = isReasoningModel(model);
@@ -84,7 +86,9 @@ export async function research({ provider, env, instructions, input, tools = {},
       instructions,
       input: next,
       ...(definitions.length ? { tools: definitions } : {}),
-      ...(definitions.length ? { tool_choice: finalOnly ? "none" : "auto", parallel_tool_calls: true } : {}),
+      // `mustLook`: something the answer depends on could not be read, so
+      // the first round goes looking instead of answering from nothing.
+      ...(definitions.length ? { tool_choice: finalOnly ? "none" : (mustLook && rounds === 1 ? "required" : "auto"), parallel_tool_calls: true } : {}),
       max_output_tokens: maxOutput || (reasoning ? 12000 : 3000),
       ...(previous ? { previous_response_id: previous } : {}),
       ...(reasoning ? { reasoning: { effort: effort || env?.AGENT_REASONING || "medium" } } : {}),
