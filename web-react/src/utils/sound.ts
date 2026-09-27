@@ -15,8 +15,9 @@
 // - Not more than one sound a second and a half: a burst of messages is one.
 //
 // Everything is synthesised with Web Audio — no files to load, nothing to
-// cache, the same on every browser — and every sound is under half a second
-// except the Jam ring, which repeats until it is answered or gives up.
+// cache, the same on every browser. The voice is a felt piano: soft keys
+// with a short room tail, quiet enough to hear all day. Every sound is over
+// within a second except the Jam ring, which repeats until it is answered.
 //
 // Settings are per device (a laptop and a phone on one desk should not both
 // knock), in localStorage.
@@ -101,56 +102,95 @@ if (typeof window !== 'undefined') {
   window.addEventListener('keydown', wake)
 }
 
-/// One note: a tone that rises and falls quickly, so it never clicks.
-function note(ac: AudioContext, out: AudioNode, { freq, at, dur, type = 'sine', gain = 1, slideTo }: { freq: number; at: number; dur: number; type?: OscillatorType; gain?: number; slideTo?: number }) {
-  const osc = ac.createOscillator()
+/// A small room: a short, soft tail so a note does not stop dead. Its
+/// impulse is made once per audio context; each sound gets its own room,
+/// wired to its own output, so nothing stays connected after it.
+let impulse: AudioBuffer | null = null
+let impulseOf: AudioContext | null = null
+function roomFor(ac: AudioContext, out: AudioNode): AudioNode {
+  if (!impulse || impulseOf !== ac) {
+    const len = Math.floor(ac.sampleRate * 0.9)
+    impulse = ac.createBuffer(2, len, ac.sampleRate)
+    for (let c = 0; c < 2; c++) {
+      const d = impulse.getChannelData(c)
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2)
+    }
+    impulseOf = ac
+  }
+  const room = ac.createConvolver()
+  room.buffer = impulse
+  const wet = ac.createGain()
+  wet.gain.value = 0.22
+  room.connect(wet).connect(out)
+  return room
+}
+
+/// One felt key: a soft attack, the note and its octave fading faster than
+/// it, high frequencies rolled off — a piano played through felt.
+function key(ac: AudioContext, out: AudioNode, room: AudioNode, { freq, at, dur, gain, lp = 1800, partials = [[1, 1], [2, 0.3, 0.6], [3, 0.1, 0.3]], wet = true }: { freq: number; at: number; dur: number; gain: number; lp?: number; partials?: number[][]; wet?: boolean }) {
   const env = ac.createGain()
-  osc.type = type
-  osc.frequency.setValueAtTime(freq, at)
-  if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, at + dur)
   env.gain.setValueAtTime(0.0001, at)
   env.gain.exponentialRampToValueAtTime(gain, at + 0.012)
   env.gain.exponentialRampToValueAtTime(0.0001, at + dur)
-  osc.connect(env).connect(out)
-  osc.start(at)
-  osc.stop(at + dur + 0.02)
+  const soft = ac.createBiquadFilter()
+  soft.type = 'lowpass'
+  soft.frequency.value = lp
+  soft.Q.value = 0.4
+  env.connect(soft)
+  soft.connect(out)
+  if (wet) soft.connect(room)
+  for (const [mult, amp, decay = 1] of partials) {
+    const osc = ac.createOscillator()
+    const g = ac.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(freq * mult, at)
+    g.gain.setValueAtTime(amp, at)
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur * decay)
+    osc.connect(g).connect(env)
+    osc.start(at)
+    osc.stop(at + dur + 0.05)
+  }
 }
 
-/// The sounds themselves. Pitches are from one scale (D major), so any two
-/// that happen together do not clash.
+const D5 = 587.33, FS5 = 739.99, A5 = 880
+
+/// The sounds themselves: soft felt keys, all from one D major chord, so
+/// any two that happen together do not clash.
 function render(kind: SoundKind, ac: AudioContext, out: AudioNode) {
   const t = ac.currentTime + 0.01
+  const two = [[1, 1], [2, 0.28, 0.6]]
+  const room = roomFor(ac, out)
   switch (kind) {
-    case 'mention': // a knock-knock: two quick, warm, rising taps
-      note(ac, out, { freq: 587.33, at: t, dur: 0.11, type: 'triangle', gain: 0.9 })
-      note(ac, out, { freq: 880, at: t + 0.12, dur: 0.16, type: 'triangle', gain: 0.8 })
+    case 'mention': // two keys, a third apart: somebody wants you
+      key(ac, out, room, { freq: FS5, at: t, dur: 0.5, gain: 0.6 })
+      key(ac, out, room, { freq: A5, at: t + 0.14, dur: 0.7, gain: 0.56 })
       break
-    case 'message': // one soft drop
-      note(ac, out, { freq: 739.99, at: t, dur: 0.14, type: 'sine', gain: 0.45, slideTo: 659.25 })
+    case 'message': // one low key, barely pressed
+      key(ac, out, room, { freq: D5, at: t, dur: 0.4, gain: 0.3, lp: 1600, partials: [[1, 1], [2, 0.25, 0.5]] })
       break
-    case 'inConversation': // a tick, barely there
-      note(ac, out, { freq: 1174.66, at: t, dur: 0.06, type: 'sine', gain: 0.18 })
+    case 'inConversation': // a touch of a key: you are already here
+      key(ac, out, room, { freq: A5, at: t, dur: 0.12, gain: 0.14, lp: 1800, partials: [[1, 1]], wet: false })
       break
-    case 'sent': // a small upward swish
-      note(ac, out, { freq: 880, at: t, dur: 0.09, type: 'sine', gain: 0.22, slideTo: 1318.51 })
+    case 'sent': // the lightest tap
+      key(ac, out, room, { freq: A5, at: t, dur: 0.08, gain: 0.1, lp: 2000, partials: [[1, 1]], wet: false })
       break
-    case 'decision': // three notes: something is waiting on you
-      note(ac, out, { freq: 587.33, at: t, dur: 0.14, type: 'sine', gain: 0.7 })
-      note(ac, out, { freq: 739.99, at: t + 0.1, dur: 0.14, type: 'sine', gain: 0.6 })
-      note(ac, out, { freq: 1108.73, at: t + 0.2, dur: 0.26, type: 'sine', gain: 0.55 })
+    case 'decision': // the chord, rising: something is waiting on you
+      key(ac, out, room, { freq: D5, at: t, dur: 0.6, gain: 0.52, lp: 1700, partials: two })
+      key(ac, out, room, { freq: FS5, at: t + 0.14, dur: 0.6, gain: 0.48, lp: 1700, partials: two })
+      key(ac, out, room, { freq: A5, at: t + 0.28, dur: 0.9, gain: 0.48, partials: two })
       break
     case 'jamJoin': // up
-      note(ac, out, { freq: 659.25, at: t, dur: 0.12, type: 'sine', gain: 0.55 })
-      note(ac, out, { freq: 987.77, at: t + 0.1, dur: 0.18, type: 'sine', gain: 0.5 })
+      key(ac, out, room, { freq: D5, at: t, dur: 0.4, gain: 0.44, partials: two })
+      key(ac, out, room, { freq: A5, at: t + 0.12, dur: 0.55, gain: 0.4, partials: two })
       break
     case 'jamLeave': // down
-      note(ac, out, { freq: 987.77, at: t, dur: 0.12, type: 'sine', gain: 0.45 })
-      note(ac, out, { freq: 659.25, at: t + 0.1, dur: 0.2, type: 'sine', gain: 0.4 })
+      key(ac, out, room, { freq: A5, at: t, dur: 0.4, gain: 0.36, partials: two })
+      key(ac, out, room, { freq: D5, at: t + 0.12, dur: 0.55, gain: 0.34, partials: two })
       break
-    case 'ring': // one ring of a call: a bright double pulse
-      for (const off of [0, 0.18]) {
-        note(ac, out, { freq: 880, at: t + off, dur: 0.14, type: 'triangle', gain: 0.6 })
-        note(ac, out, { freq: 1108.73, at: t + off, dur: 0.14, type: 'sine', gain: 0.35 })
+    case 'ring': // one ring of a call: the mention's two keys, twice
+      for (const off of [0, 0.26]) {
+        key(ac, out, room, { freq: FS5, at: t + off, dur: 0.3, gain: 0.5, lp: 2200 })
+        key(ac, out, room, { freq: A5, at: t + off + 0.1, dur: 0.36, gain: 0.46, lp: 2200 })
       }
       break
   }
@@ -184,7 +224,7 @@ export function playSound(kind: SoundKind, { preview = false }: { preview?: bool
   master.gain.value = Math.max(0, Math.min(1, settings.volume)) * 0.5
   master.connect(ac.destination)
   render(kind, ac, master)
-  setTimeout(() => { try { master.disconnect() } catch { /* already gone */ } }, 1200)
+  setTimeout(() => { try { master.disconnect() } catch { /* already gone */ } }, 2400)
   return true
 }
 
