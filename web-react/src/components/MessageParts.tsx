@@ -496,3 +496,96 @@ export const SchedulePicker: React.FC<{ onPick: (at: string) => void; onClose: (
     </div>
   )
 }
+
+// ---- Link cards ----
+//
+// A link in a message unfurls, as in Slack: the page's title, a line of
+// what it is and its picture; a YouTube video plays in place when its
+// thumbnail is pressed. Read through the Worker (/channels/link-preview),
+// once per link per page load.
+
+export interface LinkCard {
+  kind: 'page' | 'youtube' | 'tiktok' | 'x'
+  title: string
+  description?: string
+  image?: string | null
+  site?: string
+  icon?: string | null
+  videoId?: string
+}
+
+const cardCache = new Map<string, Promise<LinkCard | null>>()
+const LINK_RE = /https?:\/\/[^\s<>"'）」]+/g
+
+/// The links a message would unfurl: the first two, not the app's own
+/// recordings, trailing punctuation off.
+export function unfurlable(text: string): string[] {
+  const out: string[] = []
+  for (const raw of String(text || '').match(LINK_RE) || []) {
+    const url = raw.replace(/[.,!?;:)\]]+$/, '')
+    if (JAM_AUDIO.test(url) || out.includes(url)) continue
+    out.push(url)
+    if (out.length >= 2) break
+  }
+  return out
+}
+
+function loadCard(httpBase: string, orgId: string, token: string, url: string): Promise<LinkCard | null> {
+  if (!cardCache.has(url)) {
+    cardCache.set(url, fetch(`${httpBase}/channels/link-preview?orgId=${encodeURIComponent(orgId)}&url=${encodeURIComponent(url)}`, { headers: { 'x-session-token': token } })
+      .then((r) => (r.ok ? r.json() : null)).then((d) => (d?.card as LinkCard) || null).catch(() => null))
+  }
+  return cardCache.get(url)!
+}
+
+const LinkCardView: React.FC<{ url: string; httpBase: string; orgId: string; token: string }> = ({ url, httpBase, orgId, token }) => {
+  const t = useT()
+  const [card, setCard] = useState<LinkCard | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [imageOk, setImageOk] = useState(true)
+  useEffect(() => {
+    let live = true
+    void loadCard(httpBase, orgId, token, url).then((c) => { if (live) setCard(c) })
+    return () => { live = false }
+  }, [httpBase, orgId, token, url])
+  if (!card) return null
+  const video = card.kind === 'youtube' && card.videoId
+  return (
+    <div className={`link-card ${card.kind}`} data-link-card={card.kind}>
+      <div className="link-card-site">
+        {card.icon && <img className="link-card-icon" src={card.icon} alt="" width={14} height={14} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />}
+        <span>{card.site}</span>
+      </div>
+      <a className="link-card-title" href={url} target="_blank" rel="noopener noreferrer">{card.title}</a>
+      {card.description && <div className="link-card-desc">{card.description}</div>}
+      {video && playing ? (
+        <div className="link-card-player">
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${card.videoId}?autoplay=1&rel=0`}
+            title={card.title}
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            allowFullScreen
+          />
+        </div>
+      ) : card.image && imageOk ? (
+        video ? (
+          <button type="button" className="link-card-thumb video" onClick={() => setPlaying(true)} aria-label={t('Play {title}', { title: card.title })}>
+            <img src={card.image} alt="" loading="lazy" onError={() => setImageOk(false)} />
+            <span className="link-card-play" aria-hidden="true" />
+          </button>
+        ) : (
+          <a className="link-card-thumb" href={url} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
+            <img src={card.image} alt="" loading="lazy" onError={() => setImageOk(false)} />
+          </a>
+        )
+      ) : null}
+    </div>
+  )
+}
+
+/// The cards for the links in one message.
+export const LinkCards: React.FC<{ text: string; httpBase: string; orgId: string; token: string }> = ({ text, httpBase, orgId, token }) => {
+  const urls = unfurlable(text)
+  if (!urls.length) return null
+  return <div className="link-cards">{urls.map((u) => <LinkCardView key={u} url={u} httpBase={httpBase} orgId={orgId} token={token} />)}</div>
+}

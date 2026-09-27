@@ -14,7 +14,7 @@ import type { AgentFace } from '../utils/mentions'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
 import type { DetailsTab, JournalCite } from './ChannelPanes'
 import { JamCall } from '../utils/jam'
@@ -1932,6 +1932,7 @@ export const ClassicList: React.FC<Props> = ({
   /// What sits under a message's words: its reactions and its thread.
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
+      {!m.deleted && m.kind === 'message' && <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken} />}
       {!m.deleted && (
         <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(m.id)} />
       )}

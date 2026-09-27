@@ -810,6 +810,22 @@ export async function handleChannels(request, env, url, { route, after }) {
     return json({ view: key, refs: picked.map((m) => m.ref) }, 201);
   }
 
+  // A link's card under the message that shares it: title, a line, a
+  // picture, and for a video what it takes to play it here (preview.js).
+  // Members only, so this is nobody's open proxy.
+  if (path === "/channels/link-preview" && request.method === "GET") {
+    const limited = await enforce(env, request, "chat");
+    if (limited) return limited;
+    const session = await getSession(env.DB, request.headers.get("x-session-token"));
+    if (!session) return json({ message: "Please sign in." }, 401);
+    const orgId = url.searchParams.get("orgId") || "";
+    if (!orgId || !(await isMember(env.DB, orgId, session.github_id))) return json({ message: "not a member of this org" }, 403);
+    const target = String(url.searchParams.get("url") || "").slice(0, 2000);
+    const { cachedPreview } = await import("./preview.js");
+    const out = await cachedPreview(target);
+    return json(out);
+  }
+
   // A private channel's members: anyone inside may bring somebody in, or
   // take somebody out; anyone may leave.
   // Messages in another language, in this reader's: translated once per
