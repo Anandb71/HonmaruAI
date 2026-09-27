@@ -55,6 +55,9 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     var createdAt: String
     var editedAt: String?
     var deleted: Bool?
+    /// The language it is written in; nil when there is nothing to
+    /// translate. A reader in another language sees it translated.
+    var lang: String?
     var parentId: String?
     var replyCount: Int?
     var lastReplyAt: String?
@@ -416,6 +419,13 @@ enum ChatService {
     static func businesses(orgId: String, base: URL) async throws -> [ChatBusiness] {
         struct R: Decodable { let businesses: [ChatBusiness] }
         return try await call("GET", "/businesses", base: base, query: ["orgId": orgId], as: R.self).businesses
+    }
+
+    /// Messages in this reader's language: `translations` by id, from what
+    /// is kept or written now; `off` when the reader turned it off.
+    struct Translations: Decodable { let translations: [String: String]; let off: Bool? }
+    static func translate(orgId: String, channel: String, ids: [String], base: URL) async throws -> Translations {
+        try await call("POST", "/channels/translate", base: base, body: ["orgId": orgId, "channel": channel, "ids": ids], timeout: 60, as: Translations.self)
     }
 
     static func messages(orgId: String, channel: String, before: String? = nil, base: URL) async throws -> [ChatMessage] {

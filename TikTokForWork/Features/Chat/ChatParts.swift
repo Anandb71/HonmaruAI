@@ -98,6 +98,35 @@ enum ChatText {
     }
 }
 
+/// Messages in another language, in the reader's: kept per message with the
+/// words they were translated from (an edit asks again), and which ones the
+/// reader turned back to the original.
+final class ChatTranslations: ObservableObject {
+    static let shared = ChatTranslations()
+    @Published private(set) var texts: [String: (from: String, text: String)] = [:]
+    @Published var originals: Set<String> = []
+    var off = false
+    private var asked: Set<String> = []
+
+    func store(_ id: String, from: String, text: String) { texts[id] = (from, text) }
+    func shown(_ m: ChatMessage) -> (text: String, translated: Bool) {
+        if let t = texts[m.id], t.from == m.body, !originals.contains(m.id) { return (t.text, true) }
+        return (m.body, false)
+    }
+    func hasTranslation(_ m: ChatMessage) -> Bool { texts[m.id]?.from == m.body }
+    func toggle(_ id: String) { if originals.contains(id) { originals.remove(id) } else { originals.insert(id) } }
+    /// The ones still to ask for, marked as asked.
+    func wanted(_ list: [ChatMessage], reader: String) -> [ChatMessage] {
+        guard !off else { return [] }
+        let out = list.filter { m in
+            guard m.deleted != true, let lang = m.lang, lang != reader, texts[m.id]?.from != m.body else { return false }
+            return !asked.contains("\(m.id):\(m.body)")
+        }
+        for m in out { asked.insert("\(m.id):\(m.body)") }
+        return out
+    }
+}
+
 /// A message's words, with quotes and lists as blocks.
 struct ChatRichText: View {
     let text: String
@@ -408,6 +437,7 @@ struct ChatMessageRow: View {
     let onProfile: (String) -> Void
 
     @Environment(\.chatAssets) private var assets
+    @ObservedObject private var translations = ChatTranslations.shared
     /// A message that is nothing but this workspace's emoji: drawn large.
     private var onlyEmoji: [String]? {
         let parts = message.body.split(whereSeparator: \.isWhitespace).map(String.init)
@@ -458,7 +488,13 @@ struct ChatMessageRow: View {
                     if let big = onlyEmoji {
                         HStack(spacing: 4) { ForEach(Array(big.enumerated()), id: \.offset) { _, e in ChatEmojiGlyph(emoji: e, size: 34) } }
                     } else if !message.body.isEmpty {
-                        ChatRichText(text: message.body)
+                        ChatRichText(text: translations.shown(message).text)
+                        if translations.hasTranslation(message) {
+                            Button { translations.toggle(message.id) } label: {
+                                Text(translations.shown(message).translated ? LocalizedStringKey("Translated · Show original") : LocalizedStringKey("Show translation"))
+                                    .font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
+                            }.buttonStyle(.plain)
+                        }
                     }
                     if let files = message.files, !files.isEmpty { ChatAttachments(files: files) }
                     if message.editedAt != nil {
