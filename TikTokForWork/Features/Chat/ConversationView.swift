@@ -440,36 +440,106 @@ struct ConversationView: View {
         }
     }
 
+    /// One line of "@": what it writes, what it shows, and how.
+    private struct MentionOption: Identifiable {
+        enum Kind { case special, ai, person, agent, group }
+        let id: String
+        let insert: String
+        let label: String
+        var detail: String? = nil
+        var kind: Kind
+        var emoji: String? = nil
+        var avatarURL: String? = nil
+        var online = false
+        var outside = false
+    }
+
+    /// Who "@" offers here, as Slack orders them: @here, @channel and
+    /// @agents first; then the people in this conversation, its agents, the
+    /// groups, and the people outside it — each with a dot for whether they
+    /// are at the app now.
+    private func mentionOptions(query q: String) -> [MentionOption] {
+        let online = Set(appState.onlineLogins.map { ChatHash.short($0) })
+        let groupRefs = store.groups.first { $0.view == view }?.refs
+        func inside(_ m: ChatMember) -> Bool {
+            if m.mine { return true }
+            if view.hasPrefix("dm:") { return view == "dm:\(m.ref)" }
+            if let groupRefs { return groupRefs.contains(m.ref) }
+            return true
+        }
+        let people = store.members.filter { !$0.mine }.map { m in
+            MentionOption(id: m.ref, insert: m.handle ?? m.name.replacingOccurrences(of: " ", with: ""), label: m.name, kind: .person,
+                          avatarURL: m.avatarUrl, online: m.loginHash.map { online.contains($0) } ?? false, outside: !inside(m))
+        }
+        let agents = store.agentMentions(in: view)
+        let here = people.filter { !$0.outside }
+        var specials = [
+            MentionOption(id: "__here", insert: "here", label: "@here", detail: String(localized: "Notifies the \(here.filter(\.online).count) people online here"), kind: .special),
+            MentionOption(id: "__channel", insert: "channel", label: "@channel", detail: String(localized: "Notifies all \(here.count) people in this conversation"), kind: .special),
+        ]
+        if !agents.isEmpty {
+            specials.append(MentionOption(id: "__agents", insert: agents.map(\.handle).joined(separator: " @"), label: "@agents",
+                                          detail: String(localized: "Calls all \(agents.count) agents in this conversation"), kind: .special))
+        }
+        let ai = [MentionOption(id: "__ai", insert: "AI", label: "AI", kind: .ai)]
+        let agentOptions = agents.map { MentionOption(id: "agent:\($0.handle)", insert: $0.handle, label: $0.label, detail: "@\($0.handle)", kind: .agent, emoji: $0.emoji, online: true) }
+        let groups = store.userGroups.map { MentionOption(id: "group:\($0.handle)", insert: $0.handle, label: $0.name, detail: "@\($0.handle)", kind: .group) }
+        let ordered = specials + ai + here + agentOptions + groups + people.filter(\.outside)
+        return ordered.filter { o in
+            q.isEmpty || o.insert.lowercased().hasPrefix(q) || o.label.lowercased().hasPrefix(q) || o.label.lowercased().hasPrefix("@\(q)")
+                || o.label.lowercased().split(separator: " ").contains { $0.hasPrefix(q) }
+        }.prefix(8).map { $0 }
+    }
+
     @ViewBuilder
     private var mentionSuggestions: some View {
         if let token = draft.split(separator: " ", omittingEmptySubsequences: false).last, token.hasPrefix("@"), token.count >= 1 {
-            let q = token.dropFirst().lowercased()
-            // (what goes after "@", what the chip says, an agent's face)
-            let ai: [(String, String, String?)] = [("AI", "AI", nil)]
-            let humans: [(String, String, String?)] = store.members.filter { !$0.mine }.map { ($0.handle ?? $0.name, $0.name, nil) }
-            let teamAgents: [(String, String, String?)] = store.agentMentions(in: view).map { ($0.handle, "@\($0.handle) · \($0.label)", $0.emoji) }
-            let groupsList: [(String, String, String?)] = store.userGroups.map { ($0.handle, "@\($0.handle) · \($0.name)", nil) }
-            let people = ai + teamAgents + humans + groupsList
-            let hits = people.filter { q.isEmpty || $0.0.lowercased().hasPrefix(q) || $0.1.lowercased().hasPrefix(q) }.prefix(6)
+            let hits = mentionOptions(query: token.dropFirst().lowercased())
             if !hits.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(hits.enumerated()), id: \.offset) { _, p in
-                            Button {
-                                var parts = draft.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
-                                parts[parts.count - 1] = "@\(p.0.contains(" ") ? p.1.replacingOccurrences(of: " ", with: "") : p.0) "
-                                draft = parts.joined(separator: " ")
-                            } label: {
-                                HStack(spacing: 6) {
-                                    ChatAvatar(name: p.1, isAI: p.0 == "AI" && p.2 == nil, size: 22, agentEmoji: p.2)
-                                    Text(p.1).font(.footnote.weight(.semibold))
-                                }.padding(.horizontal, 10).padding(.vertical, 6).glassCapsule(interactive: true)
-                            }.buttonStyle(.plain)
-                        }
+                VStack(spacing: 0) {
+                    ForEach(hits) { o in
+                        Button {
+                            var parts = draft.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+                            parts[parts.count - 1] = "@\(o.insert) "
+                            draft = parts.joined(separator: " ")
+                        } label: { mentionRow(o) }
+                        .buttonStyle(.plain)
                     }
                 }
+                .padding(.vertical, 4)
+                .glassPanel(cornerRadius: 14)
+                .padding(.horizontal, 12)
             }
         }
+    }
+
+    private func mentionRow(_ o: MentionOption) -> some View {
+        HStack(spacing: 10) {
+            if o.kind == .special {
+                Text("@").font(.headline).foregroundStyle(Theme.Colors.textSecondary).frame(width: 26, height: 26)
+            } else {
+                ChatAvatar(name: o.label, isAI: o.kind == .ai, size: 26, agentEmoji: o.kind == .agent ? (o.emoji ?? "🤖") : nil, url: o.avatarURL)
+                    .overlay(alignment: .bottomTrailing) {
+                        if o.kind == .person || o.kind == .agent {
+                            Circle().fill(o.online ? Color.green : Theme.Colors.textTertiary)
+                                .frame(width: 9, height: 9)
+                                .overlay(Circle().stroke(Theme.Colors.background, lineWidth: 2))
+                                .offset(x: 2, y: 2)
+                                .accessibilityLabel(o.online ? Text("Online") : Text("Offline"))
+                        }
+                    }
+            }
+            Text(o.label).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.Colors.textPrimary).lineLimit(1)
+            Spacer(minLength: 8)
+            Group {
+                if o.kind == .agent { Text("Agent") }
+                else if o.outside { Text("Not in channel") }
+                else if let d = o.detail { Text(d) }
+            }
+            .font(.caption).foregroundStyle(Theme.Colors.textTertiary).lineLimit(1)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .contentShape(Rectangle())
     }
 
     /// The @names in what is being written, each saying whether it reaches
