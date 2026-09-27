@@ -14,7 +14,7 @@ import type { AgentFace } from '../utils/mentions'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
 import type { DetailsTab, JournalCite } from './ChannelPanes'
 import { JamCall } from '../utils/jam'
@@ -157,6 +157,8 @@ interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name:
 /// A user group: "@handle" names everyone in it.
 interface UserGroup { handle: string; name: string; refs: string[]; createdBy: string | null }
 interface ActivityItem { type: 'mention' | 'reply' | 'reaction' | 'keyword'; message: ChannelMessage; unread: boolean; at?: string; emoji?: string; by?: string | null; byAvatar?: string | null; keyword?: string }
+
+const LATIN_READERS = new Set(['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'nb', 'fi', 'pl', 'cs', 'sk', 'ro', 'hu', 'tr', 'id', 'ms', 'vi', 'tl', 'ca', 'hr', 'sl', 'et', 'lv', 'lt', 'sw'])
 
 async function hash16(text: string): Promise<string> {
   const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))
@@ -309,6 +311,12 @@ export const ClassicList: React.FC<Props> = ({
     window.addEventListener('honmaru:agents-changed', on)
     return () => window.removeEventListener('honmaru:agents-changed', on)
   }, [api.httpBase, api.orgId, authHeaders])
+  // Somebody joined or left: the people in the sidebar are read again too.
+  useEffect(() => {
+    const on = () => setChannelsTick((n) => n + 1)
+    window.addEventListener('honmaru:members-changed', on)
+    return () => window.removeEventListener('honmaru:members-changed', on)
+  }, [])
   useEffect(() => {
     fetch(`${api.httpBase}/channels/usergroups?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
       .then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.groups) setUserGroups(d.groups) }).catch(() => {})
@@ -941,10 +949,11 @@ export const ClassicList: React.FC<Props> = ({
         if (!list) return prev
         const has = list.some((x) => x.id === m.id)
         isNew = !has
-        if (m.deleted && !m.replyCount) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
+        // Deleted is gone — its thread with it — never a "was deleted" line.
+        if (m.deleted) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
         return { ...prev, [m.channel]: has ? list.map((x) => (x.id === m.id ? msg : x)) : [...list, msg] }
       })
-      setThread((prev) => (prev && prev.parent.id === m.id ? { ...prev, parent: msg } : prev))
+      setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
       if (!m.deleted && !m.editedAt && (isNew || !messagesRef.current[m.channel])) {
         setActivity((prev) => ({ ...prev, [m.channel]: { channel: m.channel, lastAt: m.createdAt, preview: m.body.slice(0, 120), lastBy: mine ? 'me' : m.authorName } }))
       }
@@ -1199,7 +1208,10 @@ export const ClassicList: React.FC<Props> = ({
   const [originals, setOriginals] = useState<Set<string>>(new Set())
   const [translateOff, setTranslateOff] = useState(false)
   const asking = useRef<Set<string>>(new Set())
+  // "latn": Latin letters, too few to name the language — translated for a
+  // reader of Japanese, left alone for a reader of another Latin language.
   const needsTranslation = (m: ChannelMessage) => !translateOff && !m.deleted && Boolean(m.lang) && m.lang !== readerLang
+    && !(m.lang === 'latn' && LATIN_READERS.has(readerLang))
     && translations[m.id]?.from !== m.body && !asking.current.has(`${m.id}:${m.body}`)
   const translate = useCallback(async (channel: string, list: ChannelMessage[]) => {
     const want = list.filter(needsTranslation).slice(0, 60)
@@ -1343,9 +1355,14 @@ export const ClassicList: React.FC<Props> = ({
     if (done) setEditing(null)
   }
   const remove = async (channel: string, m: ChannelMessage) => {
-    if (!window.confirm(t('Delete this message? This cannot be undone.'))) return
-    await act('DELETE', '/channels/messages', channel, { messageId: m.id })
+    if (!window.confirm(m.replyCount ? t('Delete this message and its thread? This cannot be undone.') : t('Delete this message? This cannot be undone.'))) return
+    const done = await act('DELETE', '/channels/messages', channel, { messageId: m.id })
     if (editing?.id === m.id) setEditing(null)
+    // Gone here at once, and its thread with it.
+    if (done && !m.parentId) {
+      setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
+      setThread((prev) => (prev && prev.parent.id === m.id ? null : prev))
+    }
   }
   const togglePin = (channel: string, m: ChannelMessage) => void act('POST', '/channels/pins', channel, { messageId: m.id, pinned: !m.pinned })
   const openThread = async (channel: string, m: ChannelMessage) => {
@@ -1699,12 +1716,36 @@ export const ClassicList: React.FC<Props> = ({
 
   // "@" in the composer offers the team — and the AI.
   const mentionable = useMembers(api.httpBase, api.orgId, api.sessionToken)
-  const withAI = useMemo(() => [
-    { ref: '__ai', name: 'AI' } as (typeof mentionable)[number],
-    ...mentionable,
-    ...userGroups.map((g) => ({ ref: `group:${g.handle}`, name: g.name, handle: g.handle, title: t('{n} people', { n: g.refs.length }) }) as (typeof mentionable)[number]),
-    ...agentMentionables(agentsIn(agents, current?.view), mentionable),
-  ], [mentionable, userGroups, agents, current?.view, t])
+  // Who is online, by the hash of their login the member list carries.
+  const onlineKeys = useMemo(() => {
+    const on = new Set<string>()
+    for (const [login, state] of Object.entries(presence)) if (state === 'online' && hashes.get(login)) on.add(hashes.get(login)!)
+    return on
+  }, [presence, hashes])
+  const withAI = useMemo(() => {
+    const view = current?.view || ''
+    // Who is in the conversation being written in: everyone, in a public
+    // channel; its people, in a private one, a group or a DM.
+    const privateKeys = current?.kind === 'channel' && current.private ? new Set(businesses.find((b) => b.slug === current.slug)?.memberKeys || []) : null
+    const inside = (m: (typeof mentionable)[number]) => {
+      if (m.mine) return true
+      if (current?.kind === 'channel') return privateKeys ? Boolean(m.presence && privateKeys.has(m.presence)) : true
+      if (view.startsWith('dm:')) return view === `dm:${m.ref}`
+      if (current?.kind === 'group') return Boolean(current.refs?.includes(m.ref))
+      return true
+    }
+    const people = mentionable.map((m) => ({ ...m, online: Boolean(m.presence && onlineKeys.has(m.presence)), outside: privateKeys && !privateKeys.size ? false : !inside(m) }))
+    const here = agentMentionables(agentsIn(agents, view), mentionable)
+    const everyone = people.filter((m) => !m.outside && !m.mine).length
+    return [
+      { ref: '__here', name: 'here', handle: 'here', special: 'here', detail: t('Notifies the {n} people in this conversation', { n: everyone }) } as (typeof mentionable)[number],
+      ...(here.length ? [{ ref: '__agents', name: 'agents', handle: 'agents', special: 'agents', handles: here.map((a) => a.handle!), detail: t('Calls all {n} agents in this conversation', { n: here.length }) } as (typeof mentionable)[number]] : []),
+      { ref: '__ai', name: 'AI' } as (typeof mentionable)[number],
+      ...people,
+      ...userGroups.map((g) => ({ ref: `group:${g.handle}`, name: g.name, handle: g.handle, title: t('{n} people', { n: g.refs.length }) }) as (typeof mentionable)[number]),
+      ...here,
+    ]
+  }, [mentionable, userGroups, agents, current, businesses, onlineKeys, t])
   const mention = useMentionMenu(composer, draft, setDraft, withAI)
   const threadMention = useMentionMenu(threadComposer, threadDraft, setThreadDraft, withAI)
   // @names that reach somebody light up as they are typed.
@@ -1876,9 +1917,22 @@ export const ClassicList: React.FC<Props> = ({
     return `slk-mention${kind === 'group' ? ' group' : ''}`
   })
 
+  /// One face beside "3 replies": the AI's mark, an agent's emoji, your own
+  /// photo, or a teammate's.
+  const replyFace = (r: string) => {
+    if (r === 'ai') return <img key={r} className="slk-face slk-face-ai" src="/icon.svg" alt="" width={20} height={20} />
+    if (r.startsWith('agent:')) {
+      const a = agents.find((x) => `agent:${x.id}` === r)
+      return <span key={r} className="slk-face slk-face-agent">{a?.emoji || '🤖'}</span>
+    }
+    const mine = r === myRef
+    return <Avatar key={r} className="slk-face" name={mine ? (myName || t('You')) : nameOfRef(r)} url={mine ? myAvatar : memberByRef(r)?.avatarUrl} size={20} />
+  }
+
   /// What sits under a message's words: its reactions and its thread.
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
+      {!m.deleted && m.kind === 'message' && <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken} />}
       {!m.deleted && (
         <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(m.id)} />
       )}
@@ -1886,7 +1940,7 @@ export const ClassicList: React.FC<Props> = ({
       {!inThread && (m.replyCount || 0) > 0 && (
         <button type="button" className="slk-thread-link" onClick={() => void openThread(channel, m)}>
           <span className="slk-thread-faces" aria-hidden="true">
-            {(m.replyRefs || []).slice(0, 3).map((r) => <Avatar key={r} className="slk-face" name={nameOfRef(r)} url={memberByRef(r)?.avatarUrl} size={20} />)}
+            {(m.replyRefs || []).slice(0, 3).map((r) => replyFace(r))}
           </span>
           <b>{m.replyCount === 1 ? t('1 reply') : t('{n} replies', { n: m.replyCount! })}</b>
           {m.lastReplyAt && <span className="slk-thread-last">{t('Last reply {when}', { when: when(m.lastReplyAt) })}</span>}
@@ -2306,6 +2360,18 @@ export const ClassicList: React.FC<Props> = ({
         prevWho = `card:${who.name}`
       } else {
         const m = item.msg
+        if (m.kind === 'joined') {
+          // Somebody new came into the workspace: one quiet line, in your words.
+          out.push(
+            <div key={m.id} className="slk-joined" data-joined={m.id}>
+              <span className="slk-joined-face" aria-hidden="true">{m.authorAvatar ? <img src={m.authorAvatar} alt="" /> : '👋'}</span>
+              <span className="slk-joined-text">{t('{name} joined the workspace. Say hello!', { name: m.authorName || t('Someone') })}</span>
+              <time className="slk-joined-time" dateTime={m.createdAt}>{new Date(Date.parse(m.createdAt)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+            </div>,
+          )
+          prevWho = ''
+          continue
+        }
         if (m.kind === 'ai') {
           const card = m.cardId ? cardsById.get(m.cardId) : undefined
           out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m) },

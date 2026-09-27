@@ -3,7 +3,7 @@ import { fetchMock } from "./helpers/fetch-mock.js";
 import { beforeEach, afterEach, expect, test } from "vitest";
 import schemaSql from "../schema.sql?raw";
 import worker from "../src/index.js";
-import { messageLanguage } from "../src/translate.js";
+import { messageLanguage, wantsTranslation } from "../src/translate.js";
 
 // Each reader reads a conversation in their own language: a message in
 // another language is translated for them, once, and kept.
@@ -33,6 +33,13 @@ test("a message says the language it is in; names, links and emoji alone say non
   expect(messageLanguage("Autumn menu launches on the 1st")).toBe("en");
   expect(messageLanguage("ポスターの方向性をください")).toBe("ja");
   expect(messageLanguage("@hayao https://x.com/a 👍")).toBe(null);
+  // Too short to name: still not Japanese, so a Japanese reader gets it
+  // translated; a reader of English or Spanish is not asked.
+  expect(messageLanguage("hello!")).toBe("latn");
+  expect(wantsTranslation("latn", "ja")).toBe(true);
+  expect(wantsTranslation("latn", "en")).toBe(false);
+  expect(wantsTranslation("ja", "ja-JP")).toBe(false);
+  expect(wantsTranslation("en", "ja")).toBe(true);
 });
 
 test("a message in another language is translated for its reader, once; edited, it is translated again; off, never", async () => {

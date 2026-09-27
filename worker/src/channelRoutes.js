@@ -163,7 +163,7 @@ export async function decideFromMessage(env, { orgId, session, user, resolved, r
 
     // Whoever the message names decides; in a direct conversation with
     // nobody named, the other person does.
-    const named = resolveMentions(instruction, members).filter((m) => m.login !== user.login);
+    const named = resolveMentions(instruction, members, { here: false }).filter((m) => m.login !== user.login);
     const mentions = named.length ? named.map((m) => m.ref) : (resolved.kind === "dm" ? [resolved.other.ref] : []);
     await progress("routing");
     const res = await route({
@@ -676,7 +676,9 @@ export async function handleChannels(request, env, url, { route, after }) {
       : await deleteMessage(env.DB, { orgId: body.orgId, id: body.messageId, authorLogin: ctx.who.user.login });
     if (out.error) return json({ message: out.error }, out.status || 400);
     // Unsent: its files go with its words.
-    if (request.method === "DELETE") await dropFiles(env, body.orgId, body.messageId);
+    if (request.method === "DELETE") {
+      for (const mid of [body.messageId, ...(out.replies || [])]) await dropFiles(env, body.orgId, mid);
+    }
     after(async () => {
       await broadcastWithParent(env, body.orgId, ctx.resolved, out.row, ctx.members);
       await emitMessage(env, body.orgId, out.row, { updated: true });
@@ -806,6 +808,22 @@ export async function handleChannels(request, env, url, { route, after }) {
       event: customEvent("channel_group", { view: key, refs: members.filter((m) => logins.includes(m.login) && m.login !== login).map((m) => m.ref) }),
     })));
     return json({ view: key, refs: picked.map((m) => m.ref) }, 201);
+  }
+
+  // A link's card under the message that shares it: title, a line, a
+  // picture, and for a video what it takes to play it here (preview.js).
+  // Members only, so this is nobody's open proxy.
+  if (path === "/channels/link-preview" && request.method === "GET") {
+    const limited = await enforce(env, request, "chat");
+    if (limited) return limited;
+    const session = await getSession(env.DB, request.headers.get("x-session-token"));
+    if (!session) return json({ message: "Please sign in." }, 401);
+    const orgId = url.searchParams.get("orgId") || "";
+    if (!orgId || !(await isMember(env.DB, orgId, session.github_id))) return json({ message: "not a member of this org" }, 403);
+    const target = String(url.searchParams.get("url") || "").slice(0, 2000);
+    const { cachedPreview } = await import("./preview.js");
+    const out = await cachedPreview(target);
+    return json(out);
   }
 
   // A private channel's members: anyone inside may bring somebody in, or

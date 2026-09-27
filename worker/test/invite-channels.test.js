@@ -50,6 +50,19 @@ test("a person who takes an invitation is introduced in the channels it named, a
   expect(await said("cafe")).toHaveLength(1);
 });
 
+test("an invitation that names no channel: the team's first channel says who came in, once", async () => {
+  const made = await (await call("/invites/create", toru, { method: "POST", body: { orgId: ORG, role: "member" } })).json();
+  expect((await call("/invites/accept", newcomer, { method: "POST", body: { code: made.code } })).status).toBe(200);
+  const rows = (await env.DB.prepare("SELECT channel, kind, author_login FROM channel_messages WHERE org_id = ?1").bind(ORG).all()).results;
+  expect(rows).toEqual([{ channel: "b:cafe", kind: "joined", author_login: "u:gota@x.jp" }]);
+  // The line is who came in; each reader's screen says it in its language.
+  const list = await (await call(`/channels/messages?orgId=${encodeURIComponent(ORG)}&channel=b:cafe`, toru)).json();
+  expect(list.messages[0]).toMatchObject({ kind: "joined", authorName: "Gota" });
+  // Nobody's AI reads it as something said.
+  const { transcriptUpTo } = await import("../src/channels.js");
+  expect(await transcriptUpTo(env.DB, ORG, "b:cafe", new Date().toISOString())).toEqual([]);
+});
+
 test("an agent link mints a token once, for the member who made it, and introduces the agent", async () => {
   expect((await call("/agents/invite", outsider, { method: "POST", body: { orgId: ORG } })).status).toBe(403);
   const link = await (await call("/agents/invite", toru, { method: "POST", body: { orgId: ORG, channels: ["roastery"] } })).json();

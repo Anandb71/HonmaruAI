@@ -103,6 +103,7 @@ enum ChatText {
 /// reader turned back to the original.
 final class ChatTranslations: ObservableObject {
     static let shared = ChatTranslations()
+    static let latinReaders: Set<String> = ["en", "es", "fr", "de", "it", "pt", "nl", "sv", "da", "no", "nb", "fi", "pl", "cs", "sk", "ro", "hu", "tr", "id", "ms", "vi", "tl", "ca", "hr", "sl", "et", "lv", "lt", "sw"]
     @Published private(set) var texts: [String: (from: String, text: String)] = [:]
     @Published var originals: Set<String> = []
     var off = false
@@ -120,6 +121,9 @@ final class ChatTranslations: ObservableObject {
         guard !off else { return [] }
         let out = list.filter { m in
             guard m.deleted != true, let lang = m.lang, lang != reader, texts[m.id]?.from != m.body else { return false }
+            // "latn": too few Latin letters to name the language — translated
+            // for a reader of Japanese, left alone for a Latin-script reader.
+            if lang == "latn", Self.latinReaders.contains(reader) { return false }
             return !asked.contains("\(m.id):\(m.body)")
         }
         for m in out { asked.insert("\(m.id):\(m.body)") }
@@ -497,6 +501,7 @@ struct ChatMessageRow: View {
                         }
                     }
                     if let files = message.files, !files.isEmpty { ChatAttachments(files: files) }
+                    if message.kind == "message", let link = ChatLinkMetadata.firstLink(in: message.body) { ChatLinkPreview(url: link) }
                     if message.editedAt != nil {
                         Text("(edited)").font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -514,7 +519,14 @@ struct ChatMessageRow: View {
                         HStack(spacing: 6) {
                             HStack(spacing: -6) {
                                 ForEach(Array((message.replyRefs ?? []).prefix(3)), id: \.self) { ref in
-                                    ChatAvatar(name: nameOf(ref), size: 20, url: assets.avatars[ref])
+                                    // The AI and the team's agents answer in threads too.
+                                    if ref == "ai" {
+                                        ChatAvatar(name: String(localized: "Your AI"), isAI: true, size: 20)
+                                    } else if ref.hasPrefix("agent:") {
+                                        ChatAvatar(name: String(localized: "Agent"), size: 20, agentEmoji: "🤖")
+                                    } else {
+                                        ChatAvatar(name: nameOf(ref), size: 20, url: assets.avatars[ref])
+                                    }
                                 }
                             }
                             Text(n == 1 ? String(localized: "1 reply") : String(localized: "\(n) replies"))
@@ -548,6 +560,22 @@ struct ChatDayDivider: View {
                 .glassCapsule()
             VStack { Divider() }
         }.padding(.horizontal, 16).padding(.vertical, 6)
+    }
+}
+
+/// Somebody new came into the workspace: one quiet line, in your words.
+struct ChatJoinedRow: View {
+    let message: ChatMessage
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("👋").font(.body)
+            Text(String(localized: "\(message.authorName ?? String(localized: "Someone")) joined the workspace. Say hello!"))
+                .font(.subheadline).foregroundStyle(Theme.Colors.textPrimary)
+            Text(message.date, style: .time).font(.caption).foregroundStyle(Theme.Colors.textTertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
     }
 }
 

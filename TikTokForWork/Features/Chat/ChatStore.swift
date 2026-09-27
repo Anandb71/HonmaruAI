@@ -537,13 +537,16 @@ final class ChatStore: ObservableObject {
         }
         var list = messages[m.channel] ?? []
         if let i = list.firstIndex(where: { $0.id == m.id }) {
-            if m.isDeleted && (m.replyCount ?? 0) == 0 { list.remove(at: i) } else { list[i] = m }
+            // Deleted is gone, its thread with it — never a "was deleted" line.
+            if m.isDeleted { list.remove(at: i) } else { list[i] = m }
         } else if !m.isDeleted {
             list.append(m)
             if !m.mine { activity[m.channel] = ChatActivity(channel: m.channel, lastAt: m.createdAt, preview: String(m.body.prefix(120)), lastBy: m.authorName) }
         }
         if messages[m.channel] != nil { messages[m.channel] = list }
-        if thread?.parent.id == m.id { thread?.parent = m }
+        if thread?.parent.id == m.id {
+            if m.isDeleted { thread = nil } else { thread?.parent = m }
+        }
     }
 
     private func receiveMessage(_ data: Data?) {

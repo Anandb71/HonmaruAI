@@ -178,7 +178,7 @@ export async function hydrate(db, orgId, rows) {
     const chunk = ids.slice(i, i + 90);
     const marks = chunk.map((_, j) => `?${j + 2}`).join(", ");
     const [replies, reactions] = await Promise.all([
-      db.prepare(`SELECT parent_id, author_login, created_at FROM channel_messages
+      db.prepare(`SELECT parent_id, author_login, kind, created_at FROM channel_messages
                    WHERE org_id = ?1 AND deleted_at IS NULL AND parent_id IN (${marks}) ORDER BY created_at`)
         .bind(orgId, ...chunk).all(),
       db.prepare(`SELECT message_id, emoji, login FROM message_reactions
@@ -190,7 +190,10 @@ export async function hydrate(db, orgId, rows) {
       if (!slot) continue;
       slot.replyCount += 1;
       slot.lastReplyAt = r.created_at;
-      if (r.author_login && !slot.replyLogins.includes(r.author_login)) slot.replyLogins.push(r.author_login);
+      // Who answered, for the faces beside "3 replies": a person by login,
+      // the AI as "ai", an agent as "agent:<id>".
+      const who = r.kind === "ai" ? "ai" : r.author_login;
+      if (who && !slot.replyLogins.includes(who)) slot.replyLogins.push(who);
     }
     for (const r of reactions.results || []) out.get(r.message_id)?.reactions.push({ emoji: r.emoji, login: r.login });
   }
@@ -204,7 +207,7 @@ export async function present(db, orgId, rows, viewerLogin, view, members) {
   const now = Date.now();
   return Promise.all(rows.map(async (r) => {
     const x = extras.get(r.id) || {};
-    const replyRefs = (x.replyLogins || []).map((l) => members.find((m) => m.login === l)?.ref).filter(Boolean).slice(0, 5);
+    const replyRefs = (x.replyLogins || []).map((l) => (l === "ai" || String(l).startsWith("agent:") ? l : members.find((m) => m.login === l)?.ref)).filter(Boolean).slice(0, 5);
     const own = await Promise.all((files.get(r.id) || []).map((f) => toFile(db, f, now)));
     return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null });
   }));
@@ -222,8 +225,9 @@ export async function listMessages(db, orgId, resolved, viewerLogin, view, membe
     .all();
   const rows = (results || []).reverse();
   const shown = await present(db, orgId, rows, viewerLogin, view, members);
-  // A deleted message with nothing under it is simply gone, as in Slack.
-  return shown.filter((m) => !m.deleted || m.replyCount > 0);
+  // A deleted message is simply gone. (Before its thread went with it, one
+  // could be left with replies under it; those are not shown either.)
+  return shown.filter((m) => !m.deleted);
 }
 
 /// A thread: the message it hangs off, and every reply under it, oldest first.
@@ -275,20 +279,28 @@ export async function editMessage(db, { orgId, id, authorLogin, body }) {
   return { row: await getMessage(db, orgId, id) };
 }
 
-/// Unsend. The words go at once; the row stays as a tombstone so a thread
-/// under it still has somewhere to hang, and its reactions and pin go too.
+/// Unsend. The message is gone — no "this message was deleted" left in
+/// its place — and a thread under it goes with it: the replies, their
+/// reactions and pins. The rows stay only as tombstones nobody is shown.
+/// `replies` are the ids taken with it, for their files to go too.
 export async function deleteMessage(db, { orgId, id, authorLogin }) {
   const row = await getMessage(db, orgId, id);
   if (!row || row.deleted_at) return { error: "No such message.", status: 404 };
   if (row.kind !== "message" || row.author_login !== authorLogin) return { error: "Only the person who wrote it can delete it.", status: 403 };
   const { keepIfHeld } = await import("./governance.js");
   await keepIfHeld(db, orgId, row, "delete");
-  await db.batch([
+  const { results: under } = row.parent_id ? { results: [] } : await db.prepare(
+    "SELECT * FROM channel_messages WHERE org_id = ?1 AND parent_id = ?2 AND deleted_at IS NULL"
+  ).bind(orgId, id).all();
+  for (const r of under || []) await keepIfHeld(db, orgId, r, "delete");
+  const now = new Date().toISOString();
+  const gone = [id, ...(under || []).map((r) => r.id)];
+  await db.batch(gone.flatMap((mid) => [
     db.prepare("UPDATE channel_messages SET body = '', deleted_at = ?3, pinned_at = NULL, pinned_by = NULL WHERE org_id = ?1 AND id = ?2")
-      .bind(orgId, id, new Date().toISOString()),
-    db.prepare("DELETE FROM message_reactions WHERE org_id = ?1 AND message_id = ?2").bind(orgId, id),
-  ]);
-  return { row: await getMessage(db, orgId, id) };
+      .bind(orgId, mid, now),
+    db.prepare("DELETE FROM message_reactions WHERE org_id = ?1 AND message_id = ?2").bind(orgId, mid),
+  ]));
+  return { row: await getMessage(db, orgId, id), replies: gone.slice(1) };
 }
 
 /// The emoji a reaction may be: one grapheme of pictograph, or a short
@@ -373,7 +385,7 @@ export async function transcriptUpTo(db, orgId, key, createdAt, { limit = 24, sk
               (SELECT group_concat(f.name, ', ') FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id) AS file_names
          FROM channel_messages m
          LEFT JOIN users u ON u.login = m.author_login
-        WHERE m.org_id = ?1 AND m.channel = ?2 AND m.created_at <= ?3 AND m.deleted_at IS NULL
+        WHERE m.org_id = ?1 AND m.channel = ?2 AND m.created_at <= ?3 AND m.deleted_at IS NULL AND m.kind != 'joined'
         ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?4`
     )
     .bind(orgId, key, createdAt, skip ? limit * 3 : limit)
@@ -421,10 +433,10 @@ export async function channelActivity(db, orgId, viewerLogin, members) {
               (SELECT f.name FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id ORDER BY f.created_at LIMIT 1) AS file_name
          FROM channel_messages m
          JOIN (SELECT channel, MAX(created_at) AS at FROM channel_messages
-                WHERE org_id = ?1 AND deleted_at IS NULL AND parent_id IS NULL GROUP BY channel) latest
+                WHERE org_id = ?1 AND deleted_at IS NULL AND parent_id IS NULL AND kind != 'joined' GROUP BY channel) latest
            ON latest.channel = m.channel AND latest.at = m.created_at
          LEFT JOIN users u ON u.login = m.author_login
-        WHERE m.org_id = ?1 AND m.deleted_at IS NULL AND m.parent_id IS NULL`
+        WHERE m.org_id = ?1 AND m.deleted_at IS NULL AND m.parent_id IS NULL AND m.kind != 'joined'`
     )
     .bind(orgId)
     .all();
@@ -670,10 +682,10 @@ function span(value, unit) {
 
 export async function searchMessages(db, orgId, login, members, raw, { limit = 30 } = {}) {
   const q = parseQuery(raw);
-  const where = [`m.org_id = ?1`, VISIBLE, `m.deleted_at IS NULL`];
+  const where = [`m.org_id = ?1`, VISIBLE, `m.deleted_at IS NULL`, `m.kind != 'joined'`];
   const binds = [orgId, login];
   const add = (sql, value) => { binds.push(value); where.push(sql.replace("?", `?${binds.length}`)); };
-  const person = (name) => name === "me" ? members.find((m) => m.login === login) : resolveMentions(`@${name}`, members)[0];
+  const person = (name) => name === "me" ? members.find((m) => m.login === login) : resolveMentions(`@${name}`, members, { here: false })[0];
   if (q.text) add("m.body LIKE ? ESCAPE '\\'", likeOf(q.text));
   for (const phrase of q.phrases) add("m.body LIKE ? ESCAPE '\\'", likeOf(phrase));
   for (const word of q.not) add("m.body NOT LIKE ? ESCAPE '\\'", likeOf(word));

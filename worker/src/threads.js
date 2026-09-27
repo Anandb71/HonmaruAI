@@ -32,12 +32,19 @@ const handleOf = (login) => fold(login).replace(/^(u:|email:)/, "").split("@")[0
 /// by handle (the part of the login before the @), by ref, or by alias when
 /// the member list carries them — case-folded, so "@kenji" finds "Kenji
 /// Tanaka". Unmatched tokens are left alone: "@everyone" is just a word.
-export function resolveMentions(text, members) {
+export function resolveMentions(text, members, { here = true } = {}) {
   const tokens = mentionTokens(text);
   if (!tokens.length) return [];
   const found = new Map();
   for (const token of tokens) {
     const want = fold(token);
+    // "@here" reaches everyone the conversation's `members` are — for a
+    // closed one, the caller keeps only the people in it. Deciding who
+    // decides, it names nobody (`here: false`).
+    if (want === "here") {
+      if (here) for (const m of members) found.set(m.login, m);
+      continue;
+    }
     for (const m of members) {
       const names = [m.handle, m.name, ...(m.name ? String(m.name).split(/\s+/) : []), handleOf(m.login), m.login, m.ref, ...(m.aliases || [])]
         .filter(Boolean)
@@ -139,7 +146,7 @@ export async function addComment(db, { orgId, cardId, authorLogin, body }) {
   const card = await getCard(db, orgId, cardId);
   if (!card) return { error: "no such card", status: 404 };
   const members = await listMembers(db, orgId, null);
-  const mentioned = resolveMentions(text, members).map((m) => m.login).filter((l) => l !== authorLogin);
+  const mentioned = resolveMentions(text, members, { here: false }).map((m) => m.login).filter((l) => l !== authorLogin);
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
   await db

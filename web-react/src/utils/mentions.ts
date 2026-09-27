@@ -21,6 +21,18 @@ export interface Mentionable {
   /// One of the team's agents: drawn with its emoji and an "Agent" tag.
   agent?: boolean
   emoji?: string | null
+  /// A hash of their login, matching the relay's online/offline events.
+  presence?: string | null
+  /// Here right now: a green dot beside them in "@".
+  online?: boolean
+  /// Not in the conversation being written in: "@" says so.
+  outside?: boolean
+  /// "@here" (everyone in the conversation) or "@agents" (every agent in it).
+  special?: 'here' | 'agents'
+  /// What a special entry does, said on its right.
+  detail?: string
+  /// For "@agents": the handles it writes out.
+  handles?: string[]
 }
 
 /// An agent as the workspace lists it (GET /channels, /channels/agents).
@@ -78,7 +90,7 @@ const fold = (s: string) => s.normalize('NFKC').toLowerCase()
 
 /// Who matches what has been typed so far, best first: a name that starts
 /// with it, then one that contains it. Empty query: everyone.
-export function matchMembers(members: Mentionable[], query: string, limit = 6): Mentionable[] {
+export function matchMembers(members: Mentionable[], query: string, limit = 8): Mentionable[] {
   const q = fold(query.trim())
   const score = (m: Mentionable) => {
     const names = [m.handle || '', m.name, ...(m.aliases || [])].filter(Boolean).map(fold)
@@ -88,10 +100,13 @@ export function matchMembers(members: Mentionable[], query: string, limit = 6): 
     if (names.some((n) => n.includes(q))) return 1
     return 0
   }
+  // @here and @agents first, then the people in the conversation, then its
+  // agents, then everyone else — the way Slack lists them.
+  const rank = (m: Mentionable) => (m.special ? 0 : m.outside ? 3 : m.agent ? 2 : 1)
   return members
     .map((m) => ({ m, s: score(m) }))
     .filter((x) => x.s > 0)
-    .sort((a, b) => b.s - a.s || a.m.name.localeCompare(b.m.name))
+    .sort((a, b) => b.s - a.s || rank(a.m) - rank(b.m) || a.m.name.localeCompare(b.m.name))
     .slice(0, limit)
     .map((x) => x.m)
 }
@@ -103,7 +118,9 @@ export function insertMention(text: string, caret: number, member: Mentionable):
   if (!q) return { text, caret }
   // The username when there is one — it is exact and has no spaces; else
   // the first name, which the Worker also matches.
-  const label = `@${member.handle || member.name.split(/\s+/)[0] || member.name} `
+  const label = member.special === 'agents' && member.handles?.length
+    ? `${member.handles.map((h) => `@${h}`).join(' ')} `
+    : `@${member.handle || member.name.split(/\s+/)[0] || member.name} `
   const next = text.slice(0, q.start) + label + text.slice(caret)
   return { text: next, caret: q.start + label.length }
 }
@@ -140,16 +157,20 @@ export function splitMentions(text: string): Array<{ text: string; mention: bool
   return out
 }
 
-// The team, once per workspace per page load: every box that offers names
-// reads the same list.
+// The team, once per workspace, shared by every box that offers names —
+// read again when somebody joins or leaves (the relay says so), and when the
+// page comes back into view after a while, in case that word was missed.
 const cache = new Map<string, Promise<Mentionable[]>>()
+const loadedAt = new Map<string, number>()
+const STALE_MS = 60_000
 
 export function loadMembers(httpBase: string, orgId: string, sessionToken: string): Promise<Mentionable[]> {
   const key = `${httpBase}|${orgId}`
   if (!cache.has(key)) {
+    loadedAt.set(key, Date.now())
     cache.set(key, fetch(`${httpBase}/members?orgId=${encodeURIComponent(orgId)}`, { headers: { 'x-session-token': sessionToken } })
       .then((r) => (r.ok ? r.json() : { members: [] }))
-      .then((data) => (data.members || []).map((m: { ref: string; name: string; aliases?: string[]; handle?: string | null; mine?: boolean; avatarUrl?: string | null }) => ({ ref: m.ref, name: m.name, aliases: m.aliases || [], handle: m.handle || null, mine: Boolean(m.mine), avatarUrl: m.avatarUrl || null })))
+      .then((data) => (data.members || []).map((m: { ref: string; name: string; aliases?: string[]; handle?: string | null; mine?: boolean; avatarUrl?: string | null; presence?: string | null }) => ({ ref: m.ref, name: m.name, aliases: m.aliases || [], handle: m.handle || null, mine: Boolean(m.mine), avatarUrl: m.avatarUrl || null, presence: m.presence || null })))
       .catch(() => { cache.delete(key); return [] }))
   }
   return cache.get(key)!
@@ -164,8 +185,28 @@ export function useMembers(httpBase: string, orgId: string, sessionToken: string
   const [members, setMembers] = useState<Mentionable[]>([])
   useEffect(() => {
     let ignore = false
-    loadMembers(httpBase, orgId, sessionToken).then((list) => { if (!ignore) setMembers(list) })
-    return () => { ignore = true }
+    const read = () => loadMembers(httpBase, orgId, sessionToken).then((list) => { if (!ignore) setMembers(list) })
+    // Every box that offers names hears the same word: the first one to
+    // hear it reads the team again, the rest share that read.
+    const again = () => {
+      if (Date.now() - (loadedAt.get(`${httpBase}|${orgId}`) || 0) > 2000) forgetMembers(orgId)
+      void read()
+    }
+    const back = () => {
+      if (document.visibilityState !== 'visible') return
+      const at = loadedAt.get(`${httpBase}|${orgId}`) || 0
+      if (Date.now() - at > STALE_MS) again()
+    }
+    void read()
+    window.addEventListener('honmaru:members-changed', again)
+    window.addEventListener('focus', back)
+    document.addEventListener('visibilitychange', back)
+    return () => {
+      ignore = true
+      window.removeEventListener('honmaru:members-changed', again)
+      window.removeEventListener('focus', back)
+      document.removeEventListener('visibilitychange', back)
+    }
   }, [httpBase, orgId, sessionToken])
   return members
 }

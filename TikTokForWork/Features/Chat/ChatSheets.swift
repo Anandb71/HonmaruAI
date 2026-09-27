@@ -52,6 +52,8 @@ struct ChatThreadSheet: View {
             }
             .navigationTitle("Thread").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            // Its message deleted, the thread went with it: nothing left to show.
+            .onChange(of: store.thread?.parent.id) { old, new in if old != nil && new == nil { dismiss() } }
             .sheet(item: $reactingTo) { m in ChatEmojiPicker { e in Task { await store.react(m, e) } } }
         }
         // Everyone's photos and the workspace's emoji, however the sheet was opened.

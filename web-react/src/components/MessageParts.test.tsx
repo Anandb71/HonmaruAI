@@ -78,3 +78,12 @@ describe('a Jam recording in a message', () => {
     expect(html('see https://example.com/channels/jam/audio/nope')).toContain('<a href="https://example.com/channels/jam/audio/nope"')
   })
 })
+
+describe('the links a message unfurls', () => {
+  it('takes the first two, trims punctuation, skips a Jam recording', async () => {
+    const { unfurlable } = await import('./MessageParts')
+    expect(unfurlable('see https://a.example/x, and https://b.example/y! https://c.example/z')).toEqual(['https://a.example/x', 'https://b.example/y'])
+    expect(unfurlable('https://h.example/channels/jam/audio/0f8fad5b-d9cb-469f-a165-70867728950e')).toEqual([])
+    expect(unfurlable('no links')).toEqual([])
+  })
+})

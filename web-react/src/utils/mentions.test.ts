@@ -82,3 +82,20 @@ describe('mentionKind', () => {
     expect(mentionSegments('mail a@b.com', list).some((p) => p.mention)).toBe(false)
   })
 })
+
+describe('the "@" list, as Slack orders it', () => {
+  const list = [
+    { ref: 'out', name: 'Ryan Haraki', outside: true },
+    { ref: 'agent:1', name: 'jack', handle: 'jack', agent: true },
+    { ref: 'p1', name: 'Gota Wazumi' },
+    { ref: '__agents', name: 'agents', handle: 'agents', special: 'agents' as const, handles: ['ando', 'jack'] },
+    { ref: '__here', name: 'here', handle: 'here', special: 'here' as const },
+  ]
+  it('puts @here and @agents first, then people here, then agents, then people outside', () => {
+    expect(matchMembers(list, '').map((m) => m.ref)).toEqual(['__agents', '__here', 'p1', 'agent:1', 'out'])
+  })
+  it('writes out every agent for @agents', () => {
+    expect(insertMention('@ag', 3, list[3]).text).toBe('@ando @jack ')
+    expect(insertMention('hi @he', 6, list[4]).text).toBe('hi @here ')
+  })
+})
