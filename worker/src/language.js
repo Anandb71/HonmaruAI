@@ -168,11 +168,3 @@ export function languageName(locale) {
     return null;
   }
 }
-
-/// Whether a message written in one language is read by someone of another:
-/// only when both are known and differ.
-export function readsDifferently(text, locale) {
-  const reader = primaryLanguage(locale);
-  const written = primaryLanguage(detectLanguage(text) || "");
-  return Boolean(reader && written && written !== "und" && written !== reader);
-}

@@ -4,8 +4,6 @@ import { resolveMentions } from "./threads.js";
 import { filesFor, toFile } from "./files.js";
 import { accessFor, mayRead, membersOf, isGroupKey, hasGuests, publicAudience } from "./access.js";
 import { parseKeywords, keywordHit } from "./quiet.js";
-import { detectLanguage, primaryLanguage, readsDifferently } from "./language.js";
-import { sha256Hex } from "./auth.js";
 
 // Channels you can talk in.
 //
@@ -150,32 +148,7 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     reactions: deleted ? [] : reactions,
     files: deleted ? [] : (extra.files || []),
     ...(agent ? { agent: { id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji || null } } : {}),
-    // A reply an agent or the AI wrote: the language it is in, and — when
-    // the reader reads another and it has been translated — theirs.
-    ...((row.kind === "agent" || row.kind === "ai") && !deleted ? { lang: primaryLanguage(detectLanguage(row.body) || "") || null, translation: extra.translation || null } : {}),
   };
-}
-
-/// The stored translations of the replies in `rows` into the viewer's own
-/// language, by message id — only ones made from the text as it stands.
-async function translationsFor(db, orgId, rows, viewerLogin) {
-  const out = new Map();
-  const replies = rows.filter((r) => (r.kind === "agent" || r.kind === "ai") && !r.deleted_at && r.body);
-  if (!replies.length || !viewerLogin) return out;
-  const user = await db.prepare("SELECT locale FROM users WHERE login = ?1").bind(viewerLogin).first().catch(() => null);
-  const lang = primaryLanguage(user?.locale);
-  if (!lang) return out;
-  const wanted = replies.filter((r) => readsDifferently(r.body, lang)).slice(0, 90);
-  if (!wanted.length) return out;
-  const { results } = await db.prepare(
-    `SELECT message_id, source_hash, body FROM message_translations WHERE org_id = ?1 AND locale = ?2 AND message_id IN (${wanted.map((_, i) => `?${i + 3}`).join(", ")})`
-  ).bind(orgId, lang, ...wanted.map((r) => r.id)).all().catch(() => ({ results: [] }));
-  const kept = new Map((results || []).map((r) => [r.message_id, r]));
-  for (const r of wanted) {
-    const t = kept.get(r.id);
-    if (t && t.source_hash === (await sha256Hex(r.body)).slice(0, 32)) out.set(r.id, { lang, body: t.body });
-  }
-  return out;
 }
 
 /// The agents that wrote any of these rows, by id — the deleted too, so
@@ -223,13 +196,13 @@ export async function hydrate(db, orgId, rows) {
 /// Rows to messages, with their threads, reactions and files — each file
 /// with an address signed for whoever is being shown it.
 export async function present(db, orgId, rows, viewerLogin, view, members) {
-  const [extras, files, agents, translations] = await Promise.all([hydrate(db, orgId, rows), filesFor(db, orgId, rows.map((r) => r.id)), agentsOf(db, orgId, rows), translationsFor(db, orgId, rows, viewerLogin)]);
+  const [extras, files, agents] = await Promise.all([hydrate(db, orgId, rows), filesFor(db, orgId, rows.map((r) => r.id)), agentsOf(db, orgId, rows)]);
   const now = Date.now();
   return Promise.all(rows.map(async (r) => {
     const x = extras.get(r.id) || {};
     const replyRefs = (x.replyLogins || []).map((l) => members.find((m) => m.login === l)?.ref).filter(Boolean).slice(0, 5);
     const own = await Promise.all((files.get(r.id) || []).map((f) => toFile(db, f, now)));
-    return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null, translation: translations.get(r.id) || null });
+    return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null });
   }));
 }
 

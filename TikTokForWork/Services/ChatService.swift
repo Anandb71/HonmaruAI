@@ -64,21 +64,12 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     var files: [ChatFile]?
     /// Set when one of the team's agents wrote it: its name and face.
     var agent: ChatAgentFace?
-    /// A reply by an agent or the AI: the language it is written in, and
-    /// — when this reader reads another and it has been made — theirs.
-    var lang: String?
-    var translation: ChatTranslation?
 
     var isAI: Bool { kind == "ai" }
     /// Written by an agent the team made ("@hayao"), not by a person.
     var isAgent: Bool { kind == "agent" }
     var isDeleted: Bool { deleted == true }
     var date: Date { ChatDates.parse(createdAt) ?? .distantPast }
-}
-
-struct ChatTranslation: Codable, Hashable {
-    let lang: String
-    let body: String
 }
 
 struct ChatMemberStatus: Codable, Hashable {
@@ -474,14 +465,6 @@ enum ChatService {
         struct R: Decodable { let sessions: [SignedInSession] }
         let body: [String: Any] = ref.map { ["ref": $0] } ?? ["others": true]
         return try await call("DELETE", "/sessions", base: base, body: body, as: R.self).sessions
-    }
-
-    /// An agent's or the AI's reply in the reader's language: kept on the
-    /// server once made. Nil when it needs none or none could be made.
-    static func translate(orgId: String, channel: String, messageId: String, locale: String, base: URL) async throws -> ChatTranslation? {
-        struct R: Decodable { let translation: ChatTranslation? }
-        return try await call("POST", "/channels/messages/translate", base: base,
-                              body: ["orgId": orgId, "channel": channel, "messageId": messageId, "locale": locale], as: R.self).translation
     }
 
     /// This workspace's own emoji. Another workspace's are not in it.

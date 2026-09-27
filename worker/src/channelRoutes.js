@@ -13,8 +13,7 @@ import { allowed } from "./permissions.js";
 import { resolveMentions } from "./threads.js";
 import { appendCardEvent } from "./events.js";
 import { announceCards, announceEvents, announceTo } from "./announce.js";
-import { localizeForRecipient, translatedMessage } from "./localize.js";
-import { primaryLanguage, detectLanguage } from "./language.js";
+import { localizeForRecipient } from "./localize.js";
 import { loadCopy } from "./copy.js";
 import { serverText } from "./serverCopy.js";
 import { notifyCard, anyChannelConfigured } from "./notify.js";
@@ -79,25 +78,6 @@ async function caller(env, request, orgId) {
 }
 
 /// The caller, the channel they named, and how they see it — or why not.
-/// A reply by an agent or the AI, made ready in the language of each person
-/// who reads this conversation, so it opens in theirs rather than the
-/// asker's. At most four languages; nothing when everyone reads the one it
-/// is in. Charged to whoever asked.
-export async function translateForReaders(env, orgId, row, resolved, members, payerGithubId) {
-  try {
-    if (!row?.body || (row.kind !== "agent" && row.kind !== "ai")) return;
-    const logins = Array.isArray(resolved?.logins) && resolved.logins.length ? resolved.logins : members.map((m) => m.login);
-    const wanted = logins.filter(Boolean).slice(0, 90);
-    if (!wanted.length) return;
-    const { results } = await env.DB.prepare(`SELECT DISTINCT locale FROM users WHERE login IN (${wanted.map((_, i) => `?${i + 1}`).join(", ")})`).bind(...wanted).all();
-    const written = primaryLanguage(detectLanguage(row.body) || "");
-    const langs = [...new Set((results || []).map((r) => primaryLanguage(r.locale)).filter((l) => l && l !== written))].slice(0, 4);
-    for (const lang of langs) await translatedMessage(env, orgId, row, { locale: lang, payerGithubId });
-  } catch (err) {
-    console.error("reply translation failed", safe(err?.message));
-  }
-}
-
 async function inChannel(env, request, { orgId, channel }) {
   const who = await caller(env, request, orgId);
   if (who.denied) return who;
@@ -159,8 +139,6 @@ export async function decideFromMessage(env, { orgId, session, user, resolved, r
     if (out.row) {
       await broadcastWithParent(env, orgId, resolved, out.row, members);
       await emitMessage(env, orgId, out.row);
-      await translateForReaders(env, orgId, out.row, resolved, members, session.github_id);
-      if (resolved.logins) await broadcastWithParent(env, orgId, resolved, out.row, members).catch(() => {});
     }
   };
   try {
@@ -422,10 +400,6 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
         await broadcastWithParent(env, orgId, resolved, out.row, members);
         await emitMessage(env, orgId, out.row);
         await queueMessagePushes(env, orgId, out.row, { members }).catch((err) => console.error("push queue failed", safe(err?.message)));
-        // Then in the language of each reader; the same message again, now
-        // carrying it.
-        await translateForReaders(env, orgId, out.row, resolved, members, session.github_id);
-        if (resolved.logins) await broadcastWithParent(env, orgId, resolved, out.row, members).catch(() => {});
       }
     } catch (err) {
       console.error("agent answer failed", safe(err?.message));
@@ -688,19 +662,6 @@ export async function handleChannels(request, env, url, { route, after }) {
   }
 
   // Edit or unsend your own message.
-  // An agent's or the AI's reply in the reader's own language: from the
-  // store, or made now. Only a message the caller can see; only a reply.
-  if (path === "/channels/messages/translate" && request.method === "POST") {
-    const body = await request.json().catch(() => ({}));
-    const ctx = await inChannel(env, request, body);
-    if (ctx.denied) return ctx.denied;
-    const row = await getMessage(env.DB, body.orgId, String(body.messageId || ""));
-    if (!row || row.channel !== ctx.resolved.key || row.deleted_at) return json({ message: "No such message." }, 404);
-    if (row.kind !== "agent" && row.kind !== "ai") return json({ message: "Only replies from an agent or the AI are translated here." }, 400);
-    const locale = primaryLanguage(body.locale) || primaryLanguage(ctx.who.user.locale) || "en";
-    const translation = await translatedMessage(env, body.orgId, row, { locale, payerGithubId: ctx.who.session.github_id });
-    return json({ translation });
-  }
   if (path === "/channels/messages" && (request.method === "PUT" || request.method === "DELETE")) {
     const limited = await enforce(env, request, "chat");
     if (limited) return limited;

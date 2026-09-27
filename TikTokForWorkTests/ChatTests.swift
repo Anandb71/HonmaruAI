@@ -195,17 +195,4 @@ final class ChannelAgentTests: XCTestCase {
         let older = try JSONDecoder().decode(ChatAgent.self, from: Data(#"{"id":"a2","handle":"x","name":"X"}"#.utf8))
         XCTAssertNil(older.channels)
     }
-
-    func testAgentRepliesCarryTheirLanguageAndTranslation() throws {
-        let json = """
-        {"id":"m1","channel":"b:cafe","kind":"agent","body":"The supplier can deliver on Friday.","authorName":"Hayao","authorRef":null,"mine":false,"cardId":null,"createdAt":"2026-09-27T00:00:00Z",
-         "lang":"en","translation":{"lang":"ja","body":"仕入れ先は金曜日に納品できます。"}}
-        """
-        let m = try JSONDecoder().decode(ChatMessage.self, from: Data(json.utf8))
-        XCTAssertEqual(m.lang, "en")
-        XCTAssertEqual(m.translation, ChatTranslation(lang: "ja", body: "仕入れ先は金曜日に納品できます。"))
-        let person = try JSONDecoder().decode(ChatMessage.self, from: Data(#"{"id":"m2","channel":"b:cafe","kind":"message","body":"hi","mine":true,"createdAt":"2026-09-27T00:00:00Z"}"#.utf8))
-        XCTAssertNil(person.lang)
-        XCTAssertNil(person.translation)
-    }
 }

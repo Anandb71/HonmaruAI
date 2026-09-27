@@ -107,17 +107,3 @@ The allow form says that what the AI reads from an app passes through Smithery (
 | `DELETE /orgs/apps?orgId=&server=` | owners, fresh sign-in |
 | `POST /apps/connect` `{orgId, server}` → `{state, setupUrl}` | members (not guests) |
 | `DELETE /apps/connect?orgId=&server=` | the person |
-
----
-
-## Replies in each reader's language
-
-This is a separate change that landed alongside B.
-
-An agent's or the AI's reply is written in the asker's language. Everyone else in the conversation now reads it in their own:
-
-- `message_translations` keeps a reply's translation per language, with a hash of the words it was made from. An edited reply is translated again rather than shown stale.
-- After a reply is posted, `translateForReaders` translates it into each distinct language of the people in that conversation, up to four. It is charged to the asker's allowance.
-- A message shown to someone carries `lang` (the language it is written in) and, when theirs differs and is ready, `translation`.
-- `POST /channels/messages/translate {orgId, channel, messageId, locale}` makes one on demand. It only works for a reply the caller can see.
-- Web and iOS show the translation, with "Translated · Show original" to switch back.

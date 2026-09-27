@@ -24,7 +24,6 @@ import { InviteDialog } from './InviteDialog'
 import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
-import { ReplyText } from './ReplyText'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
 import './ClassicList.css'
 
@@ -1860,7 +1859,7 @@ export const ClassicList: React.FC<Props> = ({
       <>
         {(m.body || m.editedAt) && (
           <div className="slk-text">
-            <ReplyText m={m} channel={channel} api={api} render={rich} />
+            {rich(m.body)}
             {m.editedAt && <span className="slk-edited" title={new Date(m.editedAt).toLocaleString(locale)}> {t('(edited)')}</span>}
           </div>
         )}
@@ -2242,7 +2241,7 @@ export const ClassicList: React.FC<Props> = ({
           const card = m.cardId ? cardsById.get(m.cardId) : undefined
           out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m) },
             <>
-              <div className="slk-text"><ReplyText m={m} channel={thread.view!} api={api} render={rich} /></div>
+              <div className="slk-text">{rich(m.body)}</div>
               {card && attachment(card)}
               {jams[thread.view!]?.messageId === m.id && jamCard(thread.view!, jams[thread.view!])}
               {underneath(thread.view!, m)}

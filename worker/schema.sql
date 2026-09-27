@@ -1341,16 +1341,3 @@ CREATE TABLE IF NOT EXISTS app_connection_tombstones (
   id          TEXT PRIMARY KEY,
   created_at  TEXT NOT NULL
 );
-
-/* An agent's or the AI's reply in each reader's language (channels.js):
-   the words as written stay in channel_messages; each language someone
-   reads it in is kept here, for the text it was made from. */
-CREATE TABLE IF NOT EXISTS message_translations (
-  org_id       TEXT NOT NULL,
-  message_id   TEXT NOT NULL,
-  locale       TEXT NOT NULL,
-  source_hash  TEXT NOT NULL,
-  body         TEXT NOT NULL,
-  created_at   TEXT NOT NULL,
-  PRIMARY KEY (org_id, message_id, locale)
-);

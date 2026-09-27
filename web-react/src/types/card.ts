@@ -187,8 +187,4 @@ export interface ChannelMessage {
   files?: FileRef[]
   /// Who wrote it, when an agent did: its name and face.
   agent?: { id: string; handle: string; name: string; emoji: string | null } | null
-  /// A reply by an agent or the AI: the language it is written in, and —
-  /// when this reader reads another and it has been made — theirs.
-  lang?: string | null
-  translation?: { lang: string; body: string } | null
 }
