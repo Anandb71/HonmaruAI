@@ -19,6 +19,8 @@ enum ChatMentionKind: Equatable { case ai, person, group, agent
 final class ChatMentionDirectory {
     static let shared = ChatMentionDirectory()
     private(set) var names: [String: ChatMentionKind] = [:]
+    /// The agents by folded handle: who "@hayao" is.
+    private(set) var agents: [String: ChatAgent] = [:]
 
     static func fold(_ s: String) -> String { s.precomposedStringWithCompatibilityMapping.lowercased() }
 
@@ -31,6 +33,7 @@ final class ChatMentionDirectory {
         for g in groups { out[Self.fold(g.handle)] = .group }
         for a in agents { out[Self.fold(a.handle)] = .agent }
         names = out
+        self.agents = Dictionary(agents.map { (Self.fold($0.handle), $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// What "@token" (or "＠token", or "@tokenに") names, or nil for nobody.
@@ -44,6 +47,19 @@ final class ChatMentionDirectory {
     }
 
     var isLoaded: Bool { names.count > 1 }
+
+    /// The first agent a text calls, "@hayao" or "@hayaoに" — an agent's
+    /// work is the agent's, never a card for a person.
+    func agentCalled(in text: String) -> ChatAgent? {
+        guard let regex = try? NSRegularExpression(pattern: #"[@＠]([^\s@＠,，。、!?！？:;)）」]+)"#) else { return nil }
+        let ns = text as NSString
+        for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let want = Self.fold(ns.substring(with: m.range(at: 1)))
+            if let a = agents[want] { return a }
+            if want.hasSuffix("に") || want.hasSuffix("へ"), let a = agents[String(want.dropLast())] { return a }
+        }
+        return nil
+    }
 }
 
 /// Slack's formatting, read back natively: *bold*, _italic_, ~strike~ and

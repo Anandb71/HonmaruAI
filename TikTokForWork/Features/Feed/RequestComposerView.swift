@@ -11,6 +11,23 @@ struct RequestComposerView: View {
     @State private var inputMode = false
     @State private var showTeam = false
     @FocusState private var writing: Bool
+    @State private var sendingToAgent = false
+
+    /// The request goes to the agent's own conversation, as said to it.
+    private func sendToAgent(_ agent: ChatAgent) async {
+        guard let orgId = appState.currentUser?.teamID, let base = appState.backendBaseURL else { return }
+        let text = model.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        sendingToAgent = true
+        defer { sendingToAgent = false }
+        do {
+            _ = try await ChatService.send(orgId: orgId, channel: "ag:\(agent.id)", body: text, base: base)
+            model.reset()
+            dismiss()
+        } catch {
+            model.errorMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "That did not send. Try again.")
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -85,6 +102,17 @@ struct RequestComposerView: View {
                 VStack(spacing: 9) {
                     if model.isDrafting || model.isSending {
                         HStack(spacing: 8) { ProgressView().controlSize(.small); Text(model.isSending ? String(localized: "Sending request…") : String(localized: "Preparing your draft…")).font(.footnote) }
+                    }
+                    if !model.isReviewing, let agent = ChatMentionDirectory.shared.agentCalled(in: model.sourceText) {
+                        // Written to an agent: it is the agent's to do.
+                        Button { Task { await sendToAgent(agent) } } label: {
+                            Label("Send to \(agent.glyph) \(agent.name) instead", systemImage: "arrow.turn.up.right")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent).tint(.purple)
+                        .disabled(sendingToAgent)
+                        Text("@\(agent.handle) is an agent: it does this itself and answers in its conversation. A card would go to a person.")
+                            .font(.caption).foregroundStyle(Theme.Colors.textSecondary).multilineTextAlignment(.center)
                     }
                     PrimaryButton(title: model.isReviewing ? String(localized: "Send request") : String(localized: "Review request"), enabled: model.isReviewing ? canSend : model.canReview) {
                         writing = false
