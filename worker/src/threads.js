@@ -32,17 +32,19 @@ const handleOf = (login) => fold(login).replace(/^(u:|email:)/, "").split("@")[0
 /// by handle (the part of the login before the @), by ref, or by alias when
 /// the member list carries them — case-folded, so "@kenji" finds "Kenji
 /// Tanaka". Unmatched tokens are left alone: "@everyone" is just a word.
-export function resolveMentions(text, members, { here = true } = {}) {
+export function resolveMentions(text, members, { here = true, online = null } = {}) {
   const tokens = mentionTokens(text);
   if (!tokens.length) return [];
   const found = new Map();
   for (const token of tokens) {
     const want = fold(token);
-    // "@here" reaches everyone the conversation's `members` are — for a
-    // closed one, the caller keeps only the people in it. Deciding who
-    // decides, it names nobody (`here: false`).
-    if (want === "here") {
-      if (here) for (const m of members) found.set(m.login, m);
+    // "@channel" reaches everyone the conversation's
+    // `members` are; "@here" only those at the app now — `online`, a set of
+    // logins, when the caller knows it. For a closed conversation the caller
+    // keeps only the people in it. Deciding who decides, they name nobody
+    // (`here: false`).
+    if (want === "channel" || want === "here") {
+      if (here) for (const m of members) if (want !== "here" || !online || online.has(m.login)) found.set(m.login, m);
       continue;
     }
     for (const m of members) {

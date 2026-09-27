@@ -26,6 +26,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Two runs at once share these ports: the second one's steps then talk to
+# the first one's servers and fail in ways that look like flakes. Say so
+# and stop instead.
+for port in "$WORKER_PORT" "$WEB_PORT"; do
+  if curl -s --max-time 1 "http://127.0.0.1:$port/" >/dev/null 2>&1; then
+    echo "Port $port is already in use — another end-to-end run (or a dev server) is up. Stop it and run again." >&2
+    exit 2
+  fi
+done
+
 # Wait for something to answer, and say so plainly when it never does.
 #
 # The loops here used to give up in silence. When the preview server did not

@@ -538,7 +538,7 @@ function loadCard(httpBase: string, orgId: string, token: string, url: string): 
   return cardCache.get(url)!
 }
 
-const LinkCardView: React.FC<{ url: string; httpBase: string; orgId: string; token: string }> = ({ url, httpBase, orgId, token }) => {
+const LinkCardView: React.FC<{ url: string; httpBase: string; orgId: string; token: string; onHide?: () => void }> = ({ url, httpBase, orgId, token, onHide }) => {
   const t = useT()
   const [card, setCard] = useState<LinkCard | null>(null)
   const [playing, setPlaying] = useState(false)
@@ -552,6 +552,7 @@ const LinkCardView: React.FC<{ url: string; httpBase: string; orgId: string; tok
   const video = card.kind === 'youtube' && card.videoId
   return (
     <div className={`link-card ${card.kind}`} data-link-card={card.kind}>
+      {onHide && <button type="button" className="link-card-hide" onClick={onHide} aria-label={t('Remove preview')} title={t('Remove preview')}>×</button>}
       <div className="link-card-site">
         {card.icon && <img className="link-card-icon" src={card.icon} alt="" width={14} height={14} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />}
         <span>{card.site}</span>
@@ -584,8 +585,9 @@ const LinkCardView: React.FC<{ url: string; httpBase: string; orgId: string; tok
 }
 
 /// The cards for the links in one message.
-export const LinkCards: React.FC<{ text: string; httpBase: string; orgId: string; token: string }> = ({ text, httpBase, orgId, token }) => {
+/// `onHide`: the author's × — takes the cards off the message for everyone.
+export const LinkCards: React.FC<{ text: string; httpBase: string; orgId: string; token: string; onHide?: () => void }> = ({ text, httpBase, orgId, token, onHide }) => {
   const urls = unfurlable(text)
   if (!urls.length) return null
-  return <div className="link-cards">{urls.map((u) => <LinkCardView key={u} url={u} httpBase={httpBase} orgId={orgId} token={token} />)}</div>
+  return <div className="link-cards">{urls.map((u) => <LinkCardView key={u} url={u} httpBase={httpBase} orgId={orgId} token={token} onHide={onHide} />)}</div>
 }

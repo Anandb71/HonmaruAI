@@ -559,7 +559,9 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   deleted_at    TEXT,
   parent_id     TEXT,
   pinned_at     TEXT,
-  pinned_by     TEXT
+  pinned_by     TEXT,
+  /* The author took the link cards off this message. */
+  previews_hidden INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_channel_messages ON channel_messages(org_id, channel, created_at);
 

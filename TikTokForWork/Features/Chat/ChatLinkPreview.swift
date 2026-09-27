@@ -1,5 +1,6 @@
 import SwiftUI
 import LinkPresentation
+import CryptoKit
 
 /// A link in a message, unfurled the way Messages does it: the system reads
 /// the page on this phone — its title, picture, and for a YouTube video a
@@ -57,5 +58,14 @@ struct ChatLinkPreview: View {
             }
         }
         .onAppear { ChatLinkMetadata.shared.load(url) { metadata = $0 } }
+    }
+}
+
+
+/// The short hash of a login the Worker hands out as `loginHash` (and the
+/// browser takes of a presence event): the first 16 hex digits of SHA-256.
+enum ChatHash {
+    static func short(_ login: String) -> String {
+        SHA256.hash(data: Data(login.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16).map { String($0) }.joined()
     }
 }

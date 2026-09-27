@@ -3,7 +3,7 @@ import { fetchMock } from "./helpers/fetch-mock.js";
 import { beforeEach, afterEach, expect, test } from "vitest";
 import schemaSql from "../schema.sql?raw";
 import worker from "../src/index.js";
-import { messageLanguage, wantsTranslation } from "../src/translate.js";
+import { messageLanguage, wantsTranslation, textFor } from "../src/translate.js";
 
 // Each reader reads a conversation in their own language: a message in
 // another language is translated for them, once, and kept.
@@ -39,6 +39,22 @@ test("a message says the language it is in; names, links and emoji alone say non
   expect(wantsTranslation("latn", "es")).toBe(true);
   expect(wantsTranslation("ja", "ja-JP")).toBe(false);
   expect(wantsTranslation("en", "ja")).toBe(true);
+});
+
+test("a push, a preview: one message in each person's language, kept", async () => {
+  const said = (await (await post("/channels/messages", toru, { orgId: ORG, channel: "b:cafe", body: "秋メニューは1日から" })).json()).message;
+  let calls = 0;
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/chat/completions", method: "POST" }).reply(200, () => {
+    calls += 1;
+    return { choices: [{ message: { content: JSON.stringify({ items: [{ id: said.id, text: "Autumn menu from the 1st" }] }) } }] };
+  });
+  const row = await env.DB.prepare("SELECT * FROM channel_messages WHERE id = ?1").bind(said.id).first();
+  const e = { ...env, OPENAI_API_KEY: "sk-test" };
+  expect(await textFor(e, ORG, row, "mika")).toBe("Autumn menu from the 1st");
+  expect(await textFor(e, ORG, row, "mika")).toBe("Autumn menu from the 1st");
+  expect(calls).toBe(1);
+  // Its own writer reads it as written.
+  expect(await textFor(e, ORG, row, "toru")).toBe("秋メニューは1日から");
 });
 
 test("the language the reader's screen is set to wins over the profile's", async () => {

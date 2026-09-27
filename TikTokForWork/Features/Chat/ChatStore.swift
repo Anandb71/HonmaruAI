@@ -431,6 +431,12 @@ final class ChatStore: ObservableObject {
         do { if let out = try await ChatService.react(orgId: orgId, channel: m.channel, messageId: m.id, emoji: emoji, base: base) { upsert(out) } }
         catch { self.error = error.localizedDescription }
     }
+    /// Take the link cards off your own message, for everyone.
+    func hidePreviews(_ m: ChatMessage) async {
+        guard let orgId, let base else { return }
+        do { if let out = try await ChatService.hidePreviews(orgId: orgId, channel: m.channel, messageId: m.id, base: base) { upsert(out) } }
+        catch { self.error = error.localizedDescription }
+    }
     func togglePin(_ m: ChatMessage) async {
         guard let orgId, let base else { return }
         do { if let out = try await ChatService.pin(orgId: orgId, channel: m.channel, messageId: m.id, pinned: m.pinned != true, base: base) { upsert(out) } }

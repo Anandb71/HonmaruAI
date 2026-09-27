@@ -63,6 +63,8 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     var lastReplyAt: String?
     var replyRefs: [String]?
     var pinned: Bool?
+    /// Its author took the link cards off.
+    var previewsHidden: Bool?
     var reactions: [ChatReaction]?
     var files: [ChatFile]?
     /// Set when one of the team's agents wrote it: its name and face.
@@ -588,11 +590,16 @@ enum ChatService {
     }
 
     static func delete(orgId: String, channel: String, messageId: String, base: URL) async throws -> ChatMessage? {
-        try await call("DELETE", "/channels/messages", base: base, body: ["orgId": orgId, "channel": channel, "messageId": messageId], as: Sent.self).message
+        // The confirmation already said a thread goes with it.
+        try await call("DELETE", "/channels/messages", base: base, body: ["orgId": orgId, "channel": channel, "messageId": messageId, "withThread": true], as: Sent.self).message
     }
 
     static func react(orgId: String, channel: String, messageId: String, emoji: String, base: URL) async throws -> ChatMessage? {
         try await call("POST", "/channels/reactions", base: base, body: ["orgId": orgId, "channel": channel, "messageId": messageId, "emoji": emoji], as: Sent.self).message
+    }
+
+    static func hidePreviews(orgId: String, channel: String, messageId: String, base: URL) async throws -> ChatMessage? {
+        try await call("POST", "/channels/previews", base: base, body: ["orgId": orgId, "channel": channel, "messageId": messageId, "hidden": true], as: Sent.self).message
     }
 
     static func pin(orgId: String, channel: String, messageId: String, pinned: Bool, base: URL) async throws -> ChatMessage? {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { defaultDailySetup, dailyWanted, DAILY_CHANNEL_SLUGS, NEW_CHANNEL } from './dailySetup'
-import { changeLocale, t } from './i18n'
+import { changeLocale, localeReady, t } from './i18n'
 
 // The daily report as onboarding offers it: 08:00 and 22:00, weekdays, into
 // the team's daily-report channel when there is one.
@@ -29,9 +29,10 @@ describe('daily setup', () => {
     expect(dailyWanted({ ...on, channel: 'b:kitchen' })).toBe(true)
   })
 
-  it('knows the channel name it proposes in every language the screens speak', () => {
+  it('knows the channel name it proposes in every language the screens speak', async () => {
     for (const code of ['en', 'ja', 'es', 'fr', 'de']) {
       changeLocale(code)
+      await localeReady()
       expect(DAILY_CHANNEL_SLUGS).toContain(t('daily-reports'))
     }
     changeLocale('en')

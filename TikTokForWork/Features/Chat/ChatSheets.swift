@@ -156,6 +156,7 @@ struct ChatProfileSheet: View {
 /// Activity: what named you, and replies in your threads.
 struct ChatActivityView: View {
     @ObservedObject var store: ChatStore
+    @ObservedObject private var translations = ChatTranslations.shared
     var body: some View {
         List {
             if store.inbox.isEmpty {
@@ -173,7 +174,7 @@ struct ChatActivityView: View {
                             Text(item.message.date, style: .relative).font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
                         }
                         Text(item.message.isAI ? String(localized: "Your AI") : (item.message.authorName ?? "")).font(.subheadline.weight(.semibold))
-                        Text(item.message.body).font(.subheadline).lineLimit(3).foregroundStyle(Theme.Colors.textPrimary)
+                        Text(translations.shown(item.message).text).font(.subheadline).lineLimit(3).foregroundStyle(Theme.Colors.textPrimary)
                     }.padding(.vertical, 4)
                 }
             }
@@ -181,7 +182,13 @@ struct ChatActivityView: View {
         .listStyle(.plain)
         .navigationTitle("Activity")
         .refreshable { await store.loadInbox() }
-        .task { await store.loadInbox(); await store.markInboxRead() }
+        .task {
+            await store.loadInbox(); await store.markInboxRead()
+            // In the language you set, by the conversation each came from.
+            for (channel, list) in Dictionary(grouping: store.inbox.map(\.message).filter { !$0.mine }, by: \.channel) {
+                await store.translate(channel, list)
+            }
+        }
     }
     private func place(_ view: String) -> String {
         guard let c = store.conversation(for: view) else { return "" }

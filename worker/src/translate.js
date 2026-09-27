@@ -131,3 +131,20 @@ async function callModel(provider, batch, lang) {
   }
   return { called: true, texts };
 }
+
+/// One message as one person reads it — a push, a preview, an Activity
+/// line: in the language they set, from the kept translation or the model;
+/// as written when they turned translation off, when it is theirs already,
+/// or when there is no model.
+export async function textFor(env, orgId, row, login) {
+  if (!row?.body || !login) return row?.body || "";
+  const user = await env.DB.prepare("SELECT locale, translate_messages FROM users WHERE login = ?1").bind(login).first().catch(() => null);
+  if (!user || Number(user.translate_messages ?? 1) === 0) return row.body;
+  const lang = String(user.locale || "en").slice(0, 2).toLowerCase();
+  if (!wantsTranslation(messageLanguage(row.body), lang)) return row.body;
+  const { providerFor } = await import("./orgAI.js");
+  const provider = await providerFor(env, orgId).catch(() => null);
+  const { byId } = await translateMessages(env.DB, orgId, [row], { locale: lang, provider });
+  const text = byId[row.id];
+  return text && text.trim() !== row.body.trim() ? text : row.body;
+}

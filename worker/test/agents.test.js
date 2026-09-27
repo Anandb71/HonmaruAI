@@ -284,6 +284,16 @@ test("an agent researches with a reasoning model, web search and its own tools, 
   expect(calls.results[1]).toMatchObject({ purpose: "agent", usd: 0.01 });
 });
 
+test("an agent that cannot answer says why in the thread, never silence", async () => {
+  await send("POST", "/channels/agents", toru, { orgId: ORG, markdown: HAYAO });
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/responses", method: "POST" }).reply(401, { error: { message: "bad key" } }).times(2);
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/chat/completions", method: "POST" }).reply(401, { error: { message: "bad key" } });
+  const sent = await (await send("POST", "/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "@hayao autumn colours?" }, { OPENAI_API_KEY: "sk-test" })).json();
+  const thread = await (await get(`/channels/thread?${q({ orgId: ORG, channel: "b:cafe", messageId: sent.message.id })}`, mika)).json();
+  expect(thread.replies[0]).toMatchObject({ kind: "agent" });
+  expect(thread.replies[0].body).toMatch(/turned the request down|受け付けませんでした/);
+});
+
 test("in a channel an agent reads the web but not the team's decisions; a model that refuses the full call is tried bare, its tools kept", async () => {
   await send("POST", "/channels/agents", toru, { orgId: ORG, markdown: HAYAO });
   const asked = [];
