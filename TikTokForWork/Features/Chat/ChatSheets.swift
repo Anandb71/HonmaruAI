@@ -34,7 +34,7 @@ struct ChatThreadSheet: View {
             .defaultScrollAnchor(.bottom)
             .safeAreaInset(edge: .bottom) {
                 HStack(alignment: .bottom, spacing: 8) {
-                    TextField("Reply… — @AI makes it a decision", text: $draft, axis: .vertical)
+                    TextField("Reply… — @AI to ask the AI", text: $draft, axis: .vertical)
                         .lineLimit(1...5).focused($focused)
                         .padding(.horizontal, 16).padding(.vertical, 11)
                         .glassPanel(cornerRadius: 22, interactive: true)

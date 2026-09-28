@@ -168,7 +168,7 @@ struct ConversationView: View {
                 if c.kind == .channel {
                     Image(systemName: "number").font(.title2.weight(.bold)).frame(width: 48, height: 48).glassPanel(cornerRadius: 14)
                     Text("This is the start of #\(c.name)").font(.title3.weight(.bold))
-                    Text("Talk about \(c.name) here. Write @AI — or long-press a message and pick Make it a decision — and your AI turns it into a decision card, written from what was said.")
+                    Text("Talk about \(c.name) here. Write @AI to ask your AI anything. A decision card is made only when you ask for one: Send as a decision, or long-press a message and pick Make it a decision.")
                         .font(.subheadline).foregroundStyle(Theme.Colors.textSecondary)
                 } else if c.kind == .agent {
                     ChatAvatar(name: c.name, size: 48, agentEmoji: c.agent?.glyph ?? ChatAgent.glyph(nil))
@@ -181,7 +181,7 @@ struct ConversationView: View {
                 } else {
                     ChatAvatar(name: c.name, size: 48, url: c.member?.avatarUrl)
                     Text(c.name).font(.title3.weight(.bold))
-                    Text("Just the two of you. Write @AI and your AI makes what you said a decision for \(c.name).")
+                    Text("Just the two of you. Write @AI to ask your AI, or Send as a decision to send \(c.name) a decision.")
                         .font(.subheadline).foregroundStyle(Theme.Colors.textSecondary)
                 }
             }

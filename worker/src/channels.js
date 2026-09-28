@@ -35,6 +35,14 @@ export function asksTheAI(text) {
   return /(^|[\s(（「])[@＠]ai(?![A-Za-z0-9_])/iu.test(String(text || ""));
 }
 
+/// "@AI" asked for a decision, in so many words: a card, an approval, a
+/// sign-off. Anything else said to the AI — a question, "summarise this",
+/// "what do you think" — is answered in the thread, never made a card.
+export function asksForDecision(text) {
+  const t = String(text || "");
+  return /(カード|意思決定|決裁|稟議|承認|決定を|判断を仰|OKをもら|approv|sign[- ]?off|decision|\bcard\b|aprob|décision|valid(ate|er)|genehmig|entscheid)/iu.test(t);
+}
+
 /// The instruction in a message, without the "@AI" that summoned it.
 export function withoutAI(text) {
   // "@AIに…" is addressed to the AI; the particle goes with the name.
