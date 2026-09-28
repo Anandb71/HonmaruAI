@@ -12,7 +12,7 @@
 // message that named it — as itself, with its own name and face. It writes;
 // it does not act. What needs deciding still goes to @AI and a card.
 
-import { mentionTokens } from "./threads.js";
+import { mentionTokens, MENTION_BEFORE } from "./threads.js";
 import { transcriptUpTo } from "./channels.js";
 import { relevantMemories, playbookBlock } from "./memory.js";
 import { noteUsage } from "./ledger.js";
@@ -316,7 +316,7 @@ const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /// What was asked of one agent: the message, without its @name.
 export function requestFor(text, agent) {
-  const re = new RegExp(`(^|[\\s(（「])[@＠]${escape(agent.handle)}(?:[にへ](?=[\\s,、:：]|$)|(?![\\p{L}\\p{N}_.-]))[,、:：]?\\s*`, "giu");
+  const re = new RegExp(`${MENTION_BEFORE}[@＠]${escape(agent.handle)}(?:[にへ](?=[\\s,、:：]|$)|(?![\\p{L}\\p{N}_.-]))[,、:：]?\\s*`, "giu");
   return String(text || "").replace(re, "$1").trim();
 }
 

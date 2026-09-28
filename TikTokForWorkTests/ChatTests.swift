@@ -166,12 +166,24 @@ final class ChatMentionTests: XCTestCase {
         XCTAssertEqual(directory.kind(of: "＠sales"), .group)
         XCTAssertEqual(directory.kind(of: "@AI"), .ai)
         XCTAssertNil(directory.kind(of: "@nobody"))
+        XCTAssertEqual(directory.kind(of: "＠all"), .group)
+        XCTAssertEqual(directory.kind(of: "@allの皆さん"), .group)
+        XCTAssertEqual(directory.kind(of: "@everyone"), .group)
+        XCTAssertNil(directory.kind(of: "@alliance"))
     }
 
     func testTheComposerChecksOnlyFinishedMentions() {
         XCTAssertEqual(ConversationView.mentionTokens(in: "@mika ask @nobody about it"), ["@mika", "@nobody"])
         XCTAssertEqual(ConversationView.mentionTokens(in: "hi @mik"), [])
         XCTAssertEqual(ConversationView.mentionTokens(in: "mail a@b.com "), [])
+        // Names are offered after "＠" and right after Japanese, never inside an address or a link.
+        XCTAssertEqual(ConversationView.mentionQuery(in: "確認@mi")?.query, "mi")
+        XCTAssertEqual(ConversationView.mentionQuery(in: "確認@mi")?.before, "確認")
+        XCTAssertEqual(ConversationView.mentionQuery(in: "＠al")?.query, "al")
+        XCTAssertEqual(ConversationView.mentionQuery(in: "hi @")?.query, "")
+        XCTAssertNil(ConversationView.mentionQuery(in: "mail a@b"))
+        XCTAssertNil(ConversationView.mentionQuery(in: "youtube.com/@ch"))
+        XCTAssertNil(ConversationView.mentionQuery(in: "@mika done"))
     }
 }
 

@@ -59,7 +59,7 @@ test("a mention resolves by name, first name, handle or alias — and only to me
   expect(resolveMentions("@Mika what do you think", members).map((m) => m.login)).toEqual(["u:mika@x.jp"]);
   expect(resolveMentions("@美香 見て", members).map((m) => m.login)).toEqual(["u:mika@x.jp"]);
   expect(resolveMentions("@toru and @r2", members).map((m) => m.login)).toEqual(["u:toru@x.jp", "u:mika@x.jp"]);
-  expect(resolveMentions("@everyone look", members)).toEqual([]);
+  expect(resolveMentions("@everyone look", members).map((m) => m.login)).toEqual(["u:toru@x.jp", "u:mika@x.jp"]);
 });
 
 test("@channel and @all call everyone — with a Japanese keyboard's ＠, and right after Japanese words too", () => {

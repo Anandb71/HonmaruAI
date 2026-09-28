@@ -79,6 +79,8 @@ test("a message calls the agents it names, the particle going with the name", ()
   expect(agentsCalled("mail hayao@cafe.jp", agents)).toEqual([]);
   expect(requestFor("@hayaoに ポスター案を考えて", { handle: "hayao" })).toBe("ポスター案を考えて");
   expect(requestFor("Hi @hayao, what colour?", { handle: "hayao" })).toBe("Hi what colour?");
+  // Called right after Japanese, the name still comes out of the request.
+  expect(requestFor("ポスター案を考えて＠hayao", { handle: "hayao" })).toBe("ポスター案を考えて");
 });
 
 test("presets come in the reader's language, and one becomes a team agent anyone can call and improve", async () => {

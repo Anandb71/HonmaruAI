@@ -43,7 +43,15 @@ final class ChatMentionDirectory {
         let want = Self.fold(raw)
         if let k = names[want] { return k }
         if want.hasSuffix("に") || want.hasSuffix("へ") { return names[String(want.dropLast())] }
-        return want == "ai" ? .ai : nil
+        if want == "ai" { return .ai }
+        // "@channel", "@all", "@everyone", "@here" — and "@allの皆さん" —
+        // call everyone, drawn like a group. "@alliance" does not.
+        for word in ["channel", "all", "everyone", "here"] where want.hasPrefix(word) {
+            let rest = want.dropFirst(word.count)
+            if let next = rest.first, next.isASCII, next.isLetter || next.isNumber || "_.-".contains(next) { continue }
+            return .group
+        }
+        return nil
     }
 
     var isLoaded: Bool { names.count > 1 }

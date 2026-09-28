@@ -1854,6 +1854,7 @@ export const ClassicList: React.FC<Props> = ({
     return [
       { ref: '__here', name: 'here', handle: 'here', special: 'here', detail: t('Notifies the {n} people online here', { n: onlineHere }) } as (typeof mentionable)[number],
       { ref: '__channel', name: 'channel', handle: 'channel', special: 'channel', detail: t('Notifies all {n} people in this conversation', { n: everyone }) } as (typeof mentionable)[number],
+      { ref: '__all', name: 'all', handle: 'all', special: 'channel', detail: t('Notifies all {n} people in this conversation', { n: everyone }) } as (typeof mentionable)[number],
       ...(here.length ? [{ ref: '__agents', name: 'agents', handle: 'agents', special: 'agents', handles: here.map((a) => a.handle!), detail: t('Calls all {n} agents in this conversation', { n: here.length }) } as (typeof mentionable)[number]] : []),
       { ref: '__ai', name: 'AI' } as (typeof mentionable)[number],
       ...people,

@@ -32,6 +32,18 @@ test("the budget runs out and the caller is told when to come back", async () =>
   expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
 });
 
+test("RATE_LIMIT_SCALE (the end-to-end run's) multiplies the allowance, at most a hundredfold", async () => {
+  const req = requestFrom("203.0.113.9");
+  const max = LIMITS["ai/route"].max;
+  const scaled = { ...env, RATE_LIMIT_SCALE: "3" };
+  for (let i = 0; i < max * 3; i += 1) expect(await enforce(scaled, req, "ai/route")).toBeNull();
+  expect((await enforce(scaled, req, "ai/route")).status).toBe(429);
+  const wild = requestFrom("203.0.113.10");
+  const huge = { ...env, RATE_LIMIT_SCALE: "100000" };
+  for (let i = 0; i < max * 100; i += 1) await enforce(huge, wild, "ai/route");
+  expect((await enforce(huge, wild, "ai/route")).status).toBe(429);
+});
+
 test("one caller's exhausted budget does not touch another's", async () => {
   const max = LIMITS["ai/route"].max;
   const noisy = requestFrom("203.0.113.2");
