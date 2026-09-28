@@ -21,6 +21,7 @@ export const DataRules: React.FC<{ httpBase: string; orgId: string; sessionToken
   const [note, setNote] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [pictures, setPictures] = useState<{ on: boolean; available: boolean } | null>(null)
   const headers = { 'x-session-token': sessionToken, 'content-type': 'application/json' }
 
   const load = useCallback(async () => {
@@ -28,7 +29,7 @@ export const DataRules: React.FC<{ httpBase: string; orgId: string; sessionToken
     if (res?.status === 403) { setDenied(true); return }
     const data = res?.ok ? await res.json().catch(() => null) : null
     if (!data) return
-    setRules(data.rules); setDetectors(data.detectors); setCanEdit(Boolean(data.canEdit))
+    setRules(data.rules); setDetectors(data.detectors); setCanEdit(Boolean(data.canEdit)); setPictures(data.pictures || null)
   }, [httpBase, orgId, sessionToken])
   useEffect(() => { void load() }, [load])
 
@@ -87,6 +88,22 @@ export const DataRules: React.FC<{ httpBase: string; orgId: string; sessionToken
         </div>
       ))}
       {rules && !rules.length && <p className="row-sub">{t('No rules yet: everything is sent as written.')}</p>}
+
+      {pictures && (
+        <div className="sso-domain" data-dlp-pictures={pictures.on ? 'on' : 'off'}>
+          <div className="sso-domain-head">
+            <b>{t('Read pictures and scanned PDFs')}</b>
+            <span className={`sso-badge${pictures.on && pictures.available ? ' ok' : ''}`}>{pictures.on ? t('On') : t('Off')}</span>
+          </div>
+          <p className="row-sub">{t('Photos, screenshots and scanned pages have no text of their own. With this on, each one attached is sent to the workspace’s AI model to be read, checked against these rules, and dropped. It uses the AI allowance.')}</p>
+          {!pictures.available && <p className="row-sub">{t('This needs an OpenAI model for the workspace, which is not set up.')}</p>}
+          {canEdit && (
+            <div className="rules-actions">
+              <button type="button" className="studio-btn" disabled={busy} data-dlp-pictures-toggle onClick={() => void send('/orgs/dlp/settings', 'PUT', { readPictures: !pictures.on }, t('Saved.'))}>{pictures.on ? t('Turn off') : t('Turn on')}</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {canEdit && (
         <>
