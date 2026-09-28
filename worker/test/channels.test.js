@@ -115,6 +115,33 @@ test("@AI turns a message into a decision written from the conversation, and say
   expect(ai.body).toContain("Mika");
 });
 
+test("@AI asked a question answers it in the thread and makes no card", async () => {
+  await post("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "The roaster quote came in: +8% from Friday, same beans" });
+  let prompt;
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/chat/completions", method: "POST" }).reply(200, (opts) => {
+    prompt = JSON.parse(opts.body);
+    return { choices: [{ message: { content: "+8% from Friday, same beans." } }] };
+  });
+  const res = await post("/channels/messages", toru, { orgId: ORG, channel: "b:cafe", body: "@AI 今の話を要約して" }, { OPENAI_API_KEY: "sk-test", OPENAI_MODEL: "gpt-4o-mini" });
+  const { message, deciding } = await res.json();
+  expect(deciding).toBe(false);
+  const { results } = await env.DB.prepare("SELECT data FROM cards WHERE org_id = ?1").bind(ORG).all();
+  expect(results).toHaveLength(0);
+  expect(prompt.messages.find((m) => m.role === "user").content).toContain("The roaster quote came in");
+  const { replies } = await (await get(`/channels/thread?${q({ orgId: ORG, channel: "b:cafe", messageId: message.id })}`, toru)).json();
+  expect(replies).toEqual([expect.objectContaining({ kind: "ai", body: "+8% from Friday, same beans." })]);
+});
+
+test("only words that ask for one make \"@AI\" a card", async () => {
+  const { asksForDecision } = await import("../src/channels.js");
+  expect(asksForDecision("@Mika approve the new roaster price")).toBe(true);
+  expect(asksForDecision("店長に承認もらって")).toBe(true);
+  expect(asksForDecision("これカードにして")).toBe(true);
+  expect(asksForDecision("今の話を要約して")).toBe(false);
+  expect(asksForDecision("what do you think about the new menu?")).toBe(false);
+  expect(asksForDecision("@Mika の意見をまとめて")).toBe(false);
+});
+
 test("any message can be made a decision afterwards, once; in a direct conversation it goes to the other person", async () => {
   const { message } = await (await post("/channels/messages", toru, { orgId: ORG, channel: `dm:${refs.Kenji}`, body: "Sign off the menu photos by Thursday" })).json();
   const made = await post("/channels/decide", toru, { orgId: ORG, channel: `dm:${refs.Kenji}`, messageId: message.id }, { OPENAI_API_KEY: undefined });

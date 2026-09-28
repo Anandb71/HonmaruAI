@@ -2520,10 +2520,10 @@ export const ClassicList: React.FC<Props> = ({
     }
     const waitingHere = thread.cards.filter(isUnread).length
     const placeholder = thread.kind === 'channel'
-      ? t('Message #{name} — @AI makes it a decision', { name: thread.name })
+      ? t('Message #{name} — @AI to ask the AI', { name: thread.name })
       : thread.kind === 'agent'
         ? t('Message {name}', { name: thread.name })
-        : t('Message {name} — @AI makes it a decision', { name: thread.name })
+        : t('Message {name} — @AI to ask the AI', { name: thread.name })
     return (
       <>
         <header className="slk-head">
@@ -2784,9 +2784,9 @@ export const ClassicList: React.FC<Props> = ({
             {lead(thread, 'head')}
             <h2>{thread.kind === 'channel' ? t('This is the start of #{name}', { name: thread.name }) : thread.name}</h2>
             <p>{thread.kind === 'channel'
-              ? t('Talk about {name} here. Write @AI — or pick “Make it a decision” on any message — and your AI turns it into a decision card, written from what was said.', { name: thread.name })
+              ? t('Talk about {name} here. Write @AI to ask your AI anything. A decision card is made only when you ask for one: ✦, or “Make it a decision” on a message.', { name: thread.name })
               : thread.kind === 'person'
-                ? t('Just the two of you. Write @AI and your AI makes what you said a decision for {name}.', { name: thread.name })
+                ? t('Just the two of you. Write @AI to ask your AI, or ✦ to send {name} a decision.', { name: thread.name })
                 : thread.kind === 'agent'
                   ? <>{thread.agent?.description ? `${thread.agent.description} ` : ''}{t('Only you see this conversation. {name} answers everything you write here, with your past decisions and connected tools at hand.', { name: thread.name })}</>
                   : t('What {name} brought in. Each opens as a card.', { name: thread.name })}</p>
@@ -2913,7 +2913,7 @@ export const ClassicList: React.FC<Props> = ({
               <button type="button" className="slk-attach" onClick={() => attachInput.current?.click()} aria-label={t('Attach files')} title={t('Attach files')}><Icon name="paperclip" size={17} /></button>
               <input ref={attachInput} type="file" multiple hidden data-attach="1" onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) uploads.add(files, thread.view!) }} />
               <FormatBar target={composer} value={draft} set={setDraft} />
-              <span className="slk-composer-hint">{t('Enter to send · @AI or ✦ makes it a decision · / for commands')}</span>
+              <span className="slk-composer-hint">{t('Enter to send · @AI to ask · ✦ makes it a decision · / for commands')}</span>
               <button type="button" className="slk-send ai" disabled={sending || !draft.trim()} onClick={() => void send(thread.view!, true)} aria-label={t('Send as a decision')} title={t('Send as a decision')}>
                 <Icon name="sparkle" size={15} /><span className="slk-send-label">{t('Send as a decision')}</span>
               </button>
@@ -3367,7 +3367,7 @@ export const ClassicList: React.FC<Props> = ({
                 {!p.mine && (
                   <div className="slk-profile-actions">
                     <button type="button" className="slk-send" onClick={() => { const th = everything.find((x) => x.view === `dm:${profile.ref}`); if (th) choose(th.key); setProfile(null) }}>{t('Message')}</button>
-                    <button type="button" className="slk-send ai" onClick={() => { const th = everything.find((x) => x.view === `dm:${profile.ref}`); if (th) { choose(th.key); setTimeout(() => { setDraft('@AI '); composer.current?.focus() }, 50) } setProfile(null) }}>{t('Ask for a decision')}</button>
+                    <button type="button" className="slk-send ai" onClick={() => { const th = everything.find((x) => x.view === `dm:${profile.ref}`); if (th) { choose(th.key); setTimeout(() => composer.current?.focus(), 50) } setProfile(null) }}>{t('Ask for a decision')}</button>
                   </div>
                 )}
               </div>
@@ -3453,7 +3453,7 @@ export const ClassicList: React.FC<Props> = ({
               value={threadDraft}
               rows={1}
               maxLength={4000}
-              placeholder={t('Reply… — @AI makes it a decision')}
+              placeholder={t('Reply… — @AI to ask the AI')}
               aria-label={t('Reply in thread')}
               onChange={(e) => { setThreadDraft(e.target.value); threadMention.track() }}
               onKeyUp={threadMention.track}

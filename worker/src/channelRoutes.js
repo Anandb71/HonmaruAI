@@ -21,7 +21,7 @@ import { notifyCard, anyChannelConfigured } from "./notify.js";
 import { custom as customEvent } from "./agui/events.js";
 import {
   resolveChannel, listMessages, postMessage, getMessage, linkCard, transcriptUpTo, channelActivity,
-  viewOf, asksTheAI, withoutAI, MAX_MESSAGE_CHARS,
+  viewOf, asksTheAI, asksForDecision, withoutAI, MAX_MESSAGE_CHARS,
   present, listThread, listPins, editMessage, deleteMessage, toggleReaction, setPinned, setPreviewsHidden,
   markRead, markUnreadFrom, markActivitySeen, readsFor, activityFeed, searchMessages, threadsFor,
 } from "./channels.js";
@@ -257,6 +257,67 @@ export async function decideFromMessage(env, { orgId, session, user, resolved, r
     await progress("failed");
     await say(serverText(locale, "channel.failed")).catch(() => {});
     return null;
+  }
+}
+
+/// The team's AI, asked something in a conversation: it answers in the
+/// thread under the question, as the AI — reading the conversation, the
+/// playbook and any link — and makes no card. Never throws; what goes
+/// wrong is said in the thread.
+const TEAM_AI = {
+  id: "ai", handle: "AI", name: "AI", emoji: null,
+  instructions: `You are the team's own AI assistant in its chat. Answer what you are asked: explain, summarise the conversation, draft a reply or a document, compare options, give a recommendation with its reasons. You do not create decision cards here; if the person clearly wants someone to approve or decide something, end with one short line saying they can send it as a decision.`,
+};
+export async function answerAsAI(env, { orgId, session, user, resolved, row, members, locale }) {
+  locale = await loadCopy(env, locale || "en", { orgId });
+  const parentId = row.parent_id || row.id;
+  const face = { id: "ai", handle: "AI", name: "AI", emoji: "✨" };
+  const progress = async (step) => {
+    try {
+      const payload = (view) => customEvent("channel_ai_progress", { channel: view, parentId, messageId: row.id, step, agent: face });
+      if (resolved.kind === "business" && !resolved.logins) await announceEvents(env, orgId, [payload(resolved.key)]);
+      else await announceTo(env, orgId, resolved.logins.map((login) => ({ to: login, event: payload(viewOf(resolved.key, login, members)) })));
+    } catch (err) {
+      console.error("ai progress failed", safe(err?.message));
+    }
+  };
+  const say = async (body) => {
+    const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: null, body, kind: "ai", parentId });
+    if (out.row) {
+      await broadcastWithParent(env, orgId, resolved, out.row, members);
+      await emitMessage(env, orgId, out.row);
+    }
+  };
+  await progress("agent");
+  try {
+    const provider = await providerFor(env, orgId);
+    const allowance = provider ? await allowanceFor(env, orgId, { githubId: String(session.github_id) }) : null;
+    if (!provider) { await say(serverText(locale, "agent.noModel")); return false; }
+    if (!allowance.allowed) { await say(serverText(locale, "agent.quota")); return false; }
+    const [transcript, playbook] = await Promise.all([contextFor(env.DB, orgId, resolved.key, row), playbookFor(env.DB, orgId, row.body)]);
+    let links = "";
+    try {
+      const urls = linksIn(row.body).length ? linksIn(row.body) : linksIn(transcript.slice(-6).join("\n"));
+      if (urls.length) links = linksBlock(await readLinks(urls, { language: locale, env: await readerEnvFor(env, orgId) }));
+    } catch (err) {
+      console.error("ai links failed", safe(err?.message));
+    }
+    const where = resolved.kind === "business" ? `#${resolved.slug}` : "a direct conversation";
+    const result = await askAgent({
+      provider, agent: TEAM_AI, request: withoutAI(row.body), transcript, playbook, where, links, env,
+      askedBy: user.name || "a teammate", readerLanguage: locale,
+      deadline: Date.now() + 25000, onRound: () => progress("agent"),
+    });
+    if (result.called && allowance.metered) await allowance.consume();
+    await say(result.answer || serverText(locale, result.called ? "agent.failedEmpty" : "agent.failedService"));
+    await settleUsage(env.DB, provider, { orgId, githubId: session.github_id });
+    return Boolean(result.answer);
+  } catch (err) {
+    console.error("ai answer failed", safe(err?.message));
+    await say(serverText(locale, "agent.failedError")).catch(() => {});
+    return false;
+  } finally {
+    await progress("done");
   }
 }
 
@@ -683,7 +744,12 @@ export async function handleChannels(request, env, url, { route, after }) {
     // for a person, whatever else it says.
     const toAgent = resolved.kind === "agent"
       || agentsCalled(out.row.body, await agentsHere(env.DB, orgId, who.user.login, resolved.key).catch(() => [])).length > 0;
-    const wantsDecision = !toAgent && (body.decide === true || asksTheAI(out.row.body));
+    // A card only when asked for one: sent as a decision, or "@AI" asked,
+    // in words, for an approval or a card. Any other "@AI" is a question,
+    // and the AI answers it in the thread.
+    const calledAI = !toAgent && asksTheAI(out.row.body);
+    const wantsDecision = !toAgent && (body.decide === true || (calledAI && asksForDecision(withoutAI(out.row.body))));
+    const wantsAnswer = calledAI && !wantsDecision;
     const locale = who.user.locale || "en";
     after(async () => {
       await broadcastWithParent(env, orgId, resolved, out.row, members);
@@ -694,6 +760,7 @@ export async function handleChannels(request, env, url, { route, after }) {
       if (wantsDecision) {
         await decideFromMessage(env, { orgId, session: who.session, user: who.user, resolved, row: out.row, members, route, locale });
       }
+      if (wantsAnswer) await answerAsAI(env, { orgId, session: who.session, user: who.user, resolved, row: out.row, members, locale });
       await answerAsAgents(env, { orgId, session: who.session, user: who.user, resolved, row: out.row, members, locale });
     });
     // What you said, you have read.

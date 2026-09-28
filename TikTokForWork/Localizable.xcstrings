@@ -26295,59 +26295,59 @@
       },
       "extractionState": "manual"
     },
-    "Talk about %@ here. Write @AI — or long-press a message and pick Make it a decision — and your AI turns it into a decision card, written from what was said.": {
+    "Talk about %@ here. Write @AI to ask your AI anything. A decision card is made only when you ask for one: Send as a decision, or long-press a message and pick Make it a decision.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ についてはここで話しましょう。@AI と書くか、メッセージを長押しして「決定事項にする」を選ぶと、AIが会話の内容から決定カードを作ります。"
+            "value": "%@ についてはここで話しましょう。@AI と書けばAIに何でも質問できます。決定カードは「決定事項として送信」か、メッセージを長押しして「決定事項にする」を選んだときだけ作られます。"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Habla aquí de %@. Escribe @AI —o mantén pulsado un mensaje y elige Convertir en decisión— y tu IA lo convertirá en una tarjeta de decisión a partir de lo dicho."
+            "value": "Habla aquí de %@. Escribe @AI para preguntar lo que sea a tu IA. Solo se crea una tarjeta de decisión cuando la pides: Enviar como decisión, o mantén pulsado un mensaje y elige Convertir en decisión."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Parlez de %@ ici. Écrivez @AI — ou appuyez longuement sur un message et choisissez En faire une décision — et votre IA en fera une carte de décision à partir de ce qui a été dit."
+            "value": "Parlez de %@ ici. Écrivez @AI pour poser n’importe quelle question à votre IA. Une carte de décision n’est créée que si vous la demandez : Envoyer comme décision, ou appuyez longuement sur un message et choisissez En faire une décision."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sprich hier über %@. Schreib @AI – oder halte eine Nachricht gedrückt und wähle „Zur Entscheidung machen“ – und deine KI macht daraus eine Entscheidungskarte aus dem Gesagten."
+            "value": "Sprecht hier über %@. Schreib @AI, um deiner KI eine Frage zu stellen. Eine Entscheidungskarte entsteht nur, wenn du sie anforderst: Als Entscheidung senden, oder lange auf eine Nachricht drücken und Zur Entscheidung machen wählen."
           }
         }
       },
       "extractionState": "manual"
     },
-    "Just the two of you. Write @AI and your AI makes what you said a decision for %@.": {
+    "Just the two of you. Write @AI to ask your AI, or Send as a decision to send %@ a decision.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "おふたりだけの会話です。@AI と書くと、AIが話した内容を %@ の決定事項にします。"
+            "value": "おふたりだけの会話です。@AI でAIに質問、「決定事項として送信」で %@ に決定カードを送れます。"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Solo vosotros dos. Escribe @AI y tu IA convertirá lo dicho en una decisión para %@."
+            "value": "Solo vosotros dos. Escribe @AI para preguntar a tu IA, o Enviar como decisión para enviar una decisión a %@."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rien que vous deux. Écrivez @AI et votre IA fera de vos propos une décision pour %@."
+            "value": "Rien que vous deux. Écrivez @AI pour demander à votre IA, ou Envoyer comme décision pour envoyer une décision à %@."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nur ihr beide. Schreib @AI und deine KI macht aus dem Gesagten eine Entscheidung für %@."
+            "value": "Nur ihr beide. Schreib @AI, um deine KI zu fragen, oder Als Entscheidung senden, um %@ eine Entscheidung zu schicken."
           }
         }
       },
@@ -27846,30 +27846,30 @@
       },
       "extractionState": "manual"
     },
-    "Reply… — @AI makes it a decision": {
+    "Reply… — @AI to ask the AI": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "返信… — @AI で決定事項に"
+            "value": "返信… — @AI でAIに質問"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Responder… — @AI lo convierte en decisión"
+            "value": "Responder… — @AI para preguntar a la IA"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Répondre… — @AI en fait une décision"
+            "value": "Répondre… — @AI pour demander à l’IA"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Antworten … – @AI macht eine Entscheidung daraus"
+            "value": "Antworten … – @AI, um die KI zu fragen"
           }
         }
       }
