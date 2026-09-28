@@ -485,6 +485,28 @@ export async function markRead(db, orgId, login, key, at) {
   return when;
 }
 
+/// An Activity item's name, the same on every device: `m:<message>` for a
+/// mention, reply or keyword, `r:<message>:<hash>` for one reaction.
+function reactionKey(messageId, byLogin, emoji) {
+  let h = 0;
+  for (const ch of `${byLogin}|${emoji}`) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return `r:${messageId}:${h.toString(36)}`;
+}
+
+/// Activity items looked at, wherever: kept so every other device stops
+/// calling them new. Only names that look like one are kept.
+export async function markActivitySeen(db, orgId, login, keys) {
+  const valid = [...new Set((Array.isArray(keys) ? keys : []).map(String))]
+    .filter((k) => /^(m:[A-Za-z0-9_-]{1,64}|r:[A-Za-z0-9_-]{1,64}:[a-z0-9]{1,8})$/.test(k))
+    .slice(0, 100);
+  if (!valid.length) return [];
+  const at = new Date().toISOString();
+  await db.batch(valid.map((k) => db.prepare(
+    "INSERT INTO activity_reads (org_id, login, item, read_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (org_id, login, item) DO NOTHING"
+  ).bind(orgId, login, k, at)));
+  return valid;
+}
+
 /// "Mark unread from here": read only up to just before this message,
 /// even if that is further back than before.
 export async function markUnreadFrom(db, orgId, login, key, createdAt) {
@@ -553,6 +575,10 @@ export async function activityFeed(db, orgId, login, members, { days = 30, limit
   }
   const lastRead = read?.last_read_at || "";
   const access = await accessFor(db, orgId, login);
+  // Each one looked at, on any device, is no longer new anywhere.
+  const { results: lookedAt } = await db.prepare("SELECT item FROM activity_reads WHERE org_id = ?1 AND login = ?2 AND read_at >= ?3")
+    .bind(orgId, login, since).all().catch(() => ({ results: [] }));
+  const looked = new Set((lookedAt || []).map((r) => r.item));
   // Seen where it was said: read up to it in its conversation, or — a
   // reply — in its thread. Such an item is no longer new in Activity
   // either; nobody should have to tick it off twice.
@@ -569,12 +595,13 @@ export async function activityFeed(db, orgId, login, members, { days = 30, limit
     const view = viewOf(row.channel, login, members, access);
     if (!view) continue;
     const [message] = await present(db, orgId, [row], login, view, members);
-    out.push({ type, message, unread: row.created_at > lastRead && !seen(row, row.created_at), at: row.created_at, ...(keyword ? { keyword } : {}) });
+    const key = `m:${row.id}`;
+    out.push({ key, type, message, unread: row.created_at > lastRead && !seen(row, row.created_at) && !looked.has(key), at: row.created_at, ...(keyword ? { keyword } : {}) });
   }
   // What others said with a reaction to what you wrote: one entry each, as
   // a notification — who, which, on what.
   const { results: reacted } = await db.prepare(
-    `SELECT r.emoji AS r_emoji, r.created_at AS r_at, ru.name AS r_name, ru.avatar_url AS r_avatar, m.*, au.name AS author_name
+    `SELECT r.emoji AS r_emoji, r.created_at AS r_at, r.login AS r_login, ru.name AS r_name, ru.avatar_url AS r_avatar, m.*, au.name AS author_name
        FROM message_reactions r
        JOIN channel_messages m ON m.id = r.message_id AND m.org_id = r.org_id
        LEFT JOIN users ru ON ru.login = r.login
@@ -586,9 +613,10 @@ export async function activityFeed(db, orgId, login, members, { days = 30, limit
   for (const r of reacted || []) {
     const view = viewOf(r.channel, login, members, access);
     if (!view) continue;
-    const { r_emoji: emoji, r_at: at, r_name: by, r_avatar: byAvatar, ...row } = r;
+    const { r_emoji: emoji, r_at: at, r_login: byLogin, r_name: by, r_avatar: byAvatar, ...row } = r;
     const [message] = await present(db, orgId, [row], login, view, members);
-    out.push({ type: "reaction", message, unread: at > lastRead && !seen(row, at), at, emoji, by: by || null, byAvatar: byAvatar || null });
+    const key = reactionKey(row.id, byLogin, emoji);
+    out.push({ key, type: "reaction", message, unread: at > lastRead && !seen(row, at) && !looked.has(key), at, emoji, by: by || null, byAvatar: byAvatar || null });
   }
   out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
   return { items: out.slice(0, limit), lastRead };

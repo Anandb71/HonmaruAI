@@ -90,6 +90,22 @@ final class PushService: NSObject, ObservableObject {
         self.deviceToken = nil
     }
 
+    /// Read somewhere — on this phone or another device — so what this phone
+    /// still shows for it comes down: a conversation's notifications (not
+    /// its threads'), or one thread's.
+    nonisolated static func clearDelivered(channel: String, parentId: String?) {
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { list in
+            let ids = list.filter { n in
+                let info = n.request.content.userInfo
+                guard info["kind"] as? String == "message", (info["channel"] as? String ?? n.request.content.threadIdentifier) == channel else { return false }
+                let reply = info["parentId"] as? String
+                return parentId == nil ? (reply == nil || reply?.isEmpty == true) : reply == parentId
+            }.map(\.request.identifier)
+            if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+        }
+    }
+
     func setBadge(_ count: Int) {
         UNUserNotificationCenter.current().setBadgeCount(max(0, count))
     }

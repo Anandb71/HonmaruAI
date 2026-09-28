@@ -101,13 +101,13 @@ export function isConfigured(env) {
 ///
 /// A 410, or a 400 saying BadDeviceToken, means the token is dead — the caller
 /// deletes it rather than retrying forever against an app that was uninstalled.
-export async function sendPush(env, { deviceToken, payload, collapseId, priority = 10 }) {
+export async function sendPush(env, { deviceToken, payload, collapseId, priority = 10, pushType = "alert" }) {
   try {
     const jwt = await providerToken(env);
     const headers = {
       authorization: `bearer ${jwt}`,
       "apns-topic": env.APNS_TOPIC,
-      "apns-push-type": "alert",
+      "apns-push-type": pushType === "background" ? "background" : "alert",
       "apns-priority": String(priority),
       "content-type": "application/json",
     };

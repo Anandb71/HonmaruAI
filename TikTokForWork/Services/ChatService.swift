@@ -187,12 +187,16 @@ struct ChatAgentPreset: Codable, Identifiable, Hashable {
 }
 
 struct ChatActivityItem: Codable, Identifiable, Hashable {
+    /// Its name on the server, the same on every device (`m:` or `r:`).
+    var key: String?
     let type: String
     let message: ChatMessage
     var unread: Bool
     /// For a keyword: which of yours was said.
     var keyword: String?
-    var id: String { "\(type)-\(message.id)" }
+    var at: String?
+    var emoji: String?
+    var id: String { key ?? "\(type)-\(message.id)-\(emoji ?? "")-\(at ?? "")" }
 }
 
 /// A conversation's shared document.
@@ -650,6 +654,12 @@ enum ChatService {
         return try await call("PUT", "/channels/sidebar", base: base, body: body, as: R.self).sidebar
     }
 
+    /// Activity items looked at: no longer new on any device.
+    static func markActivitySeen(orgId: String, items: [String], base: URL) async {
+        struct R: Decodable { let items: [String]? }
+        _ = try? await call("POST", "/channels/read", base: base, body: ["orgId": orgId, "channel": "activity", "items": items], as: R.self)
+    }
+
     static func markRead(orgId: String, channel: String, base: URL) async {
         struct R: Decodable { let lastReadAt: String? }
         _ = try? await call("POST", "/channels/read", base: base, body: ["orgId": orgId, "channel": channel], as: R.self)
@@ -837,4 +847,6 @@ extension Notification.Name {
     static let chatMessageEvent = Notification.Name("honmaru.chat.message")
     static let chatProgressEvent = Notification.Name("honmaru.chat.progress")
     static let chatMembersChanged = Notification.Name("honmaru.chat.members")
+    /// Read on another device: `userInfo` is the event's value.
+    static let chatReadsChanged = Notification.Name("honmaru.chat.reads")
 }

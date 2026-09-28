@@ -23,7 +23,7 @@ import {
   resolveChannel, listMessages, postMessage, getMessage, linkCard, transcriptUpTo, channelActivity,
   viewOf, asksTheAI, withoutAI, MAX_MESSAGE_CHARS,
   present, listThread, listPins, editMessage, deleteMessage, toggleReaction, setPinned, setPreviewsHidden,
-  markRead, markUnreadFrom, readsFor, activityFeed, searchMessages, threadsFor,
+  markRead, markUnreadFrom, markActivitySeen, readsFor, activityFeed, searchMessages, threadsFor,
 } from "./channels.js";
 import { safe } from "./log.js";
 import { emitMessage, emitCard } from "./webhooks.js";
@@ -36,7 +36,7 @@ import { channelJournal, forgetJournalDay, validDay, validZone } from "./journal
 import { settleUsage } from "./ledger.js";
 import { readCapped } from "./media.js";
 import { uploadFile, attachFiles, claimable, dropFiles } from "./files.js";
-import { queueMessagePushes } from "./pushes.js";
+import { queueMessagePushes, clearDelivered } from "./pushes.js";
 import { audit, person } from "./audit.js";
 import { getCanvas, toClientCanvas, listRevisions, getRevision, saveCanvas, draftCanvas } from "./canvas.js";
 import { listBookmarks, toClientBookmark, addBookmark, editBookmark, removeBookmark } from "./bookmarks.js";
@@ -103,6 +103,15 @@ async function broadcast(env, orgId, resolved, row, members) {
     const [message] = await present(env.DB, orgId, [fresh], login, viewOf(resolved.key, login, members), members);
     return { to: login, event: customEvent("channel_message", { message }) };
   })));
+}
+
+/// Read on one device, read on all of them: this person's other tabs and
+/// phones hear it at once, and a phone clears the notifications it still
+/// shows for it.
+async function readEverywhere(env, orgId, login, { view, key, thread, lastReadAt, items, unread }) {
+  const value = items ? { items } : { view, thread: thread || null, lastReadAt, ...(unread ? { unread: true } : {}) };
+  await announceTo(env, orgId, [{ to: login, event: customEvent("reads_changed", value) }]);
+  if (!unread && key) await clearDelivered(env, orgId, login, { key, view, thread, lastReadAt }).catch((err) => console.error("clear push failed", safe(err?.message)));
 }
 
 /// A reply changes its parent too: the count and faces under it.
@@ -488,17 +497,28 @@ export async function handleChannels(request, env, url, { route, after }) {
     if (body.channel === "activity") {
       const who = await caller(env, request, body.orgId);
       if (who.denied) return who.denied;
+      // The ones looked at: gone from every device's Activity.
+      if (Array.isArray(body.items)) {
+        const items = await markActivitySeen(env.DB, body.orgId, who.user.login, body.items);
+        if (items.length) after(() => readEverywhere(env, body.orgId, who.user.login, { items }));
+        return json({ items });
+      }
       return json({ lastReadAt: await markRead(env.DB, body.orgId, who.user.login, "activity", body.at) });
     }
     const ctx = await inChannel(env, request, body);
     if (ctx.denied) return ctx.denied;
+    const login = ctx.who.user.login;
     // One thread in it: Threads stops calling it unread.
     if (body.thread) {
       const parent = await getMessage(env.DB, body.orgId, String(body.thread));
       if (!parent || parent.channel !== ctx.resolved.key) return json({ message: "No such thread." }, 404);
-      return json({ lastReadAt: await markRead(env.DB, body.orgId, ctx.who.user.login, `t:${parent.id}`, body.at) });
+      const lastReadAt = await markRead(env.DB, body.orgId, login, `t:${parent.id}`, body.at);
+      after(() => readEverywhere(env, body.orgId, login, { view: ctx.view, key: ctx.resolved.key, thread: parent.id, lastReadAt }));
+      return json({ lastReadAt });
     }
-    return json({ lastReadAt: await markRead(env.DB, body.orgId, ctx.who.user.login, ctx.resolved.key, body.at) });
+    const lastReadAt = await markRead(env.DB, body.orgId, login, ctx.resolved.key, body.at);
+    after(() => readEverywhere(env, body.orgId, login, { view: ctx.view, key: ctx.resolved.key, lastReadAt }));
+    return json({ lastReadAt });
   }
 
   // "Mark unread": back to just before one message, on every device.
@@ -512,7 +532,9 @@ export async function handleChannels(request, env, url, { route, after }) {
     const row = await getMessage(env.DB, body.orgId, String(body.messageId || ""));
     if (!row || row.deleted_at || row.channel !== ctx.resolved.key) return json({ message: "No such message." }, 404);
     const key = row.parent_id ? `t:${row.parent_id}` : ctx.resolved.key;
-    return json({ lastReadAt: await markUnreadFrom(env.DB, body.orgId, ctx.who.user.login, key, row.created_at), thread: row.parent_id || null });
+    const lastReadAt = await markUnreadFrom(env.DB, body.orgId, ctx.who.user.login, key, row.created_at);
+    after(() => readEverywhere(env, body.orgId, ctx.who.user.login, { view: ctx.view, thread: row.parent_id || null, lastReadAt, unread: true }));
+    return json({ lastReadAt, thread: row.parent_id || null });
   }
 
   // Agents the team writes: "@hayao" answers as its Markdown instructions

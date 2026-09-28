@@ -105,6 +105,10 @@ final class ChatTests: XCTestCase {
         let item = try JSONDecoder().decode(ChatActivityItem.self, from: #"{"type":"keyword","keyword":"invoice","unread":true,"message":{"id":"m1","channel":"b:cafe","kind":"message","body":"The invoice is late","mine":false,"createdAt":"2026-09-26T01:00:00.000Z"}}"#.data(using: .utf8)!)
         XCTAssertEqual(item.keyword, "invoice")
         XCTAssertEqual(item.type, "keyword")
+        // The server's name for it is what every device marks as seen.
+        let keyed = try JSONDecoder().decode(ChatActivityItem.self, from: Data(#"{"key":"r:m1:abc","type":"reaction","emoji":"👍","at":"2026-09-26T02:00:00Z","unread":true,"message":{"id":"m1","channel":"b:cafe","kind":"message","body":"hi","mine":true,"createdAt":"2026-09-26T01:00:00.000Z"}}"#.utf8))
+        XCTAssertEqual(keyed.id, "r:m1:abc")
+        XCTAssertNotEqual(item.id, keyed.id)
     }
 
     func testMessagesAndMembersCarryTheirPhotos() throws {

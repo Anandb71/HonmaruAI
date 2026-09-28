@@ -13,6 +13,22 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         }
     }
 
+    /// A silent push: what was read on another device comes down here too,
+    /// even while the app is not open.
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        guard userInfo["kind"] as? String == "read", let channel = userInfo["channel"] as? String else {
+            completionHandler(.noData)
+            return
+        }
+        let parentId = (userInfo["parentId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        PushService.clearDelivered(channel: channel, parentId: parentId)
+        completionHandler(.newData)
+    }
+
     func application(
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
