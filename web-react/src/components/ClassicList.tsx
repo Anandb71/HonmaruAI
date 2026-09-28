@@ -548,6 +548,15 @@ export const ClassicList: React.FC<Props> = ({
   }, [api.httpBase, api.orgId, authHeaders])
   useEffect(() => { void loadThreads() }, [loadThreads])
   const threadsUnread = (threadItems || []).filter((x) => x.unread).length
+  /// Threads read up to a point, wherever that was done: each one whose
+  /// newest reply is no later is no longer new.
+  const threadsReadTo = useCallback((read: Array<{ thread: string; lastReadAt: string }>) => {
+    const upTo = new Map(read.map((r) => [r.thread, r.lastReadAt]))
+    setThreadItems((prev) => prev && prev.map((x) => {
+      const at = upTo.get(x.parent.id)
+      return x.unread && at && x.lastReplyAt <= at ? { ...x, unread: false } : x
+    }))
+  }, [])
   const [activityItems, setActivityItems] = useState<ActivityItem[] | null>(null)
   // What the Unread tab showed when you came to it stays in the list while
   // you are there, however many of them you have looked at since.
@@ -574,7 +583,10 @@ export const ClassicList: React.FC<Props> = ({
     void fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, channel: 'activity', items: serverKeys }),
-    }).catch(() => { /* seen here; the next load asks again */ })
+    }).then((r) => (r.ok ? r.json() : null))
+      // A reply looked at here is read in its thread too: Threads agrees.
+      .then((d) => { if (Array.isArray(d?.threads)) threadsReadTo(d.threads) })
+      .catch(() => { /* seen here; the next load asks again */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.httpBase, api.orgId, authHeaders])
   const activityUnread = (activityItems || []).filter(stillNew).length
@@ -1470,10 +1482,11 @@ export const ClassicList: React.FC<Props> = ({
   // notifications for it come down.
   useEffect(() => {
     const on = (e: Event) => {
-      const d = (e as CustomEvent<{ items?: string[]; view?: string; thread?: string | null; lastReadAt?: string; unread?: boolean }>).detail || {}
+      const d = (e as CustomEvent<{ items?: string[]; threads?: Array<{ thread: string; lastReadAt: string }>; view?: string; thread?: string | null; lastReadAt?: string; unread?: boolean }>).detail || {}
       if (Array.isArray(d.items)) {
         const keys = new Set(d.items)
         setActivityItems((prev) => prev && prev.map((i) => (i.unread && keys.has(activityKey(i)) ? { ...i, unread: false } : i)))
+        if (Array.isArray(d.threads)) threadsReadTo(d.threads)
         return
       }
       const v = d.view

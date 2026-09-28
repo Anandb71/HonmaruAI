@@ -655,10 +655,15 @@ enum ChatService {
         return try await call("PUT", "/channels/sidebar", base: base, body: body, as: R.self).sidebar
     }
 
-    /// Activity items looked at: no longer new on any device.
-    static func markActivitySeen(orgId: String, items: [String], base: URL) async {
-        struct R: Decodable { let items: [String]? }
-        _ = try? await call("POST", "/channels/read", base: base, body: ["orgId": orgId, "channel": "activity", "items": items], as: R.self)
+    /// A thread read up to a point: every reply no later is no longer new.
+    struct ThreadRead: Decodable, Equatable { let thread: String; let lastReadAt: String }
+
+    /// Activity items looked at: no longer new on any device. The threads
+    /// the replies among them belong to come back read up to them.
+    @discardableResult
+    static func markActivitySeen(orgId: String, items: [String], base: URL) async -> [ThreadRead] {
+        struct R: Decodable { let items: [String]?; let threads: [ThreadRead]? }
+        return (try? await call("POST", "/channels/read", base: base, body: ["orgId": orgId, "channel": "activity", "items": items], as: R.self))?.threads ?? []
     }
 
     static func markRead(orgId: String, channel: String, base: URL) async {
