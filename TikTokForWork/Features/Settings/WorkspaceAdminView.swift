@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The workspace's admin screens on the phone (docs/enterprise-audit-log.md
 /// §10): data rules, which an admin can switch on and off, add and remove
-/// here; and how compliance, single sign-on and the audit streams stand.
-/// Settings that need an owner's fresh sign-in are changed on the web.
+/// here; compliance, which an owner changes here after confirming it is
+/// them; and how single sign-on and the audit streams stand.
 struct WorkspaceAdminView: View {
     @EnvironmentObject private var appState: AppState
 
@@ -20,7 +20,7 @@ struct WorkspaceAdminView: View {
                     Label("Single sign-on and audit streams", systemImage: "key.horizontal")
                 }
             } footer: {
-                Text("Only admins and owners see these. Settings that need an owner to sign in again are changed on the web, in Studio.")
+                Text("Only admins and owners see these. An owner is asked to confirm it’s them before changing compliance settings. Single sign-on and audit streams are set up on the web, in Studio.")
             }
         }
         .navigationTitle("Workspace admin").navigationBarTitleDisplayMode(.inline)
@@ -197,30 +197,70 @@ private struct NewDataRuleSheet: View {
 
 // MARK: - Compliance
 
+/// How long things are kept, where the workspace may be used from, who may be
+/// invited, legal holds and exports. Admins read them; an owner changes them
+/// here, confirming it is them first when the Worker asks (Reauth.swift).
 struct ComplianceAdminView: View {
     @State private var governance: AdminService.Governance?
     @State private var holds: [AdminService.Hold] = []
     @State private var exports: [AdminService.ComplianceExport] = []
+    @State private var downloaded: [String: URL] = [:]
     @State private var loaded = false
+    @State private var busy = false
     @State private var error: String?
+    @State private var editingNetworks = false
+    @State private var placingHold = false
+    @State private var exporting = false
+
+    private var canEdit: Bool { governance?.canEdit == true }
 
     var body: some View {
         List {
             if let g = governance {
                 Section("How long things are kept") {
-                    LabeledContent("Public channels", value: AdminService.days(g.retention.publicDays))
-                    LabeledContent("Private channels", value: AdminService.days(g.retention.privateDays))
-                    LabeledContent("Direct messages", value: AdminService.days(g.retention.dmDays))
-                    LabeledContent("Files", value: AdminService.days(g.retention.filesDays))
+                    retentionRow("Public channels", key: "publicDays", value: g.retention.publicDays, g: g)
+                    retentionRow("Private channels", key: "privateDays", value: g.retention.privateDays, g: g)
+                    retentionRow("Direct messages", key: "dmDays", value: g.retention.dmDays, g: g)
+                    retentionRow("Files", key: "filesDays", value: g.retention.filesDays, g: g)
                 }
-                Section("Where it can be used from") {
-                    LabeledContent("Allowed networks", value: g.network.enforce ? String(localized: "On") : String(localized: "Off"))
+                Section {
+                    if canEdit {
+                        Toggle("Only from these networks", isOn: Binding(
+                            get: { g.network.enforce },
+                            set: { on in change { try await AdminService.setNetwork(enforce: on, allowlist: g.network.allowlist, orgId: $0, base: $1) } }
+                        ))
+                        .disabled(busy || g.network.allowlist.isEmpty)
+                    } else {
+                        LabeledContent("Allowed networks", value: g.network.enforce ? String(localized: "On") : String(localized: "Off"))
+                    }
                     ForEach(g.network.allowlist, id: \.self) { Text($0).font(.footnote.monospaced()) }
+                    if canEdit {
+                        Button { editingNetworks = true } label: { Label("Edit networks", systemImage: "pencil") }
+                    }
+                } header: { Text("Where it can be used from") } footer: {
+                    if let ip = g.yourIp { Text("This phone is at \(ip) now.") }
                 }
                 Section("Who may be invited") {
-                    LabeledContent("Invitations", value: policyName(g.invites.policy))
-                    if g.invites.policy != "open" {
-                        LabeledContent("Guests", value: g.invites.guestsExempt ? String(localized: "Anyone") : String(localized: "Same rule"))
+                    if canEdit {
+                        Picker("Invitations", selection: Binding(
+                            get: { g.invites.policy },
+                            set: { policy in change { try await AdminService.setInvites(policy: policy, guestsExempt: g.invites.guestsExempt, orgId: $0, base: $1) } }
+                        )) {
+                            ForEach(["open", "company", "approval"], id: \.self) { Text(policyName($0)).tag($0) }
+                        }
+                        .disabled(busy)
+                        if g.invites.policy != "open" {
+                            Toggle("Guests may be invited from anywhere", isOn: Binding(
+                                get: { g.invites.guestsExempt },
+                                set: { exempt in change { try await AdminService.setInvites(policy: g.invites.policy, guestsExempt: exempt, orgId: $0, base: $1) } }
+                            ))
+                            .disabled(busy)
+                        }
+                    } else {
+                        LabeledContent("Invitations", value: policyName(g.invites.policy))
+                        if g.invites.policy != "open" {
+                            LabeledContent("Guests", value: g.invites.guestsExempt ? String(localized: "Anyone") : String(localized: "Same rule"))
+                        }
                     }
                 }
             }
@@ -234,19 +274,76 @@ struct ComplianceAdminView: View {
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(hold.releasedAt == nil ? Theme.Colors.accent : Theme.Colors.textSecondary)
                     }
+                    .swipeActions {
+                        if canEdit && hold.releasedAt == nil {
+                            Button("Release") { change { try await AdminService.releaseHold(hold.id, orgId: $0, base: $1) } }.tint(Theme.Colors.reject)
+                        }
+                    }
+                }
+                if canEdit {
+                    Button { placingHold = true } label: { Label("Place a hold", systemImage: "lock.doc") }
                 }
             }
             Section {
                 if loaded && exports.isEmpty { Text("No exports.").foregroundStyle(Theme.Colors.textSecondary) }
                 ForEach(exports) { e in
-                    LabeledContent(ChatDates.parse(e.createdAt)?.formatted(date: .abbreviated, time: .shortened) ?? e.createdAt, value: exportStatus(e.status))
+                    HStack {
+                        LabeledContent(ChatDates.parse(e.createdAt)?.formatted(date: .abbreviated, time: .shortened) ?? e.createdAt, value: exportStatus(e.status))
+                        if e.status == "ready" && canEdit {
+                            if let file = downloaded[e.id] {
+                                ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }
+                            } else {
+                                Button { Task { await download(e) } } label: { Image(systemName: "arrow.down.circle") }
+                                    .buttonStyle(.borderless).disabled(busy)
+                                    .accessibilityLabel(Text("Download"))
+                            }
+                        }
+                    }
+                }
+                if canEdit {
+                    Button { exporting = true } label: { Label("Make an export", systemImage: "square.and.arrow.down.on.square") }
                 }
             } header: { Text("Exports") } footer: {
-                Text("Retention, allowed networks, invitations, holds and exports are changed and downloaded on the web, where an owner signs in again first.")
+                if canEdit {
+                    Text("Owners are asked to confirm it’s them before a change here. Every change, hold and export is in the audit log, and the other owners are emailed.")
+                } else {
+                    Text("Only an owner can change these.")
+                }
             }
         }
         .navigationTitle("Compliance").navigationBarTitleDisplayMode(.inline)
         .modifier(AdminLoad(error: error, loaded: loaded, reload: load))
+        .sheet(isPresented: $editingNetworks) {
+            NetworksSheet(ranges: governance?.network.allowlist ?? [], yourIp: governance?.yourIp) { ranges in
+                let enforce = (governance?.network.enforce ?? false) && !ranges.isEmpty
+                return await attempt { try await AdminService.setNetwork(enforce: enforce, allowlist: ranges, orgId: $0, base: $1) }
+            }
+        }
+        .sheet(isPresented: $placingHold) {
+            PlaceHoldSheet { person, channel, reason in
+                await attempt { try await AdminService.placeHold(person: person, channel: channel, reason: reason, orgId: $0, base: $1) }
+            }
+        }
+        .sheet(isPresented: $exporting) {
+            MakeExportSheet { from, to, reason in
+                await attempt { try await AdminService.makeExport(from: from, to: to, reason: reason, orgId: $0, base: $1) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func retentionRow(_ title: LocalizedStringKey, key: String, value: Int?, g: AdminService.Governance) -> some View {
+        if canEdit, let choices = g.retentionChoices, !choices.isEmpty {
+            Picker(title, selection: Binding(
+                get: { value },
+                set: { days in change { try await AdminService.setRetention(key, days: days, orgId: $0, base: $1) } }
+            )) {
+                ForEach(choices.indices, id: \.self) { i in Text(AdminService.days(choices[i])).tag(choices[i]) }
+            }
+            .disabled(busy)
+        } else {
+            LabeledContent(title, value: AdminService.days(value))
+        }
     }
 
     private func policyName(_ policy: String) -> String {
@@ -266,15 +363,201 @@ struct ComplianceAdminView: View {
         }
     }
 
+    /// A change, then the settings as they now stand.
+    private func change(_ run: @escaping (String, URL) async throws -> Void) {
+        Task { _ = await attempt(run) }
+    }
+
+    /// Nil when it went through, or the sentence that says why not.
+    @discardableResult
+    private func attempt(_ run: (String, URL) async throws -> Void) async -> String? {
+        guard let ctx = AdminService.context else { return nil }
+        busy = true
+        defer { busy = false }
+        var failed: String?
+        do { try await run(ctx.orgId, ctx.base); Haptics.success(); error = nil }
+        catch { failed = error.localizedDescription; self.error = failed }
+        await load()
+        return failed
+    }
+
+    private func download(_ export: AdminService.ComplianceExport) async {
+        guard let ctx = AdminService.context else { return }
+        busy = true
+        defer { busy = false }
+        do { downloaded[export.id] = try await AdminService.downloadExport(export.id, orgId: ctx.orgId, base: ctx.base) }
+        catch { self.error = error.localizedDescription }
+    }
+
     private func load() async {
         guard let ctx = AdminService.context else { return }
         do {
-            governance = try await AdminService.governance(orgId: ctx.orgId, base: ctx.base)
+            let g = try await AdminService.governance(orgId: ctx.orgId, base: ctx.base)
+            governance = g
             holds = try await AdminService.holds(orgId: ctx.orgId, base: ctx.base)
-            exports = try await AdminService.exports(orgId: ctx.orgId, base: ctx.base)
-            error = nil
+            // Only an owner sees exports at all.
+            if g.canEdit == true { exports = try await AdminService.exports(orgId: ctx.orgId, base: ctx.base) } else { exports = [] }
         } catch { self.error = error.localizedDescription }
         loaded = true
+    }
+}
+
+/// The address ranges the workspace may be used from, one per line.
+private struct NetworksSheet: View {
+    let ranges: [String]
+    let yourIp: String?
+    let save: ([String]) async -> String?
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("203.0.113.0/24", text: $text, axis: .vertical)
+                        .lineLimit(4...12).font(.body.monospaced())
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                } footer: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("One address or range per line, IPv4 or IPv6.")
+                        if let yourIp { Text("This phone is at \(yourIp) now. Keep it in the list, or you will be locked out.") }
+                    }
+                }
+                if let yourIp, !text.contains(yourIp) {
+                    Button { text = (text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n" + yourIp).trimmingCharacters(in: .whitespacesAndNewlines) } label: {
+                        Label("Add this phone’s address", systemImage: "plus")
+                    }
+                }
+                if let error { Text(error).foregroundStyle(Theme.Colors.reject) }
+            }
+            .navigationTitle("Allowed networks").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task {
+                            busy = true
+                            let list = text.split(whereSeparator: { $0 == "\n" || $0 == "," || $0 == " " }).map(String.init).filter { !$0.isEmpty }
+                            if let failed = await save(list) { error = failed } else { dismiss() }
+                            busy = false
+                        }
+                    }
+                    .disabled(busy)
+                }
+            }
+            .onAppear { text = ranges.joined(separator: "\n") }
+        }
+    }
+}
+
+/// A hold on a person or a channel, and the matter it is for.
+private struct PlaceHoldSheet: View {
+    let place: (_ person: String?, _ channel: String?, _ reason: String) async -> String?
+    @Environment(\.dismiss) private var dismiss
+    @State private var onPerson = true
+    @State private var people: [TeamMember] = []
+    @State private var channels: [ChatBusiness] = []
+    @State private var person = ""
+    @State private var channel = ""
+    @State private var reason = ""
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("Hold", selection: $onPerson) {
+                    Text("A person").tag(true)
+                    Text("A channel").tag(false)
+                }
+                .pickerStyle(.segmented)
+                if onPerson {
+                    Picker("Person", selection: $person) {
+                        Text("Choose").tag("")
+                        ForEach(people) { Text($0.name).tag($0.ref) }
+                    }
+                } else {
+                    Picker("Channel", selection: $channel) {
+                        Text("Choose").tag("")
+                        ForEach(channels) { Text(verbatim: "#\($0.name)").tag("b:\($0.slug)") }
+                    }
+                }
+                Section {
+                    TextField("The matter, e.g. Case 2026-014", text: $reason, axis: .vertical).lineLimit(2...4)
+                } footer: {
+                    Text("Nothing they say, or that is said there, is deleted while the hold is on, whatever the retention. Nobody else is told.")
+                }
+                if let error { Text(error).foregroundStyle(Theme.Colors.reject) }
+            }
+            .navigationTitle("Place a hold").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Place") {
+                        Task {
+                            busy = true
+                            let failed = await place(onPerson ? person : nil, onPerson ? nil : channel, reason.trimmingCharacters(in: .whitespacesAndNewlines))
+                            busy = false
+                            if let failed { error = failed } else { dismiss() }
+                        }
+                    }
+                    .disabled(busy || reason.trimmingCharacters(in: .whitespaces).isEmpty || (onPerson ? person.isEmpty : channel.isEmpty))
+                }
+            }
+            .task { await loadChoices() }
+        }
+    }
+
+    private func loadChoices() async {
+        guard let ctx = AdminService.context else { return }
+        people = (try? await TeamService.members(orgId: ctx.orgId, backendBaseURL: ctx.base).members) ?? []
+        channels = (try? await ChatService.businesses(orgId: ctx.orgId, base: ctx.base)) ?? []
+    }
+}
+
+/// Every message and file between two days, for a matter.
+private struct MakeExportSheet: View {
+    let make: (_ from: Date, _ to: Date, _ reason: String) async -> String?
+    @Environment(\.dismiss) private var dismiss
+    @State private var from = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+    @State private var to = Date()
+    @State private var reason = ""
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("From", selection: $from, in: ...to, displayedComponents: .date)
+                DatePicker("To", selection: $to, in: from...Date(), displayedComponents: .date)
+                Section {
+                    TextField("The matter, e.g. Case 2026-014", text: $reason, axis: .vertical).lineLimit(2...4)
+                } footer: {
+                    Text("Everyone’s messages and files in that time. It can be downloaded for seven days, and the other owners are emailed.")
+                }
+                if busy { HStack { ProgressView(); Text("Making the export…") } }
+                if let error { Text(error).foregroundStyle(Theme.Colors.reject) }
+            }
+            .navigationTitle("Make an export").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Export") {
+                        Task {
+                            busy = true
+                            let start = Calendar.current.startOfDay(for: from)
+                            let end = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: to)) ?? to
+                            let failed = await make(start, end, reason.trimmingCharacters(in: .whitespacesAndNewlines))
+                            busy = false
+                            if let failed { error = failed } else { dismiss() }
+                        }
+                    }
+                    .disabled(busy || reason.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
     }
 }
 

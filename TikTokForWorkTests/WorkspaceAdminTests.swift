@@ -80,4 +80,36 @@ final class WorkspaceAdminTests: XCTestCase {
         let started = try decode(AdminService.Connecting.self, #"{"state":"auth_required","setupUrl":"https://auth.smithery.ai/setup/x"}"#)
         XCTAssertEqual(started.setupUrl, "https://auth.smithery.ai/setup/x")
     }
+
+    func testAnOwnerReadsWhatMayBeChosen() throws {
+        let g = try decode(AdminService.Governance.self, """
+        {"retention":{"publicDays":null,"privateDays":null,"dmDays":null,"filesDays":null},
+         "network":{"enforce":false,"allowlist":[]},"invites":{"policy":"open","guestsExempt":false},
+         "canEdit":true,"yourIp":"203.0.113.9","retentionChoices":[null,1,7,30,90,180,365,730,1825,3650]}
+        """)
+        XCTAssertEqual(g.canEdit, true)
+        XCTAssertEqual(g.yourIp, "203.0.113.9")
+        XCTAssertEqual(g.retentionChoices?.count, 10)
+        let forever: Int?? = g.retentionChoices?.first
+        XCTAssertEqual(forever, .some(nil), "the first choice is forever")
+        XCTAssertEqual(AdminService.retentionKeys, ["publicDays", "privateDays", "dmDays", "filesDays"])
+    }
+
+    func testAnExportIsSavedUnderTheNameTheWorkerGave() {
+        XCTAssertEqual(AdminService.exportFileName(id: "0123456789", disposition: #"attachment; filename="export-01234567.jsonl.gz""#), "export-01234567.jsonl.gz")
+        XCTAssertEqual(AdminService.exportFileName(id: "0123456789", disposition: #"attachment; filename="../../evil/x.gz""#), "-..-evil-x.gz")
+        XCTAssertEqual(AdminService.exportFileName(id: "0123456789", disposition: #"attachment; filename="..""#), "export-01234567.jsonl.gz")
+        XCTAssertEqual(AdminService.exportFileName(id: "0123456789", disposition: nil), "export-01234567.jsonl.gz")
+    }
+
+    /// "Confirm it's you" is a 401 with its own code, and is not being signed out.
+    func testARecentSignInAskedForIsToldApartFromBeingSignedOut() {
+        let asked = Data(#"{"message":"Confirm it's you to do this.","code":"reauth-required","minutes":10}"#.utf8)
+        let ended = Data(#"{"message":"Sign in again.","code":"session-policy"}"#.utf8)
+        XCTAssertTrue(Reauth.isAsked(status: 401, data: asked))
+        XCTAssertFalse(Reauth.isAsked(status: 403, data: asked))
+        XCTAssertFalse(Reauth.isAsked(status: 401, data: ended))
+        XCTAssertFalse(Reauth.isAsked(status: 401, data: Data()))
+        XCTAssertEqual(Reauth.origin(of: URL(string: "https://api.example.com:8443/orgs/governance?orgId=x"))?.absoluteString, "https://api.example.com:8443")
+    }
 }
