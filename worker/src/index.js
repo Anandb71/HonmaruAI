@@ -759,6 +759,19 @@ async function handle(request, env, url, ctx) {
       return json(result);
     }
 
+    // What the iPhone app should be on. The newest version comes from the
+    // App Store itself; this says only the oldest one the service still
+    // works with (IOS_MIN_VERSION), and where to get it if the lookup
+    // cannot say (IOS_APP_STORE_URL). No sign-in: a build too old to sign
+    // in is exactly the one that needs to hear it.
+    if (url.pathname === "/app/ios" && request.method === "GET") {
+      const version = (v) => (typeof v === "string" && /^\d+(\.\d+){0,3}$/.test(v.trim()) ? v.trim() : null);
+      const store = typeof env.IOS_APP_STORE_URL === "string" && /^https:\/\/apps\.apple\.com\//.test(env.IOS_APP_STORE_URL) ? env.IOS_APP_STORE_URL : null;
+      return new Response(JSON.stringify({ minimumVersion: version(env.IOS_MIN_VERSION), storeUrl: store }), {
+        headers: { "content-type": "application/json", "cache-control": "public, max-age=300", "access-control-allow-origin": "*" },
+      });
+    }
+
     if (url.pathname === "/health" && request.method === "GET") {
       return json({
         ok: true,

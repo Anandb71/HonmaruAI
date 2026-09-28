@@ -10,6 +10,8 @@ struct YouView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var push: PushService
     @EnvironmentObject private var subscription: SubscriptionService
+    @ObservedObject private var updates = AppUpdateService.shared
+    @Environment(\.openURL) private var openURL
     @State private var showEmail = false
     @State private var translateMessages = true
     @State private var showGitHub = false
@@ -104,6 +106,16 @@ struct YouView: View {
                         NavigationLink { workspaceSettings } label: { row("Workspace", icon: "building.2", value: appState.isGuest ? String(localized: "Demo") : nil) }
                         separator
                         NavigationLink { ContextView().environmentObject(appState) } label: { row("Your work context", icon: "person.text.rectangle") }
+                    }
+                    if let next = updates.available {
+                        Button { openURL(next.storeURL) } label: {
+                            Label(String(localized: "Update to \(next.version)"), systemImage: "arrow.down.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                                .background(Theme.Colors.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .foregroundStyle(Theme.Colors.accent)
+                        .padding(.top, 4)
                     }
                     Text("Version \(version)").font(.caption).foregroundStyle(Theme.Colors.textTertiary).padding(.top, 4)
                 }.padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 24)
