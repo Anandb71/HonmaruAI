@@ -19,7 +19,7 @@ import { allowed, ownersOf } from "./permissions.js";
 import { memberGate, reauthDenial } from "./policy.js";
 import { domainOf, domainMatches } from "./domains.js";
 import { enforce } from "./ratelimit.js";
-import { spEntityId, acsUrl, spMetadata, redirectUrl, verifyResponse, parseIdpMetadata, normalizeCert } from "./saml.js";
+import { spEntityId, acsUrl, sloUrl, spMetadata, redirectUrl, verifyResponse, parseIdpMetadata, normalizeCert, verifyLogoutRequest, logoutResponseUrl } from "./saml.js";
 
 export const PROVIDERS = {
   google: { name: "Google Workspace", issuer: "https://accounts.google.com" },
@@ -259,7 +259,7 @@ export function presentConnection(row, base) {
     sessionHours: row.session_hours, status: row.status,
     testedAt: row.tested_at, test: row.test_result ? JSON.parse(row.test_result) : null,
     ...(row.provider !== "saml" && base ? { logoutUrl: `${String(base).replace(/\/$/, "")}/sso/oidc/${encodeURIComponent(row.id)}/backchannel-logout` } : {}),
-    ...(row.provider === "saml" && base ? { sp: { entityId: spEntityId(base, row.id), acs: acsUrl(base, row.id), metadata: `${spEntityId(base, row.id)}/metadata` } } : {}),
+    ...(row.provider === "saml" && base ? { sp: { entityId: spEntityId(base, row.id), acs: acsUrl(base, row.id), slo: sloUrl(base, row.id), metadata: `${spEntityId(base, row.id)}/metadata` }, idpSloUrl: row.idp_slo_url || null } : {}),
   };
 }
 export function presentSso(row, policy = null) {
@@ -487,6 +487,7 @@ export async function samlAcs(env, request, url, connectionId) {
   if (row.expires_at <= new Date().toISOString()) return fail("This sign-in has expired. Start again.");
   if (!conn || conn.provider !== "saml" || conn.id !== connectionId) return fail("This sign-in is for a different connection.");
   let identity;
+  let grant = {};
   try {
     const base = baseOf(env, url);
     const said = verifyResponse(form.get("SAMLResponse"), {
@@ -494,10 +495,57 @@ export async function samlAcs(env, request, url, connectionId) {
     });
     if (!covers(conn, said.email)) throw new Error("This email's domain is not registered for single sign-on here.");
     identity = { subject: said.subject, email: said.email, name: said.name };
+    // The NameID and SessionIndex, as a LogoutRequest from the IdP names them.
+    grant = { sub: said.subject, sid: said.sessionIndex || null };
   } catch (err) {
     return fail(err?.message || String(err));
   }
-  return finishSignIn(env, request, row, conn, identity);
+  return finishSignIn(env, request, row, conn, identity, grant);
+}
+
+/// GET or POST /sso/saml/:id/slo — the IdP ends a sign-in (or all of one
+/// person's) there, and asks us to end ours. Signed with its certificate,
+/// from its entity ID, to this address, recent, and taken once. The
+/// sessions that came through this connection for that NameID (and, when
+/// named, those SessionIndexes) end at once. We answer to the IdP's logout
+/// address when it has one; otherwise with a page that says so.
+async function samlLogout(env, request, url, connectionId) {
+  const page = (status, text) => new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Honmaru AI</title><p style="font:16px system-ui;margin:3em auto;max-width:28em">${text}</p>`, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  const conn = await env.DB.prepare("SELECT * FROM sso_connections WHERE id = ?1 AND provider = 'saml'").bind(String(connectionId)).first().catch(() => null);
+  if (!conn) return page(404, "There is no such single sign-on connection.");
+  const base = baseOf(env, url);
+  let form = null;
+  if (request.method === "POST") form = await request.formData().catch(() => null);
+  let said;
+  try {
+    said = await verifyLogoutRequest({
+      rawQuery: request.method === "GET" ? url.search : null,
+      posted: form ? form.get("SAMLRequest") : null,
+      cert: conn.idp_cert, idpEntityId: conn.issuer, slo: sloUrl(base, conn.id),
+    });
+  } catch (err) {
+    return page(400, `This sign-out could not be checked: ${String(err?.message || err).replace(/[<>&]/g, "")}`);
+  }
+  const seen = await env.DB.prepare("INSERT OR IGNORE INTO sso_logout_tokens (id, expires_at) VALUES (?1, ?2)")
+    .bind(`${conn.id}:saml:${said.id}`, new Date(Date.now() + 20 * 60_000).toISOString()).run();
+  if (!seen.meta?.changes) return page(400, "This sign-out was already done.");
+  const indexes = said.sessionIndexes;
+  const { results } = await env.DB.prepare(
+    `SELECT token, github_id FROM sessions WHERE sso_connection_id = ?1 AND sso_subject = ?2
+       ${indexes.length ? `AND sso_sid IN (${indexes.map((_, i) => `?${i + 3}`).join(", ")})` : ""}`
+  ).bind(conn.id, said.nameId, ...indexes).all();
+  const gone = results || [];
+  if (gone.length) await env.DB.batch(gone.map((r) => env.DB.prepare("DELETE FROM sessions WHERE token = ?1").bind(r.token)));
+  const who = gone[0] ? await getUserByGithubId(env.DB, gone[0].github_id).catch(() => null) : null;
+  await audit(env, request, {
+    orgId: conn.org_id, action: "sso.idp_signed_out", actor: { type: "system" }, entity: person(who) || undefined,
+    details: { connection: conn.id, provider: "saml", by: indexes.length ? "session_index" : "name_id", sessions_ended: gone.length },
+  });
+  const relay = request.method === "GET" ? url.searchParams.get("RelayState") : form?.get("RelayState");
+  if (conn.idp_slo_url) {
+    return redirect(await logoutResponseUrl({ idpSlo: conn.idp_slo_url, inResponseTo: said.id, spEntity: spEntityId(base, conn.id), relayState: relay ? String(relay).slice(0, 80) : null }));
+  }
+  return page(200, "You are signed out of Honmaru AI.");
 }
 
 /// The one-time code for the session it stands for: once, within a minute,
@@ -553,10 +601,11 @@ async function connectionFields(env, orgId, body, current) {
     let issuer = String(body.issuer ?? current?.issuer ?? "").trim();
     let ssoUrl = String(body.ssoUrl ?? current?.sso_url ?? "").trim();
     let cert = body.certificate ? String(body.certificate) : null;
+    let sloFromMetadata;
     if (body.metadataXml) {
       try {
         const md = parseIdpMetadata(String(body.metadataXml));
-        issuer = md.entityId || issuer; ssoUrl = md.ssoUrl || ssoUrl; cert = md.cert;
+        issuer = md.entityId || issuer; ssoUrl = md.ssoUrl || ssoUrl; cert = md.cert; sloFromMetadata = md.sloUrl || undefined;
       } catch (err) { return { error: `Could not read the metadata: ${err?.message || err}` }; }
     }
     if (!issuer) return { error: "The identity provider's entity ID is required." };
@@ -565,7 +614,11 @@ async function connectionFields(env, orgId, body, current) {
     if (cert) { try { pem = normalizeCert(cert); } catch (err) { return { error: err.message }; } }
     if (!pem) return { error: "The identity provider's signing certificate is required." };
     const retest = !current || current.issuer !== issuer || current.sso_url !== ssoUrl || current.idp_cert !== pem;
-    return { fields: { ...common, issuer, sso_url: ssoUrl, idp_cert: pem, client_id: null, client_secret: null, hosted_domain: null, tenant_id: null }, retest };
+    // Where the IdP takes logout answers: from its metadata, or as given (optional).
+    const sloGiven = body.sloUrl !== undefined ? String(body.sloUrl || "").trim() : undefined;
+    const idpSlo = sloFromMetadata !== undefined ? sloFromMetadata : sloGiven !== undefined ? (sloGiven || null) : (current?.idp_slo_url || null);
+    if (idpSlo && !/^https:\/\//.test(idpSlo)) return { error: "The identity provider's sign-out address must be https://." };
+    return { fields: { ...common, issuer, sso_url: ssoUrl, idp_cert: pem, idp_slo_url: idpSlo, client_id: null, client_secret: null, hosted_domain: null, tenant_id: null }, retest };
   }
   if (!env.SSO_SECRET_KEY) return { error: "Single sign-on is not set up on this deployment yet.", status: 503 };
   const issuer = String(body.issuer || current?.issuer || PROVIDERS[provider].issuer || "").trim().replace(/\/$/, "");
@@ -582,7 +635,7 @@ async function connectionFields(env, orgId, body, current) {
   };
 }
 
-const COLUMNS = ["name", "provider", "issuer", "client_id", "client_secret", "sso_url", "idp_cert", "allowed_domains", "hosted_domain", "tenant_id", "session_hours"];
+const COLUMNS = ["name", "provider", "issuer", "client_id", "client_secret", "sso_url", "idp_cert", "idp_slo_url", "allowed_domains", "hosted_domain", "tenant_id", "session_hours"];
 
 async function saveConnection(env, orgId, id, fields, { createdBy, retest, existing }) {
   const now = new Date().toISOString();
@@ -750,16 +803,17 @@ export async function handleSso(request, env, url) {
     if (limited) return limited;
     return callback(env, request, url);
   }
-  const samlPath = path.match(/^\/sso\/saml\/([A-Za-z0-9_-]{1,64})(\/metadata|\/acs)?$/);
+  const samlPath = path.match(/^\/sso\/saml\/([A-Za-z0-9_-]{1,64})(\/metadata|\/acs|\/slo)?$/);
   if (samlPath) {
     const limited = await enforce(env, request, "sso");
     if (limited) return limited;
     if (samlPath[2] === "/acs" && request.method === "POST") return samlAcs(env, request, url, samlPath[1]);
-    if (samlPath[2] !== "/acs" && request.method === "GET") {
+    if (samlPath[2] === "/slo" && (request.method === "GET" || request.method === "POST")) return samlLogout(env, request, url, samlPath[1]);
+    if ((samlPath[2] === "/metadata" || !samlPath[2]) && request.method === "GET") {
       const conn = await env.DB.prepare("SELECT id FROM sso_connections WHERE id = ?1 AND provider = 'saml'").bind(samlPath[1]).first().catch(() => null);
       if (!conn) return new Response("not found", { status: 404 });
       const base = baseOf(env, url);
-      return new Response(spMetadata(spEntityId(base, conn.id), acsUrl(base, conn.id)), { headers: { "content-type": "application/samlmetadata+xml", "cache-control": "no-store" } });
+      return new Response(spMetadata(spEntityId(base, conn.id), acsUrl(base, conn.id), sloUrl(base, conn.id)), { headers: { "content-type": "application/samlmetadata+xml", "cache-control": "no-store" } });
     }
     return new Response("not found", { status: 404 });
   }

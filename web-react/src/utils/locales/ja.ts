@@ -1868,6 +1868,8 @@ const table: Record<string, string> = {
   'Take {app} away? Everyone’s connection to it ends.': '{app} の許可を外しますか？全員の接続が終了します。',
   'Taken away.': '許可を外しました。',
   'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'ここで接続したものはあなた専用です。読むのはあなたとAIの1対1の会話だけで、チャンネルや他の人には届きません。オーナーが許可しない限り、読むだけで書き込みはしません。',
+  'Single logout URL (SLO)': 'シングルログアウトURL（SLO）',
+  'Sign-out address, optional, https://…': 'サインアウト先アドレス（任意）、https://…',
 }
 
 export default table

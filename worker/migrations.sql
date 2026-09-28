@@ -87,3 +87,4 @@ ALTER TABLE sessions ADD COLUMN sso_checked_at TEXT;
 ALTER TABLE users ADD COLUMN translate_messages INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE org_ai_settings ADD COLUMN gemini_key TEXT;
 ALTER TABLE channel_messages ADD COLUMN previews_hidden INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sso_connections ADD COLUMN idp_slo_url TEXT;

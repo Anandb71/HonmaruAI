@@ -36,11 +36,12 @@ const call = async (path, token, { method = "GET", body, form } = {}) => {
 };
 const params = (res) => new URLSearchParams(res.headers.get("location").split("?")[1] || "");
 
-const metadata = (entityId, ssoUrl, cert) => `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="${entityId}">
+const metadata = (entityId, ssoUrl, cert, slo = null) => `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="${entityId}">
   <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
     <md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${cert.replace(/-----[A-Z ]+-----|\s/g, "")}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>
     <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="${ssoUrl}/post"/>
-    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="${ssoUrl}"/>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="${ssoUrl}"/>${slo ? `
+    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="${slo}"/>` : ""}
   </md:IDPSSODescriptor>
 </md:EntityDescriptor>`;
 
@@ -51,8 +52,9 @@ function samlResponse(o) {
   const {
     requestId, sp, email = "ken@acme.co.jp", issuer = IDP, audience = sp.entityId, recipient = sp.acs, inResponseTo = requestId,
     expiresIn = 300_000, key = "idp", algorithm = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256", sign = "assertion", status = "Success",
+    sessionIndex = null,
   } = o;
-  const assertion = `<saml:Assertion xmlns:saml="${S.saml}" ID="_a1" Version="2.0" IssueInstant="${iso(0)}"><saml:Issuer>${issuer}</saml:Issuer><saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">${email}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${inResponseTo}" Recipient="${recipient}" NotOnOrAfter="${iso(expiresIn)}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="${iso(-60_000)}" NotOnOrAfter="${iso(expiresIn)}"><saml:AudienceRestriction><saml:Audience>${audience}</saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AttributeStatement><saml:Attribute Name="displayName"><saml:AttributeValue>Ken Sato</saml:AttributeValue></saml:Attribute></saml:AttributeStatement></saml:Assertion>`;
+  const assertion = `<saml:Assertion xmlns:saml="${S.saml}" ID="_a1" Version="2.0" IssueInstant="${iso(0)}"><saml:Issuer>${issuer}</saml:Issuer><saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">${email}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${inResponseTo}" Recipient="${recipient}" NotOnOrAfter="${iso(expiresIn)}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="${iso(-60_000)}" NotOnOrAfter="${iso(expiresIn)}"><saml:AudienceRestriction><saml:Audience>${audience}</saml:Audience></saml:AudienceRestriction></saml:Conditions>${sessionIndex ? `<saml:AuthnStatement AuthnInstant="${iso(0)}" SessionIndex="${sessionIndex}"/>` : ""}<saml:AttributeStatement><saml:Attribute Name="displayName"><saml:AttributeValue>Ken Sato</saml:AttributeValue></saml:Attribute></saml:AttributeStatement></saml:Assertion>`;
   let xml = `<samlp:Response xmlns:samlp="${S.samlp}" xmlns:saml="${S.saml}" ID="_r1" Version="2.0" IssueInstant="${iso(0)}" Destination="${sp.acs}" InResponseTo="${requestId}"><saml:Issuer>${issuer}</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:${status}"/></samlp:Status>${assertion}</samlp:Response>`;
   if (sign) {
     const target = sign === "assertion" ? "Assertion" : "Response";
@@ -225,3 +227,99 @@ test("a workspace set up before there could be several keeps its connection and 
   expect(shown.sso).toMatchObject({ issuer: "https://old.test", enforce: true });
   expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM org_sso").first()).n).toBe(0);
 });
+
+// ---- Single logout: the IdP ends sign-ins here ----
+
+const IDP_SLO = "https://idp.acme.test/slo";
+let logoutSeq = 0;
+function logoutRequest({ sp, nameId = "toru@acme.co.jp", sessionIndexes = [], issuer = IDP, destination = sp.slo, issued = Date.now() }) {
+  logoutSeq += 1;
+  return `<samlp:LogoutRequest xmlns:samlp="${S.samlp}" xmlns:saml="${S.saml}" ID="_lo${logoutSeq}" Version="2.0" IssueInstant="${new Date(issued).toISOString()}" Destination="${destination}"><saml:Issuer>${issuer}</saml:Issuer><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">${nameId}</saml:NameID>${sessionIndexes.map((i) => `<samlp:SessionIndex>${i}</samlp:SessionIndex>`).join("")}</samlp:LogoutRequest>`;
+}
+function signPosted(xml, key = "idp") {
+  const sig = new SignedXml({ privateKey: KEYS[key], signatureAlgorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256", canonicalizationAlgorithm: "http://www.w3.org/2001/10/xml-exc-c14n#" });
+  sig.addReference({ xpath: "//*[local-name(.)='LogoutRequest']", digestAlgorithm: "http://www.w3.org/2001/04/xmlenc#sha256", transforms: ["http://www.w3.org/2000/09/xmldsig#enveloped-signature", "http://www.w3.org/2001/10/xml-exc-c14n#"] });
+  sig.computeSignature(xml, { location: { reference: "//*[local-name(.)='LogoutRequest']/*[local-name(.)='Issuer']", action: "after" } });
+  return sig.getSignedXml();
+}
+/// The redirect binding: deflated, and the query itself signed.
+async function signedRedirect(xml, { key = "idp", relay = "back-to-idp" } = {}) {
+  const deflated = new Uint8Array(await new Response(new Blob([xml]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer());
+  const q = `SAMLRequest=${encodeURIComponent(btoa(String.fromCharCode(...deflated)))}&RelayState=${encodeURIComponent(relay)}&SigAlg=${encodeURIComponent("http://www.w3.org/2001/04/xmldsig-more#rsa-sha256")}`;
+  const der = Uint8Array.from(atob((key === "idp" ? idpKeyBody : otherKeyBody).trim()), (c) => c.charCodeAt(0));
+  const k = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", k, new TextEncoder().encode(q)));
+  return `${q}&Signature=${encodeURIComponent(btoa(String.fromCharCode(...sig)))}`;
+}
+async function samlSession(conn, sessionIndex) {
+  const { requestId, relay } = await start(conn.id);
+  const back = await call(`/sso/saml/${conn.id}/acs`, null, { method: "POST", form: { SAMLResponse: encode(samlResponse({ requestId, sp: conn.sp, email: "toru@acme.co.jp", sessionIndex })), RelayState: relay } });
+  return (await (await call("/sso/exchange", null, { method: "POST", body: { code: params(back).get("code"), client: "web" } })).json()).token;
+}
+const alive = async (token) => (await call(`/members?orgId=${encodeURIComponent(ORG)}`, token)).status === 200;
+
+test("single logout by post: signed by the IdP, one sign-in or all of them, once, and answered to the IdP", async () => {
+  const conn = await makeSaml({ metadataXml: metadata(IDP, IDP_SSO, idpCert, IDP_SLO), allowedDomains: ["acme.co.jp"] });
+  expect(conn.sp.slo).toBe(`https://api.example.com/sso/saml/${conn.id}/slo`);
+  expect(conn.idpSloUrl).toBe(IDP_SLO);
+  expect(await (await call(`/sso/saml/${conn.id}/metadata`)).text()).toContain(`SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="${conn.sp.slo}"`);
+  await activate(conn.id);
+  const a = await samlSession(conn, "_s1");
+  const b = await samlSession(conn, "_s2");
+  expect(await env.DB.prepare("SELECT sso_subject, sso_sid FROM sessions WHERE token = ?1").bind(a).first()).toEqual({ sso_subject: "toru@acme.co.jp", sso_sid: "_s1" });
+
+  // Refused: unsigned, another key, another IdP, another address, stale.
+  for (const xml of [
+    logoutRequest({ sp: conn.sp, sessionIndexes: ["_s1"] }),
+    signPosted(logoutRequest({ sp: conn.sp, sessionIndexes: ["_s1"] }), "other"),
+    signPosted(logoutRequest({ sp: conn.sp, sessionIndexes: ["_s1"], issuer: "https://evil.test" })),
+    signPosted(logoutRequest({ sp: conn.sp, sessionIndexes: ["_s1"], destination: "https://elsewhere.test/slo" })),
+    signPosted(logoutRequest({ sp: conn.sp, sessionIndexes: ["_s1"], issued: Date.now() - 60 * 60_000 })),
+  ]) {
+    expect((await call(`/sso/saml/${conn.id}/slo`, null, { method: "POST", form: { SAMLRequest: encode(xml) } })).status).toBe(400);
+  }
+  expect(await alive(a)).toBe(true);
+
+  // One sign-in, by its SessionIndex: that one ends, the other stays.
+  const one = signPosted(logoutRequest({ sp: conn.sp, sessionIndexes: ["_s1"] }));
+  const done = await call(`/sso/saml/${conn.id}/slo`, null, { method: "POST", form: { SAMLRequest: encode(one), RelayState: "r1" } });
+  expect(done.status).toBe(302);
+  expect(done.headers.get("location").startsWith(`${IDP_SLO}?`)).toBe(true);
+  const answer = await new Response(new Blob([Uint8Array.from(atob(params(done).get("SAMLResponse")), (c) => c.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+  expect(answer).toContain("LogoutResponse");
+  expect(answer).toMatch(/InResponseTo="_lo\d+"/);
+  expect(answer).toContain("status:Success");
+  expect(params(done).get("RelayState")).toBe("r1");
+  expect(await alive(a)).toBe(false);
+  expect(await alive(b)).toBe(true);
+  // The same request again: taken once.
+  expect((await call(`/sso/saml/${conn.id}/slo`, null, { method: "POST", form: { SAMLRequest: encode(one) } })).status).toBe(400);
+
+  // No SessionIndex: every sign-in of that person through this connection.
+  const all = signPosted(logoutRequest({ sp: conn.sp }));
+  expect((await call(`/sso/saml/${conn.id}/slo`, null, { method: "POST", form: { SAMLRequest: encode(all) } })).status).toBe(302);
+  expect(await alive(b)).toBe(false);
+  const logged = await env.DB.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE org_id = ?1 AND action = 'sso.idp_signed_out'").bind(ORG).first();
+  expect(logged.n).toBe(2);
+});
+
+test("single logout by redirect: the query's own signature is checked", async () => {
+  const conn = await makeSaml({ metadataXml: metadata(IDP, IDP_SSO, idpCert), allowedDomains: ["acme.co.jp"] });
+  expect(conn.idpSloUrl).toBe(null);
+  await activate(conn.id);
+  const a = await samlSession(conn, "_s9");
+  const forged = await signedRedirect(logoutRequest({ sp: conn.sp, sessionIndexes: ["_s9"] }), { key: "other" });
+  expect((await call(`/sso/saml/${conn.id}/slo?${forged}`)).status).toBe(400);
+  // A signed query with the request swapped out is refused too.
+  const good = await signedRedirect(logoutRequest({ sp: conn.sp, sessionIndexes: ["_s9"] }));
+  const other = await signedRedirect(logoutRequest({ sp: conn.sp, nameId: "boss@acme.co.jp" }));
+  const swapped = `SAMLRequest=${new URLSearchParams(other).get("SAMLRequest") && other.split("&")[0].slice("SAMLRequest=".length)}&${good.split("&").slice(1).join("&")}`;
+  expect((await call(`/sso/saml/${conn.id}/slo?${swapped}`)).status).toBe(400);
+  expect(await alive(a)).toBe(true);
+  // Without an IdP logout address, the answer is a page that says so.
+  const res = await call(`/sso/saml/${conn.id}/slo?${good}`);
+  expect(res.status).toBe(200);
+  expect(await res.text()).toContain("signed out");
+  expect(await alive(a)).toBe(false);
+});
+
