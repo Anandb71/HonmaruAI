@@ -1262,6 +1262,8 @@ CREATE TABLE IF NOT EXISTS sso_connections (
   client_secret   TEXT,
   sso_url         TEXT,
   idp_cert        TEXT,
+  /* Where the IdP takes our answer to its logout (SAML SLO), when it has one. */
+  idp_slo_url     TEXT,
   allowed_domains TEXT NOT NULL,
   hosted_domain   TEXT,
   tenant_id       TEXT,

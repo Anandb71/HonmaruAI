@@ -332,7 +332,7 @@ OIDC だけでは、IdP 側で止められた人を即座には知れない。SC
    - 確かめること: 署名（ID トークンと同じ IdP の鍵）、発行者、Audience（Client ID）、`iat` が 10 分以内、`events` にバックチャネル・ログアウトのイベント、`sub` か `sid`、`nonce` が無いこと、`jti`。同じ `jti` は 1 度しか受けない（`sso_logout_tokens`）。
    - `sid` があればそのサインイン（`sessions.sso_sid`）だけ、`sub` だけならその人の、その接続から入った全セッションを終える。`sso.idp_signed_out` を残す。
    - 応答は 200（成功）か 400（`invalid_request`）で、`Cache-Control: no-store`。
-   - SAML のシングルログアウトは受けない。SAML の IdP での停止は SCIM（§11）と寿命で追う。
+   - SAML のシングルログアウト（SLO）も受ける（§11 の SAML 2.0 を参照）。IdP での利用停止そのものは SCIM（§11）と寿命で追う。
 4. **管理者の手動停止**:
    - チームの画面の「全端末からログアウト」（#80 で実装済み）に、「そして SSO の紐付けを外す」を足す。
 
@@ -410,6 +410,10 @@ POST /orgs/join-requests       {orgId, ref, approve: bool}
   - 確かめること: 発行者、Audience（こちらの Entity ID）、Recipient（ACS）、InResponseTo（こちらが送った要求の ID）、有効期間（±2 分）、Response の Destination。
   - 受け付けない: DOCTYPE を含む文書、暗号化されたアサーション、RSA-SHA256/512 以外の署名、アサーションが 1 つでない応答、こちらから始めていないサインイン（IdP 起点）。
   - 設定は IdP のメタデータ XML を貼るか、Entity ID・サインイン URL（HTTP-Redirect）・証明書を入れる。こちらの Entity ID・ACS・メタデータ URL は画面に出す（`/sso/saml/<接続 ID>/metadata`）。
+  - **シングルログアウト**（実装済み、IdP 起点）: `GET` / `POST /sso/saml/<接続 ID>/slo` に IdP が `LogoutRequest` を送る（HTTP-Redirect と HTTP-POST の両方）。このアドレスは画面とメタデータ（`SingleLogoutService`）に出す。
+    - 確かめること: 署名（HTTP-Redirect はクエリ署名を Owner が登録した証明書の公開鍵で WebCrypto で、HTTP-POST は `xml-crypto` の enveloped 署名で、署名が覆う部分だけを読む）、RSA-SHA256/512 だけ、発行者、Destination（あれば）、`IssueInstant` が ±2 分・10 分以内、`NotOnOrAfter`。同じ要求 ID は 1 度しか受けない（`sso_logout_tokens`）。
+    - サインイン時に `NameID` と `SessionIndex` を `sessions.sso_subject` / `sso_sid` に置く。`SessionIndex` があればそのサインインだけ、無ければその人の、その接続から入った全セッションを終える。`sso.idp_signed_out` を残す。
+    - IdP のサインアウト先（メタデータの `SingleLogoutService`、または画面で任意入力、https のみ）があれば `LogoutResponse`（Success）をそこへ返す。無ければ「サインアウトしました」のページを出す。こちらから IdP へ送る SP 起点の SLO はまだ無い。
 - **SCIM 2.0**（実装済み、`worker/src/scim.js`）:
   - `/scim/v2/Users`、`/scim/v2/Groups` を Bearer トークン（ワークスペースキー、[admin-controls.md](admin-controls.md) §2 の `scim:write` スコープ）で受ける。`ServiceProviderConfig`・`ResourceTypes` もある。
   - 受け付けるのは確認済みドメインのアドレスだけ。同じアドレスのアカウントがあればそれにつなぎ、無ければ作る（`joined_via = 'scim'`）。

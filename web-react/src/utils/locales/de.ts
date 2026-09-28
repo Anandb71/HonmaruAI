@@ -1804,6 +1804,8 @@ const table: Record<string, string> = {
   'Take {app} away? Everyone’s connection to it ends.': '{app} entfernen? Alle Verbindungen dazu enden.',
   'Taken away.': 'Entfernt.',
   'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'Was du hier verbindest, gehört nur dir: Nur dein eigenes Gespräch mit deiner KI liest es, nie ein Kanal oder jemand anderes. Es wird nur gelesen, nicht geschrieben – außer ein Eigentümer erlaubt es.',
+  'Single logout URL (SLO)': 'Single-Logout-URL (SLO)',
+  'Sign-out address, optional, https://…': 'Abmeldeadresse (optional), https://…',
 }
 
 export default table

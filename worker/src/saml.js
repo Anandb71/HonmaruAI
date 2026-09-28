@@ -1,5 +1,6 @@
 // SAML 2.0, the part of it single sign-on needs: an AuthnRequest sent by
-// redirect, and the IdP's signed Response posted back to us.
+// redirect, the IdP's signed Response posted back to us — and the IdP's
+// signed LogoutRequest, by redirect or post, ending those sign-ins here.
 //
 // docs/sso-and-domain-join.md §11. The XML signature is checked by
 // xml-crypto, never by hand, against the certificate the owner gave us —
@@ -46,12 +47,16 @@ const b64 = (bytes) => btoa(Array.from(new Uint8Array(bytes), (b) => String.from
 
 export const spEntityId = (base, connectionId) => `${base}/sso/saml/${connectionId}`;
 export const acsUrl = (base, connectionId) => `${base}/sso/saml/${connectionId}/acs`;
+export const sloUrl = (base, connectionId) => `${base}/sso/saml/${connectionId}/slo`;
 
-/// What an IdP is told about us: who we are and where to post.
-export function spMetadata(entityId, acs) {
+/// What an IdP is told about us: who we are, where to post the sign-in,
+/// and where to send a logout.
+export function spMetadata(entityId, acs, slo = null) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <md:EntityDescriptor xmlns:md="${NS.md}" entityID="${escapeXml(entityId)}">
-  <md:SPSSODescriptor AuthnRequestsSigned="false" WantAssertionsSigned="true" protocolSupportEnumeration="${NS.samlp}">
+  <md:SPSSODescriptor AuthnRequestsSigned="false" WantAssertionsSigned="true" protocolSupportEnumeration="${NS.samlp}">${slo ? `
+    <md:SingleLogoutService Binding="${REDIRECT_BINDING}" Location="${escapeXml(slo)}"/>
+    <md:SingleLogoutService Binding="${POST_BINDING}" Location="${escapeXml(slo)}"/>` : ""}
     <md:NameIDFormat>${EMAIL_FORMAT}</md:NameIDFormat>
     <md:AssertionConsumerService Binding="${POST_BINDING}" Location="${escapeXml(acs)}" index="0" isDefault="true"/>
   </md:SPSSODescriptor>
@@ -105,7 +110,10 @@ export function parseIdpMetadata(xml) {
   const signing = kids(idp, NS.md, "KeyDescriptor").filter((k) => !k.getAttribute("use") || k.getAttribute("use") === "signing");
   const certNode = signing.map((k) => Array.from(k.getElementsByTagNameNS(NS.ds, "X509Certificate"))[0]).find(Boolean);
   if (!certNode) throw new Error("That metadata has no signing certificate.");
-  return { entityId: entity.getAttribute("entityID"), ssoUrl: redirect.getAttribute("Location"), cert: normalizeCert(textOf(certNode)) };
+  // Where a logout is answered, when the IdP has one (optional).
+  const slo = kids(idp, NS.md, "SingleLogoutService").find((s) => s.getAttribute("Binding") === REDIRECT_BINDING);
+  const sloUrl = slo?.getAttribute("ResponseLocation") || slo?.getAttribute("Location") || null;
+  return { entityId: entity.getAttribute("entityID"), ssoUrl: redirect.getAttribute("Location"), cert: normalizeCert(textOf(certNode)), sloUrl: sloUrl && /^https:\/\//.test(sloUrl) ? sloUrl : null };
 }
 
 function attributesOf(assertion) {
@@ -199,5 +207,140 @@ export function verifyResponse(encoded, { cert, idpEntityId, spEntity, acs, requ
   const name = firstOf(attrs, NAME_ATTRIBUTES) || [given, surname].filter(Boolean).join(" ") || null;
   if (!nameIdText) throw new Error("The assertion does not say who this is.");
   if (!email) throw new Error("The assertion carries no email address.");
-  return { subject: nameIdText, email, name, assertionId: assertion.getAttribute("ID") };
+  // Which sign-in at the IdP this is, so a logout of it can name it.
+  const sessionIndex = kids(assertion, NS.saml, "AuthnStatement").map((a) => a.getAttribute("SessionIndex")).find(Boolean) || null;
+  return { subject: nameIdText, email, name, assertionId: assertion.getAttribute("ID"), sessionIndex };
+}
+
+// ---- Single logout (IdP-initiated) ----
+
+const RSA = {
+  "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256": "SHA-256",
+  "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512": "SHA-512",
+};
+
+/// The SubjectPublicKeyInfo inside an X.509 certificate (DER), for WebCrypto.
+function spkiOf(pem) {
+  const der = Uint8Array.from(atob(String(pem).replace(/-----(BEGIN|END) CERTIFICATE-----/g, "").replace(/\s+/g, "")), (c) => c.charCodeAt(0));
+  // One DER element at `at`: where its contents start, and where it ends.
+  const read = (at) => {
+    let len = der[at + 1];
+    let start = at + 2;
+    if (len & 0x80) {
+      const n = len & 0x7f;
+      if (n < 1 || n > 4) throw new Error("bad length");
+      len = 0;
+      for (let i = 0; i < n; i++) len = (len * 256) + der[at + 2 + i];
+      start = at + 2 + n;
+    }
+    if (start + len > der.length) throw new Error("truncated");
+    return { tag: der[at], start, end: start + len };
+  };
+  const cert = read(0);
+  const tbs = read(cert.start);
+  let at = tbs.start;
+  const fields = [];
+  while (at < tbs.end && fields.length < 8) { const f = read(at); fields.push({ ...f, at }); at = f.end; }
+  // [0] version is optional: the key is the 6th field after it, else the 6th.
+  const offset = fields[0]?.tag === 0xa0 ? 1 : 0;
+  const spki = fields[offset + 5];
+  if (!spki || spki.tag !== 0x30) throw new Error("That certificate has no public key.");
+  return der.slice(spki.at, spki.end);
+}
+
+async function verifyRedirectSignature(rawQuery, cert) {
+  // The signed octets are the query's own encoding of these three, in order.
+  const raw = new Map();
+  for (const part of String(rawQuery || "").replace(/^\?/, "").split("&")) {
+    const eq = part.indexOf("=");
+    if (eq > 0) raw.set(part.slice(0, eq), part.slice(eq + 1));
+  }
+  const alg = decodeURIComponent(raw.get("SigAlg") || "");
+  const hash = RSA[alg];
+  if (!hash) throw new Error("The logout request is not signed, or not with RSA-SHA256/512.");
+  const signature = raw.get("Signature");
+  if (!signature || !raw.get("SAMLRequest")) throw new Error("The logout request is not signed.");
+  const signed = [["SAMLRequest", raw.get("SAMLRequest")], ["RelayState", raw.get("RelayState")], ["SigAlg", raw.get("SigAlg")]]
+    .filter(([, v]) => v !== undefined).map(([k, v]) => `${k}=${v}`).join("&");
+  let key;
+  try { key = await crypto.subtle.importKey("spki", spkiOf(cert), { name: "RSASSA-PKCS1-v1_5", hash }, false, ["verify"]); } catch { throw new Error("The identity provider's certificate cannot be read."); }
+  const sig = Uint8Array.from(atob(decodeURIComponent(signature)), (c) => c.charCodeAt(0));
+  if (!(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, sig, new TextEncoder().encode(signed)))) throw new Error("The logout request's signature is not valid.");
+}
+
+async function inflateRaw(bytes, cap) {
+  const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+  const parts = []; let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > cap) { await reader.cancel().catch(() => {}); throw new Error("The logout request is too large."); }
+    parts.push(value);
+  }
+  return new TextDecoder().decode(await new Blob(parts).arrayBuffer());
+}
+
+/// Check the IdP's LogoutRequest — by redirect (`rawQuery`, the query string
+/// exactly as it came) or by post (`posted`, the form's SAMLRequest) — and
+/// return who and which sign-ins it ends. It must be signed with the IdP's
+/// certificate, be from its entity ID, to this address, and recent.
+export async function verifyLogoutRequest({ rawQuery = null, posted = null, cert, idpEntityId, slo, now = Date.now() }) {
+  let xml;
+  if (posted) {
+    const raw = String(posted).replace(/\s+/g, "");
+    if (raw.length > MAX_RESPONSE_BYTES * 1.4) throw new Error("The logout request is too large.");
+    try { xml = new TextDecoder().decode(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0))); } catch { throw new Error("The logout request is not base64."); }
+  } else {
+    const encoded = new URLSearchParams(String(rawQuery || "")).get("SAMLRequest");
+    if (!encoded) throw new Error("There is no logout request.");
+    await verifyRedirectSignature(rawQuery, cert);
+    let bytes;
+    try { bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0)); } catch { throw new Error("The logout request is not base64."); }
+    xml = await inflateRaw(bytes, MAX_RESPONSE_BYTES);
+  }
+  const doc = parse(xml);
+  let request = doc.documentElement;
+  if (request.namespaceURI !== NS.samlp || request.localName !== "LogoutRequest") throw new Error("That is not a SAML LogoutRequest.");
+  if (posted) {
+    // Posted: the XML signature on the request itself, read only as signed.
+    const holder = kid(request, NS.ds, "Signature");
+    if (!holder) throw new Error("The logout request is not signed.");
+    const sig = new SignedXml({ publicCert: cert, getCertFromKeyInfo: () => null });
+    sig.loadSignature(holder);
+    if (!ACCEPTED_SIGNATURES.has(sig.signatureAlgorithm)) throw new Error("The logout request is signed with an algorithm that is not accepted.");
+    let valid = false;
+    try { valid = sig.checkSignature(xml); } catch { valid = false; }
+    if (!valid) throw new Error("The logout request's signature is not valid.");
+    const signed = sig.getSignedReferences();
+    if (signed.length !== 1) throw new Error("The logout request's signature must cover exactly one element.");
+    const signedRoot = parse(signed[0]).documentElement;
+    if (!request.getAttribute("ID") || signedRoot.getAttribute("ID") !== request.getAttribute("ID") || signedRoot.localName !== "LogoutRequest") throw new Error("The signature does not cover the logout request.");
+    request = signedRoot;
+  }
+  if (textOf(kid(request, NS.saml, "Issuer")) !== idpEntityId) throw new Error("The logout request is from a different identity provider.");
+  const destination = request.getAttribute("Destination");
+  if (destination && destination !== slo) throw new Error("The logout request was sent to a different address.");
+  const issued = Date.parse(request.getAttribute("IssueInstant") || "");
+  if (!Number.isFinite(issued) || issued - SKEW_MS > now || now - issued > 10 * 60_000) throw new Error("The logout request is too old or from the future.");
+  const notAfter = request.getAttribute("NotOnOrAfter");
+  if (notAfter && Date.parse(notAfter) + SKEW_MS <= now) throw new Error("The logout request has expired.");
+  const nameId = textOf(kid(request, NS.saml, "NameID"));
+  if (!nameId) throw new Error("The logout request names no one.");
+  const id = request.getAttribute("ID");
+  if (!id) throw new Error("The logout request has no ID.");
+  const sessionIndexes = kids(request, NS.samlp, "SessionIndex").map(textOf).filter(Boolean).slice(0, 20);
+  return { id, nameId, sessionIndexes };
+}
+
+/// Our answer, by redirect, to the IdP's logout address. Unsigned: the IdP
+/// learns the logout was done; nothing it does depends on trusting us.
+export async function logoutResponseUrl({ idpSlo, inResponseTo, spEntity, relayState = null, now = Date.now() }) {
+  const id = `_${crypto.randomUUID().replace(/-/g, "")}`;
+  const xml = `<samlp:LogoutResponse xmlns:samlp="${NS.samlp}" xmlns:saml="${NS.saml}" ID="${id}" Version="2.0" IssueInstant="${new Date(now).toISOString()}" Destination="${escapeXml(idpSlo)}" InResponseTo="${escapeXml(inResponseTo)}"><saml:Issuer>${escapeXml(spEntity)}</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status></samlp:LogoutResponse>`;
+  const deflated = await new Response(new Blob([xml]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer();
+  const url = new URL(idpSlo);
+  url.searchParams.set("SAMLResponse", b64(deflated));
+  if (relayState) url.searchParams.set("RelayState", relayState);
+  return url.toString();
 }
