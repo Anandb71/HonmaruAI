@@ -519,6 +519,28 @@ export async function markActivitySeen(db, orgId, login, keys) {
   return valid;
 }
 
+/// A reply looked at in Activity is read in its thread too, up to it: Threads
+/// stops calling it new, as Activity does for a thread read. Later replies
+/// stay new. Returns each thread moved, and how far it is read now.
+export async function readThreadsSeenInActivity(db, orgId, login, keys) {
+  const ids = [...new Set(keys.filter((k) => k.startsWith("m:")).map((k) => k.slice(2)))];
+  if (!ids.length) return [];
+  // Only replies this person can read: a name sent here moves nothing else.
+  const marks = ids.map((_, i) => `?${i + 3}`).join(", ");
+  const { results } = await db.prepare(
+    `SELECT m.parent_id AS parent_id, MAX(m.created_at) AS at FROM channel_messages m
+      WHERE m.org_id = ?1 AND ${VISIBLE} AND m.id IN (${marks}) AND m.parent_id IS NOT NULL AND m.deleted_at IS NULL GROUP BY m.parent_id`
+  ).bind(orgId, login, ...ids).all();
+  const out = [];
+  for (const r of results || []) {
+    await markRead(db, orgId, login, `t:${r.parent_id}`, r.at);
+    const now = await db.prepare("SELECT last_read_at FROM channel_reads WHERE org_id = ?1 AND login = ?2 AND channel = ?3")
+      .bind(orgId, login, `t:${r.parent_id}`).first();
+    out.push({ thread: r.parent_id, lastReadAt: now?.last_read_at || r.at });
+  }
+  return out;
+}
+
 /// "Mark unread from here": read only up to just before this message,
 /// even if that is further back than before.
 export async function markUnreadFrom(db, orgId, login, key, createdAt) {

@@ -73,3 +73,41 @@ test("mark unread moves a conversation's read position back", async () => {
   expect(list.reads["b:cafe"]).toBe(lastReadAt);
   expect((await call("/channels/unread", toru, { method: "POST", body: { orgId: ORG, channel: "b:cafe", messageId: "nope" } })).status).toBe(404);
 });
+
+// Activity and Threads are two views of the same replies: read in either,
+// no longer new in the other.
+test("a reply read in Activity is read in Threads, and a thread read clears its replies in Activity", async () => {
+  const activity = async (token) => (await (await call(`/channels/activity?orgId=${encodeURIComponent(ORG)}`, token)).json()).items;
+  const beans = await say(toru, "New beans?");
+  await pause();
+  const first = await say(mika, "Ethiopian", beans.id);
+  await pause();
+  expect((await threads(toru))[0].unread).toBe(true);
+  const item = (await activity(toru)).find((i) => i.message.id === first.id);
+  expect(item).toMatchObject({ type: "reply", unread: true });
+
+  // Looked at in Activity: gone from Threads too, and said so for other devices.
+  const seen = await (await call("/channels/read", toru, { method: "POST", body: { orgId: ORG, channel: "activity", items: [item.key] } })).json();
+  expect(seen.threads).toEqual([{ thread: beans.id, lastReadAt: first.createdAt }]);
+  expect((await threads(toru))[0].unread).toBe(false);
+
+  // A later reply is new in both, until read in either.
+  await pause();
+  const second = await say(kenji, "or Kenyan", beans.id);
+  expect((await threads(toru))[0].unread).toBe(true);
+  expect((await activity(toru)).find((i) => i.message.id === second.id).unread).toBe(true);
+  await call("/channels/read", toru, { method: "POST", body: { orgId: ORG, channel: "b:cafe", thread: beans.id } });
+  expect((await activity(toru)).find((i) => i.message.id === second.id).unread).toBe(false);
+  expect((await threads(toru))[0].unread).toBe(false);
+
+  // A reply in a conversation this person cannot read moves nothing.
+  const { upsertBusiness } = await import("../src/db.js");
+  await upsertBusiness(env.DB, ORG, { name: "Board", createdBy: "6602" });
+  await env.DB.prepare("UPDATE businesses SET private = 1 WHERE org_id = ?1 AND slug = 'board'").bind(ORG).run();
+  await env.DB.prepare("INSERT INTO conversation_members (org_id, channel, login, added_at) VALUES (?1, 'b:board', 'mika', ?2)").bind(ORG, new Date().toISOString()).run().catch(() => {});
+  const secret = await (await call("/channels/messages", mika, { method: "POST", body: { orgId: ORG, channel: "b:board", body: "secret" } })).json();
+  const secretReply = await (await call("/channels/messages", mika, { method: "POST", body: { orgId: ORG, channel: "b:board", body: "reply", parentId: secret.message?.id } })).json();
+  expect(secretReply.message?.parentId).toBe(secret.message.id);
+  const other = await (await call("/channels/read", toru, { method: "POST", body: { orgId: ORG, channel: "activity", items: [`m:${secretReply.message.id}`] } })).json();
+  expect(other.threads).toEqual([]);
+});

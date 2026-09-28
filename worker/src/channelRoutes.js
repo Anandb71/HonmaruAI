@@ -23,7 +23,7 @@ import {
   resolveChannel, listMessages, postMessage, getMessage, linkCard, transcriptUpTo, channelActivity,
   viewOf, asksTheAI, asksForDecision, withoutAI, MAX_MESSAGE_CHARS,
   present, listThread, listPins, editMessage, deleteMessage, toggleReaction, setPinned, setPreviewsHidden,
-  markRead, markUnreadFrom, markActivitySeen, readsFor, activityFeed, searchMessages, threadsFor,
+  markRead, markUnreadFrom, markActivitySeen, readThreadsSeenInActivity, readsFor, activityFeed, searchMessages, threadsFor,
 } from "./channels.js";
 import { safe } from "./log.js";
 import { emitMessage, emitCard } from "./webhooks.js";
@@ -108,8 +108,8 @@ async function broadcast(env, orgId, resolved, row, members) {
 /// Read on one device, read on all of them: this person's other tabs and
 /// phones hear it at once, and a phone clears the notifications it still
 /// shows for it.
-async function readEverywhere(env, orgId, login, { view, key, thread, lastReadAt, items, unread }) {
-  const value = items ? { items } : { view, thread: thread || null, lastReadAt, ...(unread ? { unread: true } : {}) };
+async function readEverywhere(env, orgId, login, { view, key, thread, lastReadAt, items, threads, unread }) {
+  const value = items ? { items, ...(threads?.length ? { threads } : {}) } : { view, thread: thread || null, lastReadAt, ...(unread ? { unread: true } : {}) };
   await announceTo(env, orgId, [{ to: login, event: customEvent("reads_changed", value) }]);
   if (!unread && key) await clearDelivered(env, orgId, login, { key, view, thread, lastReadAt }).catch((err) => console.error("clear push failed", safe(err?.message)));
 }
@@ -561,8 +561,10 @@ export async function handleChannels(request, env, url, { route, after }) {
       // The ones looked at: gone from every device's Activity.
       if (Array.isArray(body.items)) {
         const items = await markActivitySeen(env.DB, body.orgId, who.user.login, body.items);
-        if (items.length) after(() => readEverywhere(env, body.orgId, who.user.login, { items }));
-        return json({ items });
+        // A reply among them is read in its thread too: Threads agrees.
+        const threads = items.length ? await readThreadsSeenInActivity(env.DB, body.orgId, who.user.login, items) : [];
+        if (items.length) after(() => readEverywhere(env, body.orgId, who.user.login, { items, threads }));
+        return json({ items, threads });
       }
       return json({ lastReadAt: await markRead(env.DB, body.orgId, who.user.login, "activity", body.at) });
     }
