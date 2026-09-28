@@ -177,13 +177,22 @@ struct ChatActivityView: View {
                         Text(translations.shown(item.message).text).font(.subheadline).lineLimit(3).foregroundStyle(Theme.Colors.textPrimary)
                     }.padding(.vertical, 4)
                 }
+                // Seen is read: on screen for a moment, it is no longer new
+                // here or on any other device. Tapping it does the same.
+                .task(id: item.unread) {
+                    guard item.unread else { return }
+                    try? await Task.sleep(for: .milliseconds(900))
+                    guard !Task.isCancelled else { return }
+                    await store.seenInbox([item.id])
+                }
+                .simultaneousGesture(TapGesture().onEnded { Task { await store.seenInbox([item.id]) } })
             }
         }
         .listStyle(.plain)
         .navigationTitle("Activity")
         .refreshable { await store.loadInbox() }
         .task {
-            await store.loadInbox(); await store.markInboxRead()
+            await store.loadInbox()
             // In the language you set, by the conversation each came from.
             for (channel, list) in Dictionary(grouping: store.inbox.map(\.message).filter { !$0.mine }, by: \.channel) {
                 await store.translate(channel, list)

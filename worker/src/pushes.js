@@ -145,10 +145,9 @@ export async function sendDuePushes(env, now = Date.now()) {
         "SELECT m.*, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name FROM channel_messages m LEFT JOIN users u ON u.login = m.author_login WHERE m.org_id = ?1 AND m.id = ?2"
       ).bind(job.org_id, job.message_id).first();
       if (!msg || msg.deleted_at) { skipped += 1; continue; }
-      // Read it already, here or anywhere.
-      const read = await db.prepare("SELECT last_read_at FROM channel_reads WHERE org_id = ?1 AND login = ?2 AND channel = ?3")
-        .bind(job.org_id, job.login, msg.channel).first().catch(() => null);
-      if (read?.last_read_at && read.last_read_at >= msg.created_at) { skipped += 1; continue; }
+      // Read it already, here or anywhere: in its conversation, in its
+      // thread, or looked at in Activity.
+      if (await readAlready(db, job.org_id, job.login, msg)) { skipped += 1; continue; }
       // At the app since it arrived: they saw it come in, and heard it there.
       // Paused, or outside the hours they set.
       if (await quietFor(db, job.login, new Date(now))) { skipped += 1; continue; }
@@ -176,9 +175,52 @@ export async function sendDuePushes(env, now = Date.now()) {
       console.error("message push failed", err?.message || err);
     }
   }
-  // Kept a day for looking into, then gone.
+  // Kept a day for looking into, then gone; what Activity was looked at,
+  // as long as Activity looks back.
   await db.prepare("DELETE FROM push_queue WHERE created_at < ?1").bind(new Date(now - 86400000).toISOString()).run().catch(() => {});
+  await db.prepare("DELETE FROM activity_reads WHERE read_at < ?1").bind(new Date(now - 35 * 86400000).toISOString()).run().catch(() => {});
   return { sent, skipped };
+}
+
+/// Seen already, on some device: read up to it where it was said (its
+/// thread, for a reply), or opened from Activity.
+export async function readAlready(db, orgId, login, msg) {
+  const keys = [msg.channel, ...(msg.parent_id ? [`t:${msg.parent_id}`] : [])];
+  const { results } = await db.prepare(
+    `SELECT channel, last_read_at FROM channel_reads WHERE org_id = ?1 AND login = ?2 AND channel IN (${keys.map((_, i) => `?${i + 3}`).join(", ")})`
+  ).bind(orgId, login, ...keys).all().catch(() => ({ results: [] }));
+  const at = new Map((results || []).map((r) => [r.channel, r.last_read_at || ""]));
+  if (keys.some((k) => (at.get(k) || "") >= msg.created_at)) return true;
+  const looked = await db.prepare("SELECT 1 AS hit FROM activity_reads WHERE org_id = ?1 AND login = ?2 AND item = ?3")
+    .bind(orgId, login, `m:${msg.id}`).first().catch(() => null);
+  return Boolean(looked);
+}
+
+/// Read somewhere, so a phone that still shows its notifications for it
+/// takes them down: a silent push, sent only when one was pushed there in
+/// the last day and is now read.
+export async function clearDelivered(env, orgId, login, { key, view, thread, lastReadAt }) {
+  if (!apnsConfigured(env) || !key || !view) return 0;
+  const since = new Date(Date.now() - 86400000).toISOString();
+  const hit = await env.DB.prepare(
+    `SELECT 1 AS hit FROM push_queue q JOIN channel_messages m ON m.org_id = q.org_id AND m.id = q.message_id
+      WHERE q.org_id = ?1 AND q.login = ?2 AND q.sent_at IS NOT NULL AND q.sent_at >= ?3
+        AND m.channel = ?4 AND m.created_at <= ?5 AND ${thread ? "m.parent_id = ?6" : "m.parent_id IS NULL"}
+      LIMIT 1`
+  ).bind(orgId, login, since, key, lastReadAt || new Date().toISOString(), ...(thread ? [thread] : [])).first().catch(() => null);
+  if (!hit) return 0;
+  let sent = 0;
+  for (const device of await devicesForLogin(env.DB, login)) {
+    const result = await sendPush(env, {
+      deviceToken: device.device_token,
+      pushType: "background",
+      priority: 5,
+      payload: { aps: { "content-available": 1 }, kind: "read", orgId, channel: view, parentId: thread || null, lastReadAt: lastReadAt || null },
+    });
+    if (result.ok) sent += 1;
+    else if (isDeadToken(result)) await removeDevice(env.DB, device.device_token);
+  }
+  return sent;
 }
 
 /// One message to every phone and browser this person has.

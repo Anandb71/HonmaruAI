@@ -588,6 +588,16 @@ CREATE TABLE IF NOT EXISTS channel_reads (
   PRIMARY KEY (org_id, login, channel)
 );
 
+/* Activity items a person has looked at, on any device: `m:<message>` or
+   `r:<message>:<who+emoji>`. Kept a month, as long as Activity looks back. */
+CREATE TABLE IF NOT EXISTS activity_reads (
+  org_id   TEXT NOT NULL,
+  login    TEXT NOT NULL,
+  item     TEXT NOT NULL,
+  read_at  TEXT NOT NULL,
+  PRIMARY KEY (org_id, login, item)
+);
+
 /* How loudly a conversation may call for you: all, mentions, or mute. */
 CREATE TABLE IF NOT EXISTS channel_prefs (
   org_id   TEXT NOT NULL,

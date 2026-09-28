@@ -37,6 +37,12 @@
 	     cannot install the build. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- A silent push takes down notifications for what was read on another
+	     device. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Record a short video so your teammate can see what you mean.</string>
 	<key>NSMicrophoneUsageDescription</key>

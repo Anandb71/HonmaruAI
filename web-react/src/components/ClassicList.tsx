@@ -158,7 +158,7 @@ interface ThreadItem { parent: ChannelMessage; replies: ChannelMessage[]; replyC
 interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name: string; views: string[]; collapsed?: boolean }> }
 /// A user group: "@handle" names everyone in it.
 interface UserGroup { handle: string; name: string; refs: string[]; createdBy: string | null }
-interface ActivityItem { type: 'mention' | 'reply' | 'reaction' | 'keyword'; message: ChannelMessage; unread: boolean; at?: string; emoji?: string; by?: string | null; byAvatar?: string | null; keyword?: string }
+interface ActivityItem { key?: string; type: 'mention' | 'reply' | 'reaction' | 'keyword'; message: ChannelMessage; unread: boolean; at?: string; emoji?: string; by?: string | null; byAvatar?: string | null; keyword?: string }
 
 async function hash16(text: string): Promise<string> {
   const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))
@@ -166,6 +166,16 @@ async function hash16(text: string): Promise<string> {
 }
 
 const seenKey = (orgId: string, view: string) => `seen:${orgId}:${view}`
+/// This browser's notifications for a conversation, taken down once it is
+/// read — here or anywhere. A push is tagged with the conversation.
+function closeNotifications(view: string) {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  navigator.serviceWorker.getRegistration()
+    .then((reg) => reg?.getNotifications({ tag: view }))
+    .then((list) => { for (const n of list || []) n.close() })
+    .catch(() => { /* nothing shown, nothing to take down */ })
+}
+
 function seenAt(orgId: string, view: string): string {
   try { return localStorage.getItem(seenKey(orgId, view)) || '' } catch { return '' }
 }
@@ -538,9 +548,9 @@ export const ClassicList: React.FC<Props> = ({
   useEffect(() => { void loadThreads() }, [loadThreads])
   const threadsUnread = (threadItems || []).filter((x) => x.unread).length
   const [activityItems, setActivityItems] = useState<ActivityItem[] | null>(null)
-  // What was unread when you opened it stays marked while you are there —
-  // the Unread tab is for exactly that — but the badge goes at once.
-  const [activitySeenAt, setActivitySeenAt] = useState('')
+  // What the Unread tab showed when you came to it stays in the list while
+  // you are there, however many of them you have looked at since.
+  const [unreadShown, setUnreadShown] = useState<Set<string>>(() => new Set())
   const [activityTab, setActivityTab] = useState<'all' | 'unread'>('all')
   const [activityPick, setActivityPick] = useState<string | null>(null)
   const loadActivity = useCallback(() => {
@@ -550,7 +560,22 @@ export const ClassicList: React.FC<Props> = ({
       .catch(() => { /* nothing new is the same as nothing loaded */ })
   }, [api.httpBase, api.orgId, authHeaders])
   useEffect(() => { void loadActivity() }, [loadActivity])
-  const stillNew = (i: ActivityItem) => i.unread && (i.at || i.message.createdAt) > activitySeenAt
+  const stillNew = (i: ActivityItem) => i.unread
+  const activityKey = (i: ActivityItem) => i.key || `${i.type}-${i.message.id}-${i.emoji || ''}-${i.at || ''}`
+  // Looked at is read: here at once, and on the server for every other
+  // device, which hears it and takes it down too.
+  const markActivitySeen = useCallback((keys: string[]) => {
+    const fresh = new Set(keys)
+    if (!fresh.size) return
+    setActivityItems((prev) => prev && prev.map((i) => (i.unread && fresh.has(activityKey(i)) ? { ...i, unread: false } : i)))
+    const serverKeys = keys.filter((k) => /^(m|r):/.test(k))
+    if (!serverKeys.length) return
+    void fetch(`${api.httpBase}/channels/read`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel: 'activity', items: serverKeys }),
+    }).catch(() => { /* seen here; the next load asks again */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api.httpBase, api.orgId, authHeaders])
   const activityUnread = (activityItems || []).filter(stillNew).length
   // Unread mentions per conversation: what still calls for you in a
   // conversation set to mentions only, or muted.
@@ -559,7 +584,7 @@ export const ClassicList: React.FC<Props> = ({
     for (const i of activityItems || []) if (stillNew(i) && i.type === 'mention') out[i.message.channel] = (out[i.message.channel] || 0) + 1
     return out
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activityItems, activitySeenAt])
+  }, [activityItems])
   const openActivity = () => {
     setOpenKey(null)
     setLaterOpen(false)
@@ -567,14 +592,33 @@ export const ClassicList: React.FC<Props> = ({
     setActivityOpen(true)
     setDetailId(null)
     setActivityPick(null)
-    void loadActivity().then(() => {
-      const at = new Date().toISOString()
-      fetch(`${api.httpBase}/channels/read`, {
-        method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-        body: JSON.stringify({ orgId: api.orgId, channel: 'activity', at }),
-      }).then(() => setActivitySeenAt(at)).catch(() => {})
-    })
+    setUnreadShown(new Set((activityItems || []).filter((i) => i.unread).map(activityKey)))
+    void loadActivity()
   }
+  // Seen is read: an unread row that stays in view for a moment, with the
+  // app in front of you, is looked at — no ticking off.
+  const activityRows = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const root = activityRows.current
+    if (!activityOpen || !root || typeof IntersectionObserver === 'undefined') return
+    const timers = new Map<string, ReturnType<typeof setTimeout>>()
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const key = (e.target as HTMLElement).dataset.key
+        if (!key) continue
+        if (e.isIntersecting && e.intersectionRatio >= 0.6) {
+          if (!timers.has(key)) timers.set(key, setTimeout(() => {
+            timers.delete(key)
+            if (document.visibilityState === 'visible') markActivitySeen([key])
+          }, 900))
+        } else {
+          clearTimeout(timers.get(key)); timers.delete(key)
+        }
+      }
+    }, { root, threshold: [0, 0.6, 1] })
+    root.querySelectorAll<HTMLElement>('[data-key]').forEach((el) => io.observe(el))
+    return () => { io.disconnect(); for (const t of timers.values()) clearTimeout(t) }
+  }, [activityOpen, activityItems, activityTab, markActivitySeen])
   // A place to go to inside a conversation, once it has loaded: a message,
   // or a reply in a thread.
   const pendingJump = useRef<{ view: string; id: string; parentId?: string | null } | null>(null)
@@ -901,6 +945,7 @@ export const ClassicList: React.FC<Props> = ({
         method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
         body: JSON.stringify({ orgId: api.orgId, channel: view }),
       }).then(() => setServerReads((prev) => ({ ...prev, [view]: now }))).catch(() => { /* this device still remembers */ })
+      closeNotifications(view)
       // Read here, so no longer new in Activity: what was said in this
       // conversation (a reply waits for its thread).
       setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === view && !i.message.parentId && (i.at || i.message.createdAt) <= now ? { ...i, unread: false } : i)))
@@ -1419,6 +1464,41 @@ export const ClassicList: React.FC<Props> = ({
       body: JSON.stringify({ orgId: api.orgId, channel, thread: parentId }),
     }).catch(() => {})
   }
+  // Read on another device (or another tab): the same here, at once —
+  // the conversation, the thread, the Activity items — and this browser's
+  // notifications for it come down.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ items?: string[]; view?: string; thread?: string | null; lastReadAt?: string; unread?: boolean }>).detail || {}
+      if (Array.isArray(d.items)) {
+        const keys = new Set(d.items)
+        setActivityItems((prev) => prev && prev.map((i) => (i.unread && keys.has(activityKey(i)) ? { ...i, unread: false } : i)))
+        return
+      }
+      const v = d.view
+      const at = d.lastReadAt
+      if (!v || !at) return
+      if (d.thread) {
+        const parentId = d.thread
+        if (d.unread) { void loadThreads(); return }
+        setThreadItems((prev) => prev && prev.map((x) => (x.parent.id === parentId ? { ...x, unread: false } : x)))
+        setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.parentId === parentId && (i.at || i.message.createdAt) <= at ? { ...i, unread: false } : i)))
+        return
+      }
+      if (d.unread) {
+        try { localStorage.setItem(seenKey(api.orgId, v), at) } catch { /* the server remembers */ }
+        setServerReads((prev) => ({ ...prev, [v]: at }))
+        setSeenTick((n) => n + 1)
+        return
+      }
+      setServerReads((prev) => ({ ...prev, [v]: [prev[v] || '', at].sort().pop() || at }))
+      setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === v && !i.message.parentId && (i.at || i.message.createdAt) <= at ? { ...i, unread: false } : i)))
+      closeNotifications(v)
+    }
+    window.addEventListener('honmaru:reads-changed', on)
+    return () => window.removeEventListener('honmaru:reads-changed', on)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api.orgId])
   const loadPins = async (channel: string) => {
     if (pins) { setPins(null); return }
     const res = await fetch(`${api.httpBase}/channels/pins?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}`, { headers: authHeaders }).catch(() => null)
@@ -2198,12 +2278,13 @@ export const ClassicList: React.FC<Props> = ({
       return th ? (th.kind === 'channel' ? th.name : th.name) : v
     }
     const isChannel = (v: string) => everything.find((x) => x.view === v)?.kind === 'channel'
-    const keyOf = (i: ActivityItem) => `${i.type}-${i.message.id}-${i.emoji || ''}-${i.at || ''}`
+    const keyOf = activityKey
     const whoOf = (i: ActivityItem) => (i.type === 'reaction' ? (i.by || t('a teammate')) : i.message.kind === 'ai' ? t('Your AI') : (i.message.authorName || t('a teammate')))
     const verb = (i: ActivityItem) => (i.type === 'reaction' ? t('reacted') : i.type === 'reply' ? t('replied in a thread') : i.type === 'keyword' ? t('said “{word}”', { word: i.keyword || '' }) : t('mentioned you'))
-    const items = (activityItems || []).filter((i) => activityTab === 'all' || i.unread)
+    const items = (activityItems || []).filter((i) => activityTab === 'all' || i.unread || unreadShown.has(keyOf(i)))
     const picked = (activityItems || []).find((i) => keyOf(i) === activityPick) || null
     const open = (i: ActivityItem) => {
+      markActivitySeen([keyOf(i)])
       if (wide) setActivityPick(keyOf(i))
       else openAt({ view: i.message.channel, id: i.message.id, parentId: i.message.parentId })
     }
@@ -2220,16 +2301,12 @@ export const ClassicList: React.FC<Props> = ({
             <button className="slk-back" onClick={() => setActivityOpen(false)} aria-label={t('Back')}><Icon name="chevron-left" size={20} /></button>
             <div className="slk-inbox-tabs" role="tablist">
               <button type="button" role="tab" aria-selected={activityTab === 'all'} onClick={() => setActivityTab('all')}>{t('All')}</button>
-              <button type="button" role="tab" aria-selected={activityTab === 'unread'} onClick={() => setActivityTab('unread')} data-unread-tab="1">
+              <button type="button" role="tab" aria-selected={activityTab === 'unread'} onClick={() => { setUnreadShown(new Set((activityItems || []).filter((i) => i.unread).map(keyOf))); setActivityTab('unread') }} data-unread-tab="1">
                 {t('Unread')}{(activityItems || []).some((i) => i.unread) ? <span className="slk-inbox-count">{(activityItems || []).filter((i) => i.unread).length}</span> : null}
               </button>
             </div>
-            <button type="button" className="slk-inbox-action" onClick={() => setActivityItems((prev) => prev && prev.map((i) => ({ ...i, unread: false })))}
-              aria-label={t('Mark all as read')} title={t('Mark all as read')}>
-              <Icon name="check" size={15} />
-            </button>
           </header>
-          <div className="slk-inbox-rows slk-activity">
+          <div className="slk-inbox-rows slk-activity" ref={activityRows}>
             {activityItems === null && <p className="slk-empty">{t('Loading…')}</p>}
             {activityItems && items.length === 0 && (
               <div className="slk-start">
@@ -2242,7 +2319,7 @@ export const ClassicList: React.FC<Props> = ({
               const m = i.message
               const who = whoOf(i)
               return (
-                <button key={keyOf(i)} type="button" className={`slk-act slk-note${i.unread ? ' unread' : ''}${activityPick === keyOf(i) ? ' on' : ''}`} onClick={() => open(i)} data-kind={i.type}>
+                <button key={keyOf(i)} type="button" data-key={i.unread ? keyOf(i) : undefined} className={`slk-act slk-note${i.unread ? ' unread' : ''}${activityPick === keyOf(i) ? ' on' : ''}`} onClick={() => open(i)} data-kind={i.type}>
                   <span className="slk-note-avatar" aria-hidden="true">{m.kind === 'ai' && i.type !== 'reaction'
                     ? <img src="/icon.svg" alt="" width={32} height={32} />
                     : m.kind === 'agent' && i.type !== 'reaction'

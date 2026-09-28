@@ -104,6 +104,33 @@ final class ChatStore: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in Task { await self?.refresh(); await self?.appState?.refreshWorkspaceMembers() } }
             .store(in: &bag)
+        NotificationCenter.default.publisher(for: .chatReadsChanged)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] note in self?.readElsewhere(note.userInfo ?? [:]) }
+            .store(in: &bag)
+    }
+
+    /// Read on another device (or marked unread there): the same here, and
+    /// the notifications this phone still shows for it come down.
+    func readElsewhere(_ value: [AnyHashable: Any]) {
+        if let items = value["items"] as? [String] {
+            let keys = Set(items)
+            inbox = inbox.map { var i = $0; if i.unread && keys.contains(i.id) { i.unread = false }; return i }
+            return
+        }
+        guard let view = value["view"] as? String, let at = value["lastReadAt"] as? String else { return }
+        let unread = value["unread"] as? Bool == true
+        if let parentId = value["thread"] as? String {
+            if unread { Task { await loadThreads() }; return }
+            if let i = threads.firstIndex(where: { $0.parent.id == parentId }) { threads[i].unread = false }
+            inbox = inbox.map { var i = $0; if i.unread && i.message.parentId == parentId && i.message.createdAt <= at { i.unread = false }; return i }
+            PushService.clearDelivered(channel: view, parentId: parentId)
+            return
+        }
+        if unread { reads[view] = at; return }
+        if at > (reads[view] ?? "") { reads[view] = at }
+        inbox = inbox.map { var i = $0; if i.unread && i.message.channel == view && i.message.parentId == nil && i.message.createdAt <= at { i.unread = false }; return i }
+        PushService.clearDelivered(channel: view, parentId: nil)
     }
 
     func bind(_ appState: AppState) { self.appState = appState }
@@ -342,13 +369,18 @@ final class ChatStore: ObservableObject {
         reads[view] = ChatDates.string(.now)
         // Read here, so no longer new in Activity (a reply waits for its thread).
         inbox = inbox.map { var i = $0; if i.unread && i.message.channel == view && i.message.parentId == nil { i.unread = false }; return i }
+        PushService.clearDelivered(channel: view, parentId: nil)
         await ChatService.markRead(orgId: orgId, channel: view, base: base)
     }
 
-    func markInboxRead() async {
+    /// Activity items looked at: read here at once, and everywhere else.
+    func seenInbox(_ ids: [String]) async {
         guard let orgId, let base else { return }
-        await ChatService.markRead(orgId: orgId, channel: "activity", base: base)
-        inbox = inbox.map { var i = $0; i.unread = false; return i }
+        let keys = Set(ids)
+        guard inbox.contains(where: { $0.unread && keys.contains($0.id) }) else { return }
+        inbox = inbox.map { var i = $0; if i.unread && keys.contains(i.id) { i.unread = false }; return i }
+        let server = ids.filter { $0.hasPrefix("m:") || $0.hasPrefix("r:") }
+        if !server.isEmpty { await ChatService.markActivitySeen(orgId: orgId, items: server, base: base) }
     }
 
     func loadOlder(_ view: String) async {
@@ -481,6 +513,7 @@ final class ChatStore: ObservableObject {
         // calling its replies new.
         inbox = inbox.map { var i = $0; if i.unread && i.message.parentId == m.id { i.unread = false }; return i }
         if let i = threads.firstIndex(where: { $0.parent.id == m.id }) { threads[i].unread = false }
+        PushService.clearDelivered(channel: m.channel, parentId: m.id)
         await ChatService.markThreadRead(orgId: orgId, channel: m.channel, parentId: m.id, base: base)
     }
     func pins(_ view: String) async -> [ChatMessage] {

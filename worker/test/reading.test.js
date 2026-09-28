@@ -114,3 +114,39 @@ test("what you read where it was said is no longer new in Activity: the conversa
   await post("/channels/read", mika, { orgId: ORG, channel: "b:cafe", thread: mine.id, at: new Date(Date.now() + 1000).toISOString() });
   expect(await unread()).toEqual([]);
 });
+
+test("an Activity item looked at on one device is no longer new on any, one at a time", async () => {
+  const mine = await say(mika, "Roaster moved to Friday");
+  await say(kenji, "@Mika the lease, please");
+  await say(kenji, "@Mika and the invoice");
+  await post("/channels/reactions", toru, { orgId: ORG, channel: "b:cafe", messageId: mine.id, emoji: "👍" });
+  const { createSession } = await import("../src/db.js");
+  const phone = await createSession(env.DB, "9802", "phone");
+  const feed = async (token) => (await (await get(`/channels/activity?${q({ orgId: ORG })}`, token)).json()).items;
+  const items = await feed(mika);
+  expect(items.every((i) => /^(m|r):/.test(i.key))).toBe(true);
+  const lease = items.find((i) => i.message.body.includes("lease"));
+  const reaction = items.find((i) => i.type === "reaction");
+  const res = await (await post("/channels/read", mika, { orgId: ORG, channel: "activity", items: [lease.key, reaction.key, "x:../etc", 42] })).json();
+  expect(res.items).toEqual([lease.key, reaction.key]);
+  // The phone agrees; the one not looked at is still new.
+  const there = await feed(phone);
+  expect(there.filter((i) => i.unread).map((i) => i.message.body)).toEqual(["@Mika and the invoice"]);
+  // Not somebody else's to clear.
+  await post("/channels/read", kenji, { orgId: ORG, channel: "activity", items: [lease.key] });
+  expect((await feed(mika)).filter((i) => i.unread)).toHaveLength(1);
+});
+
+test("a message looked at in Activity, or read in its thread, is not pushed to the phone a minute later", async () => {
+  const { readAlready } = await import("../src/pushes.js");
+  const mine = await say(mika, "Which roaster?");
+  const reply = await say(toru, "This one", { parentId: mine.id });
+  const lease = await say(kenji, "@Mika the lease");
+  const row = async (id) => env.DB.prepare("SELECT * FROM channel_messages WHERE id = ?1").bind(id).first();
+  expect(await readAlready(env.DB, ORG, "mika", await row(lease.id))).toBe(false);
+  expect(await readAlready(env.DB, ORG, "mika", await row(reply.id))).toBe(false);
+  await post("/channels/read", mika, { orgId: ORG, channel: "activity", items: [`m:${lease.id}`] });
+  await post("/channels/read", mika, { orgId: ORG, channel: "b:cafe", thread: mine.id, at: new Date(Date.now() + 1000).toISOString() });
+  expect(await readAlready(env.DB, ORG, "mika", await row(lease.id))).toBe(true);
+  expect(await readAlready(env.DB, ORG, "mika", await row(reply.id))).toBe(true);
+});

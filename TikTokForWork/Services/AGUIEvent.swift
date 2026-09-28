@@ -117,6 +117,11 @@ final class AGUIEventAssembler {
                 return []
             }
             // Somebody joined or left: the team lists are read again.
+            // Read on another of your devices: every list here agrees.
+            if json["name"] as? String == "reads_changed", let value = json["value"] as? [String: Any] {
+                DispatchQueue.main.async { NotificationCenter.default.post(name: .chatReadsChanged, object: nil, userInfo: value) }
+                return []
+            }
             if json["name"] as? String == "members_changed" {
                 DispatchQueue.main.async { NotificationCenter.default.post(name: .chatMembersChanged, object: nil) }
                 return []
