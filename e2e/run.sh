@@ -85,6 +85,7 @@ done < <(grep -E '^(ALTER TABLE|CREATE )' migrations.sql)
 # way Cloudflare does and watch a due routine arrive in the feed.
 npx -y wrangler@4 dev --local --test-scheduled --port "$WORKER_PORT" \
   --var RESEND_API_KEY:re_e2e \
+  --var RATE_LIMIT_SCALE:20 \
   --var RESEND_API_BASE:http://127.0.0.1:9099 \
   --var APP_WEB_URL:"http://127.0.0.1:$WEB_PORT" \
   --var AUDIT_MASTER_KEY:"$(head -c 32 /dev/urandom | base64)" \

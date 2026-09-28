@@ -32,20 +32,25 @@ export function mentionTokens(text) {
 
 const fold = (s) => String(s || "").normalize("NFKC").toLowerCase();
 
-/// Whether a token calls everyone: "@channel" and "@all" everyone in the
-/// conversation, "@here" those at the app now. A Japanese word may follow
-/// ("@allの皆さん", "@channelへ"); an ASCII letter may not ("@alliance").
+/// Whether a token calls everyone: "@channel", "@all" and "@everyone"
+/// everyone in the conversation, "@here" those at the app now. A Japanese
+/// word may follow ("@allの皆さん", "@channelへ"); an ASCII letter may not
+/// ("@alliance").
 export function broadcastOf(token) {
-  const m = /^(channel|all|here)(?![a-z0-9_.\-])/.exec(fold(token));
-  return m ? (m[1] === "all" ? "channel" : m[1]) : null;
+  const m = /^(channel|all|everyone|here)(?![a-z0-9_.\-])/.exec(fold(token));
+  return m ? (m[1] === "here" ? "here" : "channel") : null;
 }
+
+/// What may come right before "@" for it to start a mention (the same rule
+/// as MENTION_RE), as a regex source to build other patterns from.
+export const MENTION_BEFORE = `(^|[^\\x21-\\x7E]|[(\\[{"'])`;
 const handleOf = (login) => fold(login).replace(/^(u:|email:)/, "").split("@")[0];
 
 /// Which members a text names. Matched by name (whole, or its first word),
 /// by handle (the part of the login before the @), by ref, or by alias when
 /// the member list carries them — case-folded, so "@kenji" finds "Kenji
-/// Tanaka". Unmatched tokens are left alone: "@everyone" is just a word.
-/// "@channel" and "@all" name everyone in `members`, "@here" those online.
+/// Tanaka". Unmatched tokens are left alone. "@channel", "@all" and
+/// "@everyone" name everyone in `members`, "@here" those online.
 export function resolveMentions(text, members, { here = true, online = null } = {}) {
   const tokens = mentionTokens(text);
   if (!tokens.length) return [];

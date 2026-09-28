@@ -95,11 +95,12 @@ const fold = (s: string) => s.normalize('NFKC').toLowerCase()
 const MENTION_BEFORE = /[^\x21-\x7E]|[(\[{"']/
 const MENTION_RE = /(^|[^\x21-\x7E]|[(\[{"'])([@＠][^\s@＠,，。、!?！？:;)）」]+)/g
 
-/// "@channel" and "@all" (everyone in the conversation) or "@here" (those
-/// at the app now): a Japanese word may follow, an ASCII letter may not.
+/// "@channel", "@all" and "@everyone" (everyone in the conversation) or
+/// "@here" (those at the app now): a Japanese word may follow, an ASCII
+/// letter may not.
 export function broadcastOf(token: string): 'channel' | 'here' | null {
-  const m = /^(channel|all|here)(?![a-z0-9_.-])/.exec(fold(token.replace(/^[@＠]/, '')))
-  return m ? (m[1] === 'all' ? 'channel' : m[1] as 'channel' | 'here') : null
+  const m = /^(channel|all|everyone|here)(?![a-z0-9_.-])/.exec(fold(token.replace(/^[@＠]/, '')))
+  return m ? (m[1] === 'here' ? 'here' : 'channel') : null
 }
 
 /// Whether a message calls everyone who reads it — so whoever reads it is
@@ -117,7 +118,8 @@ export function matchMembers(members: Mentionable[], query: string, limit = 8): 
   const q = fold(query.trim())
   const score = (m: Mentionable) => {
     const names = [m.handle || '', m.name, ...(m.aliases || [])].filter(Boolean).map(fold)
-    if (!q) return 1
+    // "@all" is "@channel" by another name: offered once it is being typed.
+    if (!q) return m.ref === '__all' ? 0 : 1
     if (names.some((n) => n.startsWith(q))) return 3
     if (names.some((n) => n.split(/\s+/).some((w) => w.startsWith(q)))) return 2
     if (names.some((n) => n.includes(q))) return 1

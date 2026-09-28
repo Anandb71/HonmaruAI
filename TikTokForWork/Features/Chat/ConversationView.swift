@@ -498,6 +498,10 @@ struct ConversationView: View {
             MentionOption(id: "__here", insert: "here", label: "@here", detail: String(localized: "Notifies the \(here.filter(\.online).count) people online here"), kind: .special),
             MentionOption(id: "__channel", insert: "channel", label: "@channel", detail: String(localized: "Notifies all \(here.count) people in this conversation"), kind: .special),
         ]
+        // "@all" is "@channel" by another name: offered once it is being typed.
+        if !q.isEmpty && "all".hasPrefix(q) {
+            specials.append(MentionOption(id: "__all", insert: "all", label: "@all", detail: String(localized: "Notifies all \(here.count) people in this conversation"), kind: .special))
+        }
         if !agents.isEmpty {
             specials.append(MentionOption(id: "__agents", insert: agents.map(\.handle).joined(separator: " @"), label: "@agents",
                                           detail: String(localized: "Calls all \(agents.count) agents in this conversation"), kind: .special))
@@ -514,15 +518,13 @@ struct ConversationView: View {
 
     @ViewBuilder
     private var mentionSuggestions: some View {
-        if let token = draft.split(separator: " ", omittingEmptySubsequences: false).last, token.hasPrefix("@"), token.count >= 1 {
-            let hits = mentionOptions(query: token.dropFirst().lowercased())
+        if let typing = Self.mentionQuery(in: draft) {
+            let hits = mentionOptions(query: typing.query.lowercased())
             if !hits.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(hits) { o in
                         Button {
-                            var parts = draft.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
-                            parts[parts.count - 1] = "@\(o.insert) "
-                            draft = parts.joined(separator: " ")
+                            draft = typing.before + "@\(o.insert) "
                         } label: { mentionRow(o) }
                         .buttonStyle(.plain)
                     }
@@ -589,6 +591,23 @@ struct ConversationView: View {
             }
             .accessibilityElement(children: .combine)
         }
+    }
+
+    /// The "@" being typed at the end of a draft — "@" or "＠", at the start,
+    /// after a space or bracket, or right after Japanese ("確認@mi") — and
+    /// the text before it. Nil when the draft does not end in one. The same
+    /// rule as the Worker's: never after an ASCII letter, digit or URL
+    /// character, so an address or a link offers no names.
+    static func mentionQuery(in draft: String) -> (before: String, query: String)? {
+        guard let at = draft.lastIndex(where: { $0 == "@" || $0 == "＠" }) else { return nil }
+        let query = String(draft[draft.index(after: at)...])
+        if query.count > 40 || query.contains(where: { $0.isWhitespace || "@＠,，。、!?！？:;)）」".contains($0) }) { return nil }
+        if at > draft.startIndex {
+            let prev = draft[draft.index(before: at)]
+            let asciiPrintable = prev.unicodeScalars.count == 1 && (0x21...0x7E).contains(prev.unicodeScalars.first!.value)
+            if asciiPrintable && !"([{\"'".contains(prev) { return nil }
+        }
+        return (String(draft[..<at]), query)
     }
 
     /// Finished @tokens in a draft: followed by a space or by more words.

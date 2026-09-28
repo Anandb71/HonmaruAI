@@ -57,6 +57,11 @@ test("@AI is read where a mention starts, and in Japanese", () => {
   expect(asksTheAI("@aida can you")).toBe(false);
   expect(withoutAI("@AIに先週の売上をまとめて")).toBe("先週の売上をまとめて");
   expect(withoutAI("@AI, @Mika approve the price")).toBe("@Mika approve the price");
+  // Right after Japanese, as a Japanese keyboard types it — never inside an address or a link.
+  expect(asksTheAI("確認して@AI")).toBe(true);
+  expect(asksTheAI("これ＠AIにまとめて")).toBe(true);
+  expect(asksTheAI("https://example.com/@ai")).toBe(false);
+  expect(withoutAI("確認して@AIにまとめて")).toBe("確認してまとめて");
 });
 
 test("a business channel is the workspace's; messages come back by name, never by login", async () => {

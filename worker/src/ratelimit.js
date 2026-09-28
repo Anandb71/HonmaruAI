@@ -142,7 +142,11 @@ export async function enforceSubject(env, bucket, subject) {
     return null;
   }
 
-  if (count <= limit.max) return null;
+  // RATE_LIMIT_SCALE: many times the allowance, for the end-to-end run only
+  // (e2e/run.sh), where one browser plays a whole team in a few minutes.
+  // Unset in production; at most 100.
+  const scale = Math.min(100, Math.max(1, Number(env?.RATE_LIMIT_SCALE) || 1));
+  if (count <= limit.max * scale) return null;
 
   const retryAfter = windowStart + limit.windowSeconds - now;
   return new Response(

@@ -1,6 +1,6 @@
 import { listMembers } from "./team.js";
 import { businessSlug } from "./db.js";
-import { resolveMentions } from "./threads.js";
+import { resolveMentions, MENTION_BEFORE } from "./threads.js";
 
 const NOBODY = new Set();
 import { filesFor, toFile } from "./files.js";
@@ -31,8 +31,12 @@ const PAGE = 150;
 
 /// "@AI" anywhere a mention can start, in either width of @, any case —
 /// and "@AIに…", where Japanese runs straight on from the name.
+/// Where a mention may start is the same rule as every other "@name"
+/// (threads.js): "確認して@AI" asks it; "x@ai.com" does not.
+const AI_CALL = new RegExp(`${MENTION_BEFORE}[@＠]ai(?![A-Za-z0-9_])`, "iu");
+const AI_CALL_ALL = new RegExp(`${MENTION_BEFORE}[@＠]ai(?![A-Za-z0-9_])(?:[にへ]|[,、:：])?\\s*`, "giu");
 export function asksTheAI(text) {
-  return /(^|[\s(（「])[@＠]ai(?![A-Za-z0-9_])/iu.test(String(text || ""));
+  return AI_CALL.test(String(text || ""));
 }
 
 /// "@AI" asked for a decision, in so many words: a card, an approval, a
@@ -46,7 +50,7 @@ export function asksForDecision(text) {
 /// The instruction in a message, without the "@AI" that summoned it.
 export function withoutAI(text) {
   // "@AIに…" is addressed to the AI; the particle goes with the name.
-  return String(text || "").replace(/(^|[\s(（「])[@＠]ai(?![A-Za-z0-9_])(?:[にへ]|[,、:：])?\s*/giu, "$1").trim();
+  return String(text || "").replace(AI_CALL_ALL, "$1").trim();
 }
 
 /// A channel as a client named it, to its stored key — or null when it
