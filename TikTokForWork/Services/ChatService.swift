@@ -666,6 +666,19 @@ enum ChatService {
         return (try? await call("POST", "/channels/read", base: base, body: ["orgId": orgId, "channel": "activity", "items": items], as: R.self))?.threads ?? []
     }
 
+    /// Activity's "Mark all as read": what it read, and the threads moved.
+    static func markAllActivityRead(orgId: String, base: URL) async -> (items: [String], threads: [ThreadRead])? {
+        struct R: Decodable { let items: [String]?; let threads: [ThreadRead]? }
+        guard let r = try? await call("POST", "/channels/read", base: base, body: ["orgId": orgId, "channel": "activity"], as: R.self) else { return nil }
+        return (r.items ?? [], r.threads ?? [])
+    }
+
+    /// Threads' "Mark all as read": each thread read up to its newest reply.
+    static func markAllThreadsRead(orgId: String, base: URL) async -> [ThreadRead]? {
+        struct R: Decodable { let threads: [ThreadRead]? }
+        return (try? await call("POST", "/channels/read", base: base, body: ["orgId": orgId, "channel": "threads"], as: R.self))?.threads
+    }
+
     static func markRead(orgId: String, channel: String, base: URL) async {
         struct R: Decodable { let lastReadAt: String? }
         _ = try? await call("POST", "/channels/read", base: base, body: ["orgId": orgId, "channel": channel], as: R.self)

@@ -1407,3 +1407,6 @@
 .classic.slk.slk .link-card-thumb:focus-visible { outline: 2px solid var(--slk-link, #1d9bd1); outline-offset: 2px; }
 .classic.slk.slk .link-card-player { margin-top: 6px; width: 100%; max-width: 480px; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: #000; }
 .classic.slk.slk .link-card-player iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+/* Activity and Threads: "Mark all as read", at the right of the header. */
+.classic.slk.slk .slk-mark-all { flex: none; white-space: nowrap; margin-left: auto; }

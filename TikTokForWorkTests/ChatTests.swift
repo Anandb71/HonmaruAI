@@ -162,6 +162,12 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(out.map(\.unread), [false, true, true])
     }
 
+    /// Activity keys name messages (`m:`) or reactions (`r:`); only the
+    /// messages have notifications of their own to take down.
+    func testOnlyMessageKeysNameNotificationsToTakeDown() {
+        XCTAssertEqual(ChatStore.messageIds(["m:abc", "r:abc:1x", "m:def", "local-1"]), ["abc", "def"])
+    }
+
     func testTheCanvasDecodesAsTheWorkerSendsIt() throws {
         let canvas = try JSONDecoder().decode(ChatCanvas.self, from: ###"{"body":"## Opening\n- [ ] Unlock at 7","version":3,"updatedBy":"Mika","updatedAt":"2026-09-26T01:00:00.000Z"}"###.data(using: .utf8)!)
         XCTAssertEqual(canvas.version, 3)

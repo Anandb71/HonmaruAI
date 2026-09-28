@@ -23,6 +23,14 @@ struct ChatThreadsView: View {
         }
         .listStyle(.plain)
         .navigationTitle("Threads")
+        .toolbar {
+            if store.unreadThreads > 0 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Mark all as read") { Task { await store.markAllThreadsRead() } }
+                        .accessibilityIdentifier("threads.markAll")
+                }
+            }
+        }
         .refreshable { await store.loadThreads() }
         .task { await store.loadThreads() }
         .sheet(isPresented: $open, onDismiss: { Task { await store.loadThreads() } }) {
