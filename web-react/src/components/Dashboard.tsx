@@ -148,12 +148,32 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   const [immersive, setImmersive] = useState(false)
   const [composeSeed, setComposeSeed] = useState<{ id: string; text: string } | null>(null)
   const returnTo = useRef<Screen | null>(null)
+  // The screens this app opened on top of where you were, in order: closing
+  // the top one is a step back through history, as the browser's Back is,
+  // so Back after closing does not open it again.
+  const opened = useRef<string[]>([])
+  useEffect(() => {
+    const here = typeof location !== 'undefined' ? location.hash : ''
+    while (opened.current.length && opened.current[opened.current.length - 1] !== here) opened.current.pop()
+  }, [route])
   const setScreen = useCallback((next: Screen | null, from: Screen | null = null) => {
     returnTo.current = from
+    if (next) opened.current.push(hashForScreen(next))
     navigate(next ? hashForScreen(next) : hashForMode(mode))
   }, [navigate, mode])
   const closeScreen = useCallback(() => {
     const back = returnTo.current
+    const stack = opened.current
+    const top = stack[stack.length - 1]
+    // One step back lands exactly where closing should: on what was there
+    // before this one screen, or on the screen that opened it.
+    const toBase = !back && stack.length === 1
+    const toOpener = Boolean(back && back !== screen && stack.length >= 2 && stack[stack.length - 2] === hashForScreen(back as Screen))
+    if (top && top === location.hash && (toBase || toOpener)) {
+      stack.pop()
+      history.back()
+      return
+    }
     setScreen(back && back !== screen ? back : null)
   }, [setScreen, screen])
   // The card the URL names — from a notification tap, a pasted link, or a

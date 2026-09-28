@@ -2594,6 +2594,22 @@ await step('Back closes the member list, then the conversation, and only then le
   await page.waitForFunction(() => location.hash === '#/feed', null, { timeout: 5000 })
 })
 
+// Closing a screen is a step back: Back after it does not open it again.
+await step('a screen closed with its own button stays closed when Back is pressed', async () => {
+  await closeEverything()
+  await page.goto(`${WEB}#/feed`, { waitUntil: 'load' })
+  await page.goto(`${WEB}#/list`, { waitUntil: 'load' })
+  await page.waitForSelector('.cl-tabs', { timeout: 20000 })
+  await page.click('[data-phone-tab="you"]')
+  await page.waitForSelector('.profile-stats', { timeout: 10000 })
+  await page.click('.screen .back')
+  await page.waitForSelector('.cl-tabs', { timeout: 10000 })
+  if ((await page.evaluate(() => location.hash)) !== '#/list') throw new Error('closing You did not return to the list')
+  await page.goBack()
+  await page.waitForTimeout(600)
+  if (await page.$('.profile-stats')) throw new Error('Back after closing You opened it again')
+})
+
 await step('on a phone the list has tabs, a long press, pictures, groups and private channels', async () => {
   await closeEverything()
   if (!mate || !joiner) throw new Error('the teammates this step needs are not here')

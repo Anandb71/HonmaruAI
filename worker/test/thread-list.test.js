@@ -111,3 +111,42 @@ test("a reply read in Activity is read in Threads, and a thread read clears its 
   const other = await (await call("/channels/read", toru, { method: "POST", body: { orgId: ORG, channel: "activity", items: [`m:${secretReply.message.id}`] } })).json();
   expect(other.threads).toEqual([]);
 });
+
+test("Mark all as read, in Activity or in Threads, clears both; a thread read clears the mention that started it", async () => {
+  const activity = async (token) => (await (await call(`/channels/activity?orgId=${encodeURIComponent(ORG)}`, token)).json()).items;
+  const read = (token, body) => call("/channels/read", token, { method: "POST", body: { orgId: ORG, ...body } });
+
+  // Activity's Mark all as read: the replies go from Threads too.
+  const beans = await say(toru, "New beans?");
+  await pause();
+  await say(mika, "Ethiopian", beans.id);
+  await pause();
+  const named = await say(mika, "@Toru the grinder is back");
+  expect((await activity(toru)).filter((i) => i.unread).length).toBe(2);
+  expect((await threads(toru))[0].unread).toBe(true);
+  const all = await (await read(toru, { channel: "activity" })).json();
+  expect(all.items.length).toBe(2);
+  expect(all.threads.map((t) => t.thread)).toEqual([beans.id]);
+  expect((await activity(toru)).filter((i) => i.unread)).toEqual([]);
+  expect((await threads(toru))[0].unread).toBe(false);
+  expect(named.id).toBeTruthy();
+
+  // Threads' Mark all as read: each thread read to its newest reply, and
+  // Activity drops those replies.
+  await pause();
+  const later = await say(kenji, "or Kenyan", beans.id);
+  expect((await threads(toru))[0].unread).toBe(true);
+  const fromThreads = await (await read(toru, { channel: "threads" })).json();
+  expect(fromThreads.threads).toEqual([{ thread: beans.id, lastReadAt: later.createdAt }]);
+  expect((await threads(toru))[0].unread).toBe(false);
+  expect((await activity(toru)).find((i) => i.message.id === later.id).unread).toBe(false);
+
+  // A thread whose first message named you: reading the thread reads it.
+  await pause();
+  const ask = await say(mika, "@Toru which roaster?");
+  await pause();
+  await say(mika, "the one on 5th", ask.id);
+  expect((await activity(toru)).find((i) => i.message.id === ask.id).unread).toBe(true);
+  await read(toru, { channel: "b:cafe", thread: ask.id });
+  expect((await activity(toru)).find((i) => i.message.id === ask.id).unread).toBe(false);
+});

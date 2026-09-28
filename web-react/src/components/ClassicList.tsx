@@ -177,6 +177,18 @@ function closeNotifications(view: string) {
     .catch(() => { /* nothing shown, nothing to take down */ })
 }
 
+/// This browser's notifications for these messages, taken down: they were
+/// looked at in Activity, here or on another device.
+function closeMessageNotifications(ids: string[]) {
+  if (!ids.length || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  const wanted = new Set(ids)
+  navigator.serviceWorker.getRegistration()
+    .then((reg) => reg?.getNotifications())
+    .then((list) => { for (const n of list || []) if (wanted.has((n.data as { messageId?: string } | null)?.messageId || '')) n.close() })
+    .catch(() => { /* nothing shown, nothing to take down */ })
+}
+const messageIdsOf = (keys: string[]) => keys.filter((k) => k.startsWith('m:')).map((k) => k.slice(2))
+
 function seenAt(orgId: string, view: string): string {
   try { return localStorage.getItem(seenKey(orgId, view)) || '' } catch { return '' }
 }
@@ -556,6 +568,11 @@ export const ClassicList: React.FC<Props> = ({
       const at = upTo.get(x.parent.id)
       return x.unread && at && x.lastReplyAt <= at ? { ...x, unread: false } : x
     }))
+    // Their replies, no later than that, are read in Activity too.
+    setActivityItems((prev) => prev && prev.map((i) => {
+      const at = i.message.parentId ? upTo.get(i.message.parentId) : undefined
+      return i.unread && at && (i.at || i.message.createdAt) <= at ? { ...i, unread: false } : i
+    }))
   }, [])
   const [activityItems, setActivityItems] = useState<ActivityItem[] | null>(null)
   // What the Unread tab showed when you came to it stays in the list while
@@ -580,6 +597,7 @@ export const ClassicList: React.FC<Props> = ({
     setActivityItems((prev) => prev && prev.map((i) => (i.unread && fresh.has(activityKey(i)) ? { ...i, unread: false } : i)))
     const serverKeys = keys.filter((k) => /^(m|r):/.test(k))
     if (!serverKeys.length) return
+    closeMessageNotifications(messageIdsOf(serverKeys))
     void fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, channel: 'activity', items: serverKeys }),
@@ -590,6 +608,31 @@ export const ClassicList: React.FC<Props> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.httpBase, api.orgId, authHeaders])
   const activityUnread = (activityItems || []).filter(stillNew).length
+  /// Activity's "Mark all as read": every item new now is looked at, and the
+  /// threads its replies are in are read up to them.
+  const markAllActivityRead = () => {
+    const keys = (activityItems || []).filter((i) => i.unread).map(activityKey)
+    if (!keys.length) return
+    setActivityItems((prev) => prev && prev.map((i) => (i.unread ? { ...i, unread: false } : i)))
+    closeMessageNotifications(messageIdsOf(keys))
+    void fetch(`${api.httpBase}/channels/read`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel: 'activity' }),
+    }).then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (Array.isArray(d?.threads)) threadsReadTo(d.threads) })
+      .catch(() => { void loadActivity() })
+  }
+  /// Threads' "Mark all as read": each thread read up to its newest reply,
+  /// and those replies read in Activity too.
+  const markAllThreadsRead = () => {
+    const open = (threadItems || []).filter((x) => x.unread)
+    if (!open.length) return
+    threadsReadTo(open.map((x) => ({ thread: x.parent.id, lastReadAt: x.lastReplyAt })))
+    void fetch(`${api.httpBase}/channels/read`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel: 'threads' }),
+    }).catch(() => { void loadThreads() })
+  }
   // Unread mentions per conversation: what still calls for you in a
   // conversation set to mentions only, or muted.
   const mentionsIn = useMemo(() => {
@@ -1471,7 +1514,8 @@ export const ClassicList: React.FC<Props> = ({
   /// calling it unread.
   const markThreadRead = (channel: string, parentId: string) => {
     setThreadItems((prev) => prev && prev.map((x) => (x.parent.id === parentId ? { ...x, unread: false } : x)))
-    setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.parentId === parentId ? { ...i, unread: false } : i)))
+    // Its replies, and its first message where it named you, in Activity too.
+    setActivityItems((prev) => prev && prev.map((i) => (i.unread && (i.message.parentId === parentId || (i.message.id === parentId && i.type !== 'reaction')) ? { ...i, unread: false } : i)))
     void fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, channel, thread: parentId }),
@@ -1487,6 +1531,7 @@ export const ClassicList: React.FC<Props> = ({
         const keys = new Set(d.items)
         setActivityItems((prev) => prev && prev.map((i) => (i.unread && keys.has(activityKey(i)) ? { ...i, unread: false } : i)))
         if (Array.isArray(d.threads)) threadsReadTo(d.threads)
+        closeMessageNotifications(messageIdsOf(d.items))
         return
       }
       const v = d.view
@@ -2254,6 +2299,7 @@ export const ClassicList: React.FC<Props> = ({
           <h1>{t('Threads')}</h1>
           <p>{t('Threads you started, answered or were named in. The newest reply first.')}</p>
         </div>
+        {threadsUnread > 0 && <button type="button" className="cl-nudge slk-mark-all" onClick={markAllThreadsRead} data-mark-all="threads">{t('Mark all as read')}</button>}
       </header>
       <div className="slk-log slk-activity slk-threads">
         {threadItems === null && <p className="slk-empty">{t('Loading…')}</p>}
@@ -2330,6 +2376,7 @@ export const ClassicList: React.FC<Props> = ({
                 {t('Unread')}{(activityItems || []).some((i) => i.unread) ? <span className="slk-inbox-count">{(activityItems || []).filter((i) => i.unread).length}</span> : null}
               </button>
             </div>
+            {activityUnread > 0 && <button type="button" className="cl-nudge slk-mark-all" onClick={markAllActivityRead} data-mark-all="activity">{t('Mark all as read')}</button>}
           </header>
           <div className="slk-inbox-rows slk-activity" ref={activityRows}>
             {activityItems === null && <p className="slk-empty">{t('Loading…')}</p>}

@@ -190,6 +190,14 @@ struct ChatActivityView: View {
         }
         .listStyle(.plain)
         .navigationTitle("Activity")
+        .toolbar {
+            if store.unreadInbox > 0 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Mark all as read") { Task { await store.markAllInboxRead() } }
+                        .accessibilityIdentifier("activity.markAll")
+                }
+            }
+        }
         .refreshable { await store.loadInbox() }
         .task {
             await store.loadInbox()

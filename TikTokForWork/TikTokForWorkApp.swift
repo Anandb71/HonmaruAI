@@ -20,7 +20,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        guard userInfo["kind"] as? String == "read", let channel = userInfo["channel"] as? String else {
+        guard userInfo["kind"] as? String == "read" else {
+            completionHandler(.noData)
+            return
+        }
+        // Looked at in Activity: those messages' own notifications.
+        if let ids = userInfo["messageIds"] as? [String] {
+            PushService.clearDelivered(messageIds: ids)
+            completionHandler(.newData)
+            return
+        }
+        guard let channel = userInfo["channel"] as? String else {
             completionHandler(.noData)
             return
         }
