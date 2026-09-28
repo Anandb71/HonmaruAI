@@ -113,6 +113,7 @@ export const AUDIT_ACTIONS = {
   "dlp.rule_created": { category: "security", severity: "warning", text: "{actor} added the data rule {entity}" },
   "dlp.rule_changed": { category: "security", severity: "warning", text: "{actor} changed the data rule {entity}" },
   "dlp.rule_deleted": { category: "security", severity: "critical", text: "{actor} removed the data rule {entity}" },
+  "dlp.settings_changed": { category: "security", severity: "warning", text: "{actor} changed whether data rules read pictures" },
   "governance.retention_changed": { category: "workspace", severity: "critical", text: "{actor} changed how long messages and files are kept" },
   "governance.ip_allowlist_changed": { category: "security", severity: "critical", text: "{actor} changed the networks the workspace can be used from" },
   "governance.invite_policy_changed": { category: "workspace", severity: "warning", text: "{actor} changed who may be invited" },

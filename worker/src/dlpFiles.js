@@ -1,15 +1,17 @@
 // What an attached file says, as text, for the workspace's data rules
 // (dlp.js): plain text of any kind, and the words inside Word, Excel and
 // PowerPoint files (Office Open XML, which is a ZIP of XML), and the words
-// in a PDF (pdfText.js). Pictures, scanned pages and anything else are not
-// read. Nothing extracted here is kept: it is read
-// against the rules and dropped.
+// in a PDF (pdfText.js), including one encrypted with no password to open
+// it. Pictures and scanned pages are read only where the workspace turned
+// that on (ocr.js); anything else is not read. Nothing extracted here is
+// kept: it is read against the rules and dropped.
 //
 // A ZIP is a promise about sizes that a file can break; every entry is read
 // with a cap on what it inflates to, and the whole file with a cap on the
 // total, so a small file cannot become a large one here.
 
-import { pdfText } from "./pdfText.js";
+import { pdfContents } from "./pdfText.js";
+import { OCR_TYPES, pictureReader } from "./ocr.js";
 
 const TEXT_TYPES = /^(text\/|application\/(json|xml|x-yaml|yaml|csv|x-ndjson|javascript|x-sh|sql))/;
 const TEXT_NAMES = /\.(txt|md|markdown|csv|tsv|json|ndjson|xml|ya?ml|log|ini|conf|env|sql|sh|py|js|ts|tsx|jsx|rb|go|java|kt|swift|c|h|cpp|cs|php|html?|css)$/i;
@@ -103,8 +105,13 @@ export function textOfXml(xml) {
     .replace(/[ \t]+\n/g, "\n");
 }
 
-/// The text of one file's bytes, or null when it is not read.
-export async function fileText(bytes, { type, name }) {
+/// The text of one file's bytes, or null when it is not read. With
+/// `readPictures` (ocr.js), a picture, and the pages of a PDF that are
+/// pictures, are read too.
+export async function fileText(bytes, { type, name }, { readPictures = null } = {}) {
+  if (readPictures && OCR_TYPES.test(type || "")) {
+    return (await readPictures([{ type, bytes: new Uint8Array(bytes) }]).catch(() => "")) || null;
+  }
   const how = readerFor(type, name);
   if (!how) return null;
   if (how === "text") {
@@ -113,7 +120,12 @@ export async function fileText(bytes, { type, name }) {
   }
   if (bytes.byteLength > MAX_OFFICE_FILE) return null;
   if (how === "pdf") {
-    try { return (await pdfText(bytes)) || null; } catch { return null; }
+    try {
+      const got = await pdfContents(bytes, { pictures: Boolean(readPictures) });
+      if (!got) return null;
+      const seen = got.images.length ? await readPictures(got.images).catch(() => "") : "";
+      return [got.text, seen].filter(Boolean).join("\n") || null;
+    } catch { return null; }
   }
   try {
     const entries = await zipEntries(bytes, how);
@@ -124,20 +136,24 @@ export async function fileText(bytes, { type, name }) {
 }
 
 /// The texts of the files a person is about to send: theirs, uploaded to
-/// this conversation and not yet sent.
-export async function attachedTexts(env, { orgId, key, login, ids }) {
+/// this conversation and not yet sent. `githubId` is whose allowance reads
+/// the pictures, where the workspace reads them.
+export async function attachedTexts(env, { orgId, key, login, ids, githubId = null }) {
   const wanted = [...new Set((Array.isArray(ids) ? ids : []).filter((x) => typeof x === "string" && /^f_[0-9a-f]{24}$/.test(x)))].slice(0, 10);
   if (!wanted.length || !env.MEDIA) return [];
   const marks = wanted.map((_, j) => `?${j + 4}`).join(", ");
   const { results } = await env.DB.prepare(
     `SELECT id, name, type, size FROM message_files WHERE org_id = ?1 AND channel = ?2 AND uploader = ?3 AND message_id IS NULL AND id IN (${marks})`
   ).bind(orgId, key, login, ...wanted).all();
+  const files = results || [];
+  const pictured = files.some((f) => OCR_TYPES.test(f.type || "") || readerFor(f.type, f.name) === "pdf");
+  const readPictures = pictured && githubId ? await pictureReader(env, { orgId, githubId }).catch(() => null) : null;
   const out = [];
-  for (const f of results || []) {
-    if (!readerFor(f.type, f.name)) continue;
+  for (const f of files) {
+    if (!readerFor(f.type, f.name) && !(readPictures && OCR_TYPES.test(f.type || ""))) continue;
     const obj = await env.MEDIA.get(`file-${f.id}`).catch(() => null);
     if (!obj) continue;
-    const text = await fileText(await obj.arrayBuffer(), f);
+    const text = await fileText(await obj.arrayBuffer(), f, { readPictures });
     if (text) out.push({ name: f.name, text });
   }
   return out;

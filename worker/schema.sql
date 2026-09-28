@@ -1248,6 +1248,15 @@ CREATE TABLE IF NOT EXISTS dlp_rules (
 );
 CREATE INDEX IF NOT EXISTS idx_dlp_rules_org ON dlp_rules(org_id);
 
+/* Whether attached pictures and scanned PDF pages are read (ocr.js): off
+   unless an admin turns it on, since the picture goes to the AI model. */
+CREATE TABLE IF NOT EXISTS dlp_settings (
+  org_id      TEXT PRIMARY KEY,
+  read_images INTEGER NOT NULL DEFAULT 0,
+  updated_by  TEXT,
+  updated_at  TEXT
+);
+
 /* A workspace's identity providers (docs/sso-and-domain-join.md §11): one
    per company or subsidiary, each for its own domains, OIDC or SAML. The
    first workspace setup lived in `org_sso`; it moves here the first time it

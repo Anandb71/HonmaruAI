@@ -724,7 +724,7 @@ export async function handleChannels(request, env, url, { route, after }) {
     const parentId = typeof body.parentId === "string" && body.parentId ? body.parentId : null;
     // The workspace's data rules read it before it is kept, sent now or later.
     const attached = Array.isArray(body.files) && body.files.length
-      ? await attachedTexts(env, { orgId, key: resolved.key, login: who.user.login, ids: body.files }).catch(() => [])
+      ? await attachedTexts(env, { orgId, key: resolved.key, login: who.user.login, ids: body.files, githubId: who.session.github_id }).catch(() => [])
       : [];
     const stopped = await checkOutgoing(env, request, { orgId, login: who.user.login, text: typeof body.body === "string" ? body.body : "", files: attached, ack: body.dlpAck === true, where: body.sendAt ? "scheduled" : parentId ? "reply" : "message" });
     if (stopped) return stopped;

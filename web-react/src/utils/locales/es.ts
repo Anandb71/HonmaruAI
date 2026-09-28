@@ -1803,6 +1803,9 @@ const table: Record<string, string> = {
   'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'Lo que conectes aquí es solo tuyo: solo lo lee tu propia conversación con tu IA, nunca un canal ni nadie más. Lee y no escribe, salvo que un propietario lo permita.',
   'Single logout URL (SLO)': 'URL de cierre de sesión único (SLO)',
   'Sign-out address, optional, https://…': 'Dirección de cierre de sesión (opcional), https://…',
+  'Read pictures and scanned PDFs': 'Leer imágenes y PDF escaneados',
+  'Photos, screenshots and scanned pages have no text of their own. With this on, each one attached is sent to the workspace’s AI model to be read, checked against these rules, and dropped. It uses the AI allowance.': 'Las fotos, capturas de pantalla y páginas escaneadas no contienen texto propio. Con esta opción activada, cada una que se adjunte se envía al modelo de IA del espacio de trabajo para leerla, se compara con estas reglas y se descarta. Consume la cuota de IA.',
+  'This needs an OpenAI model for the workspace, which is not set up.': 'Esto requiere un modelo de OpenAI para el espacio de trabajo, que no está configurado.',
 }
 
 export default table
