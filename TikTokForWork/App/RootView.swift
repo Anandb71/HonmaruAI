@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var updates = AppUpdateService.shared
     /// Signed out by a workspace's login rules: said once, on the way out.
     @State private var policyNotice = false
 
@@ -28,6 +29,13 @@ struct RootView: View {
             guard appState.isAuthenticated else { return }
             appState.signOut()
             policyNotice = true
+        }
+        .modifier(AppUpdatePrompts(updates: updates, offerAllowed: appState.isAuthenticated && !appState.isBootstrapping))
+        // A moment after launch, so it never lands on top of the first screen
+        // while it is still arriving.
+        .task {
+            try? await Task.sleep(for: .seconds(2))
+            await updates.check(backend: appState.backendBaseURL)
         }
         .alert("Sign in again", isPresented: $policyNotice) {
             Button("OK", role: .cancel) {}

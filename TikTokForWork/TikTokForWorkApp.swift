@@ -64,6 +64,8 @@ struct TikTokForWorkApp: App {
             Task { await push.refreshAuthorization() }
             // The language may have been changed on the web meanwhile.
             Task { await appState.adoptAccountLanguage() }
+            // A release may have gone out while the app was away.
+            Task { await AppUpdateService.shared.check(backend: appState.backendBaseURL) }
         }
     }
 }
