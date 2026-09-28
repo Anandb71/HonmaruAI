@@ -400,11 +400,12 @@ enum ChatService {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // An owner's change asks for a recent sign-in first (Reauth.swift).
+        let (data, response) = try await Reauth.send(request)
         guard let http = response as? HTTPURLResponse else { throw Failure.server(0, nil) }
         guard (200...299).contains(http.statusCode) else {
             SessionPolicy.noticeIfEnded(status: http.statusCode, data: data)
-            if http.statusCode == 401 { throw Failure.notSignedIn }
+            if http.statusCode == 401 && !Reauth.isAsked(status: 401, data: data) { throw Failure.notSignedIn }
             if http.statusCode == 409 || http.statusCode == 422, let said = try? JSONDecoder().decode(DataRuleAnswer.self, from: data),
                said.code == "dlp-warning" || said.code == "dlp-blocked" {
                 throw Failure.dataRule(blocked: said.code == "dlp-blocked", rules: said.rules ?? [], message: said.message)

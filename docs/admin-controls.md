@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS org_session_policy (
   - `reauth_for_admin_minutes` があるとき、管理 API は `session.created_at`（または最後の再認証 `reauth_at`）が範囲内かを見る。
   - 範囲外なら `401 { code: "reauth-required" }`。
   - Web はメールのコード（SSO なら IdP）で本人確認し、`sessions.reauth_at` を更新してから操作を続ける。
+  - iOS も同じ（`TikTokForWork/Services/Reauth.swift`）。`ChatService.call` と `TeamService` の変更系が `reauth-required` を受けたら、表示中のシートの上に「本人確認」を出し、メールのコードかパスワードで `POST /auth/reauth` してから同じ要求をもう一度送る。これはサインアウトとは扱わない。これで Owner は保持期間・許可ネットワーク・招待の制限・リーガルホールド・コンプライアンスエクスポートを iPhone からも変更できる（エクスポートは端末に保存して共有シートで渡す）。
 
 ### 3.3 方針を変えたとき
 
