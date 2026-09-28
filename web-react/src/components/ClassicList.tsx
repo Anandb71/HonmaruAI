@@ -8,6 +8,7 @@ import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
+import { useBackStack } from '../utils/backStack'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
@@ -1651,6 +1652,16 @@ export const ClassicList: React.FC<Props> = ({
     setSide((prev) => (prev && prev.kind === next.kind && (prev.kind === 'journal' || prev.kind === 'canvas' || (next.kind === 'details' && prev.kind === 'details' && prev.tab === next.tab)) ? null : next))
   }
   useEffect(() => { setSide(null) }, [current?.key])
+  // Back closes what was opened last, not the list (utils/backStack): on a
+  // phone the conversation itself, then whatever is open over it.
+  useBackStack([
+    [!wide && !!current, () => choose(null)],
+    [activityOpen || laterOpen || threadsOpen, () => { setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false) }],
+    [!!side, () => setSide(null)],
+    [!!profile, () => setProfile(null)],
+    [!!thread, () => setThread(null)],
+    [!!detailId, () => setDetailId(null)],
+  ])
   // How many automations run into each channel, for the header's count.
   const [automationCount, setAutomationCount] = useState<Record<string, number>>({})
   useEffect(() => {
