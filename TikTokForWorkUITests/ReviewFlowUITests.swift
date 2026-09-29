@@ -41,7 +41,7 @@ final class ReviewFlowUITests: XCTestCase {
         signup.httpMethod = "POST"
         signup.timeoutInterval = 30
         signup.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        signup.httpBody = try JSONSerialization.data(withJSONObject: ["email": email, "password": password, "name": "UI QA"])
+        signup.httpBody = try JSONSerialization.data(withJSONObject: ["email": email, "password": password, "name": "UI QA", "locale": "en"])
         let (data, response) = try await URLSession.shared.data(for: signup)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -89,6 +89,10 @@ final class ReviewFlowUITests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(app.buttons["New request"].waitForExistence(timeout: 25), "Saved session must survive relaunch")
+        // New accounts are offered daily-report setup after the workspace
+        // finishes loading, including when that finishes on the next launch.
+        let later = app.navigationBars.buttons["Later"]
+        if later.waitForExistence(timeout: 5) { later.tap() }
         XCTAssertTrue(app.staticTexts["You're all caught up"].waitForExistence(timeout: 25))
         app.terminate()
     }
