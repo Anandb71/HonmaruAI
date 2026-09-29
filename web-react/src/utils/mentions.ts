@@ -150,6 +150,13 @@ export function insertMention(text: string, caret: number, member: Mentionable):
   return { text: next, caret: q.start + label.length }
 }
 
+/// Every way an @ may write somebody, folded: their username, their name,
+/// its first word, and the whole of it with the spaces taken out — the
+/// iPhone writes "Mika Sato" as "@MikaSato" (the Worker agrees).
+function namesOf(mem: Mentionable): string[] {
+  return [mem.handle || '', mem.name, mem.name.split(/\s+/)[0], mem.name.replace(/\s+/g, ''), ...(mem.aliases || [])].filter(Boolean).map(fold)
+}
+
 /// The members a text names, by first name, whole name or alias.
 export function mentionedRefs(text: string, members: Mentionable[]): string[] {
   const refs = new Set<string>()
@@ -158,8 +165,7 @@ export function mentionedRefs(text: string, members: Mentionable[]): string[] {
   while ((m = re.exec(text))) {
     const want = fold(m[2].replace(/^[@＠]/, ''))
     const hit = members.find((mem) => {
-      const names = [mem.handle || '', mem.name, mem.name.split(/\s+/)[0], ...(mem.aliases || [])].filter(Boolean).map(fold)
-      return names.includes(want)
+      return namesOf(mem).includes(want)
     })
     if (hit) refs.add(hit.ref)
   }
@@ -248,8 +254,7 @@ export function mentionKind(token: string, list: Mentionable[]): MentionKind | n
   for (const want of new Set([fold(raw), fold(raw.replace(/[にへ]$/, ''))])) {
     if (!want) continue
     if (want === 'ai') return 'ai'
-    const hit = list.find((mem) => [mem.handle || '', mem.name, mem.name.split(/\s+/)[0], ...(mem.aliases || [])]
-      .filter(Boolean).map(fold).includes(want))
+    const hit = list.find((mem) => namesOf(mem).includes(want))
     if (hit) {
       if (hit.ref === '__ai') return 'ai'
       if (hit.ref.startsWith('group:')) return 'group'

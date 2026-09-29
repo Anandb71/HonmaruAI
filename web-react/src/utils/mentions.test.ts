@@ -96,6 +96,10 @@ describe('mentionKind', () => {
     expect(mentionKind('@AI', list)).toBe('ai')
     expect(mentionKind('@mika', list)).toBe('person')
     expect(mentionKind('@Mika', list)).toBe('person')
+    // As the iPhone writes a name with a space: run together.
+    expect(mentionKind('@MikaSato', list)).toBe('person')
+    expect(mentionedRefs('@MikaSato please', list)).toEqual(['m1'])
+    expect(mentionKind('@佐藤健二', [{ ref: 'k', name: '佐藤　健二' }])).toBe('person')
     expect(mentionKind('@sales', list)).toBe('group')
     expect(mentionKind('@hayaoに', list)).toBe('agent')
     expect(mentionKind('＠hayao', list)).toBe('agent')

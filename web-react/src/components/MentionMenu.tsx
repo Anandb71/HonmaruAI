@@ -161,9 +161,16 @@ export function useMentionHighlight(
     const el = box.current
     if (!el || !active) return
     const sync = () => {
+      // Once the box is at its tallest it scrolls, and its scrollbar takes
+      // width from the letters; the layer has none, so without the same room
+      // on its right it wrapped the lines later and the caret drifted off the
+      // words it sat in.
+      const cs = getComputedStyle(el)
+      const bar = el.offsetWidth - el.clientWidth - (parseFloat(cs.borderLeftWidth) || 0) - (parseFloat(cs.borderRightWidth) || 0)
+      const paddingRight = (parseFloat(cs.paddingRight) || 0) + Math.max(0, bar)
       setPlace((prev) => {
-        const next = { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight }
-        return prev && prev.top === next.top && prev.left === next.left && prev.width === next.width && prev.height === next.height ? prev : next
+        const next = { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight, paddingRight }
+        return prev && prev.top === next.top && prev.left === next.left && prev.width === next.width && prev.height === next.height && prev.paddingRight === next.paddingRight ? prev : next
       })
       if (layerRef.current) layerRef.current.scrollTop = el.scrollTop
     }
@@ -173,6 +180,11 @@ export function useMentionHighlight(
     ro?.observe(el)
     return () => { el.removeEventListener('scroll', sync); ro?.disconnect() }
   }, [box, active, text])
+  // A new place (the room for the scrollbar above) re-lays the layer out
+  // after sync set its scroll, which could not reach that far yet.
+  useLayoutEffect(() => {
+    if (layerRef.current && box.current) layerRef.current.scrollTop = box.current.scrollTop
+  }, [box, place])
   const layer = active && place ? (
     <div ref={layerRef} className={`${box.current?.className.replace(/\bhas-mentions\b/, '') || ''} mention-layer`} style={place} aria-hidden="true">
       {parts.map((p, i) => (p.mention && p.kind

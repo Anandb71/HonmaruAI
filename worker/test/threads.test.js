@@ -62,6 +62,19 @@ test("a mention resolves by name, first name, handle or alias — and only to me
   expect(resolveMentions("@everyone look", members).map((m) => m.login)).toEqual(["u:toru@x.jp", "u:mika@x.jp"]);
 });
 
+test("a name with a space is reached written whole, the way the iPhone writes it: @MikaSato, @佐藤健二", () => {
+  const members = [
+    { login: "u:toru@x.jp", ref: "r1", name: "Toru Bando", aliases: [] },
+    { login: "u:mika@x.jp", ref: "r2", name: "Mika Sato", aliases: [] },
+    { login: "u:kenji@x.jp", ref: "r3", name: "佐藤　健二", aliases: [] },
+  ];
+  expect(resolveMentions("@MikaSato can you check?", members).map((m) => m.login)).toEqual(["u:mika@x.jp"]);
+  expect(resolveMentions("@佐藤健二 確認お願いします", members).map((m) => m.login)).toEqual(["u:kenji@x.jp"]);
+  expect(resolveMentions("@佐藤 確認お願いします", members).map((m) => m.login)).toEqual(["u:kenji@x.jp"]);
+  // Two names run together name nobody.
+  expect(resolveMentions("@ToruMika hi", members)).toEqual([]);
+});
+
 test("@channel and @all call everyone — with a Japanese keyboard's ＠, and right after Japanese words too", () => {
   const members = [
     { login: "u:toru@x.jp", ref: "r1", name: "Toru Bando", aliases: [] },

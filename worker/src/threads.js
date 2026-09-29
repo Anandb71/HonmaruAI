@@ -46,7 +46,8 @@ export function broadcastOf(token) {
 export const MENTION_BEFORE = `(^|[^\\x21-\\x7E]|[(\\[{"'])`;
 const handleOf = (login) => fold(login).replace(/^(u:|email:)/, "").split("@")[0];
 
-/// Which members a text names. Matched by name (whole, or its first word),
+/// Which members a text names. Matched by name (whole, any word of it, or
+/// whole with its spaces taken out),
 /// by handle (the part of the login before the @), by ref, or by alias when
 /// the member list carries them — case-folded, so "@kenji" finds "Kenji
 /// Tanaka". Unmatched tokens are left alone. "@channel", "@all" and
@@ -68,7 +69,9 @@ export function resolveMentions(text, members, { here = true, online = null } = 
       continue;
     }
     for (const m of members) {
-      const names = [m.handle, m.name, ...(m.name ? String(m.name).split(/\s+/) : []), handleOf(m.login), m.login, m.ref, ...(m.aliases || [])]
+      // The whole name with its spaces taken out too: the iPhone writes
+      // "Mika Sato" as "@MikaSato", "佐藤 健二" as "@佐藤健二".
+      const names = [m.handle, m.name, ...(m.name ? String(m.name).split(/\s+/) : []), m.name ? String(m.name).replace(/\s+/g, "") : "", handleOf(m.login), m.login, m.ref, ...(m.aliases || [])]
         .filter(Boolean)
         .map(fold);
       if (names.includes(want)) { found.set(m.login, m); break; }

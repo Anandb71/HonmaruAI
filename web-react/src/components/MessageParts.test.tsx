@@ -87,3 +87,15 @@ describe('the links a message unfurls', () => {
     expect(unfurlable('no links')).toEqual([])
   })
 })
+
+describe('who reacted', () => {
+  it('is a sentence in the reader’s language, with the rest counted when there are many', async () => {
+    const { reactorNames } = await import('./MessageParts')
+    const more = (n: number) => `${n} others`
+    expect(reactorNames(['Aya', 'Ken', 'You'], 'en', more)).toBe('Aya, Ken, and You')
+    expect(reactorNames(['Aya'], 'en', more)).toBe('Aya')
+    expect(reactorNames(['あや', 'けん', 'あなた'], 'ja', more)).toBe('あや、けん、あなた')
+    const many = Array.from({ length: 15 }, (_, i) => `P${i + 1}`)
+    expect(reactorNames(many, 'en', more)).toBe('P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, and 3 others')
+  })
+})

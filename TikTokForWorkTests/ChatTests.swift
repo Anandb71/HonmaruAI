@@ -190,6 +190,9 @@ final class ChatMentionTests: XCTestCase {
         XCTAssertEqual(directory.kind(of: "＠sales"), .group)
         XCTAssertEqual(directory.kind(of: "@AI"), .ai)
         XCTAssertNil(directory.kind(of: "@nobody"))
+        // How "@" writes a name with a space: run together.
+        XCTAssertEqual(directory.kind(of: "@MikaSato"), .person)
+        XCTAssertEqual(ChatMentionDirectory.runTogether("佐藤　健二"), "佐藤健二")
         XCTAssertEqual(directory.kind(of: "＠all"), .group)
         XCTAssertEqual(directory.kind(of: "@allの皆さん"), .group)
         XCTAssertEqual(directory.kind(of: "@everyone"), .group)

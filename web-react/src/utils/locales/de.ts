@@ -1811,6 +1811,12 @@ const table: Record<string, string> = {
   'This needs an OpenAI model for the workspace, which is not set up.': 'Dafür ist ein OpenAI-Modell für den Workspace nötig, das nicht eingerichtet ist.',
   'Discard this draft? It will not be posted.': 'Diesen Entwurf verwerfen? Er wird nicht gepostet.',
   'Discard draft': 'Entwurf verwerfen',
+  'Your daily report is posted to {channel}, not to the daily-report channel.': 'Ihr Tagesbericht wird in {channel} gepostet, nicht im Kanal für Tagesberichte.',
+  'Move it to #{channel}': 'Nach #{channel} verschieben',
+  'Move it to a new channel, #{channel}': 'In einen neuen Kanal verschieben: #{channel}',
+  '{names} reacted with {emoji}': '{names} hat mit {emoji} reagiert',
+  '{names} reacted': '{names} hat reagiert',
+  '{n} others': '{n} weitere',
 }
 
 export default table

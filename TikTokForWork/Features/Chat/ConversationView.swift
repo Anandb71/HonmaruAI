@@ -91,6 +91,7 @@ struct ConversationView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
+            .modifier(ChatStaysAtBottom())
             .onChange(of: list.count) { _, _ in if jump == nil { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } } }
             .onChange(of: store.thinking[view]) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: store.agentTyping[view]) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
@@ -106,6 +107,11 @@ struct ConversationView: View {
                     withAnimation { highlight = nil }
                 } else {
                     proxy.scrollTo("bottom", anchor: .bottom)
+                    // Rows are measured as they are drawn, and what loads a
+                    // moment later (pictures, translations) pushed the newest
+                    // message down out of sight: once more when it settles.
+                    try? await Task.sleep(for: .milliseconds(350))
+                    if !Task.isCancelled { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
@@ -492,7 +498,7 @@ struct ConversationView: View {
             return true
         }
         let people = store.members.filter { !$0.mine }.map { m in
-            MentionOption(id: m.ref, insert: m.handle ?? m.name.replacingOccurrences(of: " ", with: ""), label: m.name, kind: .person,
+            MentionOption(id: m.ref, insert: m.handle ?? ChatMentionDirectory.runTogether(m.name), label: m.name, kind: .person,
                           avatarURL: m.avatarUrl, online: m.loginHash.map { online.contains($0) } ?? false, outside: !inside(m))
         }
         let agents = store.agentMentions(in: view)
@@ -850,5 +856,18 @@ private struct DataRuleAlerts: ViewModifier {
             } message: {
                 Text(store.dataBlocked ?? "")
             }
+    }
+}
+
+/// A conversation stays at its newest message while what is above it changes
+/// size — a picture loading, a translation replacing the words — the way a
+/// chat does. (iOS 18 and later; before that, the scroll after opening.)
+private struct ChatStaysAtBottom: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.defaultScrollAnchor(.bottom, for: .sizeChanges)
+        } else {
+            content
+        }
     }
 }

@@ -1875,6 +1875,12 @@ const table: Record<string, string> = {
   'This needs an OpenAI model for the workspace, which is not set up.': 'ワークスペースにOpenAIのモデルが必要ですが、まだ設定されていません。',
   'Discard this draft? It will not be posted.': 'この下書きを破棄しますか？投稿はされません。',
   'Discard draft': '下書きを破棄',
+  'Your daily report is posted to {channel}, not to the daily-report channel.': '日報が{channel}に投稿される設定になっています。日報チャンネルではありません。',
+  'Move it to #{channel}': '#{channel} に移す',
+  'Move it to a new channel, #{channel}': '新しいチャンネル #{channel} に移す',
+  '{names} reacted with {emoji}': '{names} が {emoji} でリアクションしました',
+  '{names} reacted': '{names} がリアクションしました',
+  '{n} others': 'ほか{n}人',
 }
 
 export default table

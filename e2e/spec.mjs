@@ -1783,6 +1783,100 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
   }
 })
 
+await step('a long reply with an @mention keeps the caret on its words once the box scrolls', async () => {
+  // The box grows to its tallest, then scrolls, and a scrollbar takes width
+  // from its letters. The layer that colours @names drew the words wider, so
+  // the lines wrapped later and the caret sat off in the blank. The shared
+  // browser hides scrollbars, as headless Chromium does, so this one shows them.
+  const bars = await chromium.launch({
+    ...(process.env.E2E_CHROMIUM ? { executablePath: process.env.E2E_CHROMIUM } : {}),
+    ignoreDefaultArgs: ['--headless=old', '--hide-scrollbars'],
+    args: ['--headless=new'],
+  })
+  try {
+    const ctx = await bars.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState() })
+    const d = await ctx.newPage()
+    d.on('pageerror', (e) => thrown.push(String(e).slice(0, 200)))
+    await d.goto(`${WEB}/#/list`, { waitUntil: 'load' })
+    await d.waitForSelector('.slk-side', { timeout: 20000 })
+    await d.click('.cl-thread:has-text("Front desk") .cl-open')
+    const msg = '.slk-msg:has-text("Check-in opens")'
+    await d.waitForSelector(msg, { timeout: 15000 })
+    await d.hover(msg)
+    await d.click(`${msg} .slk-tools [aria-label="Reply in thread"]`)
+    const box = '.slk-thread-pane .slk-composer textarea'
+    await d.waitForSelector(box, { timeout: 10000 })
+    await d.fill(box, '@AI ' + 'Marketing at ShogunAI, would love to build too. Nice to meet you all! '.repeat(9))
+    await d.waitForSelector('.slk-thread-pane .mention-layer', { timeout: 5000 }).catch(() => { throw new Error('@AI is not coloured in the reply box') })
+    await d.waitForTimeout(300)
+    const m = await d.evaluate((sel) => {
+      const ta = document.querySelector(sel)
+      const layer = ta.parentElement.querySelector('.mention-layer')
+      return { bar: ta.offsetWidth - ta.clientWidth, height: ta.offsetHeight, box: ta.scrollHeight, layer: layer.scrollHeight, top: [ta.scrollTop, layer.scrollTop] }
+    }, box)
+    // It grows first, as the channel's box does, and only then scrolls.
+    if (m.height < 200) throw new Error(`the reply box does not grow with a long reply: ${JSON.stringify(m)}`)
+    if (m.bar <= 0) throw new Error(`the reply box never scrolled, so this proves nothing: ${JSON.stringify(m)}`)
+    if (m.box !== m.layer) throw new Error(`the coloured words wrap differently from the box (the caret drifts off them): ${JSON.stringify(m)}`)
+    if (m.top[0] !== m.top[1]) throw new Error(`the coloured words do not scroll with the box: ${JSON.stringify(m)}`)
+    await d.screenshot({ path: `${SHOTS}/39b-thread-long-reply.png` })
+    await ctx.close()
+  } finally {
+    await bars.close()
+  }
+})
+
+await step('a channel opens at its newest message, and stays there while what is above it settles', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState() })
+  const d = await ctx.newPage()
+  d.on('pageerror', (e) => thrown.push(String(e).slice(0, 200)))
+  try {
+    await d.goto(`${WEB}/#/list`, { waitUntil: 'load' })
+    await d.waitForSelector('.slk-side', { timeout: 20000 })
+    await d.click('.cl-thread:has-text("Front desk") .cl-open')
+    await d.waitForSelector('.slk-composer textarea', { timeout: 10000 })
+    for (let i = 1; i <= 20; i++) {
+      await d.fill('.slk-composer textarea', `shift note ${i}`)
+      await d.keyboard.press('Enter')
+      await d.waitForSelector(`.slk-main .slk-msg:has-text("shift note ${i}")`, { timeout: 10000 })
+    }
+    const where = () => d.evaluate(() => {
+      const log = document.querySelector('.slk-main .slk-log')
+      const last = [...log.querySelectorAll('.slk-msg')].at(-1)
+      const l = log.getBoundingClientRect(), r = last.getBoundingClientRect()
+      return { newestInView: r.bottom <= l.bottom + 2 && r.top >= l.top - 2, fromBottom: Math.round(log.scrollHeight - log.scrollTop - log.clientHeight), text: last.innerText.slice(0, 40) }
+    })
+    // Away and back: it opens where the conversation is now, not above it.
+    await d.click('[data-activity="1"]')
+    await d.waitForTimeout(500)
+    await d.click('.cl-thread:has-text("Front desk") .cl-open')
+    await d.waitForSelector('.slk-main .slk-msg:has-text("shift note 20")', { timeout: 10000 })
+    await d.waitForTimeout(600)
+    const opened = await where()
+    if (!opened.newestInView) throw new Error(`the channel opened above its newest message: ${JSON.stringify(opened)}`)
+    // Something above grows a moment later (a picture, a translation): the
+    // newest message stays in view.
+    const grow = () => d.evaluate(() => {
+      const texts = document.querySelectorAll('.slk-main .slk-log .slk-msg .slk-text')
+      const x = document.createElement('div'); x.style.height = '300px'; x.className = 'e2e-grown'
+      texts[texts.length - 4].appendChild(x)
+    })
+    await grow()
+    await d.waitForTimeout(300)
+    const settled = await where()
+    if (!settled.newestInView) throw new Error(`something loading above pushed the newest message out of sight: ${JSON.stringify(settled)}`)
+    // Scrolled up by hand, it is left where it was put.
+    await d.evaluate(() => { const log = document.querySelector('.slk-main .slk-log'); log.scrollTop = Math.max(0, log.scrollTop - 500) })
+    await d.waitForTimeout(200)
+    await grow()
+    await d.waitForTimeout(300)
+    const reading = await where()
+    if (reading.fromBottom < 400) throw new Error(`reading further up, it was pulled back to the bottom: ${JSON.stringify(reading)}`)
+  } finally {
+    await ctx.close()
+  }
+})
+
 await step('people talk in a channel, and @AI turns what was said into a decision decided right there', async () => {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState() })
   const d = await ctx.newPage()
@@ -1879,6 +1973,9 @@ await step('the daily report: morning and evening at the person’s own times, d
     await d.waitForFunction(() => !document.querySelector('.routine-row.editing'), null, { timeout: 10000 })
     const ev = await d.$eval(evRow, (el) => el.innerText)
     if (!/21:30/.test(ev) || !/#kitchen/.test(ev)) throw new Error(`the evening row did not take the new time and channel: ${ev.slice(0, 160)}`)
+    // Posted somewhere other than the daily-report channel: said, with a way back.
+    const moved = await d.waitForSelector('[data-daily-misplaced] [data-daily-move]', { timeout: 5000 }).catch(() => null)
+    if (!moved || !/daily-reports/.test(await moved.innerText())) throw new Error('a daily report in #kitchen is not offered a move back to #daily-reports')
 
     // Run now: the draft, in the feed, for its owner to change.
     await d.click(`${evRow} .btn-text:has-text("Run now")`)
