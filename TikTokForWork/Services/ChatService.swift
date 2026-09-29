@@ -731,6 +731,18 @@ enum ChatService {
         _ = try await call("PUT", "/channels/status", base: base, body: b, as: R.self)
     }
 
+    /// A channel's new name; its address (the slug) stays, so links keep working.
+    static func renameChannel(orgId: String, slug: String, name: String, base: URL) async throws -> [ChatBusiness] {
+        struct R: Decodable { let businesses: [ChatBusiness] }
+        return try await call("PUT", "/businesses", base: base, body: ["orgId": orgId, "slug": slug, "name": name], as: R.self).businesses
+    }
+
+    /// Out of a private channel: somebody inside has to add you again.
+    static func leaveChannel(orgId: String, channel: String, base: URL) async throws {
+        struct R: Decodable { let ok: Bool? }
+        _ = try await call("DELETE", "/channels/members", base: base, body: ["orgId": orgId, "channel": channel], as: R.self)
+    }
+
     static func createChannel(orgId: String, name: String, base: URL) async throws -> [ChatBusiness] {
         struct R: Decodable { let businesses: [ChatBusiness] }
         return try await call("POST", "/businesses", base: base, body: ["orgId": orgId, "name": name], as: R.self).businesses
