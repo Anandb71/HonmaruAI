@@ -1903,17 +1903,25 @@ await step('right-clicking a channel in the sidebar offers what a desktop chat a
     await menu('Front desk')
     await d.click('.row-menu [data-row-menu="star"]')
     await d.waitForSelector('.row-menu', { state: 'detached', timeout: 3000 })
+    await d.waitForSelector(`${rowOf('Front desk')}`, { timeout: 5000 })
     await menu('Front desk')
     const starLabel = await d.innerText('.row-menu [data-row-menu="star"]')
     if (!/Unstar/.test(starLabel)) throw new Error(`after starring, the menu still says ${starLabel}`)
     await d.click('.row-menu [data-row-menu="star"]')
     // Just mentions: ticked the next time the menu opens.
     await menu('Front desk')
-    await d.click('.row-menu [data-row-menu="notify-mentions"]')
-    await d.waitForTimeout(400)
+    // Saved first, then shown: wait for the server to take it, not a clock.
+    await Promise.all([
+      d.waitForResponse((r) => r.url().includes('/channels/prefs') && r.request().method() === 'PUT', { timeout: 10000 }),
+      d.click('.row-menu [data-row-menu="notify-mentions"]'),
+    ])
     await menu('Front desk')
-    if (await d.getAttribute('.row-menu [data-row-menu="notify-mentions"]', 'aria-checked') !== 'true') throw new Error('choosing "Just mentions" in the menu did not take')
-    await d.click('.row-menu [data-row-menu="notify-all"]')
+    await d.waitForSelector('.row-menu [data-row-menu="notify-mentions"][aria-checked="true"]', { timeout: 5000 })
+      .catch(() => { throw new Error('choosing "Just mentions" in the menu did not take') })
+    await Promise.all([
+      d.waitForResponse((r) => r.url().includes('/channels/prefs') && r.request().method() === 'PUT', { timeout: 10000 }),
+      d.click('.row-menu [data-row-menu="notify-all"]'),
+    ])
     // Rename, and back again: the sidebar follows at once.
     await menu('Front desk')
     await d.click('.row-menu [data-row-menu="rename"]')
