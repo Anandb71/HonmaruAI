@@ -2043,14 +2043,43 @@ export const ClassicList: React.FC<Props> = ({
   const draftHl = useMentionHighlight(composer, draft, withAI)
   const threadHl = useMentionHighlight(threadComposer, threadDraft, withAI)
 
-  // The newest message in view when a conversation opens, as in any chat.
-  const logRef = useRef<HTMLDivElement>(null)
+  // The newest message in view when a conversation opens, as in any chat —
+  // and kept in view while what is above it settles: the conversation drawn
+  // again once it has loaded, pictures arriving, a translation taking the
+  // place of the words, a link growing a preview. Scrolled to once, it was
+  // pushed out of sight by all of that. Scrolling up yourself lets go; back
+  // at the bottom, it holds again.
+  const logRef = useRef<HTMLDivElement | null>(null)
+  const [logEl, setLogEl] = useState<HTMLDivElement | null>(null)
+  const logAt = useCallback((el: HTMLDivElement | null) => { logRef.current = el; setLogEl(el) }, [])
+  const pinned = useRef(true)
+  useEffect(() => { pinned.current = true }, [current?.key])
   useEffect(() => {
     const el = logRef.current
     if (!el) return
     if (keepScroll.current !== null) { el.scrollTop = el.scrollHeight - keepScroll.current; keepScroll.current = null; return }
     el.scrollTop = el.scrollHeight
-  }, [current?.key, current?.cards.length, messages[current?.view || '']?.length, thinking[current?.view || '']])
+    pinned.current = true
+  }, [logEl, current?.key, current?.cards.length, messages[current?.view || '']?.length, thinking[current?.view || '']])
+  useEffect(() => {
+    const el = logEl
+    if (!el) return
+    const settle = () => { if (pinned.current && keepScroll.current === null) el.scrollTop = el.scrollHeight }
+    const onScroll = () => { pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48 }
+    const changed = new MutationObserver(settle)
+    changed.observe(el, { childList: true, subtree: true, characterData: true })
+    const sized = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(settle) : null
+    sized?.observe(el)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    // A picture's load does not bubble; caught on the way down.
+    el.addEventListener('load', settle, true)
+    return () => {
+      changed.disconnect()
+      sized?.disconnect()
+      el.removeEventListener('scroll', onScroll)
+      el.removeEventListener('load', settle, true)
+    }
+  }, [logEl])
 
   // ---- The conversation ----
 
@@ -3036,7 +3065,7 @@ export const ClassicList: React.FC<Props> = ({
             })}
           </div>
         ) : (
-        <div className="slk-log" ref={logRef} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
+        <div className="slk-log" ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
           {thread.view && more[thread.view] && <div className="slk-older" role="status">{t('Loading earlier messages…')}</div>}
           {!(thread.view && more[thread.view]) && <div className="slk-start">
             {lead(thread, 'head')}

@@ -1826,6 +1826,57 @@ await step('a long reply with an @mention keeps the caret on its words once the 
   }
 })
 
+await step('a channel opens at its newest message, and stays there while what is above it settles', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState() })
+  const d = await ctx.newPage()
+  d.on('pageerror', (e) => thrown.push(String(e).slice(0, 200)))
+  try {
+    await d.goto(`${WEB}/#/list`, { waitUntil: 'load' })
+    await d.waitForSelector('.slk-side', { timeout: 20000 })
+    await d.click('.cl-thread:has-text("Front desk") .cl-open')
+    await d.waitForSelector('.slk-composer textarea', { timeout: 10000 })
+    for (let i = 1; i <= 20; i++) {
+      await d.fill('.slk-composer textarea', `shift note ${i}`)
+      await d.keyboard.press('Enter')
+      await d.waitForSelector(`.slk-main .slk-msg:has-text("shift note ${i}")`, { timeout: 10000 })
+    }
+    const where = () => d.evaluate(() => {
+      const log = document.querySelector('.slk-main .slk-log')
+      const last = [...log.querySelectorAll('.slk-msg')].at(-1)
+      const l = log.getBoundingClientRect(), r = last.getBoundingClientRect()
+      return { newestInView: r.bottom <= l.bottom + 2 && r.top >= l.top - 2, fromBottom: Math.round(log.scrollHeight - log.scrollTop - log.clientHeight), text: last.innerText.slice(0, 40) }
+    })
+    // Away and back: it opens where the conversation is now, not above it.
+    await d.click('[data-activity="1"]')
+    await d.waitForTimeout(500)
+    await d.click('.cl-thread:has-text("Front desk") .cl-open')
+    await d.waitForSelector('.slk-main .slk-msg:has-text("shift note 20")', { timeout: 10000 })
+    await d.waitForTimeout(600)
+    const opened = await where()
+    if (!opened.newestInView) throw new Error(`the channel opened above its newest message: ${JSON.stringify(opened)}`)
+    // Something above grows a moment later (a picture, a translation): the
+    // newest message stays in view.
+    const grow = () => d.evaluate(() => {
+      const texts = document.querySelectorAll('.slk-main .slk-log .slk-msg .slk-text')
+      const x = document.createElement('div'); x.style.height = '300px'; x.className = 'e2e-grown'
+      texts[texts.length - 4].appendChild(x)
+    })
+    await grow()
+    await d.waitForTimeout(300)
+    const settled = await where()
+    if (!settled.newestInView) throw new Error(`something loading above pushed the newest message out of sight: ${JSON.stringify(settled)}`)
+    // Scrolled up by hand, it is left where it was put.
+    await d.evaluate(() => { const log = document.querySelector('.slk-main .slk-log'); log.scrollTop = Math.max(0, log.scrollTop - 500) })
+    await d.waitForTimeout(200)
+    await grow()
+    await d.waitForTimeout(300)
+    const reading = await where()
+    if (reading.fromBottom < 400) throw new Error(`reading further up, it was pulled back to the bottom: ${JSON.stringify(reading)}`)
+  } finally {
+    await ctx.close()
+  }
+})
+
 await step('people talk in a channel, and @AI turns what was said into a decision decided right there', async () => {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState() })
   const d = await ctx.newPage()

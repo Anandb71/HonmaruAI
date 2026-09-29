@@ -23,12 +23,16 @@ final class ChatMentionDirectory {
     private(set) var agents: [String: ChatAgent] = [:]
 
     static func fold(_ s: String) -> String { s.precomposedStringWithCompatibilityMapping.lowercased() }
+    /// A name with its spaces taken out (a full-width one too).
+    static func runTogether(_ name: String) -> String { name.filter { !$0.isWhitespace } }
 
     func update(members: [ChatMember], groups: [ChatUserGroup], agents: [ChatAgent]) {
         var out: [String: ChatMentionKind] = ["ai": .ai]
         for m in members {
-            let first = m.name.split(separator: " ").first.map(String.init)
-            for n in [m.handle, m.name, first].compactMap({ $0 }) where !n.isEmpty { out[Self.fold(n)] = .person }
+            // Its first word, and the whole of it run together: "@MikaSato",
+            // "@佐藤健二" — how "@" writes a name with a space.
+            let first = m.name.split(whereSeparator: \.isWhitespace).first.map(String.init)
+            for n in [m.handle, m.name, first, Self.runTogether(m.name)].compactMap({ $0 }) where !n.isEmpty { out[Self.fold(n)] = .person }
         }
         for g in groups { out[Self.fold(g.handle)] = .group }
         for a in agents { out[Self.fold(a.handle)] = .agent }
