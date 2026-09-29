@@ -304,8 +304,9 @@ export class OrgRelay {
       // The workspace's login rules: refused if outgrown, and closed when the
       // longest a sign-in may last here runs out, however busy the socket.
       const { sessionPolicy, brokenRule, sessionDeadline } = await import("./policy.js");
+      const { endedHere } = await import("./sessions.js");
       const policy = await sessionPolicy(this.db, orgId);
-      if (brokenRule(policy, session)) {
+      if (brokenRule(policy, session) || await endedHere(this.db, session.token, orgId)) {
         return this.refuse(ws, agui, "This workspace asks you to sign in again.", "session-policy");
       }
       const { ssoDenial } = await import("./sso.js");

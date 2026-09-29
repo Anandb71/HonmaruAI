@@ -99,8 +99,11 @@ test("'apply now' signs out, at once, every session the rules no longer allow", 
   const res = await call("/orgs/session-policy/apply", owner, { method: "POST", body: { orgId: ORG } });
   expect(res.status).toBe(200);
   expect((await res.json()).ended).toBe(1);
-  expect(await env.DB.prepare("SELECT 1 FROM sessions WHERE token = ?1").bind(mika).first()).toBe(null);
-  expect(await env.DB.prepare("SELECT 1 FROM sessions WHERE token = ?1").bind(mikaOld).first()).toBeTruthy();
+  // Signed out here: refused in this workspace, the account's session kept
+  // for workspaces whose rules are not these.
+  expect(await env.DB.prepare("SELECT 1 FROM session_workspaces WHERE token = ?1 AND org_id = ?2 AND ended_at IS NOT NULL").bind(mika, ORG).first()).toBeTruthy();
+  expect(await env.DB.prepare("SELECT 1 FROM sessions WHERE token = ?1").bind(mika).first()).toBeTruthy();
+  expect(await env.DB.prepare("SELECT 1 FROM session_workspaces WHERE token = ?1 AND ended_at IS NOT NULL").bind(mikaOld).first()).toBe(null);
 });
 
 test("an owner's action wants a sign-in within the hour; a password proves it without signing out", async () => {

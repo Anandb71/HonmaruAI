@@ -95,3 +95,5 @@ CREATE INDEX IF NOT EXISTS idx_cards_org_created ON cards(org_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_channel_messages_author ON channel_messages(org_id, author_login, created_at);
 CREATE INDEX IF NOT EXISTS idx_push_queue_created ON push_queue(created_at);
 CREATE INDEX IF NOT EXISTS idx_activity_reads_read ON activity_reads(read_at);
+CREATE TABLE IF NOT EXISTS session_workspaces (token TEXT NOT NULL, org_id TEXT NOT NULL, last_seen_at TEXT NOT NULL, ended_at TEXT, PRIMARY KEY (token, org_id));
+CREATE INDEX IF NOT EXISTS idx_session_workspaces_org ON session_workspaces(org_id);
