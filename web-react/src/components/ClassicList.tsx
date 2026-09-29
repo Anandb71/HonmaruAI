@@ -1459,6 +1459,14 @@ export const ClassicList: React.FC<Props> = ({
   const threadOpenParent = thread?.parent.id || null
   const [threadDraft, setThreadDraft] = useState('')
   const threadComposer = useRef<HTMLTextAreaElement>(null)
+  // A thread's box grows with what is written, as the channel's does: it stayed one line tall and scrolled from the
+  // second line on.
+  useEffect(() => {
+    const el = threadComposer.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`
+  }, [threadDraft, thread?.channel, thread?.parent?.id])
   const [pins, setPins] = useState<ChannelMessage[] | null>(null)
   // The pinned list, in your language too.
   useEffect(() => {

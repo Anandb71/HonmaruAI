@@ -1812,8 +1812,10 @@ await step('a long reply with an @mention keeps the caret on its words once the 
     const m = await d.evaluate((sel) => {
       const ta = document.querySelector(sel)
       const layer = ta.parentElement.querySelector('.mention-layer')
-      return { bar: ta.offsetWidth - ta.clientWidth, box: ta.scrollHeight, layer: layer.scrollHeight, top: [ta.scrollTop, layer.scrollTop] }
+      return { bar: ta.offsetWidth - ta.clientWidth, height: ta.offsetHeight, box: ta.scrollHeight, layer: layer.scrollHeight, top: [ta.scrollTop, layer.scrollTop] }
     }, box)
+    // It grows first, as the channel's box does, and only then scrolls.
+    if (m.height < 200) throw new Error(`the reply box does not grow with a long reply: ${JSON.stringify(m)}`)
     if (m.bar <= 0) throw new Error(`the reply box never scrolled, so this proves nothing: ${JSON.stringify(m)}`)
     if (m.box !== m.layer) throw new Error(`the coloured words wrap differently from the box (the caret drifts off them): ${JSON.stringify(m)}`)
     if (m.top[0] !== m.top[1]) throw new Error(`the coloured words do not scroll with the box: ${JSON.stringify(m)}`)
