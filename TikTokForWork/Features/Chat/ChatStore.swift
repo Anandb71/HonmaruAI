@@ -603,6 +603,36 @@ final class ChatStore: ObservableObject {
         guard let orgId, let base, query.trimmingCharacters(in: .whitespaces).count >= 2 else { return [] }
         return (try? await ChatService.search(orgId: orgId, query: query, base: base)) ?? []
     }
+    /// Rename a channel (`b:<slug>`); nil when done, else what went wrong.
+    func renameChannel(_ view: String, to name: String) async -> String? {
+        guard let orgId, let base, view.hasPrefix("b:") else { return String(localized: "That did not save.") }
+        do {
+            businesses = try await ChatService.renameChannel(orgId: orgId, slug: String(view.dropFirst(2)), name: name, base: base)
+            return nil
+        } catch { return error.localizedDescription }
+    }
+    /// Leave a private channel; nil when done, else what went wrong.
+    func leaveChannel(_ view: String) async -> String? {
+        guard let orgId, let base else { return String(localized: "That did not work. Try again.") }
+        do {
+            try await ChatService.leaveChannel(orgId: orgId, channel: view, base: base)
+            await refresh()
+            return nil
+        } catch { return error.localizedDescription }
+    }
+    /// The web app's address for a conversation, as the web copies it.
+    func conversationLink(_ view: String) async -> URL? {
+        guard let base, let web = await ChatJamLink.webURL(base: base) else { return nil }
+        return Self.conversationLink(web: web, view: view)
+    }
+    nonisolated static func conversationLink(web: URL, view: String) -> URL? {
+        // encodeURIComponent's set: ASCII letters and digits only, so a
+        // channel named in Japanese ("b:日報") is percent-encoded as the web does.
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
+        guard let encoded = view.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        return URL(string: "\(web.absoluteString)/#/c/\(encoded)")
+    }
+
     func createChannel(_ name: String) async {
         guard let orgId, let base else { return }
         do { businesses = try await ChatService.createChannel(orgId: orgId, name: name, base: base) }
