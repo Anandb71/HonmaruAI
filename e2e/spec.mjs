@@ -1783,6 +1783,47 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
   }
 })
 
+await step('a long reply with an @mention keeps the caret on its words once the box scrolls', async () => {
+  // The box grows to its tallest, then scrolls, and a scrollbar takes width
+  // from its letters. The layer that colours @names drew the words wider, so
+  // the lines wrapped later and the caret sat off in the blank. The shared
+  // browser hides scrollbars, as headless Chromium does, so this one shows them.
+  const bars = await chromium.launch({
+    ...(process.env.E2E_CHROMIUM ? { executablePath: process.env.E2E_CHROMIUM } : {}),
+    ignoreDefaultArgs: ['--headless=old', '--hide-scrollbars'],
+    args: ['--headless=new'],
+  })
+  try {
+    const ctx = await bars.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState() })
+    const d = await ctx.newPage()
+    d.on('pageerror', (e) => thrown.push(String(e).slice(0, 200)))
+    await d.goto(`${WEB}/#/list`, { waitUntil: 'load' })
+    await d.waitForSelector('.slk-side', { timeout: 20000 })
+    await d.click('.cl-thread:has-text("Front desk") .cl-open')
+    const msg = '.slk-msg:has-text("Check-in opens")'
+    await d.waitForSelector(msg, { timeout: 15000 })
+    await d.hover(msg)
+    await d.click(`${msg} .slk-tools [aria-label="Reply in thread"]`)
+    const box = '.slk-thread-pane .slk-composer textarea'
+    await d.waitForSelector(box, { timeout: 10000 })
+    await d.fill(box, '@AI ' + 'Marketing at ShogunAI, would love to build too. Nice to meet you all! '.repeat(9))
+    await d.waitForSelector('.slk-thread-pane .mention-layer', { timeout: 5000 }).catch(() => { throw new Error('@AI is not coloured in the reply box') })
+    await d.waitForTimeout(300)
+    const m = await d.evaluate((sel) => {
+      const ta = document.querySelector(sel)
+      const layer = ta.parentElement.querySelector('.mention-layer')
+      return { bar: ta.offsetWidth - ta.clientWidth, box: ta.scrollHeight, layer: layer.scrollHeight, top: [ta.scrollTop, layer.scrollTop] }
+    }, box)
+    if (m.bar <= 0) throw new Error(`the reply box never scrolled, so this proves nothing: ${JSON.stringify(m)}`)
+    if (m.box !== m.layer) throw new Error(`the coloured words wrap differently from the box (the caret drifts off them): ${JSON.stringify(m)}`)
+    if (m.top[0] !== m.top[1]) throw new Error(`the coloured words do not scroll with the box: ${JSON.stringify(m)}`)
+    await d.screenshot({ path: `${SHOTS}/39b-thread-long-reply.png` })
+    await ctx.close()
+  } finally {
+    await bars.close()
+  }
+})
+
 await step('people talk in a channel, and @AI turns what was said into a decision decided right there', async () => {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState() })
   const d = await ctx.newPage()
