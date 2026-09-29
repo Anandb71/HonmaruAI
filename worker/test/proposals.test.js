@@ -67,10 +67,14 @@ test("the proposal is a card to the person who kept asking, made once", async ()
   expect(await runProposals(env, { now })).toMatchObject({ proposed: 0 });
 });
 
-test("the daily tick proposes through the scheduled handler", async () => {
+test("the daily tick proposes nothing unless proposals are switched on", async () => {
   await seedRepeats();
-  const out = await runAutomations(env, null, new Date("2026-09-24T00:05:00Z"));
-  expect(out.proposals).toMatchObject({ proposed: 1 });
+  const tick = new Date("2026-09-24T00:05:00Z");
+  expect((await runAutomations(env, null, tick)).proposals).toBeNull();
+  const { results } = await env.DB.prepare("SELECT card_id FROM cards WHERE org_id = ?1 AND json_extract(data, '$.proposal') IS NOT NULL").bind(ORG).all();
+  expect(results).toHaveLength(0);
+  const on = await runAutomations({ ...env, AI_PROPOSALS: "1" }, null, tick);
+  expect(on.proposals).toMatchObject({ proposed: 1 });
 });
 
 test("approved in the feed, it becomes a routine owned by whoever approved it — once", async () => {

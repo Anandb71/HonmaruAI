@@ -150,3 +150,13 @@ test("a message looked at in Activity, or read in its thread, is not pushed to t
   expect(await readAlready(env.DB, ORG, "mika", await row(lease.id))).toBe(true);
   expect(await readAlready(env.DB, ORG, "mika", await row(reply.id))).toBe(true);
 });
+
+test("an app looked at on one device is read on all of them, and only for the one who looked", async () => {
+  const at = new Date().toISOString();
+  const res = await post("/channels/read", mika, { orgId: ORG, channel: "app:routine", at });
+  expect(res.status).toBe(200);
+  expect((await (await get(`/channels?${q({ orgId: ORG })}`, mika)).json()).reads["app:routine"]).toBe(at);
+  expect((await (await get(`/channels?${q({ orgId: ORG })}`, toru)).json()).reads["app:routine"]).toBeUndefined();
+  // Not a way to write any key it likes.
+  expect((await post("/channels/read", mika, { orgId: ORG, channel: "app:../x" })).status).not.toBe(200);
+});
