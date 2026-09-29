@@ -65,5 +65,14 @@ test("a sidebar is one person's own, and keeps only what makes sense", async () 
   expect(saved.sidebar.sections.map((s) => [s.name, s.views])).toEqual([["Clients", ["b:cafe", `dm:${refs.Mika}`]], ["Later", []]]);
   expect((await (await call(`/channels/sidebar?${q({ orgId: ORG })}`, toru)).json()).sidebar.sections[0].id).toBe("s1");
   // Mika's is her own.
-  expect((await (await call(`/channels/sidebar?${q({ orgId: ORG })}`, mika)).json()).sidebar).toEqual({ starred: [], sections: [] });
+  expect((await (await call(`/channels/sidebar?${q({ orgId: ORG })}`, mika)).json()).sidebar).toEqual({ starred: [], sections: [], order: [] });
+});
+
+test("the order you dragged your channels into is kept, and an app that does not know about it cannot lose it", async () => {
+  const put = async (sidebar) => (await (await call("/channels/sidebar", toru, { method: "PUT", body: { orgId: ORG, sidebar } })).json()).sidebar;
+  expect((await put({ starred: [], sections: [], order: ["b:roastery", "b:cafe", "b:cafe", "nope"] })).order).toEqual(["b:roastery", "b:cafe"]);
+  // An older phone saves only what it knows.
+  expect((await put({ starred: ["b:cafe"], sections: [] })).order).toEqual(["b:roastery", "b:cafe"]);
+  // Saying the order outright replaces it.
+  expect((await put({ starred: [], sections: [], order: [] })).order).toEqual([]);
 });

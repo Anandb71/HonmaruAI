@@ -4,6 +4,7 @@ import { JAM_MODES, audioDevices, canPickSpeaker, recordingMime } from '../utils
 import type { JamCall, JamMode, JamState } from '../utils/jam'
 import { Icon } from './Icon'
 import { Avatar } from './Avatar'
+import { renderRich } from './MessageParts'
 
 // What a channel's header opens, left to right: its journal (the context
 // someone new or back from a week away reads first), its details (members,
@@ -156,7 +157,7 @@ export function ChannelJournal({ api, headers, view, title, locale, onCite, onCl
             <ul>
               {d.items.map((item, i) => (
                 <li key={i}>
-                  <span className="slk-jtext">{item.text}</span>
+                  <span className="slk-jtext">{renderRich(item.text, () => 'slk-mention')}</span>
                   {item.cites.map((c, n) => (
                     <button
                       key={c.id} type="button" className="slk-cite"

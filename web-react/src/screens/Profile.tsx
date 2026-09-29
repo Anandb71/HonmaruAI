@@ -315,7 +315,9 @@ export const Profile: React.FC<Props> = ({
           <section className="pf-sec pf-ws">
           <div className="rows-title">{t('Your workspace')}</div>
           <div className="rows">
-            <button className="row" onClick={() => onOpen('history')}>
+            {/* History and Tools have their own tabs on the rail; on a phone
+                they are only reached from here. */}
+            <button className="row phone-only" onClick={() => onOpen('history')}>
               <span className="row-icon"><Icon name="history" size={18} /></span>
               <span className="row-main">{t('History')}<span className="row-sub">{t('Everything already settled.')}</span></span>
               <span className="row-value">›</span>
@@ -345,11 +347,14 @@ export const Profile: React.FC<Props> = ({
               <span className="row-main">{t('The record')}<span className="row-sub">{t('Every decision in a channel, and what led to it.')}</span></span>
               <span className="row-value">›</span>
             </button>
-            <button className="row" onClick={() => onOpen('tools')}>
+            <button className="row phone-only" onClick={() => onOpen('tools')}>
               <span className="row-icon"><Icon name="tools" size={18} /></span>
               <span className="row-main">{t('Tools')}<span className="row-sub">{t('Gmail, Slack, Notion, GitHub.')}</span></span>
               <span className="row-value">›</span>
             </button>
+          </div>
+          <div className="rows-title">{t('You')}</div>
+          <div className="rows">
             {installable && (
               <button className="row" onClick={() => promptInstall()}>
                 <span className="row-main">{t('Install the app')}<span className="row-sub">{t('On your desktop or home screen, and it opens offline.')}</span></span>
@@ -361,8 +366,16 @@ export const Profile: React.FC<Props> = ({
               <span className="row-main">{t('Notifications')}<span className="row-sub">{t('Where a decision reaches you.')}</span></span>
               <span className="row-value">›</span>
             </button>
+            <button className="row" onClick={() => onOpen('plans')}>
+              <span className="row-icon"><Icon name="plan" size={18} /></span>
+              <span className="row-main">{t('Plan')}<span className="row-sub">{t('What you are on, and what else there is.')}</span></span>
+              <span className="row-value">›</span>
+            </button>
+          </div>
+          <div className="rows-title">{t('Team')}</div>
+          <div className="rows">
             <button className="row" onClick={() => onOpen('team')}>
-              <span className="row-icon"><Icon name="invite" size={18} /></span>
+              <span className="row-icon"><Icon name="users" size={18} /></span>
               <span className="row-main">{t('Your team')}<span className="row-sub">{t('Who is here, the links you have out, and one more way in.')}</span></span>
               <span className="row-value">›</span>
             </button>
@@ -386,7 +399,7 @@ export const Profile: React.FC<Props> = ({
             )}
             {joinError && <div className="form-error">{joinError}</div>}
             <button className="row create-team" onClick={() => { setCreating(!creating); setCreateError(null) }}>
-              <span className="row-icon"><Icon name="invite" size={18} /></span>
+              <span className="row-icon"><Icon name="plus" size={18} /></span>
               <span className="row-main">{t('Create a team')}<span className="row-sub">{t('A workspace of its own, with a name, that you invite people into.')}</span></span>
               <span className="row-value">{creating ? '⌄' : '›'}</span>
             </button>
@@ -405,11 +418,6 @@ export const Profile: React.FC<Props> = ({
               </div>
             )}
             {createError && <div className="form-error">{createError}</div>}
-            <button className="row" onClick={() => onOpen('plans')}>
-              <span className="row-icon"><Icon name="plan" size={18} /></span>
-              <span className="row-main">{t('Plan')}<span className="row-sub">{t('What you are on, and what else there is.')}</span></span>
-              <span className="row-value">›</span>
-            </button>
           </div>
 
           </section>

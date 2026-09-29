@@ -71,6 +71,9 @@ struct ChatThreadSheet: View {
                 if !m.isDeleted {
                     Button { reactingTo = m } label: { Label("Add reaction", systemImage: "face.smiling") }
                     Button { UIPasteboard.general.string = m.body } label: { Label("Copy text", systemImage: "doc.on.doc") }
+                    Button {
+                        Task { if let url = await store.messageLink(m) { UIPasteboard.general.url = url; UIPasteboard.general.string = url.absoluteString } }
+                    } label: { Label("Copy link", systemImage: "link") }
                     if m.mine && m.kind == "message" {
                         Button(role: .destructive) { Task { await store.delete(m) } } label: { Label("Delete message", systemImage: "trash") }
                     }

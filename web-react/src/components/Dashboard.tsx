@@ -179,15 +179,6 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   // The card the URL names — from a notification tap, a pasted link, or a
   // row picked in the inbox.
   const focusCardId = route.cardId
-  // A link to a message: the list opens where it is, then the address goes
-  // back to the list's own, so a reload does not jump again.
-  useEffect(() => {
-    const id = route.messageId
-    if (!id) return
-    try { localStorage.setItem('mode', 'classic'); sessionStorage.setItem('list.jumpId', id) } catch {}
-    window.dispatchEvent(new CustomEvent('honmaru:open-message-id', { detail: id }))
-    navigate(hashForMode('classic'), true)
-  }, [route.messageId, navigate])
   // A Jam to join — the phone app opens this in its own web view: the list
   // opens on the conversation and joins its Jam.
   useEffect(() => {
@@ -456,6 +447,29 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     const known = new Set(businesses.map((b) => b.slug))
     if (Object.values(state.cardsById || {}).some((c) => c.business && !known.has(c.business))) loadBusinesses()
   }, [state, businesses, loadBusinesses])
+  // A link to a message: the list opens where it is, then the address goes
+  // back to the list's own, so a reload does not jump again.
+  useEffect(() => {
+    const id = route.messageId
+    if (!id) return
+    // Said in another of your workspaces: go there first; the list finds
+    // the message once that workspace has loaded. Until your workspaces are
+    // known, wait for them.
+    const org = route.messageOrg
+    if (org && org !== orgId) {
+      if (!workspaces.length) return
+      if (workspaces.some((w) => w.id === org)) {
+        try { localStorage.setItem('mode', 'classic'); sessionStorage.setItem('list.jumpId', id) } catch {}
+        navigate(hashForMode('classic'), true)
+        onSwitchOrg(org)
+        return
+      }
+    }
+    try { localStorage.setItem('mode', 'classic'); sessionStorage.setItem('list.jumpId', id) } catch {}
+    window.dispatchEvent(new CustomEvent('honmaru:open-message-id', { detail: id }))
+    navigate(hashForMode('classic'), true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.messageId, route.messageOrg, workspaces.length, orgId, navigate])
 
   // Escape closes whatever is open.
   useEffect(() => {

@@ -45,6 +45,7 @@ export const DailyReportDraft: React.FC<{
   const [ask, setAsk] = useState('')
   const [talk, setTalk] = useState<Exchange[]>([])
   const [open, setOpen] = useState(!inChannel)
+  const [gone, setGone] = useState(false)
   const dirty = useRef(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const headers = { 'content-type': 'application/json', 'x-session-token': api.sessionToken }
@@ -118,6 +119,20 @@ export const DailyReportDraft: React.FC<{
     }
   }
 
+  // Put away without posting: gone from the channel and the feed.
+  const discard = async () => {
+    if (!window.confirm(t('Discard this draft? It will not be posted.'))) return
+    setError(null)
+    const res = await fetch(`${api.httpBase}/channels/daily-report/draft`, {
+      method: 'DELETE', headers, body: JSON.stringify({ orgId: api.orgId, cardId: card.id }),
+    }).catch(() => null)
+    if (!res?.ok) { setError(t('That did not save.')); return }
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    writeDraft(card.id, null)
+    setGone(true)
+  }
+  if (gone || report.status === 'discarded') return null
+
   if (report.status === 'expired') {
     if (inChannel) return null
     return (
@@ -152,6 +167,9 @@ export const DailyReportDraft: React.FC<{
           <span><b>{card.title}</b> · {t('Your draft, only you can see it')}</span>
           <span className="daily-fold-open">{t('Review and post')}</span>
         </button>
+        <button type="button" className="daily-discard" onClick={() => void discard()} aria-label={t('Discard draft')} title={t('Discard draft')} data-daily-discard="1">
+          <Icon name="x" size={14} />
+        </button>
       </div>
     )
   }
@@ -163,6 +181,7 @@ export const DailyReportDraft: React.FC<{
           ? <><Icon name="edit" size={13} /> <b>{card.title}</b> · {t('Your draft, only you can see it')}</>
           : t('Draft for {channel} — change anything, then post', { channel })}
         {inChannel && <button type="button" className="daily-fold-close" onClick={() => setOpen(false)} aria-label={t('Fold')}><Icon name="chevron-down" size={14} /></button>}
+        <button type="button" className="daily-discard" onClick={() => void discard()} aria-label={t('Discard draft')} title={t('Discard draft')}><Icon name="x" size={14} /></button>
       </div>
       <textarea
         className="daily-text"

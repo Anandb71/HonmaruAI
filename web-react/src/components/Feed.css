@@ -580,6 +580,12 @@
 .daily-fold > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .daily-fold-open { font-weight: 600; color: #1264a3; white-space: nowrap; }
 .daily-fold-close { margin-left: auto; display: grid; place-items: center; }
+/* Put the draft away without posting it. */
+.daily-in-channel.folded { display: flex; align-items: center; gap: 8px; }
+.daily-in-channel.folded .daily-fold { flex: 1; min-width: 0; }
+.daily-discard { border: none; background: none; cursor: pointer; color: #838383; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; flex: none; }
+.daily-discard:hover { background: rgba(0, 0, 0, 0.06); color: #202020; }
+@media (prefers-color-scheme: dark) { .daily-discard:hover { background: rgba(255, 255, 255, 0.08); color: #f2f2f2; } }
 .cl-draft.daily { color: #e8912d; }
 @media (prefers-color-scheme: dark) {
   .daily-ask { background: #f2f2f2; color: #121212; }

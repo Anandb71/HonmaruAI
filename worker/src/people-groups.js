@@ -121,7 +121,10 @@ export function cleanSidebar(input) {
     for (const v of views) placed.add(v);
     sections.push({ id, name, views, collapsed: Boolean(s?.collapsed) });
   }
-  return { starred, sections };
+  // The order you dragged your channels into; the rest follow in the
+  // team's order.
+  const order = [...new Set((Array.isArray(input?.order) ? input.order : []).map(cleanView).filter(Boolean))].slice(0, MAX_VIEWS);
+  return { starred, sections, order };
 }
 
 export async function getSidebar(db, orgId, login) {
@@ -130,7 +133,10 @@ export async function getSidebar(db, orgId, login) {
 }
 
 export async function saveSidebar(db, orgId, login, input) {
-  const clean = cleanSidebar(input);
+  // A client that does not know about the order (an older app) keeps the
+  // one another device set.
+  const kept = input && typeof input === "object" && !("order" in input) ? (await getSidebar(db, orgId, login)).order : null;
+  const clean = cleanSidebar(kept ? { ...input, order: kept } : input);
   await db.prepare(
     `INSERT INTO sidebar_prefs (org_id, login, data, updated_at) VALUES (?1, ?2, ?3, ?4)
      ON CONFLICT (org_id, login) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`

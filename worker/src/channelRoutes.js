@@ -4,7 +4,7 @@ import { linksIn, readLinks, linksBlock } from "./links.js";
 import { agentTools } from "./agentTools.js";
 import { translateMessages } from "./translate.js";
 import { getSession, isMember, getUserByGithubId, saveCard, getCard, listBusinesses } from "./db.js";
-import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText } from "./dailyReport.js";
+import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText, discardDraft } from "./dailyReport.js";
 import { providerFor, readerEnvFor } from "./orgAI.js";
 import { groupsIn, toClientGroup, saveGroup, deleteGroup, getSidebar, saveSidebar } from "./people-groups.js";
 import { allowanceFor } from "./gate.js";
@@ -903,6 +903,24 @@ export async function handleChannels(request, env, url, { route, after }) {
     const view = viewOf(resolved.key, who.user.login, members);
     const [message] = await present(env.DB, body.orgId, [out.row], who.user.login, view, members);
     return json({ card: posted, message }, 201);
+  }
+
+  // A daily report's draft its owner does not want to send: put away, on
+  // every device, without a word in the channel.
+  if (path === "/channels/daily-report/draft" && request.method === "DELETE") {
+    const limited = await enforce(env, request, "chat");
+    if (limited) return limited;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || typeof body.cardId !== "string") return json({ message: "Invalid JSON body." }, 400);
+    const who = await caller(env, request, body.orgId);
+    if (who.denied) return who.denied;
+    const card = await getCard(env.DB, body.orgId, body.cardId);
+    if (!card?.dailyReport || card.recipientUserID !== who.user.login) return json({ message: "No such draft." }, 404);
+    if (!(await discardDraft(env.DB, body.orgId, card.id))) return json({ message: "This report has already been posted." }, 409);
+    const closed = await getCard(env.DB, body.orgId, card.id);
+    await appendCardEvent(env.DB, body.orgId, { cardId: card.id, type: "decided", action: "dismiss", actorUserId: who.user.login, note: "draft discarded", snapshot: closed });
+    after(async () => { if (closed) await announceCards(env, body.orgId, [closed], { isNew: false }); });
+    return json({ card: closed });
   }
 
   // A daily report's draft, kept as its owner edits it (PUT), or changed by

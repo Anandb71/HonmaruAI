@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A daily report's draft, on its card: read it, change any of it, and post
 /// it to the channel under your name. Nothing reaches the channel until you
-/// press Post — and nothing but Post takes the draft off the feed. What you
+/// press Post — and only Post, or Discard, takes the draft off the feed. What you
 /// type is kept on this phone, so leaving the screen does not lose an edit.
 struct DailyReportEditor: View {
     let card: DecisionCard
@@ -19,6 +19,8 @@ struct DailyReportEditor: View {
     @State private var ask = ""
     @State private var refining = false
     @State private var talk: [(ask: String, note: String)] = []
+    @State private var confirmDiscard = false
+    @State private var discarding = false
 
     /// A channel message holds this many characters, counted as the Worker
     /// counts them.
@@ -33,6 +35,9 @@ struct DailyReportEditor: View {
                     posted(report, text: postedText)
                 } else if report.status == "posted" {
                     posted(report, text: report.text)
+                } else if report.status == "discarded" {
+                    Label(String(localized: "Discarded without posting."), systemImage: "trash")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.Colors.textSecondary)
                 } else if report.status == "expired" {
                     Label(String(localized: "This draft was replaced by a newer one."), systemImage: "clock.arrow.circlepath")
                         .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.Colors.textSecondary)
@@ -122,6 +127,30 @@ struct DailyReportEditor: View {
         }
         PrimaryButton(title: posting ? String(localized: "Posting…") : String(localized: "Post to \(report.channelName)"), enabled: canPost) {
             post()
+        }
+        // Not this one: put away without a word in the channel.
+        Button(role: .destructive) { confirmDiscard = true } label: {
+            Text("Discard draft").font(.subheadline).frame(maxWidth: .infinity)
+        }
+        .disabled(posting || discarding || appState.isGuest)
+        .confirmationDialog(String(localized: "Discard this draft? It will not be posted."), isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button(String(localized: "Discard draft"), role: .destructive) { discard() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func discard() {
+        let orgId = appState.currentUser?.teamID ?? SessionStore.orgId ?? ""
+        guard let base = appState.backendBaseURL, !orgId.isEmpty else { return }
+        discarding = true; error = nil
+        Task { @MainActor in
+            do {
+                let closed = try await DailyReportService.discard(cardId: card.id, orgId: orgId, backendBaseURL: base)
+                UserDefaults.standard.removeObject(forKey: storeKey)
+                appState.cardService.applyFromWorker(closed)
+                Haptics.light()
+            } catch { self.error = error.localizedDescription }
+            discarding = false
         }
     }
 

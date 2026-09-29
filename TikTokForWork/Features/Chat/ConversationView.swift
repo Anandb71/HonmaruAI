@@ -236,6 +236,9 @@ struct ConversationView: View {
             Button { editing = m; draft = m.body; focused = true } label: { Label("Edit message", systemImage: "pencil") }
         }
         Button { UIPasteboard.general.string = m.body } label: { Label("Copy text", systemImage: "doc.on.doc") }
+        Button {
+            Task { if let url = await store.messageLink(m) { UIPasteboard.general.url = url; UIPasteboard.general.string = url.absoluteString } }
+        } label: { Label("Copy link", systemImage: "link") }
         Button { forwarding = m } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") }
         if !m.mine {
             Button { Task { await store.markUnread(m) } } label: { Label("Mark unread", systemImage: "envelope.badge") }

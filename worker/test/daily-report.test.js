@@ -358,3 +358,20 @@ test("the daily routines follow the owner's timezone to wherever they are", asyn
   const local = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hourCycle: "h23" }).format(new Date(after.next_run_at ?? after.nextRunAt));
   expect(Number(local)).toBe(before.hour);
 });
+
+test("a draft its owner does not want is put away, without a word in the channel, and only by them", async () => {
+  const { data } = await makeDaily();
+  const routine = await getRoutine(env.DB, ORG, data.routine.id);
+  const { card } = await runRoutine(ENV({ OPENAI_API_KEY: undefined }), routine, { now: NOW, manual: true });
+  const drop = (token) => call("/channels/daily-report/draft", { method: "DELETE", headers: headers(token), body: JSON.stringify({ orgId: ORG, cardId: card.id }) });
+  const count = async () => (await env.DB.prepare("SELECT COUNT(*) AS n FROM channel_messages WHERE org_id = ?1").bind(ORG).first()).n;
+  const before = await count();
+  expect((await drop(mika)).status).toBe(404);
+  const res = await drop(toru);
+  expect(res.status).toBe(200);
+  expect((await res.json()).card).toMatchObject({ status: "completed", dailyReport: { status: "discarded" } });
+  expect(await count()).toBe(before);
+  // Gone is gone: neither posted nor put away twice.
+  expect((await drop(toru)).status).toBe(409);
+  expect((await post("/channels/daily-report/post", toru, { orgId: ORG, cardId: card.id, text: "late" })).status).toBe(409);
+});

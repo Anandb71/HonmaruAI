@@ -3,6 +3,7 @@ import { BookmarksBar } from './BookmarksBar'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { awaitsPost } from '../utils/automation'
+import { hashForMessage } from '../utils/route'
 import type { DecisionCard, Business, ChannelMessage } from '../types/card'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
@@ -156,7 +157,7 @@ interface Face { name: string; url?: string | null; emoji?: string | null }
 /// A thread you are in: its first message, the last replies, how many.
 interface ThreadItem { parent: ChannelMessage; replies: ChannelMessage[]; replyCount: number; lastReplyAt: string; unread: boolean }
 /// Your sidebar's own arrangement.
-interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name: string; views: string[]; collapsed?: boolean }> }
+interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name: string; views: string[]; collapsed?: boolean }>; order?: string[] }
 /// A user group: "@handle" names everyone in it.
 interface UserGroup { handle: string; name: string; refs: string[]; createdBy: string | null }
 interface ActivityItem { key?: string; type: 'mention' | 'reply' | 'reaction' | 'keyword'; message: ChannelMessage; unread: boolean; at?: string; emoji?: string; by?: string | null; byAvatar?: string | null; keyword?: string }
@@ -298,6 +299,27 @@ export const ClassicList: React.FC<Props> = ({
     }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.sidebar) setLayout(d.sidebar) }).catch(() => {})
   }
   const isStarred = (view: string) => layout.starred.includes(view)
+  /// Your channels in the order you dragged them into; any you have not
+  /// placed follow, in the team's order.
+  const inYourOrder = (list: Thread[]) => {
+    const at = new Map((layout.order || []).map((v, i) => [v, i]))
+    return list
+      .map((th, i) => ({ th, i, rank: th.view && at.has(th.view) ? at.get(th.view)! : Number.MAX_SAFE_INTEGER }))
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
+      .map((x) => x.th)
+  }
+  // Dragging a conversation to a new place in its list.
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropAt, setDropAt] = useState<{ view: string; after: boolean } | null>(null)
+  /// The list with the dragged one moved to where it was dropped.
+  const moved = (views: string[], from: string, to: { view: string; after: boolean }) => {
+    if (from === to.view) return views
+    const rest = views.filter((v) => v !== from)
+    const i = rest.indexOf(to.view)
+    if (i < 0) return views
+    rest.splice(to.after ? i + 1 : i, 0, from)
+    return rest
+  }
   /// Not starred and in none of your sections: where it always was.
   const unplaced = (th: { view?: string }) => !th.view || (!layout.starred.includes(th.view) && !layout.sections.some((x) => x.views.includes(th.view!)))
   const toggleStar = (view: string) => saveLayout({ ...layout, starred: isStarred(view) ? layout.starred.filter((v) => v !== view) : [...layout.starred, view] })
@@ -821,11 +843,31 @@ export const ClassicList: React.FC<Props> = ({
     )
   }
 
-  const row = (thread: Thread) => {
+  const row = (thread: Thread, reorder?: (to: { view: string; after: boolean }, from: string) => void) => {
     const on = !special && current?.key === thread.key
     const hasDraft = Boolean(thread.view && draftsFor(thread.view).length)
+    const view = thread.view
+    const drop = reorder && view && dropAt?.view === view && dragging && dragging !== view ? (dropAt.after ? ' drop-after' : ' drop-before') : ''
+    const drag = reorder && view && wide ? {
+      draggable: true,
+      onDragStart: (e: React.DragEvent) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-honmaru-view', view); setDragging(view) },
+      onDragOver: (e: React.DragEvent) => {
+        if (!dragging || !e.dataTransfer.types.includes('text/x-honmaru-view')) return
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move'
+        const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        const after = e.clientY > box.top + box.height / 2
+        if (dropAt?.view !== view || dropAt.after !== after) setDropAt({ view, after })
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault()
+        const from = e.dataTransfer.getData('text/x-honmaru-view') || dragging
+        if (from && dropAt) reorder(dropAt, from)
+        setDragging(null); setDropAt(null)
+      },
+      onDragEnd: () => { setDragging(null); setDropAt(null) },
+    } : {}
     return (
-      <li key={thread.key} data-view={thread.view} className={`cl-row cl-thread${thread.unread || (thread.fresh && !on) ? ' unread' : ''}${on ? ' on' : ''}${thread.view && prefs[thread.view] === 'mute' ? ' muted' : ''}`}>
+      <li key={thread.key} data-view={thread.view} {...drag} className={`cl-row cl-thread${thread.unread || (thread.fresh && !on) ? ' unread' : ''}${on ? ' on' : ''}${thread.view && prefs[thread.view] === 'mute' ? ' muted' : ''}${dragging === view ? ' dragging' : ''}${drop}`}>
         <button className="cl-open" onClick={() => choose(thread.key)} aria-current={on ? 'true' : undefined}>
           {lead(thread, 'row')}
           <span className="cl-title">{thread.name}</span>
@@ -844,7 +886,9 @@ export const ClassicList: React.FC<Props> = ({
     )
   }
 
-  const section = (id: string, label: string, threads: Thread[], empty: string, action?: React.ReactNode, below?: React.ReactNode) => {
+  const section = (id: string, label: string, threads: Thread[], empty: string, action?: React.ReactNode, below?: React.ReactNode, reorder?: (views: string[]) => void) => {
+    const views = threads.map((th) => th.view).filter((v): v is string => Boolean(v))
+    const place = reorder ? (to: { view: string; after: boolean }, from: string) => { if (views.includes(from)) reorder(moved(views, from, to)) } : undefined
     const shut = Boolean(folded[id])
     const unread = threads.reduce((n, th) => n + th.unread, 0)
     return (
@@ -858,7 +902,7 @@ export const ClassicList: React.FC<Props> = ({
           {action}
         </h2>
         {!shut && threads.length === 0 && <p className="cl-empty">{empty}</p>}
-        {!shut && threads.length > 0 && <ul>{threads.map(row)}</ul>}
+        {!shut && threads.length > 0 && <ul>{threads.map((th) => row(th, place))}</ul>}
         {!shut && below}
       </section>
     )
@@ -1449,7 +1493,7 @@ export const ClassicList: React.FC<Props> = ({
   /// Forward into another conversation. From a closed one only a link goes.
   const isClosed = (view: string) => view.startsWith('dm:') || view.startsWith('g:') || view.startsWith('ag:') || Boolean(everything.find((x) => x.view === view)?.private)
   const forwardTo = async (from: string, m: ChannelMessage, to: string, comment: string) => {
-    const link = `${location.origin}${location.pathname}#/m/${encodeURIComponent(m.id)}`
+    const link = `${location.origin}${location.pathname}${hashForMessage(m.id, api.orgId)}`
     const src = everything.find((x) => x.view === from)
     const who = m.kind === 'ai' ? t('Your AI') : (m.authorName || t('a teammate'))
     const quoted = m.body ? m.body.slice(0, 600).split('\n').map((l) => `> ${l}`).join('\n') : '> 📎'
@@ -1538,6 +1582,28 @@ export const ClassicList: React.FC<Props> = ({
     requestAnimationFrame(() => threadComposer.current?.focus())
     markThreadRead(channel, m.id)
   }
+  /// A thread shown in Activity: loaded whole, read, and the message you
+  /// picked picked out in it.
+  const threadInActivity = useRef(false)
+  // Leaving Activity leaves its thread behind: it is not the one a
+  // conversation opened.
+  useEffect(() => {
+    if (!activityOpen && threadInActivity.current) { threadInActivity.current = false; setThread(null) }
+  }, [activityOpen])
+  const showThreadIn = async (channel: string, parentId: string, focusId: string) => {
+    const res = await fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(parentId)}`, { headers: authHeaders }).catch(() => null)
+    const data = res?.ok ? await res.json().catch(() => null) : null
+    if (!data?.parent) { setThread(null); return }
+    threadInActivity.current = true
+    setThreadDraft('')
+    setThread({ channel, parent: data.parent, replies: data.replies || [] })
+    markThreadRead(channel, parentId)
+    requestAnimationFrame(() => {
+      const id = focusId === parentId ? `thread-${focusId}` : focusId
+      const el = document.querySelector(`.slk-inbox-thread #${CSS.escape(`msg-${id}`)}`)
+      if (el) { el.scrollIntoView({ block: 'center' }); setFlash(id); setTimeout(() => setFlash(null), 1600) }
+    })
+  }
   /// Read this thread, here and on every other device: Threads stops
   /// calling it unread.
   const markThreadRead = (channel: string, parentId: string) => {
@@ -1610,7 +1676,11 @@ export const ClassicList: React.FC<Props> = ({
     pendingJump.current = null
     if (j.parentId) {
       const parent = list.find((m) => m.id === j.parentId) || ({ id: j.parentId, channel: j.view, kind: 'message', body: '', authorName: null, authorRef: null, mine: false, cardId: null, createdAt: '' } as ChannelMessage)
-      void openThread(j.view, parent)
+      // The reply itself, found in the thread once it has loaded.
+      void openThread(j.view, parent).then(() => requestAnimationFrame(() => {
+        const el = document.querySelector(`.slk-thread-pane #${CSS.escape(`msg-${j.id}`)}`)
+        if (el) { el.scrollIntoView({ block: 'center' }); setFlash(j.id); setTimeout(() => setFlash(null), 1600) }
+      }))
     } else {
       requestAnimationFrame(() => jumpTo(j.id))
     }
@@ -2233,7 +2303,8 @@ export const ClassicList: React.FC<Props> = ({
   /// A link to one message that opens it for anyone who can read it — the
   /// message's id, not the conversation's name, which differs per reader.
   const copyLink = (m: ChannelMessage) => {
-    const url = `${location.origin}${location.pathname}#/m/${encodeURIComponent(m.id)}`
+    // With the workspace: someone in two opens it in the right one.
+    const url = `${location.origin}${location.pathname}${hashForMessage(m.id, api.orgId)}`
     void navigator.clipboard?.writeText(url).then(() => setToast(t('Link copied')), () => setToast(url))
   }
 
@@ -2384,8 +2455,13 @@ export const ClassicList: React.FC<Props> = ({
     const picked = (activityItems || []).find((i) => keyOf(i) === activityPick) || null
     const open = (i: ActivityItem) => {
       markActivitySeen([keyOf(i)])
-      if (wide) setActivityPick(keyOf(i))
-      else openAt({ view: i.message.channel, id: i.message.id, parentId: i.message.parentId })
+      if (wide) {
+        setActivityPick(keyOf(i))
+        // Part of a thread: the whole of it, open, beside the list.
+        const parentId = i.message.parentId || ((i.message.replyCount || 0) > 0 ? i.message.id : null)
+        if (parentId) void showThreadIn(i.message.channel, parentId, i.message.id)
+        else setThread(null)
+      } else openAt({ view: i.message.channel, id: i.message.id, parentId: i.message.parentId })
     }
     const where = (v: string) => (
       <span className="slk-note-where">
@@ -2454,9 +2530,17 @@ export const ClassicList: React.FC<Props> = ({
                   {where(picked.message.channel)}
                 </div>
                 <button type="button" className="slk-pane-feed" onClick={() => openAt({ view: picked.message.channel, id: picked.message.id, parentId: picked.message.parentId })}>
-                  {picked.message.parentId ? t('Open the thread') : t('Open in the conversation')}
+                  {t('Open in the conversation')}
                 </button>
               </header>
+              {thread && (thread.parent.id === picked.message.parentId || thread.parent.id === picked.message.id) ? (
+                <div className="slk-inbox-thread">
+                  {picked.type === 'reaction' && picked.emoji && (
+                    <p className="slk-inbox-said"><span className="slk-note-reaction big"><span><EmojiGlyph emoji={picked.emoji} /></span></span> {t('{name} reacted to your message', { name: whoOf(picked) })}</p>
+                  )}
+                  {threadBody(thread)}
+                </div>
+              ) : (
               <div className="slk-inbox-view-body">
                 {picked.type === 'reaction' && picked.emoji && (
                   <p className="slk-inbox-said"><span className="slk-note-reaction big"><span><EmojiGlyph emoji={picked.emoji} /></span></span> {t('{name} reacted to your message', { name: whoOf(picked) })}</p>
@@ -2483,6 +2567,7 @@ export const ClassicList: React.FC<Props> = ({
                   </div>
                 </article>
               </div>
+              )}
             </>
           )}
         </section>
@@ -2490,6 +2575,71 @@ export const ClassicList: React.FC<Props> = ({
     )
   }
 
+  /// A thread's messages and the box to answer in: in the pane beside a
+  /// conversation, and in Activity when what you picked is part of one.
+  const threadBody = (thread: { channel: string; parent: ChannelMessage; replies: ChannelMessage[] }) => (
+    <>
+          <div className="slk-thread-log">
+            {[thread.parent, ...thread.replies].map((m, i) => (
+              <React.Fragment key={m.id}>
+                {block(m.id, {
+                  joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
+                  name: whoSaid(m),
+                  face: m.kind !== 'ai' ? faceOfMessage(m) : null,
+                  msgId: i === 0 ? `thread-${m.id}` : m.id,
+                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true),
+                }, (
+                  <>
+                    {words(thread.channel, m)}
+                    {m.cardId && cardsById.get(m.cardId) && attachment(cardsById.get(m.cardId)!)}
+                    {underneath(thread.channel, m, true)}
+                  </>
+                ))}
+                {i === 0 && (
+                  <div className="slk-thread-count" role="separator">
+                    <span>{thread.replies.length === 1 ? t('1 reply') : t('{n} replies', { n: thread.replies.length })}</span>
+                  </div>
+                )}
+              </React.Fragment>
+            ))}
+            {aiSteps(thinking[thread.channel])}
+            {agentLines(thread.channel, { parentId: thread.parent.id })}
+          </div>
+          <form className="slk-composer thread" onSubmit={(e) => { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }}>
+            <PendingUploads items={threadUploads.items} onRemove={threadUploads.remove} />
+            {threadHl.layer}
+            <textarea
+              ref={threadComposer}
+              onPaste={(e) => { const files = [...e.clipboardData.files]; if (files.length) { e.preventDefault(); threadUploads.add(files, thread.channel) } }}
+              className={`slk-input${threadHl.active ? ' has-mentions' : ''}`}
+              value={threadDraft}
+              rows={1}
+              maxLength={4000}
+              placeholder={t('Reply… — @AI to ask the AI')}
+              aria-label={t('Reply in thread')}
+              onChange={(e) => { setThreadDraft(e.target.value); threadMention.track() }}
+              onKeyUp={threadMention.track}
+              onClick={threadMention.track}
+              onKeyDown={(e) => {
+                if (threadMention.onKeyDown(e)) return
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
+              }}
+              disabled={sending}
+            />
+            {threadMention.menu}
+            <div className="slk-composer-bar">
+              <button type="button" className="slk-attach" onClick={() => threadAttachInput.current?.click()} aria-label={t('Attach files')} title={t('Attach files')}><Icon name="paperclip" size={17} /></button>
+              <input ref={threadAttachInput} type="file" multiple hidden onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) threadUploads.add(files, thread.channel) }} />
+              <FormatBar target={threadComposer} value={threadDraft} set={setThreadDraft} />
+              <span className="slk-composer-hint" />
+              <button type="submit" className="slk-send" disabled={sending || threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
+                <Icon name="send" size={16} />
+              </button>
+            </div>
+          </form>
+    </>
+  )
   /// How many people a conversation has: a public channel is everyone.
   const headCount = (th: Thread) => th.kind === 'group' ? (th.refs || []).length + 1
     : th.kind === 'channel' ? (th.private ? (th.memberCount || 1) : members.length) : 2
@@ -3241,16 +3391,19 @@ export const ClassicList: React.FC<Props> = ({
             const starred = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
             return (
               <>
-                {starred.length > 0 && section('starred', t('Starred'), starred, '')}
+                {starred.length > 0 && section('starred', t('Starred'), starred, '', undefined, undefined, (views) => saveLayout({ ...layout, starred: views }))}
                 {layout.sections.map((x) => section(`sec:${x.id}`, x.name, x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)), t('Move a conversation here from its header.'), (
                   <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
                     <Icon name="x" size={12} />
                   </button>
-                )))}
+                ), undefined, (views) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) })))}
               </>
             )
           })()}
-          {section('channels', t('Channels'), channels.filter(unplaced), t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm)}
+          {section('channels', t('Channels'), inYourOrder(channels.filter(unplaced)), t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm,
+            // Drag to reorder: the channels shown here in their new order,
+            // then any placed elsewhere, as they were.
+            (views) => saveLayout({ ...layout, order: [...views, ...inYourOrder(channels).map((th) => th.view!).filter((v) => v && !views.includes(v))] }))}
           {section('people', t('Direct messages'), people.filter(unplaced), t('Nobody has sent you a decision yet.'))}
           {agents.length > 0 && section('agents', t('Agents'), agentConvos.filter(unplaced), t('Talk to one of your team’s agents: it answers you here.'), addAgent, agentPicker)}
           <button type="button" className="cl-add-section" onClick={() => { setSectionName(''); setAddingSection({}) }} data-add-section="1">
@@ -3509,7 +3662,7 @@ export const ClassicList: React.FC<Props> = ({
             />
           )
       )}
-      {!detail && thread && (
+      {!detail && thread && !(activityOpen && wide) && (
         <aside className="slk-pane slk-thread-pane" aria-label={t('Thread')}>
           <header className="slk-pane-head">
             <button className="slk-back pane" onClick={() => setThread(null)} aria-label={t('Back')}><Icon name="chevron-left" size={20} /></button>
@@ -3517,65 +3670,7 @@ export const ClassicList: React.FC<Props> = ({
             {current && <span className="slk-pane-where">{current.kind === 'channel' ? `#${current.name}` : current.name}</span>}
             <button className="slk-pane-close" onClick={() => setThread(null)} aria-label={t('Close')}><Icon name="x" size={16} /></button>
           </header>
-          <div className="slk-thread-log">
-            {[thread.parent, ...thread.replies].map((m, i) => (
-              <React.Fragment key={m.id}>
-                {block(m.id, {
-                  joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
-                  name: whoSaid(m),
-                  face: m.kind !== 'ai' ? faceOfMessage(m) : null,
-                  msgId: i === 0 ? `thread-${m.id}` : m.id,
-                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true),
-                }, (
-                  <>
-                    {words(thread.channel, m)}
-                    {m.cardId && cardsById.get(m.cardId) && attachment(cardsById.get(m.cardId)!)}
-                    {underneath(thread.channel, m, true)}
-                  </>
-                ))}
-                {i === 0 && (
-                  <div className="slk-thread-count" role="separator">
-                    <span>{thread.replies.length === 1 ? t('1 reply') : t('{n} replies', { n: thread.replies.length })}</span>
-                  </div>
-                )}
-              </React.Fragment>
-            ))}
-            {aiSteps(thinking[thread.channel])}
-            {agentLines(thread.channel, { parentId: thread.parent.id })}
-          </div>
-          <form className="slk-composer thread" onSubmit={(e) => { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }}>
-            <PendingUploads items={threadUploads.items} onRemove={threadUploads.remove} />
-            {threadHl.layer}
-            <textarea
-              ref={threadComposer}
-              onPaste={(e) => { const files = [...e.clipboardData.files]; if (files.length) { e.preventDefault(); threadUploads.add(files, thread.channel) } }}
-              className={`slk-input${threadHl.active ? ' has-mentions' : ''}`}
-              value={threadDraft}
-              rows={1}
-              maxLength={4000}
-              placeholder={t('Reply… — @AI to ask the AI')}
-              aria-label={t('Reply in thread')}
-              onChange={(e) => { setThreadDraft(e.target.value); threadMention.track() }}
-              onKeyUp={threadMention.track}
-              onClick={threadMention.track}
-              onKeyDown={(e) => {
-                if (threadMention.onKeyDown(e)) return
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
-              }}
-              disabled={sending}
-            />
-            {threadMention.menu}
-            <div className="slk-composer-bar">
-              <button type="button" className="slk-attach" onClick={() => threadAttachInput.current?.click()} aria-label={t('Attach files')} title={t('Attach files')}><Icon name="paperclip" size={17} /></button>
-              <input ref={threadAttachInput} type="file" multiple hidden onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) threadUploads.add(files, thread.channel) }} />
-              <FormatBar target={threadComposer} value={threadDraft} set={setThreadDraft} />
-              <span className="slk-composer-hint" />
-              <button type="submit" className="slk-send" disabled={sending || threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
-                <Icon name="send" size={16} />
-              </button>
-            </div>
-          </form>
+          {threadBody(thread)}
         </aside>
       )}
       {inviting && (

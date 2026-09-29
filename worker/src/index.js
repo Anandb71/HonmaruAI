@@ -502,7 +502,8 @@ async function handle(request, env, url, ctx) {
         await mailOwners(env, result.orgId, { subject: "Someone is waiting to join", text: "Someone from outside your company used an invitation. Approve or decline them on the team screen." }).catch(() => {});
         return json({ ...result, message: "An admin of this workspace needs to approve you. You will be let in once they do." }, 202);
       }
-      if (result.joined) await audit(env, request, { orgId: result.orgId, action: "member.joined", actor: await actorOf(env, session), details: { role: result.role, via: "invite" } });
+      // "member.joined" is recorded where the invitation is spent (auth.js),
+      // the same for every way in.
       return json(result);
     }
 

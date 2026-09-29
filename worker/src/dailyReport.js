@@ -537,6 +537,22 @@ export async function claimDraft(db, orgId, cardId) {
   return (res?.meta?.changes || 0) > 0;
 }
 
+/// Put a draft away without posting it: its owner does not want to send
+/// that one. Closed like an expired one, marked as theirs to have dropped.
+/// True when this call closed it.
+export async function discardDraft(db, orgId, cardId, { now = new Date() } = {}) {
+  const at = now.toISOString();
+  const res = await db
+    .prepare(
+      `UPDATE cards SET status = 'completed', decided_at = ?3, updated_at = ?3,
+         data = json_set(data, '$.status', 'completed', '$.dailyReport.status', 'discarded', '$.dailyReport.discardedAt', ?3)
+       WHERE org_id = ?1 AND card_id = ?2 AND json_extract(data, '$.dailyReport.status') = 'draft'`
+    )
+    .bind(orgId, cardId, at)
+    .run();
+  return (res?.meta?.changes || 0) > 0;
+}
+
 /// Give a claimed draft back when the post did not happen.
 export async function releaseDraft(db, orgId, cardId) {
   await db

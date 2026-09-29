@@ -21,14 +21,35 @@ const MODEL_DAYS_PER_REQUEST = 3;
 /// Today's lines are written again at most this often.
 const TODAY_FRESH_MS = 10 * 60 * 1000;
 /// Lines in a day's summary.
-const MAX_ITEMS = 5;
+const MAX_ITEMS = 4;
+/// Written again when the way a day is written changes: a stored day from
+/// an older version is stale.
+const VERSION = 2;
 
-const SYSTEM_PROMPT = `You write a channel's journal: what happened in one day of a team chat, for a teammate who was not there.
+const SYSTEM_PROMPT = `You write a channel's journal: what happened in one day of a team chat, compressed for a teammate who was not there and has thirty seconds.
 Return JSON: {"items":[{"text":"...","cites":[1,4]}]}.
-- 1 to ${MAX_ITEMS} items, the most important first: decisions made, work done or handed over, problems raised, questions still open, links shared and why.
-- Each item one or two plain sentences, in the reader's language, naming people as the messages name them. No headings, no markdown, no emoji.
+- 0 to ${MAX_ITEMS} items, the most important first. Merge every message about the same topic into ONE item — never one item per message. Fewer, denser items are better.
+- What counts: decisions and their reasons, requests and who they are for, work done or handed over, problems raised, questions still open, links shared and why.
+- Each item: a short topic in *bold* (single asterisks), then " — " and one tight sentence with the substance (numbers, dates, names, what is next). In the reader's language, naming people as the messages name them.
+- Formatting the chat understands only: *bold*, \`code\`. No headings, no lists inside an item, no emoji, no **double** asterisks.
+- Leave out greetings, thanks, chatter, and system notices such as someone joining. A day with nothing but those has no items: return {"items":[]}.
 - "cites": the numbers of the messages the item comes from, at least one each.
-- Say only what the messages say. Leave out greetings and chatter.`;
+- Say only what the messages say.`;
+
+/// Said by the app, not by the team: arrivals ("X joined"), and the
+/// AI's line introducing someone an invitation brought in.
+const JOIN_LINES = [
+  /^.+ joined the workspace\. Say hello!$/,
+  /^.+さんがワークスペースに参加しました。ようこそ！$/,
+  /^.+ se unió al espacio de trabajo\. ¡Salúdale!$/,
+  /^.+ a rejoint l’espace de travail\. Dites bonjour !$/,
+  /^.+ ist dem Workspace beigetreten\. Sag hallo!$/,
+];
+export function isNotice(row) {
+  if (row.kind === "joined") return true;
+  const body = String(row.body || "").trim();
+  return row.kind === "ai" && JOIN_LINES.some((re) => re.test(body));
+}
 
 function clip(text, n) {
   const s = String(text || "").replace(/\s+/g, " ").trim();
@@ -146,7 +167,8 @@ export async function summarizeDay(rows, { locale, members, provider, allowance,
       }))
       .filter((item) => item.text)
       .slice(0, MAX_ITEMS);
-    return items.length ? items : null;
+    // Nothing worth saying is an answer too: not a failure.
+    return Array.isArray(parsed?.items) ? items : null;
   } catch (err) {
     console.error("journal failed", safe(err?.message));
     return null;
@@ -179,7 +201,8 @@ export async function channelJournal(env, orgId, { resolved, members, tz, before
       ORDER BY created_at DESC LIMIT ${PAGE_ROWS}`
   ).bind(orgId, resolved.key, until).all();
 
-  let days = groupByDay(results, tz);
+  // What the app said (someone joined) is not what the team said.
+  let days = groupByDay(results.filter((r) => !isNotice(r)), tz);
   // The page stopped mid-day: that day belongs to the next page, whole —
   // unless it is the only one, when part of it is better than nothing.
   if (results.length === PAGE_ROWS && days.length > 1) days = days.slice(0, -1);
@@ -210,7 +233,10 @@ export async function channelJournal(env, orgId, { resolved, members, tz, before
     let items = null;
     let byModel = false;
     if (hit) {
-      try { items = JSON.parse(hit.items); } catch { items = null; }
+      let stored = null;
+      try { stored = JSON.parse(hit.items); } catch { stored = null; }
+      // An older way of writing the day is written again.
+      items = stored && !Array.isArray(stored) && stored.v === VERSION ? stored.items : null;
       byModel = Boolean(hit.by_model);
     }
     const stale = !items
@@ -233,7 +259,7 @@ export async function channelJournal(env, orgId, { resolved, members, tz, before
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
            ON CONFLICT (org_id, channel, day, tz, locale) DO UPDATE SET
              count = excluded.count, items = excluded.items, by_model = excluded.by_model, updated_at = excluded.updated_at`
-        ).bind(orgId, resolved.key, day, tz, locale, rows.length, JSON.stringify(items), byModel ? 1 : 0, now.toISOString()).run().catch(() => {});
+        ).bind(orgId, resolved.key, day, tz, locale, rows.length, JSON.stringify({ v: VERSION, items }), byModel ? 1 : 0, now.toISOString()).run().catch(() => {});
       }
     }
     // Cited messages that were since deleted are not cited.
@@ -241,6 +267,8 @@ export async function channelJournal(env, orgId, { resolved, members, tz, before
     const kept = (items || [])
       .map((item) => ({ text: item.text, messageIds: (item.messageIds || []).filter((id) => live.has(id)) }))
       .filter((item) => item.text);
+    // A day the AI found nothing in worth saying is not shown at all.
+    if (byModel && !kept.length) continue;
     out.push({
       day,
       count: rows.length,
