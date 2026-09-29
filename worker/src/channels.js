@@ -559,7 +559,7 @@ export async function readsFor(db, orgId, login, members) {
   const access = await accessFor(db, orgId, login);
   const out = {};
   for (const r of results || []) {
-    const view = r.channel === "activity" ? "activity" : viewOf(r.channel, login, members, access);
+    const view = r.channel === "activity" || /^app:[a-z0-9_-]{1,32}$/.test(r.channel) ? r.channel : viewOf(r.channel, login, members, access);
     if (view) out[view] = r.last_read_at;
   }
   return out;

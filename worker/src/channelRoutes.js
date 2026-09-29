@@ -560,6 +560,15 @@ export async function handleChannels(request, env, url, { route, after }) {
     if (limited) return limited;
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return json({ message: "Invalid JSON body." }, 400);
+    // An app in the sidebar (Automations, Gmail…): looked at, so its count
+    // goes on every device. Only the person's own position; nothing else.
+    if (typeof body.channel === "string" && /^app:[a-z0-9_-]{1,32}$/.test(body.channel)) {
+      const who = await caller(env, request, body.orgId);
+      if (who.denied) return who.denied;
+      const lastReadAt = await markRead(env.DB, body.orgId, who.user.login, body.channel, body.at);
+      after(() => announceTo(env, body.orgId, [{ to: who.user.login, event: customEvent("reads_changed", { view: body.channel, thread: null, lastReadAt }) }]));
+      return json({ lastReadAt });
+    }
     if (body.channel === "activity") {
       const who = await caller(env, request, body.orgId);
       if (who.denied) return who.denied;

@@ -147,8 +147,8 @@ export async function runScheduledSync(env, ctx) {
   return { users: rows.length, synced, created };
 }
 
-/// The AI's own work: routines that are due, and — on the day's first tick
-/// — the automations it would propose. Each half fails alone.
+/// The AI's own work: routines that are due, and — on the day's first tick,
+/// where switched on — the automations it would propose. Each fails alone.
 export async function runAutomations(env, ctx, now = new Date()) {
   const out = { routines: null, proposals: null, dailyReminders: null };
   try {
@@ -163,7 +163,9 @@ export async function runAutomations(env, ctx, now = new Date()) {
   } catch (err) {
     console.error("daily reminders failed", err?.message || err);
   }
-  if (isProposalTick(now)) {
+  // Proposals are off unless a deployment asks for them (AI_PROPOSALS=1):
+  // a card nobody asked for is noise, however well meant.
+  if (env.AI_PROPOSALS === "1" && isProposalTick(now)) {
     try {
       out.proposals = await runProposals(env, { now });
     } catch (err) {

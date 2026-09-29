@@ -467,6 +467,9 @@ export const ClassicList: React.FC<Props> = ({
         app === 'ai' ? t('Your AI') : (APP_NAME[app] ? t(APP_NAME[app]) : app.charAt(0).toUpperCase() + app.slice(1)),
         { icon: app === 'ai' ? 'plus' : (APP_ICON[app] || 'box'), app }, own, app === 'ai'))
       .filter((x): x is Thread => x !== null)
+      // An app's count is what came in since you last looked, on any
+      // device — not everything still pending, which never goes away.
+      .map((th) => ({ ...th, unread: th.cards.filter((c) => isUnread(c) && (c.createdAt || '') > readAt(th.key)).length }))
 
     // Conversations with the team's agents: each one you have talked to,
     // the one you just started, newest first.
@@ -987,6 +990,23 @@ export const ClassicList: React.FC<Props> = ({
     setNewSince({ view, at: readAt(view) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
+  // An app looked at is read: its count goes, here and on every device —
+  // and again when something new arrives while it is open.
+  // Only when there is something new to clear: every write counts against
+  // the same allowance as sending a message.
+  const appOpen = current?.kind === 'app' ? current.key : null
+  const appNew = current?.kind === 'app' ? current.unread : 0
+  useEffect(() => {
+    if (!appOpen || appNew === 0) return
+    const now = new Date().toISOString()
+    try { localStorage.setItem(seenKey(api.orgId, appOpen), now) } catch { /* the server remembers */ }
+    setSeenTick((n) => n + 1)
+    void fetch(`${api.httpBase}/channels/read`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel: appOpen }),
+    }).then(() => setServerReads((prev) => ({ ...prev, [appOpen]: now }))).catch(() => { /* this device still remembers */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appOpen, appNew, api.orgId])
   // Opened is read — here, and on the server for your other devices —
   // unless you just marked it unread and are still looking at it.
   const heldUnread = useRef<string | null>(null)
@@ -1210,9 +1230,14 @@ export const ClassicList: React.FC<Props> = ({
   const openView = !special ? (current?.view || null) : null
   useEffect(() => { setOpenView(openView); return () => { setOpenView(null) } }, [openView])
   const [laterItems, setLaterItems] = useState<Array<{ id: string; remindAt: string | null; remindedAt: string | null; message: ChannelMessage }> | null>(null)
+  // Marked done here: kept out of the list even when a load that began
+  // before the Done lands after it.
+  const laterDone = useRef<Set<string>>(new Set())
   const loadLater = useCallback(() => {
     return fetch(`${api.httpBase}/channels/later?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
-      .then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setLaterItems(d.items || []) }).catch(() => {})
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setLaterItems(((d.items || []) as Array<{ id: string; remindAt: string | null; remindedAt: string | null; message: ChannelMessage }>).filter((x) => !laterDone.current.has(x.id))) })
+      .catch(() => {})
   }, [api.httpBase, api.orgId, authHeaders])
   useEffect(() => { void loadLater() }, [loadLater])
   const saveLater = async (channel: string, m: ChannelMessage, remindAt: string | null) => {
@@ -1224,8 +1249,11 @@ export const ClassicList: React.FC<Props> = ({
     void loadLater()
   }
   const finishLater = async (id: string) => {
+    laterDone.current.add(id)
+    setLaterItems((prev) => (prev || []).filter((x) => x.id !== id))
     const res = await fetch(`${api.httpBase}/channels/later`, { method: 'DELETE', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, id }) }).catch(() => null)
-    if (res?.ok) setLaterItems((prev) => (prev || []).filter((x) => x.id !== id))
+    // It did not go: back in the list, and said so.
+    if (!res?.ok) { laterDone.current.delete(id); setProblem(t('That did not save.')); void loadLater() }
   }
 
   // A clip: messages gathered from anywhere, made one decision.
