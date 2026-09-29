@@ -992,10 +992,12 @@ export const ClassicList: React.FC<Props> = ({
   }, [view])
   // An app looked at is read: its count goes, here and on every device —
   // and again when something new arrives while it is open.
+  // Only when there is something new to clear: every write counts against
+  // the same allowance as sending a message.
   const appOpen = current?.kind === 'app' ? current.key : null
-  const appCards = current?.kind === 'app' ? current.cards.length : 0
+  const appNew = current?.kind === 'app' ? current.unread : 0
   useEffect(() => {
-    if (!appOpen) return
+    if (!appOpen || appNew === 0) return
     const now = new Date().toISOString()
     try { localStorage.setItem(seenKey(api.orgId, appOpen), now) } catch { /* the server remembers */ }
     setSeenTick((n) => n + 1)
@@ -1004,7 +1006,7 @@ export const ClassicList: React.FC<Props> = ({
       body: JSON.stringify({ orgId: api.orgId, channel: appOpen }),
     }).then(() => setServerReads((prev) => ({ ...prev, [appOpen]: now }))).catch(() => { /* this device still remembers */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appOpen, appCards, api.orgId])
+  }, [appOpen, appNew, api.orgId])
   // Opened is read — here, and on the server for your other devices —
   // unless you just marked it unread and are still looking at it.
   const heldUnread = useRef<string | null>(null)
