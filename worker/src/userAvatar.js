@@ -10,8 +10,8 @@ import { enforce } from "./ratelimit.js";
 // Images only, and never SVG: the object comes back from this origin, and
 // an SVG is a document that can run script.
 
-const MAX_BYTES = 2 * 1024 * 1024;
-const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+export const MAX_BYTES = 2 * 1024 * 1024;
+export const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const PREFIX = "user-avatar-";
 
 const CORS_HEADERS = {
@@ -22,9 +22,9 @@ const CORS_HEADERS = {
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "cache-control": "no-store", "content-type": "application/json", ...CORS_HEADERS } });
 }
-const bare = (header) => String(header || "").split(";")[0].trim().toLowerCase();
+export const bare = (header) => String(header || "").split(";")[0].trim().toLowerCase();
 
-async function readCapped(stream, max) {
+export async function readCapped(stream, max) {
   const reader = stream.getReader();
   const chunks = [];
   let total = 0;
@@ -47,9 +47,24 @@ function ownMediaId(avatarUrl) {
   return m ? m[1] : null;
 }
 
-/// POST /me/avatar (the image as the body) · DELETE /me/avatar · GET /users/avatar/:id
+/// The picture a request carries, checked: `{ bytes, contentType }`, or
+/// `{ error, status }` saying what is wrong with it.
+export async function readImage(request) {
+  const contentType = bare(request.headers.get("content-type"));
+  if (!IMAGE_TYPES.has(contentType)) return { error: "A photo is a PNG, JPEG, WebP or GIF.", status: 415 };
+  if (Number(request.headers.get("content-length") || 0) > MAX_BYTES) return { error: "A photo is at most 2 MB.", status: 413 };
+  if (!request.body) return { error: "No image in the request.", status: 400 };
+  const bytes = await readCapped(request.body, MAX_BYTES);
+  if (!bytes) return { error: "A photo is at most 2 MB.", status: 413 };
+  if (!bytes.byteLength) return { error: "No image in the request.", status: 400 };
+  return { bytes, contentType };
+}
+
+/// POST /me/avatar (the image as the body) · DELETE /me/avatar ·
+/// GET /users/avatar/:id, and an agent's picture: GET /agents/avatar/:id.
 export async function handleUserAvatar(request, env, url) {
-  const serve = url.pathname.match(/^\/users\/avatar\/(user-avatar-[0-9a-f-]{36})$/);
+  const serve = url.pathname.match(/^\/users\/avatar\/(user-avatar-[0-9a-f-]{36})$/)
+    || url.pathname.match(/^\/agents\/avatar\/(agent-avatar-[0-9a-f-]{36})$/);
   if (serve && request.method === "GET") {
     const object = await env.MEDIA.get(serve[1]);
     if (!object) return new Response("not found", { status: 404 });
@@ -78,13 +93,9 @@ export async function handleUserAvatar(request, env, url) {
     return json({ avatarUrl: null });
   }
 
-  const contentType = bare(request.headers.get("content-type"));
-  if (!IMAGE_TYPES.has(contentType)) return json({ message: "A photo is a PNG, JPEG, WebP or GIF." }, 415);
-  if (Number(request.headers.get("content-length") || 0) > MAX_BYTES) return json({ message: "A photo is at most 2 MB." }, 413);
-  if (!request.body) return json({ message: "No image in the request." }, 400);
-  const bytes = await readCapped(request.body, MAX_BYTES);
-  if (!bytes) return json({ message: "A photo is at most 2 MB." }, 413);
-  if (!bytes.byteLength) return json({ message: "No image in the request." }, 400);
+  const image = await readImage(request);
+  if (image.error) return json({ message: image.error }, image.status);
+  const { bytes, contentType } = image;
   const mediaId = `${PREFIX}${crypto.randomUUID()}`;
   await env.MEDIA.put(mediaId, bytes, { httpMetadata: { contentType } });
   const avatarUrl = `${url.origin}/users/avatar/${mediaId}`;

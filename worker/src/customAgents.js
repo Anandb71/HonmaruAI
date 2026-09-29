@@ -99,7 +99,7 @@ export function agentMarkdown(agent) {
 
 function toAgent(row) {
   return {
-    id: row.id, handle: row.handle, name: row.name, emoji: row.emoji || null, description: row.description || "",
+    id: row.id, handle: row.handle, name: row.name, emoji: row.emoji || null, avatarUrl: row.avatar_url || null, description: row.description || "",
     instructions: row.instructions, scope: row.scope === "personal" ? "personal" : "team",
     ownerLogin: row.owner_login, preset: row.preset || null,
     createdAt: row.created_at, updatedBy: row.updated_by || null, updatedAt: row.updated_at,
@@ -181,9 +181,9 @@ export async function agentsHere(db, orgId, login, key) {
 /// Every agent's name and face, the deleted too — what a message it wrote
 /// once is shown with.
 export async function agentFaces(db, orgId) {
-  const { results } = await db.prepare("SELECT id, handle, name, emoji, scope FROM custom_agents WHERE org_id = ?1")
+  const { results } = await db.prepare("SELECT id, handle, name, emoji, avatar_url, scope FROM custom_agents WHERE org_id = ?1")
     .bind(orgId).all().catch(() => ({ results: [] }));
-  return new Map((results || []).map((r) => [r.id, { id: r.id, handle: r.handle, name: r.name, emoji: r.emoji || null, scope: r.scope }]));
+  return new Map((results || []).map((r) => [r.id, { id: r.id, handle: r.handle, name: r.name, emoji: r.emoji || null, avatarUrl: r.avatar_url || null, scope: r.scope }]));
 }
 
 /// An agent as a browser or the app sees it: no logins — who made it, by
@@ -193,7 +193,7 @@ export function toClientAgent(agent, members, viewerLogin, { isAdmin = false } =
   const nameOf = (login) => members.find((m) => m.login === login)?.name || null;
   const mine = agent.ownerLogin === viewerLogin;
   return {
-    id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji, description: agent.description,
+    id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji, avatarUrl: agent.avatarUrl || null, description: agent.description,
     instructions: agent.instructions, scope: agent.scope, preset: agent.preset,
     createdBy: refOf(agent.ownerLogin), createdByName: nameOf(agent.ownerLogin), mine,
     updatedByName: nameOf(agent.updatedBy), updatedAt: agent.updatedAt,
@@ -265,6 +265,20 @@ export async function saveAgent(db, orgId, { id = null, input, login, members, i
       WHERE org_id = ?1 AND id = ?2`
   ).bind(orgId, existing.id, handle, name, emoji, description, instructions, scope, login, now).run();
   return { agent: toAgent(await db.prepare("SELECT * FROM custom_agents WHERE org_id = ?1 AND id = ?2").bind(orgId, existing.id).first()), created: false };
+}
+
+/// An agent's picture, in place of its emoji: whoever may change the agent
+/// may change it. `avatarUrl` null takes it off. Returns the agent, and the
+/// URL it had before (for its bytes to go).
+export async function setAgentAvatar(db, orgId, { id, login, avatarUrl, isGuest = false, dryRun = false }) {
+  if (isGuest) return { error: "A guest cannot make or change agents.", status: 403 };
+  const row = await db.prepare("SELECT * FROM custom_agents WHERE org_id = ?1 AND id = ?2 AND deleted_at IS NULL").bind(orgId, String(id || "")).first();
+  if (!row || (row.scope === "personal" && row.owner_login !== login)) return { error: "No such agent.", status: 404 };
+  if (dryRun) return { agent: toAgent(row), previous: row.avatar_url || null };
+  await db.prepare("UPDATE custom_agents SET avatar_url = ?3, updated_by = ?4, updated_at = ?5 WHERE org_id = ?1 AND id = ?2")
+    .bind(orgId, row.id, avatarUrl || null, login, new Date().toISOString()).run();
+  const next = await db.prepare("SELECT * FROM custom_agents WHERE org_id = ?1 AND id = ?2").bind(orgId, row.id).first();
+  return { agent: toAgent(next), previous: row.avatar_url || null };
 }
 
 /// Delete one: its owner, or an admin for a team agent. What it wrote stays,

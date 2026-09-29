@@ -449,3 +449,42 @@ test("an agent added from a preset and never changed follows the preset's curren
   const row = await env.DB.prepare("SELECT instructions FROM custom_agents WHERE id = ?1").bind(made.agent.id).first();
   expect(row.instructions).toBe(current);
 });
+
+test("an agent can wear a picture instead of its emoji: set by whoever may change it, shown wherever it appears, taken off again", async () => {
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+  const team = (await (await send("POST", "/channels/agents", toru, { orgId: ORG, markdown: HAYAO })).json()).agent;
+  const mine = (await (await send("POST", "/channels/agents", toru, { orgId: ORG, name: "Diary", handle: "diary", instructions: "x", scope: "personal" })).json()).agent;
+  const picture = (token, id, body = PNG, type = "image/png") => call(`/channels/agents/avatar?${q({ orgId: ORG, id })}`, { method: "POST", headers: { "x-session-token": token, "content-type": type }, body });
+
+  // Anyone who may improve a team agent may give it a picture.
+  const up = await picture(mika, team.id);
+  expect(up.status).toBe(200);
+  const { agent } = await up.json();
+  expect(agent.avatarUrl).toMatch(/^https:\/\/example\.com\/agents\/avatar\/agent-avatar-[0-9a-f-]{36}$/);
+  expect(agent.emoji).toBe("🎨");
+  const served = await worker.fetch(new Request(agent.avatarUrl), env);
+  expect(served.headers.get("content-type")).toBe("image/png");
+  expect(new Uint8Array(await served.arrayBuffer())).toEqual(PNG);
+
+  // Everywhere the agent shows: the list, the @ menu's overview, and what it writes.
+  expect((await (await get(`/channels/agents?${q({ orgId: ORG })}`, kenji)).json()).agents.find((a) => a.id === team.id).avatarUrl).toBe(agent.avatarUrl);
+  expect((await (await get(`/channels?${q({ orgId: ORG })}`, kenji)).json()).agents.find((a) => a.id === team.id).avatarUrl).toBe(agent.avatarUrl);
+  const asked = await (await send("POST", "/channels/messages", toru, { orgId: ORG, channel: "b:cafe", body: "@hayao which colour for the sign?" })).json();
+  const thread = await (await get(`/channels/thread?${q({ orgId: ORG, channel: "b:cafe", messageId: asked.message.id })}`, kenji)).json();
+  expect(thread.replies[0]).toMatchObject({ kind: "agent", agent: { id: team.id, avatarUrl: agent.avatarUrl } });
+
+  // Nobody else's personal agent, no guest, no SVG.
+  expect((await picture(mika, mine.id)).status).toBe(404);
+  expect((await picture(guest, team.id)).status).toBe(403);
+  expect((await picture(toru, team.id, "<svg/>", "image/svg+xml")).status).toBe(415);
+
+  // A new picture replaces the old one's bytes; taking it off leaves the emoji.
+  const next = (await (await picture(toru, team.id)).json()).agent.avatarUrl;
+  expect(next).not.toBe(agent.avatarUrl);
+  expect((await worker.fetch(new Request(agent.avatarUrl), env)).status).toBe(404);
+  const off = await call(`/channels/agents/avatar?${q({ orgId: ORG, id: team.id })}`, { method: "DELETE", headers: { "x-session-token": toru } });
+  expect((await off.json()).agent).toMatchObject({ avatarUrl: null, emoji: "🎨" });
+  expect((await worker.fetch(new Request(next), env)).status).toBe(404);
+  const { results } = await env.DB.prepare("SELECT action FROM audit_events WHERE org_id = ?1 ORDER BY seq").bind(ORG).all();
+  expect(results.map((r) => r.action).filter((a) => a === "agent.updated").length).toBe(3);
+});

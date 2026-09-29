@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AgentAvatar } from '../components/AgentAvatar'
 import { useT } from '../utils/i18n'
 import { getLocale } from '../utils/locale'
 import { Markdown } from '../utils/markdown'
@@ -38,6 +39,11 @@ export const Agents: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose
   const [confirm, setConfirm] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  // The picture chosen in the editor, kept until Save; or "take it off".
+  const [picture, setPicture] = useState<{ file: File; url: string } | null>(null)
+  const [pictureOff, setPictureOff] = useState(false)
+  const pictureInput = useRef<HTMLInputElement>(null)
+  useEffect(() => () => { if (picture) URL.revokeObjectURL(picture.url) }, [picture])
 
   const headers = useMemo(() => ({ 'content-type': 'application/json', 'x-session-token': sessionToken }), [sessionToken])
   const load = useCallback(async () => {
@@ -63,7 +69,25 @@ export const Agents: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose
     return data
   }
 
-  const open = (next: AgentDraft) => { setDraft(next); setDraftError(null); setPreview(false); setConfirm(null); setNote(null) }
+  const open = (next: AgentDraft) => { setDraft(next); setDraftError(null); setPreview(false); setConfirm(null); setNote(null); setPicture(null); setPictureOff(false) }
+  /// A picture for the agent, in place of its emoji: an image of 2 MB at
+  /// most — the same as a person's photo. Not SVG: it could run script.
+  const PICTURE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+  const choosePicture = (file: File) => {
+    if (!PICTURE_TYPES.includes(file.type)) { setDraftError(t('A picture is a PNG, JPEG, WebP or GIF.')); return }
+    if (file.size > 2 * 1024 * 1024) { setDraftError(t('A picture is at most 2 MB.')); return }
+    setDraftError(null); setPictureOff(false)
+    setPicture({ file, url: URL.createObjectURL(file) })
+  }
+  /// Sent once the agent is saved: a new one has no id before then.
+  const savePicture = async (id: string) => {
+    const at = `${httpBase}/channels/agents/avatar?orgId=${encodeURIComponent(orgId)}&id=${encodeURIComponent(id)}`
+    const res = picture
+      ? await fetch(at, { method: 'POST', headers: { 'x-session-token': sessionToken, 'content-type': picture.file.type }, body: picture.file })
+      : await fetch(at, { method: 'DELETE', headers: { 'x-session-token': sessionToken } })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(agentError(data.message || '', t))
+  }
   const save = async () => {
     if (!draft || saving) return
     setSaving(true); setDraftError(null)
@@ -75,8 +99,20 @@ export const Agents: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose
       const data = draft.id
         ? await send('PUT', { id: draft.id, ...fields })
         : await send('POST', { ...fields, ...(draft.preset ? { preset: draft.preset } : {}) })
-      setDraft(null)
       const a = data.agent as ClientAgent | undefined
+      if (a && (picture || (pictureOff && draft.avatarUrl))) {
+        try {
+          await savePicture(a.id)
+          await load()
+          announce()
+        } catch (err) {
+          // The agent is saved; only its picture is not. Say so, and stay.
+          setDraft({ ...draftFromAgent(a), avatarUrl: a.avatarUrl || null })
+          setDraftError(t('Saved, but the picture did not upload: {why}', { why: err instanceof Error ? err.message : String(err) }))
+          return
+        }
+      }
+      setDraft(null)
       if (a) setNote(t('Saved. Write @{handle} in any conversation to call it.', { handle: a.handle }))
     } catch (err) {
       setDraftError(err instanceof Error ? err.message : String(err))
@@ -136,7 +172,7 @@ export const Agents: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose
 
   const row = (a: ClientAgent) => (
     <div className="row static ca-row" key={a.id} data-agent={a.id} data-agent-handle={a.handle}>
-      <span className="ca-face" aria-hidden="true">{a.emoji || '🤖'}</span>
+      <AgentAvatar className="ca-face" agent={a} />
       <span className="row-main">
         <span className="ca-name">{a.name} <span className="ca-handle">@{a.handle}</span></span>
         {a.description && <span className="ca-desc">{a.description}</span>}
@@ -253,11 +289,30 @@ export const Agents: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose
           )}
         >
           <div className="ca-grid">
-            <label className="ca-field ca-emoji-field">
-              <span className="dlg-label">{t('Emoji')}</span>
-              <input className="dlg-input ca-emoji" value={draft.emoji} maxLength={16} placeholder="🤖"
-                onChange={(e) => setDraft({ ...draft, emoji: e.target.value })} aria-label={t('Emoji')} />
-            </label>
+            <div className="ca-field ca-emoji-field">
+              <span className="dlg-label">{t('Icon')}</span>
+              {(() => {
+                const shown = picture?.url || (pictureOff ? null : draft.avatarUrl)
+                return shown ? (
+                  <button type="button" className="ca-picture" data-agent-picture onClick={() => pictureInput.current?.click()} aria-label={t('Change the picture')} title={t('Change the picture')}>
+                    <img src={shown} alt="" />
+                  </button>
+                ) : (
+                  <input className="dlg-input ca-emoji" value={draft.emoji} maxLength={16} placeholder="🤖"
+                    onChange={(e) => setDraft({ ...draft, emoji: e.target.value })} aria-label={t('Emoji')} />
+                )
+              })()}
+              <span className="ca-picture-actions">
+                <button type="button" className="btn-text" data-agent-picture-pick onClick={() => pictureInput.current?.click()}>
+                  {picture || (draft.avatarUrl && !pictureOff) ? t('Change') : t('Picture…')}
+                </button>
+                {(picture || (draft.avatarUrl && !pictureOff)) && (
+                  <button type="button" className="btn-text" data-agent-picture-remove onClick={() => { setPicture(null); setPictureOff(true) }}>{t('Use emoji')}</button>
+                )}
+              </span>
+              <input ref={pictureInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="ca-file" data-agent-picture-input
+                aria-label={t('Picture…')} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) choosePicture(f) }} />
+            </div>
             <label className="ca-field">
               <span className="dlg-label">{t('Name')}</span>
               <input className="dlg-input ca-name-input" value={draft.name} maxLength={40} placeholder={t('e.g. Hayao')}

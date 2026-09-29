@@ -8,6 +8,8 @@ export interface ClientAgent {
   handle: string
   name: string
   emoji: string | null
+  /// A picture in place of the emoji: /agents/avatar/… on the Worker.
+  avatarUrl?: string | null
   description: string
   instructions: string
   scope: 'team' | 'personal'
@@ -38,6 +40,8 @@ export interface AgentDraft {
   name: string
   handle: string
   emoji: string
+  /// Its picture as saved, if it has one; a new one is chosen in the editor.
+  avatarUrl: string | null
   description: string
   instructions: string
   scope: 'team' | 'personal'
@@ -49,16 +53,16 @@ export interface AgentDraft {
 export const MAX_INSTRUCTIONS = 20000
 
 export const blankDraft = (scope: 'team' | 'personal' = 'team'): AgentDraft => ({
-  id: null, name: '', handle: '', emoji: '', description: '', instructions: '', scope, preset: null, canChangeScope: true,
+  id: null, name: '', handle: '', emoji: '', avatarUrl: null, description: '', instructions: '', scope, preset: null, canChangeScope: true,
 })
 
 export const draftFromPreset = (p: AgentPreset): AgentDraft => ({
-  id: null, name: p.name, handle: p.handle, emoji: p.emoji, description: p.description, instructions: p.instructions,
+  id: null, name: p.name, handle: p.handle, emoji: p.emoji, avatarUrl: null, description: p.description, instructions: p.instructions,
   scope: 'team', preset: p.id, canChangeScope: true,
 })
 
 export const draftFromAgent = (a: ClientAgent): AgentDraft => ({
-  id: a.id, name: a.name, handle: a.handle, emoji: a.emoji || '', description: a.description || '', instructions: a.instructions,
+  id: a.id, name: a.name, handle: a.handle, emoji: a.emoji || '', avatarUrl: a.avatarUrl || null, description: a.description || '', instructions: a.instructions,
   scope: a.scope, preset: a.preset, canChangeScope: a.mine,
 })
 
@@ -92,6 +96,7 @@ export function parseAgentFile(text: string): AgentDraft {
     name: out.name || '',
     handle: (out.handle || '').replace(/^[@＠]+/, ''),
     emoji: out.emoji || '',
+    avatarUrl: null,
     description: out.description || '',
     instructions: body.trim(),
     scope: out.scope === 'personal' ? 'personal' : 'team',

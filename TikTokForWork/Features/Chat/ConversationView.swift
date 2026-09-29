@@ -177,7 +177,7 @@ struct ConversationView: View {
                     Text("Talk about \(c.name) here. Write @AI to ask your AI anything. A decision card is made only when you ask for one: Send as a decision, or long-press a message and pick Make it a decision.")
                         .font(.subheadline).foregroundStyle(Theme.Colors.textSecondary)
                 } else if c.kind == .agent {
-                    ChatAvatar(name: c.name, size: 48, agentEmoji: c.agent?.glyph ?? ChatAgent.glyph(nil))
+                    ChatAvatar(name: c.name, size: 48, agentEmoji: c.agent?.glyph ?? ChatAgent.glyph(nil), url: c.agent?.avatarUrl)
                     Text(c.name).font(.title3.weight(.bold))
                     if let d = c.agent?.description, !d.isEmpty {
                         Text(verbatim: d).font(.subheadline).foregroundStyle(Theme.Colors.textSecondary)
@@ -516,7 +516,7 @@ struct ConversationView: View {
                                           detail: String(localized: "Calls all \(agents.count) agents in this conversation"), kind: .special))
         }
         let ai = [MentionOption(id: "__ai", insert: "AI", label: "AI", kind: .ai)]
-        let agentOptions = agents.map { MentionOption(id: "agent:\($0.handle)", insert: $0.handle, label: $0.label, detail: "@\($0.handle)", kind: .agent, emoji: $0.emoji, online: true) }
+        let agentOptions = agents.map { MentionOption(id: "agent:\($0.handle)", insert: $0.handle, label: $0.label, detail: "@\($0.handle)", kind: .agent, emoji: $0.emoji, avatarURL: $0.avatarUrl, online: true) }
         let groups = store.userGroups.map { MentionOption(id: "group:\($0.handle)", insert: $0.handle, label: $0.name, detail: "@\($0.handle)", kind: .group) }
         let ordered = specials + ai + here + agentOptions + groups + people.filter(\.outside)
         return ordered.filter { o in
