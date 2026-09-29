@@ -35,3 +35,20 @@ export function saveCardCache(orgId: string, cardsById: Record<string, DecisionC
 export function clearCardCache(): void {
   try { localStorage.removeItem(KEY) } catch { /* nothing to clear */ }
 }
+
+/// Everything this browser kept for the account signing out: its cards, its
+/// "How I work" per workspace, its unsent drafts, its own AI key. The next
+/// person at this machine starts from nothing of it. The device's own
+/// choices — the relay, the language, the theme — stay.
+const ACCOUNT_KEYS = ['senderContext', 'aiKey', 'orgId', 'draft:', 'daily-draft:', 'onboard.tools:']
+export function clearAccountData(storage: Storage = localStorage): void {
+  clearCardCache()
+  try {
+    const gone: string[] = []
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i) || ''
+      if (ACCOUNT_KEYS.some((p) => k === p || k.startsWith(p.endsWith(':') ? p : `${p}:`))) gone.push(k)
+    }
+    for (const k of gone) storage.removeItem(k)
+  } catch { /* blocked storage: nothing kept to clear */ }
+}

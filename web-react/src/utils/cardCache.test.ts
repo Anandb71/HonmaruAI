@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { loadCardCache, saveCardCache, clearCardCache } from './cardCache'
+import { loadCardCache, saveCardCache, clearCardCache, clearAccountData } from './cardCache'
 import type { DecisionCard } from '../types/card'
 
 function fakeStorage(): Storage {
@@ -43,5 +43,17 @@ describe('card cache', () => {
     saveCardCache('o', { a: card('a', '2026-09-10T00:00:00Z') })
     clearCardCache()
     expect(loadCardCache('o')).toEqual({})
+  })
+})
+
+describe('clearAccountData', () => {
+  it('forgets the account signing out and keeps the device', () => {
+    const s = fakeStorage()
+    for (const k of ['senderContext', 'senderContext:team:a', 'aiKey', 'orgId', 'draft:team:a:b:cafe', 'daily-draft:c1', 'onboard.tools:team:a', 'host', 'locale', 'mode', 'draftsOpen'])
+      s.setItem(k, 'x')
+    clearAccountData(s)
+    const left: string[] = []
+    for (let i = 0; i < s.length; i++) left.push(s.key(i) || '')
+    expect(left.sort()).toEqual(['draftsOpen', 'host', 'locale', 'mode'])
   })
 })

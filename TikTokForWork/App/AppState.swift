@@ -47,6 +47,9 @@ final class AppState: ObservableObject {
         webSocketService.disconnect()
         webSocketService.clearPendingEvents()
         cardService.reset()
+        // Positions are the workspace's: another team's reads must not hide
+        // this one's new cards from the badge.
+        AppReads.shared.reset()
         user.teamID = orgID; currentUser = user; SessionStore.orgId = orgID
         workspaceMembers = members
         workspaceName = nil; canRenameWorkspace = false
@@ -447,6 +450,12 @@ final class AppState: ObservableObject {
         userContext = ""
         UserDefaults.standard.removeObject(forKey: "userContext")
         UserDefaults.standard.removeObject(forKey: FirstRunFlags.promptedGitHubConnect)
+        // Unsent drafts — a message half typed, a daily report — are this
+        // account's words, not the next person's on this phone.
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("chat.draft.") || key.hasPrefix("daily-draft:") {
+            defaults.removeObject(forKey: key)
+        }
         isGuest = false
         isAuthenticated = false
         currentUser = nil
