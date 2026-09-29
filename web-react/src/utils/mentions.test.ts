@@ -23,6 +23,14 @@ describe('mentions', () => {
     expect(matchMembers(team, 'zzz')).toEqual([])
   })
 
+  it('writes the whole name when another teammate answers to the same first name', () => {
+    const two = [{ ref: 'k1', name: 'Kenji Sato' }, { ref: 'k2', name: 'Kenji Mori' }, { ref: 'a', name: 'Aki' }]
+    expect(insertMention('ask @ke', 7, two[1], two).text).toBe('ask @KenjiMori ')
+    expect(insertMention('ask @ak', 7, two[2], two).text).toBe('ask @Aki ')
+    // What it wrote reaches that one person, not the first Kenji.
+    expect(mentionedRefs('@KenjiMori please', two)).toEqual(['k2'])
+  })
+
   it('puts the name in and moves the caret past it', () => {
     expect(insertMention('ask @Mi please', 7, team[1])).toEqual({ text: 'ask @Mika  please', caret: 10 })
   })

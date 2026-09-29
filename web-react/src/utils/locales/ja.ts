@@ -1903,6 +1903,7 @@ const table: Record<string, string> = {
   'Rename channel': 'チャンネル名を変更',
   'Everyone in the workspace sees the new name. Links to it keep working.': 'ワークスペースの全員に新しい名前が表示されます。これまでのリンクはそのまま使えます。',
   'Renamed to #{name}': '#{name} に名前を変更しました',
+  'Mark as read': '既読にする',
 }
 
 export default table
