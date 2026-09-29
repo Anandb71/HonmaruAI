@@ -1812,6 +1812,9 @@ const table: Record<string, string> = {
   'Your daily report is posted to {channel}, not to the daily-report channel.': 'Votre rapport quotidien est publié dans {channel}, et non dans le canal des rapports quotidiens.',
   'Move it to #{channel}': 'Le déplacer vers #{channel}',
   'Move it to a new channel, #{channel}': 'Le déplacer vers un nouveau canal, #{channel}',
+  '{names} reacted with {emoji}': '{names} a réagi avec {emoji}',
+  '{names} reacted': '{names} a réagi',
+  '{n} others': '{n} autres',
 }
 
 export default table

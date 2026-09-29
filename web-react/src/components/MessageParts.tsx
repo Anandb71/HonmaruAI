@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { getLocale } from '../utils/locale'
 import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon } from './Icon'
@@ -72,6 +74,39 @@ export const EmojiGlyph: React.FC<{ emoji: string; size?: number }> = ({ emoji, 
   return <img className="slk-custom-emoji" src={url} alt={emoji} title={emoji} draggable={false} style={size ? { width: size, height: size } : undefined} />
 }
 
+/// Who reacted, as a sentence: "Aya, Ken, and you", with the rest counted
+/// when there are many.
+export function reactorNames(names: string[], locale: string, more: (n: number) => string, max = 12): string {
+  const shown = names.slice(0, max)
+  const rest = names.length - shown.length
+  const parts = rest > 0 ? [...shown, more(rest)] : shown
+  try { return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(parts) } catch { return parts.join(', ') }
+}
+
+/// Hovering a reaction, as in Slack: the emoji large, and who reacted with it.
+const ReactionTip: React.FC<{ emoji: string; names: string[]; anchor: DOMRect }> = ({ emoji, names, anchor }) => {
+  const t = useT()
+  const custom = CUSTOM_EMOJI.test(emoji)
+  const who = reactorNames(names, getLocale(), (n) => t('{n} others', { n }))
+  const line = custom ? t('{names} reacted with {emoji}', { emoji }) : t('{names} reacted')
+  const [before, after = ''] = line.split('{names}')
+  const width = 240
+  const left = Math.max(8, Math.min(anchor.left + anchor.width / 2 - width / 2, window.innerWidth - width - 8))
+  const above = anchor.top > 180
+  return createPortal(
+    <div
+      className="slk-react-tip"
+      role="tooltip"
+      style={{ left, width, ...(above ? { bottom: window.innerHeight - anchor.top + 8 } : { top: anchor.bottom + 8 }) }}
+      data-reaction-tip
+    >
+      <span className="slk-react-tip-emoji" aria-hidden="true"><EmojiGlyph emoji={emoji} size={56} /></span>
+      <p>{before}<b>{who}</b>{after}</p>
+    </div>,
+    document.body,
+  )
+}
+
 export const Reactions: React.FC<{
   message: ChannelMessage
   nameOf: (ref: string) => string
@@ -79,8 +114,13 @@ export const Reactions: React.FC<{
   onAdd: () => void
 }> = ({ message, nameOf, onToggle, onAdd }) => {
   const t = useT()
+  const [tip, setTip] = useState<{ emoji: string; anchor: DOMRect } | null>(null)
   const list = message.reactions || []
+  // A reaction that goes (or changes) while its tip is up takes the tip too.
+  useEffect(() => { if (tip && !list.some((r) => r.emoji === tip.emoji)) setTip(null) }, [list, tip])
   if (!list.length) return null
+  const shown = tip && list.find((r) => r.emoji === tip.emoji)
+  const open = (emoji: string) => (e: React.SyntheticEvent<HTMLElement>) => setTip({ emoji, anchor: e.currentTarget.getBoundingClientRect() })
   return (
     <div className="slk-reactions">
       {list.map((r) => (
@@ -89,13 +129,19 @@ export const Reactions: React.FC<{
           type="button"
           className={`slk-reaction${r.mine ? ' mine' : ''}`}
           aria-pressed={r.mine}
-          title={r.refs.map(nameOf).join(', ')}
+          aria-label={t('{names} reacted', { names: reactorNames(r.refs.map(nameOf), getLocale(), (n) => t('{n} others', { n })) })}
+          onMouseEnter={open(r.emoji)}
+          onMouseLeave={() => setTip(null)}
+          onFocus={open(r.emoji)}
+          onBlur={() => setTip(null)}
           onClick={() => onToggle(r.emoji)}
+          data-reaction={r.emoji}
         >
           <span className="slk-reaction-emoji"><EmojiGlyph emoji={r.emoji} /></span>
           <span className="slk-reaction-count">{r.count}</span>
         </button>
       ))}
+      {shown && tip && <ReactionTip emoji={shown.emoji} names={shown.refs.map(nameOf)} anchor={tip.anchor} />}
       <button type="button" className="slk-reaction add" onClick={onAdd} aria-label={t('Add reaction')}>
         <Icon name="smile" size={14} /><span aria-hidden="true">+</span>
       </button>

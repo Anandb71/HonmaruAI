@@ -339,8 +339,16 @@ struct ChatReactionBar: View {
                             .foregroundStyle(r.mine ? Theme.Colors.interactive : Theme.Colors.textPrimary)
                         }
                         .buttonStyle(.plain)
+                        // Who reacted: a long press on the phone, the pointer on an iPad.
+                        .contextMenu {
+                            Text(verbatim: who(r))
+                            Button { onToggle(r.emoji) } label: {
+                                Label(r.mine ? "Remove reaction" : "Add reaction", systemImage: r.mine ? "minus.circle" : "plus.circle")
+                            }
+                        }
+                        .help(Text(verbatim: who(r)))
                         .accessibilityLabel(Text(verbatim: "\(r.emoji) \(r.count)"))
-                        .accessibilityHint(Text(r.refs.map(nameOf).joined(separator: ", ")))
+                        .accessibilityHint(Text(verbatim: who(r)))
                     }
                     Button(action: onAdd) {
                         Image(systemName: "face.smiling").font(.system(size: 14)).padding(.horizontal, 9).padding(.vertical, 5)
@@ -349,6 +357,14 @@ struct ChatReactionBar: View {
                 }
             }
         }
+    }
+
+    /// "Aki, Ren and You reacted with 👍", the names in the reader's language.
+    private func who(_ r: ChatReaction) -> String {
+        let names = r.refs.map(nameOf)
+        let shown = names.count > 12 ? Array(names.prefix(12)) + [String(localized: "\(names.count - 12) others")] : names
+        let list = ListFormatter.localizedString(byJoining: shown)
+        return String(localized: "\(list) reacted with \(r.emoji)")
     }
 }
 

@@ -1410,3 +1410,20 @@
 
 /* Activity and Threads: "Mark all as read", at the right of the header. */
 .classic.slk.slk .slk-mark-all { flex: none; white-space: nowrap; margin-left: auto; }
+
+/* Hovering a reaction, as in Slack: the emoji large, and who reacted. On
+   <body>, above everything, and dark in either theme. */
+.slk-react-tip {
+  position: fixed; z-index: 1000; box-sizing: border-box; pointer-events: none;
+  padding: 12px 14px 10px; border-radius: 10px; text-align: center;
+  background: #1a1d21; color: #d1d2d3; box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+  font-size: 13px; line-height: 1.4;
+}
+.slk-react-tip-emoji {
+  display: flex; align-items: center; justify-content: center;
+  width: 64px; height: 64px; margin: 0 auto 8px; border-radius: 8px; background: #fff;
+  font-size: 44px; line-height: 1;
+}
+.slk-react-tip-emoji .slk-custom-emoji { width: 56px; height: 56px; margin: 0; }
+.slk-react-tip p { margin: 0; overflow-wrap: anywhere; }
+.slk-react-tip b { color: #fff; font-weight: 700; }

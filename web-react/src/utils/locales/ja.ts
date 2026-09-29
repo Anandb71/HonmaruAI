@@ -1876,6 +1876,9 @@ const table: Record<string, string> = {
   'Your daily report is posted to {channel}, not to the daily-report channel.': '日報が{channel}に投稿される設定になっています。日報チャンネルではありません。',
   'Move it to #{channel}': '#{channel} に移す',
   'Move it to a new channel, #{channel}': '新しいチャンネル #{channel} に移す',
+  '{names} reacted with {emoji}': '{names} が {emoji} でリアクションしました',
+  '{names} reacted': '{names} がリアクションしました',
+  '{n} others': 'ほか{n}人',
 }
 
 export default table
