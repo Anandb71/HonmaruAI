@@ -325,3 +325,12 @@ test("bookmarks at the top of a conversation", async () => {
   expect((await call("/channels/bookmarks", gus, { method: "DELETE", body: { orgId: ORG, channel: "b:cafe", id: bookmarks[0].id } })).status).toBe(403);
   expect((await call("/channels/bookmarks", toru, { method: "DELETE", body: { orgId: ORG, channel: "b:cafe", id: bookmarks[0].id } })).status).toBe(200);
 });
+
+test("a session's traces go with it", async () => {
+  const { endHere, pruneSessionTraces } = await import("../src/sessions.js");
+  await endHere(env.DB, ORG, ["no-such-token"]);
+  await env.DB.prepare("INSERT INTO workspace_activity (org_id, login, last_active_at) VALUES (?1, 'gone', '2020-01-01T00:00:00Z')").bind(ORG).run();
+  await pruneSessionTraces(env.DB);
+  expect(await env.DB.prepare("SELECT 1 FROM session_workspaces WHERE token = 'no-such-token'").first()).toBeNull();
+  expect(await env.DB.prepare("SELECT 1 FROM workspace_activity WHERE login = 'gone'").first()).toBeNull();
+});

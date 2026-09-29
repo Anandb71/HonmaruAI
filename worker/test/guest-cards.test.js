@@ -50,7 +50,8 @@ test("a private channel's card is its members' and the two on it", async () => {
   expect((await get(q("/cards/board"), member)).status).toBe(404);
   expect((await get(q("/cards/team"), member)).status).toBe(200);
   const hits = (await (await get(q("/search?q=Budget"), member)).json()).hits.map((h) => h.id).sort();
-  expect(hits).toEqual(["mine", "team"]);
+  // Not the board's; their own mail card, yes.
+  expect(hits).toEqual(["mail", "mine", "team"]);
 });
 
 test("a card from someone's own mail is theirs: nobody else opens, finds or records it", async () => {
@@ -61,4 +62,16 @@ test("a card from someone's own mail is theirs: nobody else opens, finds or reco
   expect(hits).not.toContain("mail");
   expect(JSON.stringify(await (await get(q("/record"), owner)).json())).not.toContain("Budget mail");
   expect(JSON.stringify(await (await get(q("/eval/export"), owner)).json())).not.toContain("Payslip");
+  // Its person still finds it.
+  expect((await (await get(q("/search?q=Budget"), member)).json()).hits.map((h) => h.id)).toContain("mail");
+});
+
+test("a routine's report said in a channel is the channel's, though its owner made it for themselves", async () => {
+  const { isPersonal } = await import("../src/access.js");
+  expect(isPersonal({ recipientUserID: "a", senderUserID: "a", sourceApp: "Routine", visibility: "team" })).toBe(false);
+  const { saveCard } = await import("../src/db.js");
+  await saveCard(env.DB, ORG, { id: "weekly", type: "notification", title: "Budget weekly", status: "pending", priority: "low", createdAt: new Date().toISOString(),
+    recipientUserID: "owner", senderUserID: "owner", sourceApp: "Routine", visibility: "team" });
+  expect((await get(q("/cards/weekly"), member)).status).toBe(200);
+  expect((await (await get(q("/search?q=Budget"), member)).json()).hits.map((h) => h.id)).toContain("weekly");
 });

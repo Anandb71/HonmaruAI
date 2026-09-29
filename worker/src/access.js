@@ -89,15 +89,22 @@ export function mayRead(key, access) {
 /// mail, a connected app, a reminder, a daily draft, a proposal: the same
 /// person on both ends and an app it came from. It is theirs, not the
 /// workspace's: nobody else's feed, search, record or playbook.
+///
+/// A report a routine says in a channel is the channel's (`visibility:
+/// "team"`), even when its owner made it for themselves.
 export function isPersonal(card) {
   if (!card) return false;
+  if (card.visibility === "team") return false;
   if (card.visibility === "personal") return true;
   return Boolean(card.sourceApp) && Boolean(card.recipientUserID) && card.recipientUserID === card.senderUserID;
 }
 
 /// The same, in SQL over the cards table : a team-wide
 /// lookup leaves these rows out.
-export const NOT_PERSONAL_SQL = "NOT (COALESCE(json_extract(data, '$.visibility'), '') = 'personal' OR (json_extract(data, '$.sourceApp') IS NOT NULL AND json_extract(data, '$.sourceApp') != '' AND recipient_user_id = sender_user_id))";
+export const NOT_PERSONAL_SQL = "(COALESCE(json_extract(data, '$.visibility'), '') = 'team' OR NOT (COALESCE(json_extract(data, '$.visibility'), '') = 'personal' OR (json_extract(data, '$.sourceApp') IS NOT NULL AND json_extract(data, '$.sourceApp') != '' AND recipient_user_id = sender_user_id)))";
+
+/// The same, but a person still finds their own (`?n` binds their login).
+export const visibleToSql = (n) => `(${NOT_PERSONAL_SQL} OR recipient_user_id = ?${n} OR sender_user_id = ?${n})`;
 
 /// Whether `access` lets its person see a card, over HTTP as on the socket:
 /// the two people on it always; a guest nobody else's; anyone else every card

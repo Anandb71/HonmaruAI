@@ -1,4 +1,4 @@
-import { NOT_PERSONAL_SQL } from "./access.js";
+import { NOT_PERSONAL_SQL, visibleToSql } from "./access.js";
 import { aiSpend } from "./ledger.js";
 // What the team can learn from its own decisions, and what the router can
 // learn from the team.
@@ -224,7 +224,8 @@ export async function exportGolden(db, orgId, { limit = 200 } = {}) {
 /// research tool: two to four words in, at most eight one-line decisions out.
 /// LIKE over the card JSON is crude and fast, and a team of ten has hundreds
 /// of cards, not millions.
-export async function searchDecisions(db, orgId, query, { limit = 8 } = {}) {
+/// `viewer`, when given, finds their own personal cards too; nobody else's.
+export async function searchDecisions(db, orgId, query, { limit = 8, viewer = null } = {}) {
   const words = String(query || "")
     .split(/[\s,、。・]+/u)
     .map((w) => w.trim())
@@ -235,10 +236,10 @@ export async function searchDecisions(db, orgId, query, { limit = 8 } = {}) {
   const { results } = await db
     .prepare(
       `SELECT recipient_user_id, decided_at, data FROM cards
-        WHERE org_id = ?1 AND (${clauses}) AND ${NOT_PERSONAL_SQL}
+        WHERE org_id = ?1 AND (${clauses}) AND ${viewer ? visibleToSql(words.length + 3) : NOT_PERSONAL_SQL}
         ORDER BY COALESCE(decided_at, created_at) DESC LIMIT ?${words.length + 2}`
     )
-    .bind(orgId, ...words.map((w) => `%${w}%`), Math.max(1, Math.min(Number(limit) || 8, 20)))
+    .bind(orgId, ...words.map((w) => `%${w}%`), Math.max(1, Math.min(Number(limit) || 8, 20)), ...(viewer ? [viewer] : []))
     .all();
   return (results || []).map((row) => {
     const card = parseCard(row) || {};

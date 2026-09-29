@@ -212,6 +212,9 @@ export default {
       ctx.waitUntil(warnExpiringKeys(env).catch((err) => console.error("key expiry warning failed", err?.message || err)));
       // Every proved domain, looked at again.
       ctx.waitUntil(recheckDomains(env).catch((err) => console.error("domain recheck failed", err?.message || err)));
+      // What sessions and presence leave behind, swept.
+      ctx.waitUntil(import("./sessions.js").then(({ pruneSessionTraces }) => pruneSessionTraces(env.DB, { now: at.getTime() }))
+        .catch((err) => console.error("session sweep failed", err?.message || err)));
     }
     // Once an hour: the hours just gone, sealed into the archive.
     if (at.getUTCMinutes() < 15) {
@@ -1949,7 +1952,7 @@ async function handle(request, env, url, ctx) {
         const terms = searchTermsFor(question, card);
         const available = await connectedSources(env, session, orgId);
         const [decisionsHit, recentHit, notionHit, githubHit, playbookHit, talkHit] = await Promise.all([
-          searchDecisions(env.DB, orgId, terms),
+          getUserByGithubId(env.DB, session.github_id).then((me) => searchDecisions(env.DB, orgId, terms, { viewer: me?.login || null })),
           recentDecisions(env.DB, orgId, { limit: 8 }),
           available.notion ? searchNotion(env, session.github_id, terms).catch((err) => { console.error("notion search failed", err?.message || err); return []; }) : [],
           available.github ? searchGithubIssues(session, orgId, terms, env).catch((err) => { console.error("github search failed", err?.message || err); return []; }) : [],
@@ -2087,7 +2090,7 @@ async function handle(request, env, url, ctx) {
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
       const access = await cardAccess(env, request, orgId);
-      const found = q ? await searchDecisions(env.DB, orgId, q, { limit: 20 }) : [];
+      const found = q ? await searchDecisions(env.DB, orgId, q, { limit: 20, viewer: access.login || null }) : [];
       const hits = found.filter((h) => mayReadCard({ recipientUserID: h.recipient, senderUserID: h.sender, business: h.business }, access)).slice(0, 12);
       return json({ hits });
     }
