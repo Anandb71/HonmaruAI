@@ -48,6 +48,8 @@ final class DecisionCardService: ObservableObject {
     /// it — the tab bar and the app icon — and a count computed twice is a count
     /// that eventually disagrees with itself.
     @Published private(set) var pendingCount = 0
+    /// What the icon shows: pending, less the app cards already seen.
+    private var badgeCount = -1
 
     var onCardsUpdated: (() -> Void)?
     var onContextReceived: ((String) -> Void)?
@@ -55,6 +57,7 @@ final class DecisionCardService: ObservableObject {
 
     func attach(webSocketService: WebSocketService) {
         self.webSocketService = webSocketService
+        AppReads.shared.onChange = { [weak self] in self?.refreshBadge() }
         webSocketService.onEvent = { [weak self] event in
             self?.handle(event)
         }
@@ -176,9 +179,19 @@ final class DecisionCardService: ObservableObject {
         let pending = activeUserID.map { cardsByUser[$0, default: []].filter(\.isPending).count } ?? 0
         if pending != pendingCount {
             pendingCount = pending
-            PushService.shared.setBadge(pending)
         }
+        refreshBadge()
         onCardsUpdated?()
+    }
+
+    /// The icon's number: what still calls for you — a person's card until
+    /// it is decided, an app's (Automations…) until it has been seen.
+    func refreshBadge() {
+        let count = activeUserID.map { cardsByUser[$0, default: []].filter { $0.isPending && AppReads.shared.isNew($0) }.count } ?? 0
+        if count != badgeCount {
+            badgeCount = count
+            PushService.shared.setBadge(count)
+        }
     }
 
     /// Debounced: a snapshot arriving as a burst of upserts would otherwise

@@ -125,6 +125,9 @@ final class ChatStore: ObservableObject {
             return
         }
         guard let view = value["view"] as? String, let at = value["lastReadAt"] as? String else { return }
+        // An app looked at elsewhere (Automations on the web): its cards stop
+        // counting on this phone's icon too.
+        if view.hasPrefix("app:") { AppReads.shared.merge([view: at]); return }
         let unread = value["unread"] as? Bool == true
         if let parentId = value["thread"] as? String {
             if unread { Task { await loadThreads() }; return }
@@ -201,6 +204,7 @@ final class ChatStore: ObservableObject {
             members = overview.members
             activity = Dictionary(uniqueKeysWithValues: overview.activity.map { ($0.channel, $0) })
             reads = overview.reads ?? [:]
+            AppReads.shared.merge(reads)
             prefs = overview.prefs ?? [:]
             mine = overview.mine
             groups = overview.groups ?? []
