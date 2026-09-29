@@ -148,6 +148,35 @@ test("deletion needs a session", async () => {
   expect(res.status).toBe(401);
 });
 
+test.each([
+  `u:${"long-account-".repeat(8)}@example.invalid`,
+  "u:qa_alice@example.invalid",
+])("deleting %s matches DM participants literally, including their files", async (login) => {
+  const { upsertUser, createSession } = await import("../src/db.js");
+  await upsertUser(env.DB, { githubId: "9100", login, name: "Deletion QA", locale: "en" });
+  const token = await createSession(env.DB, "9100", "email-auth");
+  const other = login.includes("_") ? login.replace("_", "x") : `${login}x`;
+  const channels = [`dm:${login}|bob`, `dm:bob|${login}`, `dm:${other}|bob`, `dm:bob|${other}`, "b:team"];
+  for (const [i, channel] of channels.entries()) {
+    await env.DB.prepare("INSERT INTO channel_messages (id, org_id, channel, author_login, body, created_at) VALUES (?1, 'qa', ?2, 'bob', 'hello', '2026-09-30')")
+      .bind(`m${i}`, channel).run();
+    await env.DB.prepare("INSERT INTO message_files (id, org_id, channel, message_id, uploader, name, type, size, created_at) VALUES (?1, 'qa', ?2, ?3, 'bob', 'file.txt', 'text/plain', 1, '2026-09-30')")
+      .bind(`f${i}`, channel, `m${i}`).run();
+  }
+  const response = await SELF.fetch("https://example.com/account", { method: "DELETE", headers: { "x-session-token": token } });
+  expect(response.status).toBe(200);
+  expect((await env.DB.prepare("SELECT id FROM channel_messages ORDER BY id").all()).results.map((m) => m.id))
+    .toEqual(["m2", "m3", "m4"]);
+  for (const i of [0, 1]) {
+    expect(await env.DB.prepare("SELECT message_id, uploader, created_at FROM message_files WHERE id = ?1").bind(`f${i}`).first())
+      .toEqual({ message_id: null, uploader: "", created_at: "1970-01-01T00:00:00.000Z" });
+  }
+  for (const i of [2, 3, 4]) {
+    expect(await env.DB.prepare("SELECT message_id, uploader FROM message_files WHERE id = ?1").bind(`f${i}`).first())
+      .toEqual({ message_id: `m${i}`, uploader: "bob" });
+  }
+});
+
 test("export hands back the account's own data, and nobody else's", async () => {
   const token = await seedAlice();
   const res = await SELF.fetch("https://example.com/account/export", {

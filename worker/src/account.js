@@ -147,6 +147,10 @@ export async function deleteAccount(db, githubId, login) {
   // acted on, are theirs. Cards they sent that someone else already holds stay
   // with that person — the sender's name comes off instead.
   if (login) {
+    // D1 limits LIKE pattern length, and a login may itself contain LIKE
+    // wildcards (e.g. an underscore in an email address). Compare the two
+    // delimited DM participants literally instead of building a pattern.
+    const ownDM = "substr(channel, 1, 3) = 'dm:' AND (substr(channel, 4, length(?1) + 1) = ?1 || '|' OR substr(channel, -(length(?1) + 1)) = '|' || ?1)";
     await db.prepare("DELETE FROM cards WHERE recipient_user_id = ?1").bind(login).run();
     await db
       .prepare("UPDATE cards SET sender_user_id = ?1 WHERE sender_user_id = ?2")
@@ -165,12 +169,12 @@ export async function deleteAccount(db, githubId, login) {
       ["DELETE FROM proposals WHERE login = ?1", [login]],
       // Their direct conversations go with them; what they said in a
       // business's channel stays with the team, unsigned.
-      ["DELETE FROM channel_messages WHERE channel LIKE 'dm:%' AND (channel LIKE 'dm:' || ?1 || '|%' OR channel LIKE 'dm:%|' || ?1)", [login]],
+      [`DELETE FROM channel_messages WHERE ${ownDM}`, [login]],
       ["UPDATE channel_messages SET author_login = NULL WHERE author_login = ?1", [login]],
       // Files in those conversations are handed to the sweeper, which takes
       // their bytes out of storage on its next run; elsewhere the name
       // comes off.
-      ["UPDATE message_files SET message_id = NULL, uploader = '', created_at = '1970-01-01T00:00:00.000Z' WHERE channel LIKE 'dm:%' AND (channel LIKE 'dm:' || ?1 || '|%' OR channel LIKE 'dm:%|' || ?1)", [login]],
+      [`UPDATE message_files SET message_id = NULL, uploader = '', created_at = '1970-01-01T00:00:00.000Z' WHERE ${ownDM}`, [login]],
       ["UPDATE message_files SET uploader = '' WHERE uploader = ?1", [login]],
       // Out of every group and private channel; what they said there stays,
       // unsigned, like a public channel's.
