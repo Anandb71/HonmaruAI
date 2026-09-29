@@ -120,7 +120,7 @@ enum TeamService {
     /// A code and, where the web has an address, the link that opens it.
     static func mintInviteLink(orgId: String, role: String, backendBaseURL: URL) async throws -> MintedInvite {
         let req = try request("invites/create", method: "POST", body: ["orgId": orgId, "role": role], backendBaseURL: backendBaseURL)
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await Reauth.send(req)
         try check(data, response)
         return try JSONDecoder().decode(MintedInvite.self, from: data)
     }
@@ -139,7 +139,7 @@ enum TeamService {
     /// comes back is the workspace to switch to.
     static func createTeam(name: String, backendBaseURL: URL) async throws -> (orgId: String, name: String) {
         let req = try request("orgs", method: "POST", body: ["name": name], backendBaseURL: backendBaseURL)
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await Reauth.send(req)
         try check(data, response)
         let made = try JSONDecoder().decode(Made.self, from: data)
         return (made.orgId, made.name)
@@ -149,14 +149,14 @@ enum TeamService {
     /// the rest with its own sentence.
     static func renameTeam(orgId: String, name: String, backendBaseURL: URL) async throws -> String {
         let req = try request("orgs/name", method: "PUT", body: ["orgId": orgId, "name": name], backendBaseURL: backendBaseURL)
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await Reauth.send(req)
         try check(data, response)
         return try JSONDecoder().decode(Made.self, from: data).name
     }
 
     static func revokeInvite(orgId: String, ref: String, backendBaseURL: URL) async throws {
         let req = try request("invites", method: "DELETE", body: ["orgId": orgId, "ref": ref], backendBaseURL: backendBaseURL)
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await Reauth.send(req)
         try check(data, response)
     }
 
@@ -164,7 +164,7 @@ enum TeamService {
     /// allowed; standing is not a thing a client gets to assert.
     static func removeMember(orgId: String, ref: String, backendBaseURL: URL) async throws {
         let req = try request("members", method: "DELETE", body: ["orgId": orgId, "ref": ref], backendBaseURL: backendBaseURL)
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await Reauth.send(req)
         try check(data, response)
     }
 

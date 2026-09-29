@@ -144,6 +144,30 @@ final class ChatTests: XCTestCase {
         XCTAssertFalse(SessionPolicy.noticeIfEnded(status: 401, data: Data(#"{"code":"reauth-required"}"#.utf8)))
     }
 
+    /// A reply looked at in Activity reads its thread up to it: a thread
+    /// whose newest reply is no later is no longer new; a later one still is.
+    func testActivityReadsThreadsUpToTheReplyLookedAt() throws {
+        let read = try JSONDecoder().decode([ChatService.ThreadRead].self, from: Data(#"[{"thread":"p1","lastReadAt":"2026-09-28T10:00:00.000Z"},{"thread":"p2","lastReadAt":"2026-09-28T10:00:00.000Z"}]"#.utf8))
+        func thread(_ id: String, last: String) throws -> ChatThreadItem {
+            try JSONDecoder().decode(ChatThreadItem.self, from: Data("""
+            {"parent":{"id":"\(id)","channel":"b:cafe","kind":"message","body":"q","mine":true,"createdAt":"2026-09-28T09:00:00.000Z"},
+             "replies":[],"replyCount":1,"lastReplyAt":"\(last)","unread":true}
+            """.utf8))
+        }
+        let out = ChatStore.readThrough([
+            try thread("p1", last: "2026-09-28T10:00:00.000Z"),
+            try thread("p2", last: "2026-09-28T10:05:00.000Z"),
+            try thread("p3", last: "2026-09-28T09:30:00.000Z"),
+        ], read)
+        XCTAssertEqual(out.map(\.unread), [false, true, true])
+    }
+
+    /// Activity keys name messages (`m:`) or reactions (`r:`); only the
+    /// messages have notifications of their own to take down.
+    func testOnlyMessageKeysNameNotificationsToTakeDown() {
+        XCTAssertEqual(ChatStore.messageIds(["m:abc", "r:abc:1x", "m:def", "local-1"]), ["abc", "def"])
+    }
+
     func testTheCanvasDecodesAsTheWorkerSendsIt() throws {
         let canvas = try JSONDecoder().decode(ChatCanvas.self, from: ###"{"body":"## Opening\n- [ ] Unlock at 7","version":3,"updatedBy":"Mika","updatedAt":"2026-09-26T01:00:00.000Z"}"###.data(using: .utf8)!)
         XCTAssertEqual(canvas.version, 3)
@@ -166,12 +190,24 @@ final class ChatMentionTests: XCTestCase {
         XCTAssertEqual(directory.kind(of: "＠sales"), .group)
         XCTAssertEqual(directory.kind(of: "@AI"), .ai)
         XCTAssertNil(directory.kind(of: "@nobody"))
+        XCTAssertEqual(directory.kind(of: "＠all"), .group)
+        XCTAssertEqual(directory.kind(of: "@allの皆さん"), .group)
+        XCTAssertEqual(directory.kind(of: "@everyone"), .group)
+        XCTAssertNil(directory.kind(of: "@alliance"))
     }
 
     func testTheComposerChecksOnlyFinishedMentions() {
         XCTAssertEqual(ConversationView.mentionTokens(in: "@mika ask @nobody about it"), ["@mika", "@nobody"])
         XCTAssertEqual(ConversationView.mentionTokens(in: "hi @mik"), [])
         XCTAssertEqual(ConversationView.mentionTokens(in: "mail a@b.com "), [])
+        // Names are offered after "＠" and right after Japanese, never inside an address or a link.
+        XCTAssertEqual(ConversationView.mentionQuery(in: "確認@mi")?.query, "mi")
+        XCTAssertEqual(ConversationView.mentionQuery(in: "確認@mi")?.before, "確認")
+        XCTAssertEqual(ConversationView.mentionQuery(in: "＠al")?.query, "al")
+        XCTAssertEqual(ConversationView.mentionQuery(in: "hi @")?.query, "")
+        XCTAssertNil(ConversationView.mentionQuery(in: "mail a@b"))
+        XCTAssertNil(ConversationView.mentionQuery(in: "youtube.com/@ch"))
+        XCTAssertNil(ConversationView.mentionQuery(in: "@mika done"))
     }
 }
 

@@ -1868,6 +1868,11 @@ const table: Record<string, string> = {
   'Take {app} away? Everyone’s connection to it ends.': '{app} の許可を外しますか？全員の接続が終了します。',
   'Taken away.': '許可を外しました。',
   'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'ここで接続したものはあなた専用です。読むのはあなたとAIの1対1の会話だけで、チャンネルや他の人には届きません。オーナーが許可しない限り、読むだけで書き込みはしません。',
+  'Single logout URL (SLO)': 'シングルログアウトURL（SLO）',
+  'Sign-out address, optional, https://…': 'サインアウト先アドレス（任意）、https://…',
+  'Read pictures and scanned PDFs': '画像とスキャンしたPDFも読む',
+  'Photos, screenshots and scanned pages have no text of their own. With this on, each one attached is sent to the workspace’s AI model to be read, checked against these rules, and dropped. It uses the AI allowance.': '写真・スクリーンショット・スキャンしたページには文字データがありません。オンにすると、添付されたものをワークスペースのAIモデルに送って読み取り、ルールと照らし合わせたあと破棄します。AIの利用枠を使います。',
+  'This needs an OpenAI model for the workspace, which is not set up.': 'ワークスペースにOpenAIのモデルが必要ですが、まだ設定されていません。',
 }
 
 export default table

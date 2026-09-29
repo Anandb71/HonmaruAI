@@ -2,17 +2,26 @@
 // renderer: it finds the pages, their content streams and the fonts they
 // name, and reads the text-showing operators, turning each font's codes into
 // characters through the font's ToUnicode map when it has one. Enough for
-// what office software and browsers print to PDF; a scanned page is a
-// picture, and has no words here.
+// what office software and browsers print to PDF. A scanned page is a
+// picture and has no words here; its JPEG is handed back instead, for the
+// workspace's reader of pictures, when asked for (ocr.js).
 //
 // A PDF is compressed streams inside a file of any size: every stream is
 // inflated with a cap, and all of them together with another, so a small
-// file cannot become a large one. An encrypted PDF is not read.
+// file cannot become a large one. An encrypted PDF is read when it opens
+// without a password (pdfCrypt.js); one that asks for a password is not.
+
+import { openEncryption, decryptStream } from "./pdfCrypt.js";
 
 const MAX_STREAM_INFLATED = 8 * 1024 * 1024;
 const MAX_TOTAL_INFLATED = 24 * 1024 * 1024;
 const MAX_TEXT_OUT = 1024 * 1024;
 const MAX_FORM_DEPTH = 3;
+// Pictures of pages: a page with fewer letters than this is a picture.
+const PICTURE_PAGE_LETTERS = 16;
+const MAX_PICTURES = 4;
+const MAX_PICTURE_BYTES = 4 * 1024 * 1024;
+const MIN_PICTURE_SIDE = 300;
 
 const WHITE = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
 const DELIM = new Set([...Array.from("()<>[]{}/%", (c) => c.charCodeAt(0))]);
@@ -201,7 +210,7 @@ class Pdf {
     while ((m = re.exec(this.src))) {
       const lex = new Lexer(this.src, m.index + m[0].length);
       const value = parseValue(lex);
-      const entry = { value };
+      const entry = { value, gen: Number(m[2]) || 0 };
       const save = lex.pos;
       const kw = lex.next();
       if (kw.t === "kw" && kw.v === "stream") {
@@ -236,7 +245,7 @@ class Pdf {
     const entry = this.objects.get(num);
     let out = null;
     if (entry && entry.start !== undefined && entry.value && typeof entry.value === "object") {
-      const raw = this.bytes.subarray(entry.start, entry.end);
+      const raw = await this.raw(num, entry);
       const f = this.get(entry.value.Filter);
       const filters = (Array.isArray(f) ? f : f ? [f] : []).map((x) => nameOf(this.get(x)));
       if (!filters.length) out = raw;
@@ -252,6 +261,15 @@ class Pdf {
     }
     this.decoded.set(num, out);
     return out;
+  }
+
+  /// A stream's bytes as stored, decrypted when the file is.
+  async raw(num, entry) {
+    const stored = this.bytes.subarray(entry.start, entry.end);
+    if (!this.crypt || num === this.encryptNum) return stored;
+    const type = nameOf(entry.value?.Type);
+    if (type === "XRef" || (type === "Metadata" && !this.crypt.encryptMetadata)) return stored;
+    return decryptStream(this.crypt, num, entry.gen || 0, stored);
   }
 
   /// Objects kept inside object streams, which newer PDFs put fonts and
@@ -278,15 +296,41 @@ class Pdf {
     }
   }
 
-  encrypted() {
-    for (const m of this.src.matchAll(/trailer\s*<</g)) {
-      const trailer = parseValue(new Lexer(this.src, m.index + m[0].length - 2));
-      if (trailer?.Encrypt) return true;
-    }
-    for (const entry of this.objects.values()) {
-      if (nameOf(entry.value?.Type) === "XRef" && entry.value.Encrypt) return true;
-    }
-    return false;
+  /// The trailer's Encrypt and ID, from a classic trailer or an XRef stream.
+  trailer() {
+    const found = {};
+    const take = (t) => {
+      if (!t || typeof t !== "object") return;
+      if (t.Encrypt && !found.Encrypt) found.Encrypt = t.Encrypt;
+      if (Array.isArray(t.ID) && !found.ID) found.ID = t.ID;
+    };
+    for (const m of this.src.matchAll(/trailer\s*<</g)) take(parseValue(new Lexer(this.src, m.index + m[0].length - 2)));
+    for (const entry of this.objects.values()) if (nameOf(entry.value?.Type) === "XRef") take(entry.value);
+    return found;
+  }
+
+  /// False when the file is encrypted and does not open without a password.
+  async unlock() {
+    const { Encrypt, ID } = this.trailer();
+    if (!Encrypt) return true;
+    if (isRef(Encrypt)) this.encryptNum = Encrypt.ref;
+    const id0 = Array.isArray(ID) ? this.get(ID[0]) : "";
+    this.crypt = await openEncryption(this.get(Encrypt), typeof id0 === "string" ? id0 : "", (v) => this.get(v)).catch(() => null);
+    return Boolean(this.crypt);
+  }
+
+  /// A picture's JPEG as stored, when it is one big enough to be a page.
+  async jpegOf(num) {
+    const entry = this.objects.get(num);
+    const v = entry?.value;
+    if (!v || entry.start === undefined || nameOf(v.Subtype) !== "Image") return null;
+    const f = this.get(v.Filter);
+    const filters = (Array.isArray(f) ? f : f ? [f] : []).map((x) => nameOf(this.get(x)));
+    if (filters.length !== 1 || (filters[0] !== "DCTDecode" && filters[0] !== "DCT")) return null;
+    if (Math.max(Number(this.get(v.Width)) || 0, Number(this.get(v.Height)) || 0) < MIN_PICTURE_SIDE) return null;
+    if (entry.end - entry.start > MAX_PICTURE_BYTES) return null;
+    const bytes = await this.raw(num, entry);
+    return bytes.length > 2 && bytes[0] === 0xff && bytes[1] === 0xd8 ? bytes : null;
   }
 
   // ---- Fonts ----
@@ -338,7 +382,7 @@ class Pdf {
     return parts.join("\n");
   }
 
-  async textOf(content, resources, out, depth = 0) {
+  async textOf(content, resources, out, depth = 0, drawn = []) {
     const fonts = await this.fontsOf(resources);
     const xobjects = this.get(this.get(resources)?.XObject) || {};
     const lex = new Lexer(content);
@@ -381,8 +425,8 @@ class Pdf {
         const form = isRef(ref) ? this.objects.get(ref.ref) : null;
         if (form && nameOf(form.value?.Subtype) === "Form") {
           const data = await this.stream(ref.ref);
-          if (data) await this.textOf(latin1(data), form.value.Resources || resources, out, depth + 1);
-        }
+          if (data) await this.textOf(latin1(data), form.value.Resources || resources, out, depth + 1, drawn);
+        } else if (form && nameOf(form.value?.Subtype) === "Image") drawn.push(ref.ref);
       } else if (op === "ID") {
         // An inline image's bytes, up to its end.
         const end = content.slice(lex.pos).search(/\sEI(\s|$)/);
@@ -392,16 +436,26 @@ class Pdf {
     }
   }
 
-  async text() {
+  /// The words, and (when asked) the JPEGs of pages that are pictures.
+  async text({ pictures = false } = {}) {
     const out = { parts: [], size: 0, push(s) { if (!s) return; this.parts.push(s); this.size += s.length; } };
+    const images = [];
     const pages = [...this.objects.values()].filter((e) => nameOf(e.value?.Type) === "Page");
     for (const page of pages) {
       if (out.size > MAX_TEXT_OUT) break;
+      const from = out.parts.length;
+      const drawn = [];
       const content = await this.contentOf(page.value.Contents);
-      if (content) await this.textOf(content, this.resourcesOf(page.value), out);
+      if (content) await this.textOf(content, this.resourcesOf(page.value), out, 0, drawn);
       out.push("\n");
+      if (!pictures || images.length >= MAX_PICTURES || !drawn.length) continue;
+      if (out.parts.slice(from).join("").replace(/\s+/g, "").length >= PICTURE_PAGE_LETTERS) continue;
+      for (const num of new Set(drawn)) {
+        const jpeg = await this.jpegOf(num);
+        if (jpeg) { images.push({ type: "image/jpeg", bytes: jpeg }); break; }
+      }
     }
-    return out.parts.join("").replace(/[ \t]+\n/g, "\n").slice(0, MAX_TEXT_OUT);
+    return { text: out.parts.join("").replace(/[ \t]+\n/g, "\n").slice(0, MAX_TEXT_OUT), images };
   }
 }
 
@@ -464,13 +518,19 @@ function decodeShown(tok, font) {
   return s;
 }
 
-/// The text of a PDF's bytes, or null when it is not a PDF we can read.
-export async function pdfText(buffer) {
+/// A PDF's words and, with `pictures`, the JPEGs of its pages that are
+/// pictures (at most four); null when it is not a PDF we can read.
+export async function pdfContents(buffer, { pictures = false } = {}) {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   if (latin1(bytes.subarray(0, 1024)).indexOf("%PDF-") < 0) return null;
   const pdf = new Pdf(bytes);
   pdf.index();
+  if (!(await pdf.unlock())) return null;
   await pdf.unpackObjectStreams();
-  if (pdf.encrypted()) return null;
-  return pdf.text();
+  return pdf.text({ pictures });
+}
+
+/// The text of a PDF's bytes, or null when it is not a PDF we can read.
+export async function pdfText(buffer) {
+  return (await pdfContents(buffer))?.text ?? null;
 }

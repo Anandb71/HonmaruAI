@@ -13,7 +13,8 @@ interface Connection {
   ssoUrl: string | null; certificate: string | null; allowedDomains: string[]; hostedDomain: string | null; tenantId: string | null
   sessionHours: number | null; status: 'draft' | 'testing' | 'active' | 'disabled'; testedAt: string | null
   test: { email: string; subject: string; name: string | null } | null
-  sp?: { entityId: string; acs: string; metadata: string }
+  sp?: { entityId: string; acs: string; slo?: string; metadata: string }
+  idpSloUrl?: string | null
   logoutUrl?: string
 }
 interface Provider { id: string; name: string; issuer: string | null }
@@ -129,7 +130,7 @@ export const DomainsSso: React.FC<{ httpBase: string; orgId: string; sessionToke
 /// through them is required.
 const SsoConnections: React.FC<{ httpBase: string; orgId: string; sessionToken: string; verified: string[] }> = ({ httpBase, orgId, sessionToken, verified }) => {
   const t = useT()
-  const blank = { provider: 'google', name: '', issuer: 'https://accounts.google.com', clientId: '', clientSecret: '', hostedDomain: '', tenantId: '', ssoUrl: '', certificate: '', metadataXml: '', allowedDomains: [] as string[], sessionHours: '24' }
+  const blank = { provider: 'google', name: '', issuer: 'https://accounts.google.com', clientId: '', clientSecret: '', hostedDomain: '', tenantId: '', ssoUrl: '', sloUrl: '', certificate: '', metadataXml: '', allowedDomains: [] as string[], sessionHours: '24' }
   const [connections, setConnections] = useState<Connection[]>([])
   const [enforce, setEnforce] = useState(false)
   const [canEdit, setCanEdit] = useState(false)
@@ -169,14 +170,14 @@ const SsoConnections: React.FC<{ httpBase: string; orgId: string; sessionToken: 
     setError(null); setNote(null)
     if (!c) { setEditing('new'); setForm(blank); return }
     setEditing(c.id)
-    setForm({ ...blank, provider: c.provider, name: c.name, issuer: c.issuer, clientId: c.clientId || '', hostedDomain: c.hostedDomain || '', tenantId: c.tenantId || '', ssoUrl: c.ssoUrl || '', allowedDomains: c.allowedDomains, sessionHours: String(c.sessionHours || 24) })
+    setForm({ ...blank, provider: c.provider, name: c.name, issuer: c.issuer, clientId: c.clientId || '', hostedDomain: c.hostedDomain || '', tenantId: c.tenantId || '', ssoUrl: c.ssoUrl || '', sloUrl: c.idpSloUrl || '', allowedDomains: c.allowedDomains, sessionHours: String(c.sessionHours || 24) })
   }
   const save = async () => {
     const saml = form.provider === 'saml'
     const body: Record<string, unknown> = {
       provider: form.provider, name: form.name, allowedDomains: form.allowedDomains, sessionHours: Number(form.sessionHours),
       ...(saml
-        ? { ...(form.metadataXml.trim() ? { metadataXml: form.metadataXml } : { issuer: form.issuer, ssoUrl: form.ssoUrl }), ...(form.certificate.trim() ? { certificate: form.certificate } : {}) }
+        ? { ...(form.metadataXml.trim() ? { metadataXml: form.metadataXml } : { issuer: form.issuer, ssoUrl: form.ssoUrl }), sloUrl: form.sloUrl.trim(), ...(form.certificate.trim() ? { certificate: form.certificate } : {}) }
         : { issuer: form.issuer, clientId: form.clientId, ...(form.clientSecret ? { clientSecret: form.clientSecret } : {}), hostedDomain: form.hostedDomain || null, tenantId: form.tenantId || null }),
     }
     const out = editing && editing !== 'new'
@@ -208,7 +209,7 @@ const SsoConnections: React.FC<{ httpBase: string; orgId: string; sessionToken: 
           {c.sp && (
             <div className="sso-sp">
               <p className="row-sub">{t('Give your identity provider these:')}</p>
-              {[[t('Entity ID'), c.sp.entityId], [t('Reply URL (ACS)'), c.sp.acs], [t('Metadata'), c.sp.metadata]].map(([label, value]) => (
+              {[[t('Entity ID'), c.sp.entityId], [t('Reply URL (ACS)'), c.sp.acs], ...(c.sp.slo ? [[t('Single logout URL (SLO)'), c.sp.slo]] : []), [t('Metadata'), c.sp.metadata]].map(([label, value]) => (
                 <div key={label} className="dlg-secret"><span className="row-sub">{label}</span> <code>{value}</code>
                   <button type="button" className="studio-btn" onClick={() => copy(value)}>{t('Copy')}</button></div>
               ))}
@@ -247,6 +248,7 @@ const SsoConnections: React.FC<{ httpBase: string; orgId: string; sessionToken: 
               <textarea className="rules-number wide" rows={4} placeholder={t('Paste the metadata XML from your identity provider (or fill in the three fields below)')} value={form.metadataXml} onChange={(e) => setForm({ ...form, metadataXml: e.target.value })} data-sso-metadata />
               <input className="rules-number wide" placeholder={t('Identity provider entity ID')} value={form.issuer} disabled={Boolean(form.metadataXml.trim())} onChange={(e) => setForm({ ...form, issuer: e.target.value })} />
               <input className="rules-number wide" placeholder={t('Sign-in address (HTTP-Redirect), https://…')} value={form.ssoUrl} disabled={Boolean(form.metadataXml.trim())} onChange={(e) => setForm({ ...form, ssoUrl: e.target.value })} />
+              <input className="rules-number wide" placeholder={t('Sign-out address, optional, https://…')} value={form.sloUrl} onChange={(e) => setForm({ ...form, sloUrl: e.target.value })} data-sso-slo />
               <textarea className="rules-number wide" rows={3} placeholder={current?.certificate ? t('Signing certificate (saved; paste to replace)') : t('Signing certificate (PEM)')} value={form.certificate} disabled={Boolean(form.metadataXml.trim())} onChange={(e) => setForm({ ...form, certificate: e.target.value })} />
             </>
           ) : (

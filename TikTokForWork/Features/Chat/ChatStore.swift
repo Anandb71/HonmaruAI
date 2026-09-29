@@ -116,6 +116,12 @@ final class ChatStore: ObservableObject {
         if let items = value["items"] as? [String] {
             let keys = Set(items)
             inbox = inbox.map { var i = $0; if i.unread && keys.contains(i.id) { i.unread = false }; return i }
+            let read = (value["threads"] as? [[String: Any]] ?? []).compactMap { t -> ChatService.ThreadRead? in
+                guard let id = t["thread"] as? String, let at = t["lastReadAt"] as? String else { return nil }
+                return ChatService.ThreadRead(thread: id, lastReadAt: at)
+            }
+            threadsRead(read)
+            PushService.clearDelivered(messageIds: Self.messageIds(items))
             return
         }
         guard let view = value["view"] as? String, let at = value["lastReadAt"] as? String else { return }
@@ -123,7 +129,7 @@ final class ChatStore: ObservableObject {
         if let parentId = value["thread"] as? String {
             if unread { Task { await loadThreads() }; return }
             if let i = threads.firstIndex(where: { $0.parent.id == parentId }) { threads[i].unread = false }
-            inbox = inbox.map { var i = $0; if i.unread && i.message.parentId == parentId && i.message.createdAt <= at { i.unread = false }; return i }
+            inbox = inbox.map { var i = $0; if i.unread && ((i.message.parentId == parentId && i.message.createdAt <= at) || (i.message.id == parentId && i.type != "reaction")) { i.unread = false }; return i }
             PushService.clearDelivered(channel: view, parentId: parentId)
             return
         }
@@ -255,6 +261,8 @@ final class ChatStore: ObservableObject {
     func markThreadRead(_ item: ChatThreadItem) async {
         guard let orgId, let base else { return }
         if let i = threads.firstIndex(where: { $0.id == item.id }) { threads[i].unread = false }
+        // Its replies in Activity are read too, and its first message where it named you.
+        inbox = inbox.map { var i = $0; if i.unread && (i.message.parentId == item.parent.id || (i.message.id == item.parent.id && i.type != "reaction")) { i.unread = false }; return i }
         await ChatService.markThreadRead(orgId: orgId, channel: item.parent.channel, parentId: item.parent.id, base: base)
     }
 
@@ -380,7 +388,50 @@ final class ChatStore: ObservableObject {
         guard inbox.contains(where: { $0.unread && keys.contains($0.id) }) else { return }
         inbox = inbox.map { var i = $0; if i.unread && keys.contains(i.id) { i.unread = false }; return i }
         let server = ids.filter { $0.hasPrefix("m:") || $0.hasPrefix("r:") }
-        if !server.isEmpty { await ChatService.markActivitySeen(orgId: orgId, items: server, base: base) }
+        PushService.clearDelivered(messageIds: Self.messageIds(server))
+        // A reply looked at here is read in its thread too: Threads agrees.
+        if !server.isEmpty { threadsRead(await ChatService.markActivitySeen(orgId: orgId, items: server, base: base)) }
+    }
+
+    nonisolated static func messageIds(_ keys: [String]) -> [String] {
+        keys.filter { $0.hasPrefix("m:") }.map { String($0.dropFirst(2)) }
+    }
+
+    /// Activity's "Mark all as read": everything new there, and the threads
+    /// its replies are in.
+    func markAllInboxRead() async {
+        guard let orgId, let base else { return }
+        let keys = inbox.filter(\.unread).map(\.id)
+        guard !keys.isEmpty else { return }
+        inbox = inbox.map { var i = $0; i.unread = false; return i }
+        PushService.clearDelivered(messageIds: Self.messageIds(keys))
+        if let done = await ChatService.markAllActivityRead(orgId: orgId, base: base) { threadsRead(done.threads) } else { await loadInbox() }
+    }
+
+    /// Threads' "Mark all as read": each thread read up to its newest reply,
+    /// and those replies in Activity too.
+    func markAllThreadsRead() async {
+        guard let orgId, let base else { return }
+        let open = threads.filter(\.unread)
+        guard !open.isEmpty else { return }
+        threadsRead(open.map { ChatService.ThreadRead(thread: $0.parent.id, lastReadAt: $0.lastReplyAt) })
+        for t in open { PushService.clearDelivered(channel: t.parent.channel, parentId: t.parent.id) }
+        if await ChatService.markAllThreadsRead(orgId: orgId, base: base) == nil { await loadThreads() }
+    }
+
+    /// Threads read up to a point, wherever that was done: each one whose
+    /// newest reply is no later is no longer new.
+    func threadsRead(_ read: [ChatService.ThreadRead]) {
+        guard !read.isEmpty else { return }
+        threads = Self.readThrough(threads, read)
+        // Their replies, no later than that, are read in Activity too.
+        let upTo = Dictionary(read.map { ($0.thread, $0.lastReadAt) }, uniquingKeysWith: { a, b in max(a, b) })
+        inbox = inbox.map { var i = $0; if i.unread, let p = i.message.parentId, let at = upTo[p], (i.at ?? i.message.createdAt) <= at { i.unread = false }; return i }
+    }
+
+    nonisolated static func readThrough(_ threads: [ChatThreadItem], _ read: [ChatService.ThreadRead]) -> [ChatThreadItem] {
+        let upTo = Dictionary(read.map { ($0.thread, $0.lastReadAt) }, uniquingKeysWith: { a, b in max(a, b) })
+        return threads.map { var t = $0; if t.unread, let at = upTo[t.parent.id], t.lastReplyAt <= at { t.unread = false }; return t }
     }
 
     func loadOlder(_ view: String) async {

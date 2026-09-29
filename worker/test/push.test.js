@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, test } from "vitest";
 import schemaSql from "../schema.sql?raw";
 import { notifyCard } from "../src/notify.js";
 import { providerToken, resetProviderToken, isDeadToken } from "../src/apns.js";
+import { clearDeliveredMessages } from "../src/pushes.js";
 
 // A P-256 private key in PKCS#8 PEM, generated for this test only. It is not a
 // credential — it signs nothing that exists — and it is here because the point
@@ -191,4 +192,19 @@ test("a dead token is told apart from a bad day", () => {
   expect(isDeadToken({ status: 400, reason: "BadDeviceToken" })).toBe(true);
   expect(isDeadToken({ status: 400, reason: "PayloadTooLarge" })).toBe(false);
   expect(isDeadToken({ status: 503, reason: "" })).toBe(false);
+});
+
+test("messages looked at in Activity come off the phone that was told about them, and only then", async () => {
+  const now = new Date().toISOString();
+  await env.DB.prepare("INSERT INTO push_queue (org_id, login, message_id, reason, created_at, due_at, sent_at) VALUES ('o1', 'alice', 'msg-1', 'mention', ?1, ?1, ?1)").bind(now).run();
+  // Never pushed: nothing is sent.
+  expect(await clearDeliveredMessages(pushEnv(), "o1", "alice", ["msg-other"])).toBe(0);
+  const bodies = [];
+  for (const token of ["tok-alice-phone", "tok-alice-ipad"]) {
+    fetchMock.get("https://api.sandbox.push.apple.com")
+      .intercept({ path: `/3/device/${token}`, method: "POST", body: (b) => { bodies.push(JSON.parse(b)); return true; } })
+      .reply(200, {});
+  }
+  expect(await clearDeliveredMessages(pushEnv(), "o1", "alice", ["msg-1", "msg-other", "bad id!"])).toBe(2);
+  expect(bodies[0]).toEqual({ aps: { "content-available": 1 }, kind: "read", orgId: "o1", messageIds: ["msg-1", "msg-other"] });
 });

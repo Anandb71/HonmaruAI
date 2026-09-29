@@ -1,9 +1,8 @@
 import Foundation
 
-/// What a workspace's admins look after, read from the phone: its data rules
-/// (which they can also switch on and off here), and how its compliance
-/// settings, single sign-on and audit streams stand. Changing the rest takes
-/// an owner's fresh sign-in, which is the web's (Studio).
+/// What a workspace's admins look after, from the phone: its data rules, its
+/// compliance settings (which an owner changes here too, after confirming it
+/// is them: Reauth.swift), and how single sign-on and audit streams stand.
 enum AdminService {
     // MARK: Data rules
 
@@ -67,6 +66,12 @@ enum AdminService {
         let retention: Retention
         let network: Network
         let invites: Invites
+        /// Whether this person may change them: an owner.
+        var canEdit: Bool? = nil
+        /// The address this phone is at, as the Worker sees it.
+        var yourIp: String? = nil
+        /// How long things may be kept, in days; null is forever.
+        var retentionChoices: [Int?]? = nil
     }
 
     struct Hold: Identifiable, Decodable {
@@ -98,6 +103,80 @@ enum AdminService {
     static func exports(orgId: String, base: URL) async throws -> [ComplianceExport] {
         struct R: Decodable { let exports: [ComplianceExport] }
         return try await ChatService.call("GET", "/orgs/compliance/exports", base: base, query: ["orgId": orgId], as: R.self).exports
+    }
+
+    /// The retention keys, as the Worker names them.
+    static let retentionKeys = ["publicDays", "privateDays", "dmDays", "filesDays"]
+
+    /// How long one kind of thing is kept; nil keeps it forever.
+    static func setRetention(_ key: String, days: Int?, orgId: String, base: URL) async throws {
+        let value: Any = days.map { $0 as Any } ?? NSNull()
+        _ = try await ChatService.call("PUT", "/orgs/governance", base: base, body: ["orgId": orgId, "retention": [key: value] as [String: Any]], as: Governance.self)
+    }
+
+    /// The networks the workspace may be used from, one range per entry.
+    static func setNetwork(enforce: Bool, allowlist: [String], orgId: String, base: URL) async throws {
+        _ = try await ChatService.call("PUT", "/orgs/governance", base: base, body: ["orgId": orgId, "network": ["enforce": enforce, "allowlist": allowlist] as [String: Any]], as: Governance.self)
+    }
+
+    static func setInvites(policy: String, guestsExempt: Bool, orgId: String, base: URL) async throws {
+        _ = try await ChatService.call("PUT", "/orgs/governance", base: base, body: ["orgId": orgId, "invites": ["policy": policy, "guestsExempt": guestsExempt] as [String: Any]], as: Governance.self)
+    }
+
+    /// Keep everything a person, or a channel (`b:slug`), says, whatever the
+    /// retention, until the hold is released.
+    static func placeHold(person ref: String? = nil, channel: String? = nil, reason: String, orgId: String, base: URL) async throws {
+        struct R: Decodable { let id: String }
+        var body: [String: Any] = ["orgId": orgId, "reason": reason]
+        if let ref { body["kind"] = "person"; body["ref"] = ref }
+        if let channel { body["kind"] = "channel"; body["channel"] = channel }
+        _ = try await ChatService.call("POST", "/orgs/holds", base: base, body: body, as: R.self)
+    }
+
+    static func releaseHold(_ id: String, orgId: String, base: URL) async throws {
+        _ = try await ChatService.call("DELETE", "/orgs/holds/\(id)", base: base, query: ["orgId": orgId], as: Nothing.self)
+    }
+
+    /// Every message and file between two days, for the matter named.
+    static func makeExport(from: Date, to: Date, reason: String, orgId: String, base: URL) async throws {
+        struct R: Decodable { let export: ComplianceExport }
+        let iso = ISO8601DateFormatter()
+        _ = try await ChatService.call("POST", "/orgs/compliance/exports", base: base,
+                                       body: ["orgId": orgId, "from": iso.string(from: from), "to": iso.string(from: to), "reason": reason],
+                                       timeout: 120, as: R.self)
+    }
+
+    /// A ready export, saved to a file of its own on this phone to share on.
+    static func downloadExport(_ id: String, orgId: String, base: URL) async throws -> URL {
+        guard let token = SessionStore.sessionToken, var parts = URLComponents(url: base, resolvingAgainstBaseURL: true) else {
+            throw ChatService.Failure.notSignedIn
+        }
+        parts.path = "/orgs/compliance/exports/\(id)/download"
+        parts.queryItems = [URLQueryItem(name: "orgId", value: orgId)]
+        guard let url = parts.url else { throw ChatService.Failure.server(0, nil) }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 120
+        request.setValue(token, forHTTPHeaderField: "x-session-token")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw ChatService.Failure.server((response as? HTTPURLResponse)?.statusCode ?? 0, String(localized: "The export could not be downloaded."))
+        }
+        let name = exportFileName(id: id, disposition: http.value(forHTTPHeaderField: "Content-Disposition"))
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try data.write(to: file, options: [.atomic, .completeFileProtection])
+        return file
+    }
+
+    /// The file name the Worker gave, or one made from the export's ID.
+    static func exportFileName(id: String, disposition: String?) -> String {
+        if let disposition, let range = disposition.range(of: #"filename="?([^";]+)"?"#, options: .regularExpression) {
+            let raw = disposition[range].replacingOccurrences(of: "filename=", with: "").replacingOccurrences(of: "\"", with: "")
+            var safe = raw.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-").trimmingCharacters(in: .whitespaces)
+            // Never a hidden file, and never "..": it stays in the folder it is put in.
+            while safe.hasPrefix(".") { safe.removeFirst() }
+            if !safe.isEmpty { return safe }
+        }
+        return "export-\(id.prefix(8)).jsonl.gz"
     }
 
     // MARK: Single sign-on and audit streams

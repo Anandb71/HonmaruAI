@@ -2567,6 +2567,49 @@ await step('GitHub is not claimed where it cannot run', async () => {
 // On a phone the list is Slack's app: five tabs along the bottom, a long
 // press for what you can do to a message, a picture from the camera roll,
 // a group of three, and a channel only its members can see.
+// Back — the phone's gesture, the browser's button — closes what was opened
+// last. It used to skip the whole list for the page before it: the cards.
+await step('Back closes the member list, then the conversation, and only then leaves the list', async () => {
+  await closeEverything()
+  await page.goto(`${WEB}#/feed`, { waitUntil: 'load' })
+  await page.goto(`${WEB}#/list`, { waitUntil: 'load' })
+  await page.waitForSelector('.cl-tabs', { timeout: 20000 })
+  await page.click('text=daily-reports')
+  await page.waitForSelector('.slk-head-text')
+  await page.click('.slk-head-text')
+  await page.waitForSelector('.slk-details')
+  // A member's profile from the list, and Back returns to the list.
+  await page.click('.slk-member-row >> nth=0')
+  await page.waitForSelector('.slk-details', { state: 'detached' })
+  await page.goBack()
+  await page.waitForSelector('.slk-details', { timeout: 5000 })
+  await page.goBack()
+  await page.waitForSelector('.slk-details', { state: 'detached', timeout: 5000 })
+  const still = await page.evaluate(() => ({ hash: location.hash, open: !!document.querySelector('.slk-head-text') }))
+  if (still.hash !== '#/list' || !still.open) throw new Error(`Back from the member list left the conversation: ${JSON.stringify(still)}`)
+  await page.goBack()
+  await page.waitForSelector('.cl-tabs', { timeout: 5000 })
+  if ((await page.evaluate(() => location.hash)) !== '#/list') throw new Error('Back from the conversation left the list')
+  await page.goBack()
+  await page.waitForFunction(() => location.hash === '#/feed', null, { timeout: 5000 })
+})
+
+// Closing a screen is a step back: Back after it does not open it again.
+await step('a screen closed with its own button stays closed when Back is pressed', async () => {
+  await closeEverything()
+  await page.goto(`${WEB}#/feed`, { waitUntil: 'load' })
+  await page.goto(`${WEB}#/list`, { waitUntil: 'load' })
+  await page.waitForSelector('.cl-tabs', { timeout: 20000 })
+  await page.click('[data-phone-tab="you"]')
+  await page.waitForSelector('.profile-stats', { timeout: 10000 })
+  await page.click('.screen .back')
+  await page.waitForSelector('.cl-tabs', { timeout: 10000 })
+  if ((await page.evaluate(() => location.hash)) !== '#/list') throw new Error('closing You did not return to the list')
+  await page.goBack()
+  await page.waitForTimeout(600)
+  if (await page.$('.profile-stats')) throw new Error('Back after closing You opened it again')
+})
+
 await step('on a phone the list has tabs, a long press, pictures, groups and private channels', async () => {
   await closeEverything()
   if (!mate || !joiner) throw new Error('the teammates this step needs are not here')

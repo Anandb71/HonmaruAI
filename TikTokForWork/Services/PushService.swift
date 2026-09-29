@@ -93,6 +93,21 @@ final class PushService: NSObject, ObservableObject {
     /// Read somewhere — on this phone or another device — so what this phone
     /// still shows for it comes down: a conversation's notifications (not
     /// its threads'), or one thread's.
+    /// Notifications for these messages, taken down: they were looked at in
+    /// Activity, here or on another device.
+    nonisolated static func clearDelivered(messageIds: [String]) {
+        let wanted = Set(messageIds)
+        guard !wanted.isEmpty else { return }
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { list in
+            let ids = list.filter { n in
+                let info = n.request.content.userInfo
+                return info["kind"] as? String == "message" && wanted.contains(info["messageId"] as? String ?? "")
+            }.map(\.request.identifier)
+            if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+        }
+    }
+
     nonisolated static func clearDelivered(channel: String, parentId: String?) {
         let center = UNUserNotificationCenter.current()
         center.getDeliveredNotifications { list in

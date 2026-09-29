@@ -23,7 +23,7 @@ import {
   resolveChannel, listMessages, postMessage, getMessage, linkCard, transcriptUpTo, channelActivity,
   viewOf, asksTheAI, asksForDecision, withoutAI, MAX_MESSAGE_CHARS,
   present, listThread, listPins, editMessage, deleteMessage, toggleReaction, setPinned, setPreviewsHidden,
-  markRead, markUnreadFrom, markActivitySeen, readsFor, activityFeed, searchMessages, threadsFor,
+  markRead, markUnreadFrom, markActivitySeen, readThreadsSeenInActivity, readsFor, activityFeed, searchMessages, threadsFor,
 } from "./channels.js";
 import { safe } from "./log.js";
 import { emitMessage, emitCard } from "./webhooks.js";
@@ -36,7 +36,7 @@ import { channelJournal, forgetJournalDay, validDay, validZone } from "./journal
 import { settleUsage } from "./ledger.js";
 import { readCapped } from "./media.js";
 import { uploadFile, attachFiles, claimable, dropFiles } from "./files.js";
-import { queueMessagePushes, clearDelivered } from "./pushes.js";
+import { queueMessagePushes, clearDelivered, clearDeliveredMessages } from "./pushes.js";
 import { audit, person } from "./audit.js";
 import { getCanvas, toClientCanvas, listRevisions, getRevision, saveCanvas, draftCanvas } from "./canvas.js";
 import { listBookmarks, toClientBookmark, addBookmark, editBookmark, removeBookmark } from "./bookmarks.js";
@@ -108,10 +108,15 @@ async function broadcast(env, orgId, resolved, row, members) {
 /// Read on one device, read on all of them: this person's other tabs and
 /// phones hear it at once, and a phone clears the notifications it still
 /// shows for it.
-async function readEverywhere(env, orgId, login, { view, key, thread, lastReadAt, items, unread }) {
-  const value = items ? { items } : { view, thread: thread || null, lastReadAt, ...(unread ? { unread: true } : {}) };
+async function readEverywhere(env, orgId, login, { view, key, thread, lastReadAt, items, threads, unread }) {
+  const value = items ? { items, ...(threads?.length ? { threads } : {}) } : { view, thread: thread || null, lastReadAt, ...(unread ? { unread: true } : {}) };
   await announceTo(env, orgId, [{ to: login, event: customEvent("reads_changed", value) }]);
   if (!unread && key) await clearDelivered(env, orgId, login, { key, view, thread, lastReadAt }).catch((err) => console.error("clear push failed", safe(err?.message)));
+  // Items looked at in Activity: their own notifications come down too.
+  if (items?.length) {
+    const ids = items.filter((k) => k.startsWith("m:")).map((k) => k.slice(2));
+    await clearDeliveredMessages(env, orgId, login, ids).catch((err) => console.error("clear push failed", safe(err?.message)));
+  }
 }
 
 /// A reply changes its parent too: the count and faces under it.
@@ -570,10 +575,44 @@ export async function handleChannels(request, env, url, { route, after }) {
       // The ones looked at: gone from every device's Activity.
       if (Array.isArray(body.items)) {
         const items = await markActivitySeen(env.DB, body.orgId, who.user.login, body.items);
-        if (items.length) after(() => readEverywhere(env, body.orgId, who.user.login, { items }));
-        return json({ items });
+        // A reply among them is read in its thread too: Threads agrees.
+        const threads = items.length ? await readThreadsSeenInActivity(env.DB, body.orgId, who.user.login, items) : [];
+        if (items.length) after(() => readEverywhere(env, body.orgId, who.user.login, { items, threads }));
+        return json({ items, threads });
       }
-      return json({ lastReadAt: await markRead(env.DB, body.orgId, who.user.login, "activity", body.at) });
+      // "Mark all as read": every item new now is looked at, its replies
+      // read in their threads too, and the inbox read up to now.
+      const members = await listMembers(env.DB, body.orgId, who.session.github_id);
+      const { items: all } = await activityFeed(env.DB, body.orgId, who.user.login, members);
+      const newKeys = all.filter((i) => i.unread).map((i) => i.key).filter((k) => /^(m|r):/.test(k || ""));
+      const items = await markActivitySeen(env.DB, body.orgId, who.user.login, newKeys);
+      const threads = items.length ? await readThreadsSeenInActivity(env.DB, body.orgId, who.user.login, items) : [];
+      const lastReadAt = await markRead(env.DB, body.orgId, who.user.login, "activity", body.at);
+      if (items.length) after(() => readEverywhere(env, body.orgId, who.user.login, { items, threads }));
+      return json({ lastReadAt, items, threads });
+    }
+    // Threads' "Mark all as read": each thread with a new reply read up to
+    // its newest; Activity drops those replies as it does for any thread read.
+    if (body.channel === "threads") {
+      const who = await caller(env, request, body.orgId);
+      if (who.denied) return who.denied;
+      const members = await listMembers(env.DB, body.orgId, who.session.github_id);
+      const open = (await threadsFor(env.DB, body.orgId, who.user.login, members)).filter((x) => x.unread);
+      const threads = [];
+      for (const x of open) {
+        const lastReadAt = await markRead(env.DB, body.orgId, who.user.login, `t:${x.parent.id}`, x.lastReplyAt);
+        threads.push({ thread: x.parent.id, lastReadAt, view: x.parent.channel });
+      }
+      if (threads.length) {
+        after(async () => {
+          await announceTo(env, body.orgId, [{ to: who.user.login, event: customEvent("reads_changed", { items: [], threads: threads.map(({ thread, lastReadAt }) => ({ thread, lastReadAt })) }) }]);
+          for (const t of threads) {
+            const row = await getMessage(env.DB, body.orgId, t.thread);
+            if (row) await clearDelivered(env, body.orgId, who.user.login, { key: row.channel, view: t.view, thread: t.thread, lastReadAt: t.lastReadAt }).catch(() => {});
+          }
+        });
+      }
+      return json({ threads: threads.map(({ thread, lastReadAt }) => ({ thread, lastReadAt })) });
     }
     const ctx = await inChannel(env, request, body);
     if (ctx.denied) return ctx.denied;
@@ -583,7 +622,12 @@ export async function handleChannels(request, env, url, { route, after }) {
       const parent = await getMessage(env.DB, body.orgId, String(body.thread));
       if (!parent || parent.channel !== ctx.resolved.key) return json({ message: "No such thread." }, 404);
       const lastReadAt = await markRead(env.DB, body.orgId, login, `t:${parent.id}`, body.at);
-      after(() => readEverywhere(env, body.orgId, login, { view: ctx.view, key: ctx.resolved.key, thread: parent.id, lastReadAt }));
+      // Its first message, where it named you, is read in Activity too.
+      const parentItems = await markActivitySeen(env.DB, body.orgId, login, [`m:${parent.id}`]);
+      after(async () => {
+        await readEverywhere(env, body.orgId, login, { view: ctx.view, key: ctx.resolved.key, thread: parent.id, lastReadAt });
+        if (parentItems.length) await readEverywhere(env, body.orgId, login, { items: parentItems });
+      });
       return json({ lastReadAt });
     }
     const lastReadAt = await markRead(env.DB, body.orgId, login, ctx.resolved.key, body.at);
@@ -733,7 +777,7 @@ export async function handleChannels(request, env, url, { route, after }) {
     const parentId = typeof body.parentId === "string" && body.parentId ? body.parentId : null;
     // The workspace's data rules read it before it is kept, sent now or later.
     const attached = Array.isArray(body.files) && body.files.length
-      ? await attachedTexts(env, { orgId, key: resolved.key, login: who.user.login, ids: body.files }).catch(() => [])
+      ? await attachedTexts(env, { orgId, key: resolved.key, login: who.user.login, ids: body.files, githubId: who.session.github_id }).catch(() => [])
       : [];
     const stopped = await checkOutgoing(env, request, { orgId, login: who.user.login, text: typeof body.body === "string" ? body.body : "", files: attached, ack: body.dlpAck === true, where: body.sendAt ? "scheduled" : parentId ? "reply" : "message" });
     if (stopped) return stopped;

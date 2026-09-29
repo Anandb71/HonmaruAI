@@ -1,6 +1,6 @@
 import { listMembers } from "./team.js";
 import { businessSlug } from "./db.js";
-import { resolveMentions } from "./threads.js";
+import { resolveMentions, MENTION_BEFORE } from "./threads.js";
 
 const NOBODY = new Set();
 import { filesFor, toFile } from "./files.js";
@@ -31,8 +31,12 @@ const PAGE = 150;
 
 /// "@AI" anywhere a mention can start, in either width of @, any case —
 /// and "@AIに…", where Japanese runs straight on from the name.
+/// Where a mention may start is the same rule as every other "@name"
+/// (threads.js): "確認して@AI" asks it; "x@ai.com" does not.
+const AI_CALL = new RegExp(`${MENTION_BEFORE}[@＠]ai(?![A-Za-z0-9_])`, "iu");
+const AI_CALL_ALL = new RegExp(`${MENTION_BEFORE}[@＠]ai(?![A-Za-z0-9_])(?:[にへ]|[,、:：])?\\s*`, "giu");
 export function asksTheAI(text) {
-  return /(^|[\s(（「])[@＠]ai(?![A-Za-z0-9_])/iu.test(String(text || ""));
+  return AI_CALL.test(String(text || ""));
 }
 
 /// "@AI" asked for a decision, in so many words: a card, an approval, a
@@ -46,7 +50,7 @@ export function asksForDecision(text) {
 /// The instruction in a message, without the "@AI" that summoned it.
 export function withoutAI(text) {
   // "@AIに…" is addressed to the AI; the particle goes with the name.
-  return String(text || "").replace(/(^|[\s(（「])[@＠]ai(?![A-Za-z0-9_])(?:[にへ]|[,、:：])?\s*/giu, "$1").trim();
+  return String(text || "").replace(AI_CALL_ALL, "$1").trim();
 }
 
 /// A channel as a client named it, to its stored key — or null when it
@@ -513,6 +517,28 @@ export async function markActivitySeen(db, orgId, login, keys) {
     "INSERT INTO activity_reads (org_id, login, item, read_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (org_id, login, item) DO NOTHING"
   ).bind(orgId, login, k, at)));
   return valid;
+}
+
+/// A reply looked at in Activity is read in its thread too, up to it: Threads
+/// stops calling it new, as Activity does for a thread read. Later replies
+/// stay new. Returns each thread moved, and how far it is read now.
+export async function readThreadsSeenInActivity(db, orgId, login, keys) {
+  const ids = [...new Set(keys.filter((k) => k.startsWith("m:")).map((k) => k.slice(2)))];
+  if (!ids.length) return [];
+  // Only replies this person can read: a name sent here moves nothing else.
+  const marks = ids.map((_, i) => `?${i + 3}`).join(", ");
+  const { results } = await db.prepare(
+    `SELECT m.parent_id AS parent_id, MAX(m.created_at) AS at FROM channel_messages m
+      WHERE m.org_id = ?1 AND ${VISIBLE} AND m.id IN (${marks}) AND m.parent_id IS NOT NULL AND m.deleted_at IS NULL GROUP BY m.parent_id`
+  ).bind(orgId, login, ...ids).all();
+  const out = [];
+  for (const r of results || []) {
+    await markRead(db, orgId, login, `t:${r.parent_id}`, r.at);
+    const now = await db.prepare("SELECT last_read_at FROM channel_reads WHERE org_id = ?1 AND login = ?2 AND channel = ?3")
+      .bind(orgId, login, `t:${r.parent_id}`).first();
+    out.push({ thread: r.parent_id, lastReadAt: now?.last_read_at || r.at });
+  }
+  return out;
 }
 
 /// "Mark unread from here": read only up to just before this message,

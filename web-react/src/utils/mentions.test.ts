@@ -43,6 +43,16 @@ describe('mentions', () => {
     expect(mentionedRefs('確認@Mika', team)).toEqual(['r2'])
   })
 
+  it('offers @all once it is typed, and hears @everyone as everyone', () => {
+    const specials = [
+      { ref: '__channel', name: 'channel', handle: 'channel', special: 'channel' as const },
+      { ref: '__all', name: 'all', handle: 'all', special: 'channel' as const },
+    ]
+    expect(matchMembers([...specials, ...team], '').map((m) => m.ref)).not.toContain('__all')
+    expect(matchMembers([...specials, ...team], 'al').map((m) => m.ref)).toContain('__all')
+    expect(mentionsEveryone('@everyone 見て')).toBe(true)
+  })
+
   it('offers names after ＠ and right after Japanese words', () => {
     expect(mentionQuery('確認@Mi', 5)).toEqual({ start: 2, query: 'Mi' })
     expect(mentionQuery('＠ch', 3)).toEqual({ start: 0, query: 'ch' })

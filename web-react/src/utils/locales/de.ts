@@ -1804,6 +1804,11 @@ const table: Record<string, string> = {
   'Take {app} away? Everyone’s connection to it ends.': '{app} entfernen? Alle Verbindungen dazu enden.',
   'Taken away.': 'Entfernt.',
   'What you connect here is yours alone: only your own conversation with your AI reads it, never a channel or anyone else. It reads, and does not write, unless an owner allowed it.': 'Was du hier verbindest, gehört nur dir: Nur dein eigenes Gespräch mit deiner KI liest es, nie ein Kanal oder jemand anderes. Es wird nur gelesen, nicht geschrieben – außer ein Eigentümer erlaubt es.',
+  'Single logout URL (SLO)': 'Single-Logout-URL (SLO)',
+  'Sign-out address, optional, https://…': 'Abmeldeadresse (optional), https://…',
+  'Read pictures and scanned PDFs': 'Bilder und gescannte PDFs lesen',
+  'Photos, screenshots and scanned pages have no text of their own. With this on, each one attached is sent to the workspace’s AI model to be read, checked against these rules, and dropped. It uses the AI allowance.': 'Fotos, Screenshots und gescannte Seiten enthalten keinen eigenen Text. Ist dies aktiviert, wird jeder Anhang dieser Art an das KI-Modell des Workspaces gesendet, gelesen, mit diesen Regeln abgeglichen und danach verworfen. Das zählt zum KI-Kontingent.',
+  'This needs an OpenAI model for the workspace, which is not set up.': 'Dafür ist ein OpenAI-Modell für den Workspace nötig, das nicht eingerichtet ist.',
 }
 
 export default table

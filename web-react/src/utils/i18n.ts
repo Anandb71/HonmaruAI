@@ -94,7 +94,13 @@ export function loadLocale(code: string): Promise<void> {
   if (!loading.has(lang)) {
     loading.set(lang, LOADERS[lang]().then((m) => {
       TABLES[lang] = m.default
-      if (lang === current) for (const fn of listeners) fn()
+      if (lang === current) {
+        // A new snapshot, or React sees the same language and skips the
+        // repaint: whatever did not happen to redraw stayed in English.
+        loaded += 1
+        for (const fn of listeners) fn()
+        if (typeof window !== 'undefined') window.dispatchEvent(new Event('honmaru:locale'))
+      }
     }).catch(() => { loading.delete(lang) }))
   }
   return loading.get(lang)!
@@ -106,10 +112,14 @@ export function localeReady(): Promise<void> {
 }
 
 let current = primary(getLocale())
+// Tables that have arrived: part of the snapshot, so one arriving repaints.
+let loaded = 0
 const listeners = new Set<() => void>()
 
-function snapshot(): string {
-  return current
+/// What a component using `useT` is drawn from: the language, and how many
+/// tables have arrived. Exported for its test.
+export function snapshot(): string {
+  return `${current}:${loaded}`
 }
 
 function subscribe(fn: () => void): () => void {

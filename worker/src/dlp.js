@@ -10,6 +10,7 @@
 import { audit } from "./audit.js";
 import { allowed } from "./permissions.js";
 import { getSession, getUserByGithubId } from "./db.js";
+import { providerFor } from "./orgAI.js";
 
 const MAX_RULES = 50;
 const MAX_PATTERN = 200;
@@ -187,10 +188,11 @@ export async function checkOutgoing(env, request, { orgId, login, text, files = 
 /// POST   /orgs/dlp                  {orgId, name, kind, detector|pattern|keywords, action}
 /// PATCH  /orgs/dlp/:id              {orgId, name?, action?, enabled?, pattern?, keywords?}
 /// DELETE /orgs/dlp/:id?orgId=
+/// PUT    /orgs/dlp/settings         {orgId, readPictures}
 /// POST   /orgs/dlp/test             {orgId, text} → which rules it breaks
 export async function handleDlp(request, env, url) {
   if (url.pathname !== "/orgs/dlp" && !url.pathname.startsWith("/orgs/dlp/")) return null;
-  const body = ["POST", "PATCH"].includes(request.method) ? await request.json().catch(() => ({})) : {};
+  const body = ["POST", "PATCH", "PUT"].includes(request.method) ? await request.json().catch(() => ({})) : {};
   const orgId = String(body.orgId || url.searchParams.get("orgId") || "");
   const session = await getSession(env.DB, request.headers.get("x-session-token") || "");
   if (!session) return json({ message: "Sign in first." }, 401);
@@ -201,8 +203,14 @@ export async function handleDlp(request, env, url) {
   const user = await getUserByGithubId(env.DB, userId);
   const actor = { type: "user", id: user?.login || userId, name: user?.name || null };
 
+  // Reading pictures needs a model that sees them: the workspace's OpenAI.
+  const picturesOf = async () => {
+    const row = await env.DB.prepare("SELECT read_images FROM dlp_settings WHERE org_id = ?1").bind(orgId).first().catch(() => null);
+    const provider = await providerFor(env, orgId).catch(() => null);
+    return { on: Boolean(row?.read_images), available: provider?.providerName === "OpenAI" };
+  };
   if (url.pathname === "/orgs/dlp" && request.method === "GET") {
-    return json({ rules: (await rulesOf(env.DB, orgId)).map(presentRule), detectors: Object.entries(DETECTORS).map(([id, d]) => ({ id, name: d.name })), canEdit });
+    return json({ rules: (await rulesOf(env.DB, orgId)).map(presentRule), detectors: Object.entries(DETECTORS).map(([id, d]) => ({ id, name: d.name })), pictures: await picturesOf(), canEdit });
   }
   if (url.pathname === "/orgs/dlp/test" && request.method === "POST") {
     const text = String(body.text || "").slice(0, 8000);
@@ -212,6 +220,16 @@ export async function handleDlp(request, env, url) {
   const action = (a) => (a === "block" ? "block" : a === "warn" ? "warn" : null);
   const now = new Date().toISOString();
 
+  if (url.pathname === "/orgs/dlp/settings") {
+    if (request.method !== "PUT") return json({ message: "not found" }, 404);
+    if (typeof body.readPictures !== "boolean") return json({ message: "Say whether pictures are read: readPictures true or false." }, 400);
+    await env.DB.prepare(
+      `INSERT INTO dlp_settings (org_id, read_images, updated_by, updated_at) VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(org_id) DO UPDATE SET read_images = excluded.read_images, updated_by = excluded.updated_by, updated_at = excluded.updated_at`
+    ).bind(orgId, body.readPictures ? 1 : 0, String(userId), now).run();
+    await audit(env, request, { orgId, action: "dlp.settings_changed", actor, details: { read_pictures: body.readPictures } });
+    return json({ pictures: await picturesOf() });
+  }
   if (url.pathname === "/orgs/dlp" && request.method === "POST") {
     if ((await rulesOf(env.DB, orgId)).length >= MAX_RULES) return json({ message: `A workspace has at most ${MAX_RULES} rules.` }, 400);
     const kind = ["builtin", "regex", "keywords"].includes(body.kind) ? body.kind : null;

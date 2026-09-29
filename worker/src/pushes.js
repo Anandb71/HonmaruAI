@@ -223,6 +223,32 @@ export async function clearDelivered(env, orgId, login, { key, view, thread, las
   return sent;
 }
 
+/// Messages looked at one by one (in Activity): their notifications come
+/// off this person's phones, the same as for a conversation read. Only when
+/// one of them was pushed there in the last day.
+export async function clearDeliveredMessages(env, orgId, login, messageIds) {
+  const ids = [...new Set((messageIds || []).map(String))].filter((id) => /^[A-Za-z0-9_-]{1,64}$/.test(id)).slice(0, 100);
+  if (!apnsConfigured(env) || !ids.length) return 0;
+  const since = new Date(Date.now() - 86400000).toISOString();
+  const marks = ids.map((_, i) => `?${i + 4}`).join(", ");
+  const hit = await env.DB.prepare(
+    `SELECT 1 AS hit FROM push_queue WHERE org_id = ?1 AND login = ?2 AND sent_at IS NOT NULL AND sent_at >= ?3 AND message_id IN (${marks}) LIMIT 1`
+  ).bind(orgId, login, since, ...ids).first().catch(() => null);
+  if (!hit) return 0;
+  let sent = 0;
+  for (const device of await devicesForLogin(env.DB, login)) {
+    const result = await sendPush(env, {
+      deviceToken: device.device_token,
+      pushType: "background",
+      priority: 5,
+      payload: { aps: { "content-available": 1 }, kind: "read", orgId, messageIds: ids },
+    });
+    if (result.ok) sent += 1;
+    else if (isDeadToken(result)) await removeDevice(env.DB, device.device_token);
+  }
+  return sent;
+}
+
 /// One message to every phone and browser this person has.
 async function pushMessage(env, login, { title, body, orgId, channel, messageId, parentId }) {
   let delivered = 0;
