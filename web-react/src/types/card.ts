@@ -193,5 +193,5 @@ export interface ChannelMessage {
   reactions?: Array<{ emoji: string; count: number; refs: string[]; mine: boolean }>
   files?: FileRef[]
   /// Who wrote it, when an agent did: its name and face.
-  agent?: { id: string; handle: string; name: string; emoji: string | null } | null
+  agent?: { id: string; handle: string; name: string; emoji: string | null; avatarUrl?: string | null } | null
 }

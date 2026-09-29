@@ -826,6 +826,9 @@ CREATE TABLE IF NOT EXISTS custom_agents (
   handle        TEXT NOT NULL,
   name          TEXT NOT NULL,
   emoji         TEXT,
+  /* A picture in place of the emoji, when somebody gave it one: a URL of
+     ours (/agents/avatar/…), the bytes in R2. */
+  avatar_url    TEXT,
   description   TEXT,
   instructions  TEXT NOT NULL,
   scope         TEXT NOT NULL DEFAULT 'team',

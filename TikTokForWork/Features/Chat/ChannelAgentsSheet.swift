@@ -27,8 +27,7 @@ struct ChatChannelAgentsSheet: View {
                     }
                     ForEach(loaded?.placed ?? []) { a in
                         HStack(spacing: 12) {
-                            Text(verbatim: a.glyph).font(.title3).frame(width: 32, height: 32)
-                                .background(Circle().fill(Theme.Colors.textSecondary.opacity(0.12)))
+                            ChatAvatar(name: a.name, size: 32, agentEmoji: a.glyph, url: a.avatarUrl)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(verbatim: "\(a.name) @\(a.handle ?? "")").font(.subheadline.weight(.semibold)).lineLimit(1)
                                 if let d = a.description, !d.isEmpty {
@@ -58,8 +57,7 @@ struct ChatChannelAgentsSheet: View {
                         ForEach(addable) { a in
                             Button { Task { await place(a.id, add: true) } } label: {
                                 HStack(spacing: 12) {
-                                    Text(verbatim: a.glyph).font(.title3).frame(width: 32, height: 32)
-                                        .background(Circle().fill(Theme.Colors.textSecondary.opacity(0.12)))
+                                    ChatAvatar(name: a.name, size: 32, agentEmoji: a.glyph, url: a.avatarUrl)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(verbatim: "\(a.name) @\(a.handle)").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.Colors.textPrimary).lineLimit(1)
                                         Text(a.scope == "personal" ? LocalizedStringKey("Your own agent") : LocalizedStringKey("Team agent"))

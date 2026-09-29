@@ -44,7 +44,11 @@ describe('agentMentionables', () => {
   ]
   it('offers each agent once, by handle, with its face', () => {
     const list = agentMentionables(agents, [{ ref: 'm1', name: 'Kenji', handle: 'kenji' }])
-    expect(list).toEqual([{ ref: 'agent:a1', name: 'Hayao', handle: 'hayao', title: 'Art director', agent: true, emoji: '🎨' }])
+    expect(list).toEqual([{ ref: 'agent:a1', name: 'Hayao', handle: 'hayao', title: 'Art director', agent: true, emoji: '🎨', avatarUrl: null }])
+  })
+  it('carries its picture, when it has one, for the @ menu to show', () => {
+    const [face] = agentMentionables([{ ...agents[0], avatarUrl: 'https://w.example/agents/avatar/agent-avatar-1' }])
+    expect(face.avatarUrl).toBe('https://w.example/agents/avatar/agent-avatar-1')
   })
   it('is found by what is typed after @', () => {
     const list = [{ ref: 'm1', name: 'Hanako' }, ...agentMentionables(agents)]

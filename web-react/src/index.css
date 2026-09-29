@@ -43,3 +43,10 @@ button {
   font-weight: 700; line-height: 1; box-sizing: border-box; vertical-align: middle;
 }
 .avatar-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* An agent's picture, in whatever box its emoji sat in: the box keeps its
+   size and corners, the picture fills it. A box with no size of its own
+   (a line of text) holds it at the height of the letters. */
+.agent-picture { overflow: hidden; padding: 0 !important; }
+.agent-picture img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
+span.agent-picture:not([class*="sz-"]):not([class*="face"]):not([class*="tile"]):not([class*="avatar"]) { display: inline-block; width: 1.25em; height: 1.25em; border-radius: 4px; vertical-align: -0.25em; }

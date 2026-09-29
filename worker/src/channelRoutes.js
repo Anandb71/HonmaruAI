@@ -41,8 +41,9 @@ import { audit, person } from "./audit.js";
 import { getCanvas, toClientCanvas, listRevisions, getRevision, saveCanvas, draftCanvas } from "./canvas.js";
 import { listBookmarks, toClientBookmark, addBookmark, editBookmark, removeBookmark } from "./bookmarks.js";
 import {
-  listAgents, saveAgent, deleteAgent, toClientAgent, agentsHere, channelAgents, agentChannels, agentTalkFilter, addChannelAgent, removeChannelAgent, presetsFor, agentsCalled, requestFor, askAgent, contextFor, playbookFor,
+  listAgents, saveAgent, deleteAgent, toClientAgent, agentsHere, channelAgents, agentChannels, agentTalkFilter, addChannelAgent, removeChannelAgent, presetsFor, agentsCalled, requestFor, askAgent, contextFor, playbookFor, setAgentAvatar,
 } from "./customAgents.js";
+import { readImage } from "./userAvatar.js";
 import { connectedSources, searchNotion, searchGithubIssues, formatSourcesForModel } from "./context.js";
 import { searchTermsFor } from "./ask.js";
 import { searchDecisions } from "./insights.js";
@@ -336,7 +337,7 @@ export async function answerAsAI(env, { orgId, session, user, resolved, row, mem
 /// mention: the team's, their own, and any added to a channel they can
 /// read — with those channels, as they see them.
 async function callableAgents(db, orgId, login, members) {
-  const face = (a) => ({ id: a.id, handle: a.handle, name: a.name, emoji: a.emoji, description: a.description, scope: a.scope });
+  const face = (a) => ({ id: a.id, handle: a.handle, name: a.name, emoji: a.emoji, avatarUrl: a.avatarUrl || null, description: a.description, scope: a.scope });
   const own = await listAgents(db, orgId, login);
   const placed = await agentChannels(db, orgId);
   const access = placed.length ? await accessFor(db, orgId, login) : null;
@@ -395,7 +396,7 @@ export async function answerAsAgents(env, { orgId, session, user, resolved, row,
 export async function runAgents(env, { orgId, session, user, resolved, row, members, locale, agents }) {
   locale = await loadCopy(env, locale || "en", { orgId });
   const parentId = row.parent_id || (resolved.kind === "agent" ? null : row.id);
-  const face = (a) => ({ id: a.id, handle: a.handle, name: a.name, emoji: a.emoji || null });
+  const face = (a) => ({ id: a.id, handle: a.handle, name: a.name, emoji: a.emoji || null, avatarUrl: a.avatarUrl || a.avatar_url || null });
   const progress = async (agent, step) => {
     try {
       const payload = (view) => customEvent("channel_ai_progress", { channel: view, parentId, messageId: row.id, step, agent: face(agent) });
@@ -649,6 +650,44 @@ export async function handleChannels(request, env, url, { route, after }) {
     const lastReadAt = await markUnreadFrom(env.DB, body.orgId, ctx.who.user.login, key, row.created_at);
     after(() => readEverywhere(env, body.orgId, ctx.who.user.login, { view: ctx.view, thread: row.parent_id || null, lastReadAt, unread: true }));
     return json({ lastReadAt, thread: row.parent_id || null });
+  }
+
+  // An agent's picture, in place of its emoji: the image is the body, the
+  // workspace and the agent are in the address. Whoever may change the
+  // agent may change its picture; DELETE takes it off.
+  if (path === "/channels/agents/avatar" && (request.method === "POST" || request.method === "DELETE")) {
+    const orgId = url.searchParams.get("orgId");
+    const who = await caller(env, request, orgId);
+    if (who.denied) return who.denied;
+    const limited = await enforce(env, request, "team");
+    if (limited) return limited;
+    const guest = await isGuest(env.DB, orgId, who.session.github_id);
+    const id = url.searchParams.get("id");
+    let avatarUrl = null;
+    let mediaId = null;
+    if (request.method === "POST") {
+      const image = await readImage(request);
+      if (image.error) return json({ message: image.error }, image.status);
+      // Checked before the bytes are kept, so a refusal leaves nothing behind.
+      const check = await setAgentAvatar(env.DB, orgId, { id, login: who.user.login, avatarUrl: undefined, isGuest: guest, dryRun: true });
+      if (check.error) return json({ message: check.error }, check.status || 400);
+      mediaId = `agent-avatar-${crypto.randomUUID()}`;
+      await env.MEDIA.put(mediaId, image.bytes, { httpMetadata: { contentType: image.contentType } });
+      avatarUrl = `${url.origin}/agents/avatar/${mediaId}`;
+    }
+    const out = await setAgentAvatar(env.DB, orgId, { id, login: who.user.login, avatarUrl, isGuest: guest });
+    if (out.error) {
+      if (mediaId) await env.MEDIA.delete(mediaId).catch(() => {});
+      return json({ message: out.error }, out.status || 400);
+    }
+    const old = /\/agents\/avatar\/(agent-avatar-[0-9a-f-]{36})$/.exec(String(out.previous || ""));
+    if (old && old[1] !== mediaId) await env.MEDIA.delete(old[1]).catch(() => {});
+    if (out.agent.scope === "team") {
+      await audit(env, request, { orgId, action: "agent.updated", actor: person(who.user), entity: { type: "agent", id: out.agent.id, name: `@${out.agent.handle}` }, details: { picture: avatarUrl ? "set" : "removed" } });
+    }
+    const members = await listMembers(env.DB, orgId, who.session.github_id);
+    const isAdmin = await allowed(env.DB, orgId, who.session.github_id, "agent.manage_others");
+    return json({ agent: toClientAgent(out.agent, members, who.user.login, { isAdmin }) });
   }
 
   // Agents the team writes: "@hayao" answers as its Markdown instructions
@@ -1333,14 +1372,14 @@ export async function handleChannels(request, env, url, { route, after }) {
     const here = placesAgents ? await channelAgents(env.DB, orgId, ctx.resolved.key) : [];
     const nameOf = (login) => ctx.members.find((m) => m.login === login)?.name || null;
     const custom = here.map((a) => ({
-      kind: "custom", id: a.id, handle: a.handle, name: a.name, emoji: a.emoji, description: a.description, scope: a.scope,
+      kind: "custom", id: a.id, handle: a.handle, name: a.name, emoji: a.emoji, avatarUrl: a.avatarUrl || null, description: a.description, scope: a.scope,
       owner: nameOf(a.addedBy), canRemove: !guest,
     }));
     const hereIds = new Set(here.map((a) => a.id));
     const hereHandles = new Set(here.map((a) => a.handle));
     const addable = guest ? [] : (await listAgents(env.DB, orgId, ctx.who.user.login))
       .filter((a) => !hereIds.has(a.id) && !hereHandles.has(a.handle))
-      .map((a) => ({ id: a.id, handle: a.handle, name: a.name, emoji: a.emoji, description: a.description, scope: a.scope }));
+      .map((a) => ({ id: a.id, handle: a.handle, name: a.name, emoji: a.emoji, avatarUrl: a.avatarUrl || null, description: a.description, scope: a.scope }));
     const agents = [...details.members.agents.slice(0, 1), ...custom, ...details.members.agents.slice(1)];
     return json({
       ...details,

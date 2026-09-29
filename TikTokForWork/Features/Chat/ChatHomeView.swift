@@ -198,7 +198,7 @@ struct ChatHomeView: View {
                         .foregroundStyle(Theme.Colors.textSecondary).frame(width: 28)
                         .accessibilityLabel(c.isPrivate ? Text("Private channel") : Text("Channel"))
                 } else if c.kind == .agent {
-                    ChatAvatar(name: c.name, size: 28, agentEmoji: c.agent?.glyph ?? ChatAgent.glyph(nil))
+                    ChatAvatar(name: c.name, size: 28, agentEmoji: c.agent?.glyph ?? ChatAgent.glyph(nil), url: c.agent?.avatarUrl)
                 } else if c.kind == .group {
                     Image(systemName: "person.2.fill").font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.Colors.textSecondary).frame(width: 28, height: 28)
@@ -268,7 +268,7 @@ struct ChatAgentPickerSheet: View {
                     ForEach(agents) { a in
                         Button { onPick(a) } label: {
                             HStack(spacing: 12) {
-                                ChatAvatar(name: a.name, size: 36, agentEmoji: a.glyph)
+                                ChatAvatar(name: a.name, size: 36, agentEmoji: a.glyph, url: a.avatarUrl)
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
                                         Text(verbatim: a.name).font(.body.weight(.semibold)).foregroundStyle(Theme.Colors.textPrimary).lineLimit(1)

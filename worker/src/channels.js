@@ -88,7 +88,7 @@ export async function resolveChannel(db, orgId, viewer, channel, members) {
     const id = channel.slice(3);
     if (!/^[\w-]{1,80}$/.test(id)) return null;
     const agent = await db.prepare(
-      `SELECT id, handle, name, emoji, description, instructions, scope, owner_login FROM custom_agents
+      `SELECT id, handle, name, emoji, avatar_url, description, instructions, scope, owner_login FROM custom_agents
         WHERE org_id = ?1 AND id = ?2 AND deleted_at IS NULL AND (scope = 'team' OR owner_login = ?3)`
     ).bind(orgId, id, viewer.login).first().catch(() => null);
     if (!agent) return null;
@@ -166,7 +166,7 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     ...(row.previews_hidden ? { previewsHidden: true } : {}),
     reactions: deleted ? [] : reactions,
     files: deleted ? [] : (extra.files || []),
-    ...(agent ? { agent: { id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji || null } } : {}),
+    ...(agent ? { agent: { id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji || null, avatarUrl: agent.avatar_url || agent.avatarUrl || null } } : {}),
   };
 }
 
@@ -177,7 +177,7 @@ async function agentsOf(db, orgId, rows) {
   const out = new Map();
   if (!ids.length) return out;
   const { results } = await db.prepare(
-    `SELECT id, handle, name, emoji FROM custom_agents WHERE org_id = ?1 AND id IN (${ids.slice(0, 90).map((_, i) => `?${i + 2}`).join(", ")})`
+    `SELECT id, handle, name, emoji, avatar_url FROM custom_agents WHERE org_id = ?1 AND id IN (${ids.slice(0, 90).map((_, i) => `?${i + 2}`).join(", ")})`
   ).bind(orgId, ...ids.slice(0, 90)).all().catch(() => ({ results: [] }));
   for (const r of results || []) out.set(`agent:${r.id}`, r);
   return out;

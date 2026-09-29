@@ -41,6 +41,8 @@ export interface AgentFace {
   handle: string
   name: string
   emoji?: string | null
+  /// A picture in place of the emoji, when it has one.
+  avatarUrl?: string | null
   description?: string
   scope?: 'team' | 'personal'
   /// The channels it was added to, as you see them.
@@ -68,7 +70,7 @@ export function agentMentionables(agents: AgentFace[], taken: Mentionable[] = []
     const h = fold(a.handle || '')
     if (!h || used.has(h) || seen.has(h)) continue
     seen.add(h)
-    out.push({ ref: `agent:${a.id}`, name: a.name || a.handle, handle: a.handle, title: a.description || undefined, agent: true, emoji: a.emoji || null })
+    out.push({ ref: `agent:${a.id}`, name: a.name || a.handle, handle: a.handle, title: a.description || undefined, agent: true, emoji: a.emoji || null, avatarUrl: a.avatarUrl || null })
   }
   return out
 }

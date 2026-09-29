@@ -1877,6 +1877,64 @@ await step('a channel opens at its newest message, and stays there while what is
   }
 })
 
+await step('right-clicking a channel in the sidebar offers what a desktop chat app does: star, notify, rename', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState(), permissions: ['clipboard-read', 'clipboard-write'] })
+  const d = await ctx.newPage()
+  d.on('pageerror', (e) => thrown.push(String(e).slice(0, 200)))
+  try {
+    await d.goto(`${WEB}/#/list`, { waitUntil: 'load' })
+    await d.waitForSelector('.slk-side', { timeout: 20000 })
+    const rowOf = (name) => `.slk-side .cl-thread:has(.cl-title:text-is("${name}"))`
+    const menu = async (name) => {
+      await d.click(rowOf(name), { button: 'right' })
+      await d.waitForSelector('.row-menu', { timeout: 5000 }).catch(() => { throw new Error(`right-clicking #${name} opened no menu`) })
+    }
+    await menu('Front desk')
+    await d.screenshot({ path: `${SHOTS}/39c-row-menu.png` })
+    for (const item of ['details', 'copy', 'star', 'move', 'notify-all', 'notify-mentions', 'notify-mute', 'rename']) {
+      if (!(await d.$(`.row-menu [data-row-menu="${item}"]`))) throw new Error(`the right-click menu has no "${item}"`)
+    }
+    // Copy ▸ Copy link: the channel's own address.
+    await d.hover('.row-menu [data-row-menu="copy"]')
+    await d.click('.row-menu [data-row-menu="copy-link"]')
+    const copied = await d.evaluate(() => navigator.clipboard.readText())
+    if (!/#\/c\/b%3Afront-desk$/.test(copied)) throw new Error(`Copy link copied ${copied}`)
+    // Star it from the menu.
+    await menu('Front desk')
+    await d.click('.row-menu [data-row-menu="star"]')
+    await d.waitForSelector('.row-menu', { state: 'detached', timeout: 3000 })
+    await menu('Front desk')
+    const starLabel = await d.innerText('.row-menu [data-row-menu="star"]')
+    if (!/Unstar/.test(starLabel)) throw new Error(`after starring, the menu still says ${starLabel}`)
+    await d.click('.row-menu [data-row-menu="star"]')
+    // Just mentions: ticked the next time the menu opens.
+    await menu('Front desk')
+    await d.click('.row-menu [data-row-menu="notify-mentions"]')
+    await d.waitForTimeout(400)
+    await menu('Front desk')
+    if (await d.getAttribute('.row-menu [data-row-menu="notify-mentions"]', 'aria-checked') !== 'true') throw new Error('choosing "Just mentions" in the menu did not take')
+    await d.click('.row-menu [data-row-menu="notify-all"]')
+    // Rename, and back again: the sidebar follows at once.
+    await menu('Front desk')
+    await d.click('.row-menu [data-row-menu="rename"]')
+    await d.waitForSelector('[data-rename-input]', { timeout: 5000 })
+    await d.fill('[data-rename-input]', 'Front desk team')
+    await d.click('[data-rename-save]')
+    await d.waitForSelector(rowOf('Front desk team'), { timeout: 10000 }).catch(() => { throw new Error('renaming from the menu did not rename the channel') })
+    await menu('Front desk team')
+    await d.click('.row-menu [data-row-menu="rename"]')
+    await d.fill('[data-rename-input]', 'Front desk')
+    await d.keyboard.press('Enter')
+    await d.waitForSelector(rowOf('Front desk'), { timeout: 10000 })
+    // Escape closes the menu.
+    await menu('Front desk')
+    await d.keyboard.press('Escape')
+    await d.waitForSelector('.row-menu', { state: 'detached', timeout: 3000 }).catch(() => { throw new Error('Escape did not close the menu') })
+  } finally {
+    await ctx.close()
+  }
+})
+
 await step('people talk in a channel, and @AI turns what was said into a decision decided right there', async () => {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState() })
   const d = await ctx.newPage()
@@ -3030,6 +3088,24 @@ await step('the team writes an agent: from a preset, as a .md file, and @called 
     await desk.click(`${row} .btn-text:has-text("Edit")`)
     await desk.waitForSelector('.ca-dialog .ca-instructions', { timeout: 5000 })
     if (!/^# /m.test(await desk.inputValue('.ca-dialog .ca-instructions'))) throw new Error('the editor does not hold the instructions')
+    // A picture in place of its emoji: chosen, shown in the editor, saved,
+    // then its face in the list — and back to the emoji again.
+    const face = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+    await desk.setInputFiles('.ca-dialog [data-agent-picture-input]', { name: 'face.png', mimeType: 'image/png', buffer: face })
+    await desk.waitForSelector('.ca-dialog [data-agent-picture] img', { timeout: 5000 }).catch(() => { throw new Error('a chosen picture is not shown in the editor') })
+    await desk.click('.ca-dialog .ca-save')
+    await desk.waitForSelector(`${row} .ca-face.agent-picture img[src*="/agents/avatar/agent-avatar-"]`, { timeout: 15000 })
+      .catch(() => { throw new Error('the agent does not wear its picture in the list') })
+    await desk.screenshot({ path: `${SHOTS}/63a-agent-picture.png` })
+    await desk.click(`${row} .btn-text:has-text("Edit")`)
+    await desk.waitForSelector('.ca-dialog [data-agent-picture] img', { timeout: 5000 }).catch(() => { throw new Error('the editor does not show the saved picture') })
+    await desk.click('.ca-dialog [data-agent-picture-remove]')
+    await desk.waitForSelector('.ca-dialog .ca-emoji', { timeout: 5000 })
+    await desk.click('.ca-dialog .ca-save')
+    await desk.waitForSelector(`${row} .ca-face:not(.agent-picture)`, { timeout: 15000 })
+      .catch(() => { throw new Error('taking the picture off did not bring the emoji back') })
+    await desk.click(`${row} .btn-text:has-text("Edit")`)
+    await desk.waitForSelector('.ca-dialog .ca-instructions', { timeout: 5000 })
     await desk.click('.ca-dialog .dlg-btn:has-text("Cancel")')
     const [file] = await Promise.all([desk.waitForEvent('download', { timeout: 10000 }), desk.click(`${row} .btn-text:has-text("Download .md")`)])
     if (file.suggestedFilename() !== `${handle}.md`) throw new Error(`the download is named ${file.suggestedFilename()}`)

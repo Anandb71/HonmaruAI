@@ -137,6 +137,8 @@ struct ChatAgentFace: Codable, Hashable {
     let handle: String
     let name: String
     let emoji: String?
+    /// A picture in place of the emoji, when somebody gave it one.
+    var avatarUrl: String? = nil
 
     var glyph: String { ChatAgent.glyph(emoji) }
 }
@@ -167,6 +169,8 @@ struct ChatAgent: Codable, Identifiable, Hashable {
     var channels: [String]? = nil
     /// Someone else's agent, callable only in those channels.
     var placed: Bool? = nil
+    /// A picture in place of the emoji, when somebody gave it one.
+    var avatarUrl: String? = nil
 
     var isPersonal: Bool { scope == "personal" }
     var glyph: String { Self.glyph(emoji) }
@@ -815,6 +819,7 @@ enum ChatService {
             let description: String?
             let owner: String?
             let canRemove: Bool?
+            var avatarUrl: String? = nil
             var glyph: String { ChatAgent.glyph(emoji) }
         }
         struct Addable: Decodable, Identifiable, Hashable {
@@ -824,6 +829,7 @@ enum ChatService {
             let emoji: String?
             let description: String?
             let scope: String?
+            var avatarUrl: String? = nil
             var glyph: String { ChatAgent.glyph(emoji) }
         }
         struct Members: Decodable { let agents: [Placed] }
@@ -840,6 +846,31 @@ enum ChatService {
     static func placeAgent(orgId: String, channel: String, agentId: String, add: Bool, base: URL) async throws {
         struct R: Decodable {}
         _ = try await call(add ? "POST" : "DELETE", "/channels/channel-agents", base: base, body: ["orgId": orgId, "channel": channel, "agentId": agentId], as: R.self)
+    }
+
+    /// An agent's picture, in place of its emoji: a JPEG, or nil to take it off.
+    static func setAgentPicture(orgId: String, id: String, jpeg: Data?, base: URL) async throws {
+        guard let token = SessionStore.sessionToken else { throw Failure.notSignedIn }
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: true)
+        components?.path = "/channels/agents/avatar"
+        components?.queryItems = [URLQueryItem(name: "orgId", value: orgId), URLQueryItem(name: "id", value: id)]
+        guard let url = components?.url else { throw Failure.server(0, nil) }
+        var request = URLRequest(url: url)
+        request.httpMethod = jpeg == nil ? "DELETE" : "POST"
+        request.timeoutInterval = 60
+        request.setValue(token, forHTTPHeaderField: "x-session-token")
+        let (body, response): (Data, URLResponse)
+        if let jpeg {
+            request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+            (body, response) = try await URLSession.shared.upload(for: request, from: jpeg)
+        } else {
+            (body, response) = try await URLSession.shared.data(for: request)
+        }
+        guard let http = response as? HTTPURLResponse else { throw Failure.server(0, nil) }
+        guard (200...299).contains(http.statusCode) else {
+            if http.statusCode == 401 { throw Failure.notSignedIn }
+            throw Failure.server(http.statusCode, (try? JSONDecoder().decode(Message.self, from: body))?.message)
+        }
     }
 
     static func deleteAgent(orgId: String, id: String, base: URL) async throws -> [ChatAgent] {

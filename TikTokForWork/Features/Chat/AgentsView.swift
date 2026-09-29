@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// An agent being written or changed, as the editor holds it.
@@ -10,6 +12,12 @@ struct AgentDraft: Identifiable, Hashable {
     var name = ""
     var handle = ""
     var emoji = ""
+    /// Its picture as saved, if it has one.
+    var avatarUrl: String?
+    /// A picture chosen in the editor, sent once the agent is saved.
+    var picture: Data?
+    /// Take the saved picture off: back to the emoji.
+    var removePicture = false
     var description = ""
     var instructions = ""
     /// "team" or "personal".
@@ -30,6 +38,7 @@ struct AgentDraft: Identifiable, Hashable {
         name = agent.name
         handle = agent.handle
         emoji = agent.emoji ?? ""
+        avatarUrl = agent.avatarUrl
         description = agent.description ?? ""
         instructions = agent.instructions ?? ""
         scope = agent.isPersonal ? "personal" : "team"
@@ -248,7 +257,7 @@ struct AgentsView: View {
             editing = AgentDraft(agent: a)
         } label: {
             HStack(spacing: 12) {
-                ChatAvatar(name: a.name, size: 40, agentEmoji: a.glyph)
+                ChatAvatar(name: a.name, size: 40, agentEmoji: a.glyph, url: a.avatarUrl)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(verbatim: a.name).font(.body.weight(.semibold)).foregroundStyle(Theme.Colors.textPrimary).lineLimit(1)
@@ -332,6 +341,15 @@ struct AgentsView: View {
                     instructions: d.instructions, scope: d.scope, preset: d.preset, base: base)
             }
             apply(out.agents)
+            // The picture goes once the agent exists: a new one has no id before.
+            if let id = d.agentId ?? out.agent?.id, d.picture != nil || (d.removePicture && d.avatarUrl != nil) {
+                do {
+                    try await ChatService.setAgentPicture(orgId: orgId, id: id, jpeg: d.picture, base: base)
+                    apply(try await ChatService.agents(orgId: orgId, base: base).agents)
+                } catch {
+                    return String(localized: "Saved, but the picture did not upload: \(error.localizedDescription)")
+                }
+            }
             Haptics.success()
             return nil
         } catch {
@@ -397,6 +415,7 @@ struct AgentEditorSheet: View {
     @State private var preview = false
     @State private var saving = false
     @State private var problem: String?
+    @State private var photoItem: PhotosPickerItem?
 
     init(draft: AgentDraft, exportURL: URL? = nil, onSave: @escaping (AgentDraft) async -> String?) {
         _draft = State(initialValue: draft)
@@ -412,12 +431,47 @@ struct AgentEditorSheet: View {
             && !draft.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var hasPicture: Bool { draft.picture != nil || (draft.avatarUrl != nil && !draft.removePicture) }
+
+    /// The photo picked, made small: a face, not a poster — as a person's own.
+    private func choose(_ item: PhotosPickerItem) async {
+        defer { photoItem = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data),
+              let jpeg = Self.shrunk(image).jpegData(compressionQuality: 0.85) else {
+            problem = String(localized: "That photo could not be used.")
+            return
+        }
+        problem = nil
+        draft.picture = jpeg
+        draft.removePicture = false
+    }
+
+    private static func shrunk(_ image: UIImage) -> UIImage {
+        let side = max(image.size.width, image.size.height)
+        guard side > 512 else { return image }
+        let scale = 512 / side
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     HStack(spacing: 12) {
-                        ChatAvatar(name: draft.name, size: 44, agentEmoji: ChatAgent.glyph(draft.emoji))
+                        Group {
+                            if let data = draft.picture, let image = UIImage(data: data) {
+                                Image(uiImage: image).resizable().scaledToFill()
+                                    .frame(width: 44, height: 44)
+                                    .clipShape(RoundedRectangle(cornerRadius: 44 * 0.28, style: .continuous))
+                            } else {
+                                ChatAvatar(name: draft.name, size: 44, agentEmoji: ChatAgent.glyph(draft.emoji),
+                                           url: draft.removePicture ? nil : draft.avatarUrl)
+                            }
+                        }
+                        .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(verbatim: draft.name.isEmpty ? String(localized: "New agent") : draft.name).font(.headline)
                             Text(verbatim: "@\(draft.cleanHandle)").font(.caption).foregroundStyle(Theme.Colors.textSecondary)
@@ -430,7 +484,18 @@ struct AgentEditorSheet: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
-                    TextField("Emoji", text: $draft.emoji)
+                    // Its face: a picture, or an emoji when it has none.
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Label(hasPicture ? LocalizedStringKey("Change the picture") : LocalizedStringKey("Choose a picture"), systemImage: "photo")
+                    }
+                    if hasPicture {
+                        Button(role: .destructive) {
+                            draft.picture = nil
+                            draft.removePicture = true
+                        } label: { Label("Use emoji", systemImage: "face.smiling") }
+                    } else {
+                        TextField("Emoji", text: $draft.emoji)
+                    }
                     TextField("What it does, in one line", text: $draft.description, axis: .vertical)
                         .lineLimit(1...3)
                 } footer: {
@@ -488,6 +553,10 @@ struct AgentEditorSheet: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+            .onChange(of: photoItem) { _, item in
+                guard let item else { return }
+                Task { await choose(item) }
+            }
             .navigationTitle(draft.isNew ? LocalizedStringKey("New agent") : (readOnly ? LocalizedStringKey("Agent") : LocalizedStringKey("Edit agent")))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
