@@ -4,7 +4,10 @@ import { BookmarksBar } from './BookmarksBar'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { awaitsPost } from '../utils/automation'
-import { hashForMessage } from '../utils/route'
+import { hashForMessage, hashForView } from '../utils/route'
+import { RowMenu } from './RowMenu'
+import { Dialog } from './Dialog'
+import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage } from '../types/card'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
@@ -774,6 +777,81 @@ export const ClassicList: React.FC<Props> = ({
     setSettings(false)
   }
 
+  // Right-click a conversation in the sidebar: what a desktop chat app
+  // offers there — its details, copying its name or link, a star, a
+  // section, how much it notifies you, and for a channel renaming it or
+  // leaving. The same things as its settings and the phone's long press.
+  const [rowMenu, setRowMenu] = useState<null | { thread: Thread; x: number; y: number }>(null)
+  const closeRowMenu = useCallback(() => setRowMenu(null), [])
+  const [renameDialog, setRenameDialog] = useState<null | { slug: string; name: string; error?: string | null; busy?: boolean }>(null)
+  const openBeside = (th: Thread, tab: DetailsTab) => {
+    if (current?.key === th.key) { setDetailId(null); setThread(null); setProfile(null); setPins(null); setSide({ kind: 'details', tab }); return }
+    sideOnOpen.current = { kind: 'details', tab }
+    choose(th.key)
+  }
+  const copyText = (text: string, done: string) => {
+    void navigator.clipboard?.writeText(text).then(() => setToast(done), () => setToast(text))
+  }
+  const rowMenuEntries = (th: Thread): MenuEntry[] => {
+    const v = th.view!
+    const isChannel = th.kind === 'channel'
+    const level = (prefs[v] || 'all') as 'all' | 'mentions' | 'mute'
+    const here = sectionOf(v)
+    const shown = isChannel && !th.private ? `#${th.name}` : th.name
+    const out: MenuEntry[] = []
+    if (isChannel || th.kind === 'group') {
+      out.push({ kind: 'item', label: isChannel ? t('Channel details') : t('Conversation details'), icon: 'users', data: 'details', submenu: [
+        { kind: 'item', label: t('Members'), icon: 'users', onSelect: () => openBeside(th, 'members'), data: 'members' },
+        { kind: 'item', label: t('Files'), icon: 'paperclip', onSelect: () => openBeside(th, 'attachments'), data: 'files' },
+        ...(isChannel ? [{ kind: 'item' as const, label: t('Automations'), icon: 'repeat' as const, onSelect: () => openBeside(th, 'automations'), data: 'automations' }] : []),
+        ...(isChannel && th.slug ? [{ kind: 'item' as const, label: t('Channel settings'), icon: 'settings' as const, onSelect: () => { choose(th.key); setSettings(true); setRenaming(null) }, data: 'settings' }] : []),
+      ] })
+    } else if (th.kind === 'person') {
+      out.push({ kind: 'item', label: t('View profile'), icon: 'you', onSelect: () => { if (current?.key !== th.key) choose(th.key); void openProfile(v.slice(3)) }, data: 'profile' })
+    }
+    out.push({ kind: 'item', label: t('Copy'), icon: 'copy', data: 'copy', submenu: [
+      { kind: 'item', label: t('Copy name'), onSelect: () => copyText(shown, t('Name copied')), data: 'copy-name' },
+      { kind: 'item', label: t('Copy link'), onSelect: () => copyText(`${location.origin}${location.pathname}${hashForView(v)}`, t('Link copied')), data: 'copy-link' },
+    ] })
+    out.push({ kind: 'item', label: isStarred(v) ? (isChannel ? t('Unstar channel') : t('Unstar')) : (isChannel ? t('Star channel') : t('Star')), icon: 'star', onSelect: () => toggleStar(v), data: 'star' })
+    out.push({ kind: 'item', label: t('Move to a section'), icon: 'folder', data: 'move', submenu: [
+      ...layout.sections.map((x) => ({ kind: 'item' as const, label: x.name, checked: here?.id === x.id, onSelect: () => moveTo(v, x.id), data: `move-to:${x.name}` })),
+      ...(here ? [{ kind: 'item' as const, label: t('Back to where it was'), onSelect: () => moveTo(v, null), data: 'move-back' }] : []),
+      ...(layout.sections.length || here ? [{ kind: 'sep' as const }] : []),
+      { kind: 'item', label: t('New section…'), icon: 'plus', onSelect: () => { setSectionName(''); setAddingSection({ view: v }) }, data: 'new-section' },
+    ] })
+    if (isChannel) {
+      out.push({ kind: 'sep' })
+      out.push({ kind: 'item', label: t('Daily summary to me'), icon: 'sparkle', onSelect: () => void dailySummary(th), data: 'summary' })
+    }
+    out.push({ kind: 'sep' }, { kind: 'head', label: t('Notify you about…') })
+    out.push(
+      { kind: 'item', label: t('All new posts'), checked: level === 'all', onSelect: () => void setPref(v, 'all'), data: 'notify-all' },
+      { kind: 'item', label: t('Just mentions'), checked: level === 'mentions', onSelect: () => void setPref(v, 'mentions'), data: 'notify-mentions' },
+      { kind: 'item', label: t('Mute'), checked: level === 'mute', onSelect: () => void setPref(v, 'mute'), data: 'notify-mute' },
+    )
+    if (isChannel && th.slug) {
+      out.push({ kind: 'sep' })
+      out.push({ kind: 'item', label: t('Rename channel…'), icon: 'edit', onSelect: () => setRenameDialog({ slug: th.slug!, name: th.name }), data: 'rename' })
+      if (th.private) {
+        out.push({ kind: 'item', label: t('Add people…'), icon: 'invite', onSelect: () => setAddingTo(v), data: 'add-people' })
+        out.push({ kind: 'sep' })
+        out.push({ kind: 'item', label: t('Leave channel'), danger: true, onSelect: () => void leaveChannel(th), data: 'leave' })
+      }
+    }
+    return out
+  }
+  const saveRename = async () => {
+    if (!renameDialog || renameDialog.busy) return
+    const name = renameDialog.name.trim()
+    if (!name) return
+    setRenameDialog({ ...renameDialog, busy: true, error: null })
+    const err = await onRenameChannel(renameDialog.slug, name)
+    if (err) { setRenameDialog((d) => d && { ...d, busy: false, error: err }); return }
+    setRenameDialog(null)
+    setToast(t('Renamed to #{name}', { name }))
+  }
+
   // A teammate's profile, beside the conversation.
   const [profile, setProfile] = useState<null | { ref: string; data?: { name: string; handle: string | null; title: string; timezone: string | null; status: Member['status']; awayUntil: string | null; joinedAt: string; mine: boolean; stats: { waiting: number; decided90d: number; medianMinutes: number | null } } }>(null)
   const openProfile = async (ref: string) => {
@@ -868,7 +946,7 @@ export const ClassicList: React.FC<Props> = ({
       onDragEnd: () => { setDragging(null); setDropAt(null) },
     } : {}
     return (
-      <li key={thread.key} data-view={thread.view} {...drag} className={`cl-row cl-thread${thread.unread || (thread.fresh && !on) ? ' unread' : ''}${on ? ' on' : ''}${thread.view && prefs[thread.view] === 'mute' ? ' muted' : ''}${dragging === view ? ' dragging' : ''}${drop}`}>
+      <li key={thread.key} data-view={thread.view} {...drag} onContextMenu={wide && view ? (e) => { e.preventDefault(); setRowMenu({ thread, x: e.clientX, y: e.clientY }) } : undefined} className={`cl-row cl-thread${thread.unread || (thread.fresh && !on) ? ' unread' : ''}${on ? ' on' : ''}${thread.view && prefs[thread.view] === 'mute' ? ' muted' : ''}${dragging === view ? ' dragging' : ''}${drop}`}>
         <button className="cl-open" onClick={() => choose(thread.key)} aria-current={on ? 'true' : undefined}>
           {lead(thread, 'row')}
           <span className="cl-title">{thread.name}</span>
@@ -1816,7 +1894,10 @@ export const ClassicList: React.FC<Props> = ({
     setDetailId(null); setThread(null); setProfile(null); setPins(null)
     setSide((prev) => (prev && prev.kind === next.kind && (prev.kind === 'journal' || prev.kind === 'canvas' || (next.kind === 'details' && prev.kind === 'details' && prev.tab === next.tab)) ? null : next))
   }
-  useEffect(() => { setSide(null) }, [current?.key])
+  // What to open beside a conversation chosen from somewhere else (the
+  // sidebar's right-click menu): set before choosing, applied once it opens.
+  const sideOnOpen = useRef<null | { kind: 'details'; tab: DetailsTab }>(null)
+  useEffect(() => { setSide(sideOnOpen.current); sideOnOpen.current = null }, [current?.key])
   // Back closes what was opened last, not the list (utils/backStack): on a
   // phone the conversation itself, then whatever is open over it.
   useBackStack([
@@ -3574,6 +3655,32 @@ export const ClassicList: React.FC<Props> = ({
           </Sheet>
         )
       })()}
+      {rowMenu && rowMenu.thread.view && (
+        <RowMenu at={{ x: rowMenu.x, y: rowMenu.y }} label={rowMenu.thread.name} entries={rowMenuEntries(rowMenu.thread)} onClose={closeRowMenu} />
+      )}
+      {renameDialog && (
+        <Dialog
+          title={t('Rename channel')}
+          lede={t('Everyone in the workspace sees the new name. Links to it keep working.')}
+          className="cl-rename-dialog"
+          onClose={() => setRenameDialog(null)}
+          footer={(
+            <>
+              <button type="button" className="dlg-btn" onClick={() => setRenameDialog(null)}>{t('Cancel')}</button>
+              <button type="button" className="dlg-btn primary" data-rename-save disabled={renameDialog.busy || !renameDialog.name.trim()} onClick={() => void saveRename()}>
+                {renameDialog.busy ? t('Saving…') : t('Save')}
+              </button>
+            </>
+          )}
+        >
+          <form onSubmit={(e) => { e.preventDefault(); void saveRename() }}>
+            <label className="dlg-label" htmlFor="cl-rename-input">{t('Channel name')}</label>
+            <input id="cl-rename-input" className="dlg-input" value={renameDialog.name} maxLength={120} autoFocus data-rename-input
+              onChange={(e) => setRenameDialog({ ...renameDialog, name: e.target.value, error: null })} />
+          </form>
+          {renameDialog.error && <p className="dlg-error" role="alert">{renameDialog.error}</p>}
+        </Dialog>
+      )}
       {moveSheet && (
         <Sheet label={t('Move to a section')} onClose={() => setMoveSheet(null)}>
           <p className="msheet-title">{t('Move to a section')}</p>

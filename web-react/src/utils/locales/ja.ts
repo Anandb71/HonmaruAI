@@ -1889,6 +1889,20 @@ const table: Record<string, string> = {
   'A picture is a PNG, JPEG, WebP or GIF.': '画像は PNG・JPEG・WebP・GIF のいずれかです。',
   'A picture is at most 2 MB.': '画像は 2 MB までです。',
   'Saved, but the picture did not upload: {why}': '保存しましたが、画像をアップロードできませんでした: {why}',
+  'Conversation details': '会話の詳細',
+  'View profile': 'プロフィールを見る',
+  'Copy name': '名前をコピー',
+  'Name copied': '名前をコピーしました',
+  'Unstar channel': 'チャンネルのスターを外す',
+  'Star channel': 'チャンネルにスターを付ける',
+  'Notify you about…': '通知する内容…',
+  'All new posts': 'すべての新しい投稿',
+  'Just mentions': 'メンションのみ',
+  'Rename channel…': 'チャンネル名を変更…',
+  'Add people…': 'メンバーを追加…',
+  'Rename channel': 'チャンネル名を変更',
+  'Everyone in the workspace sees the new name. Links to it keep working.': 'ワークスペースの全員に新しい名前が表示されます。これまでのリンクはそのまま使えます。',
+  'Renamed to #{name}': '#{name} に名前を変更しました',
 }
 
 export default table

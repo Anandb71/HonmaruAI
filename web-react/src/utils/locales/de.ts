@@ -1825,6 +1825,20 @@ const table: Record<string, string> = {
   'A picture is a PNG, JPEG, WebP or GIF.': 'Ein Bild ist PNG, JPEG, WebP oder GIF.',
   'A picture is at most 2 MB.': 'Ein Bild ist höchstens 2 MB groß.',
   'Saved, but the picture did not upload: {why}': 'Gespeichert, aber das Bild wurde nicht hochgeladen: {why}',
+  'Conversation details': 'Unterhaltungsdetails',
+  'View profile': 'Profil ansehen',
+  'Copy name': 'Namen kopieren',
+  'Name copied': 'Name kopiert',
+  'Unstar channel': 'Kanal-Stern entfernen',
+  'Star channel': 'Kanal mit Stern markieren',
+  'Notify you about…': 'Benachrichtigen bei…',
+  'All new posts': 'Alle neuen Beiträge',
+  'Just mentions': 'Nur Erwähnungen',
+  'Rename channel…': 'Kanal umbenennen…',
+  'Add people…': 'Personen hinzufügen…',
+  'Rename channel': 'Kanal umbenennen',
+  'Everyone in the workspace sees the new name. Links to it keep working.': 'Alle im Workspace sehen den neuen Namen. Links funktionieren weiterhin.',
+  'Renamed to #{name}': 'Umbenannt in #{name}',
 }
 
 export default table
