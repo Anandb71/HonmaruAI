@@ -122,7 +122,12 @@ test("with it on, a photo of a card and a scanned PDF of one are both stopped, a
 
   // Neither the picture nor what it said is kept or logged.
   const audits = await env.DB.prepare("SELECT * FROM audit_events WHERE org_id = ?1").bind(ORG).all();
-  expect(JSON.stringify(audits.results)).not.toContain("4111");
+  // The number as it was written, not "4111": four digits turn up by chance
+  // in the rows' random hashes and ciphertext.
+  const logged = JSON.stringify(audits.results);
+  for (const written of ["4111 1111 1111 1111", "4111-1111-1111-1111", "4111111111111111", "KEN SATO", "Invoice"]) {
+    expect(logged).not.toContain(written);
+  }
   const billed = await env.DB.prepare("SELECT purpose, user_github_id FROM ai_calls WHERE org_id = ?1").bind(ORG).all();
   expect(billed.results).toEqual([{ purpose: "dlp_ocr", user_github_id: "9202" }, { purpose: "dlp_ocr", user_github_id: "9202" }]);
 
