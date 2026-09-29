@@ -1903,17 +1903,25 @@ await step('right-clicking a channel in the sidebar offers what a desktop chat a
     await menu('Front desk')
     await d.click('.row-menu [data-row-menu="star"]')
     await d.waitForSelector('.row-menu', { state: 'detached', timeout: 3000 })
+    await d.waitForSelector(`${rowOf('Front desk')}`, { timeout: 5000 })
     await menu('Front desk')
     const starLabel = await d.innerText('.row-menu [data-row-menu="star"]')
     if (!/Unstar/.test(starLabel)) throw new Error(`after starring, the menu still says ${starLabel}`)
     await d.click('.row-menu [data-row-menu="star"]')
     // Just mentions: ticked the next time the menu opens.
     await menu('Front desk')
-    await d.click('.row-menu [data-row-menu="notify-mentions"]')
-    await d.waitForTimeout(400)
+    // Saved first, then shown: wait for the server to take it, not a clock.
+    await Promise.all([
+      d.waitForResponse((r) => r.url().includes('/channels/prefs') && r.request().method() === 'PUT', { timeout: 10000 }),
+      d.click('.row-menu [data-row-menu="notify-mentions"]'),
+    ])
     await menu('Front desk')
-    if (await d.getAttribute('.row-menu [data-row-menu="notify-mentions"]', 'aria-checked') !== 'true') throw new Error('choosing "Just mentions" in the menu did not take')
-    await d.click('.row-menu [data-row-menu="notify-all"]')
+    await d.waitForSelector('.row-menu [data-row-menu="notify-mentions"][aria-checked="true"]', { timeout: 5000 })
+      .catch(() => { throw new Error('choosing "Just mentions" in the menu did not take') })
+    await Promise.all([
+      d.waitForResponse((r) => r.url().includes('/channels/prefs') && r.request().method() === 'PUT', { timeout: 10000 }),
+      d.click('.row-menu [data-row-menu="notify-all"]'),
+    ])
     // Rename, and back again: the sidebar follows at once.
     await menu('Front desk')
     await d.click('.row-menu [data-row-menu="rename"]')
@@ -1926,6 +1934,16 @@ await step('right-clicking a channel in the sidebar offers what a desktop chat a
     await d.fill('[data-rename-input]', 'Front desk')
     await d.keyboard.press('Enter')
     await d.waitForSelector(rowOf('Front desk'), { timeout: 10000 })
+    // Mark as read, without opening it: a conversation with something new
+    // loses its dot. (The daily-report channel has the day's report.)
+    const freshRow = await d.$('.slk-side .cl-thread:has(.cl-fresh) .cl-title')
+    if (freshRow) {
+      const name = (await freshRow.innerText()).trim()
+      await menu(name)
+      await d.click('.row-menu [data-row-menu="mark-read"]').catch(() => { throw new Error(`#${name} has something new, but its menu offers no "Mark as read"`) })
+      await d.waitForSelector(`${rowOf(name)} .cl-fresh`, { state: 'detached', timeout: 5000 })
+        .catch(() => { throw new Error(`"Mark as read" left #${name} marked new`) })
+    }
     // Escape closes the menu.
     await menu('Front desk')
     await d.keyboard.press('Escape')

@@ -801,6 +801,9 @@ export const ClassicList: React.FC<Props> = ({
     const here = sectionOf(v)
     const shown = isChannel && !th.private ? `#${th.name}` : th.name
     const out: MenuEntry[] = []
+    if (th.fresh || (mentionsIn[v] || 0) > 0) {
+      out.push({ kind: 'item', label: t('Mark as read'), icon: 'check', onSelect: () => markViewRead(v), data: 'mark-read' }, { kind: 'sep' })
+    }
     if (isChannel || th.kind === 'group') {
       out.push({ kind: 'item', label: isChannel ? t('Channel details') : t('Conversation details'), icon: 'users', data: 'details', submenu: [
         { kind: 'item', label: t('Members'), icon: 'users', onSelect: () => openBeside(th, 'members'), data: 'members' },
@@ -1136,22 +1139,31 @@ export const ClassicList: React.FC<Props> = ({
   // unless you just marked it unread and are still looking at it.
   const heldUnread = useRef<string | null>(null)
   useEffect(() => { if (heldUnread.current && heldUnread.current !== view) heldUnread.current = null }, [view])
+  /// Read up to now, here and on the server for your other devices: the
+  /// conversation's count goes, its notifications close, and what was said
+  /// in it is no longer new in Activity (a reply waits for its thread).
+  const readOnServer = (v: string, now: string) => {
+    fetch(`${api.httpBase}/channels/read`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel: v }),
+    }).then(() => setServerReads((prev) => ({ ...prev, [v]: now }))).catch(() => { /* this device still remembers */ })
+    closeNotifications(api.orgId, v)
+    setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === v && !i.message.parentId && (i.at || i.message.createdAt) <= now ? { ...i, unread: false } : i)))
+  }
+  const readHere = (v: string) => {
+    const now = new Date().toISOString()
+    try { localStorage.setItem(seenKey(api.orgId, v), now) } catch { /* private mode: nothing remembered */ }
+    setSeenTick((n) => n + 1)
+    return now
+  }
+  /// "Mark as read" from the sidebar, without opening it.
+  const markViewRead = (v: string) => { readOnServer(v, readHere(v)) }
   useEffect(() => {
     if (!view || heldUnread.current === view) return
-    const now = new Date().toISOString()
-    try { localStorage.setItem(seenKey(api.orgId, view), now) } catch { /* private mode: nothing remembered */ }
-    setSeenTick((n) => n + 1)
-    const id = setTimeout(() => {
-      fetch(`${api.httpBase}/channels/read`, {
-        method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-        body: JSON.stringify({ orgId: api.orgId, channel: view }),
-      }).then(() => setServerReads((prev) => ({ ...prev, [view]: now }))).catch(() => { /* this device still remembers */ })
-      closeNotifications(api.orgId, view)
-      // Read here, so no longer new in Activity: what was said in this
-      // conversation (a reply waits for its thread).
-      setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === view && !i.message.parentId && (i.at || i.message.createdAt) <= now ? { ...i, unread: false } : i)))
-    }, 600)
+    const now = readHere(view)
+    const id = setTimeout(() => readOnServer(view, now), 600)
     return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, api.orgId, messages[view || '']?.length])
   // The composer grows with what is written, up to a point.
   useEffect(() => {

@@ -65,7 +65,7 @@ export function useMentionMenu(
   const pick = (member: Mentionable) => {
     const el = box.current
     const at = el ? (el.selectionStart ?? text.length) : caret
-    const next = insertMention(text, at, member)
+    const next = insertMention(text, at, member, members)
     pendingCaret.current = next.caret
     setText(next.text)
     setDismissed(null)

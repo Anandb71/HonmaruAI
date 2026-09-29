@@ -140,16 +140,27 @@ export function matchMembers(members: Mentionable[], query: string, limit = 8): 
 
 /// The text with the current `@query` replaced by `@Name ` and where the
 /// caret should land afterwards.
-export function insertMention(text: string, caret: number, member: Mentionable): { text: string; caret: number } {
+export function insertMention(text: string, caret: number, member: Mentionable, others: Mentionable[] = []): { text: string; caret: number } {
   const q = mentionQuery(text, caret)
   if (!q) return { text, caret }
-  // The username when there is one — it is exact and has no spaces; else
-  // the first name, which the Worker also matches.
   const label = member.special === 'agents' && member.handles?.length
     ? `${member.handles.map((h) => `@${h}`).join(' ')} `
-    : `@${member.handle || member.name.split(/\s+/)[0] || member.name} `
+    : `@${mentionLabel(member, others)} `
   const next = text.slice(0, q.start) + label + text.slice(caret)
   return { text: next, caret: q.start + label.length }
+}
+
+/// What "@" writes for somebody: their username when they have one — it is
+/// exact and has no spaces; else their first name, unless someone else in
+/// the list answers to it too ("@Kenji" would reach whichever Kenji came
+/// first), and then the whole name run together ("@KenjiSato"), which the
+/// Worker and the iPhone both match.
+export function mentionLabel(member: Mentionable, others: Mentionable[] = []): string {
+  if (member.handle) return member.handle
+  const first = member.name.split(/\s+/)[0] || member.name
+  const want = fold(first)
+  const shared = others.some((o) => o.ref !== member.ref && !o.special && namesOf(o).includes(want))
+  return shared ? member.name.replace(/\s+/g, '') : first
 }
 
 /// Every way an @ may write somebody, folded: their username, their name,

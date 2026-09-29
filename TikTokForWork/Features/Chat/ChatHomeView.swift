@@ -265,6 +265,10 @@ struct ChatHomeView: View {
     @ViewBuilder
     private func rowMenu(_ c: ChatConversation) -> some View {
         let starred = store.isStarred(c.view)
+        if store.isFresh(c.view) || store.mentions(in: c.view) > 0 {
+            Button { Task { await store.markRead(c.view) } } label: { Label("Mark as read", systemImage: "checkmark.circle") }
+            Divider()
+        }
         Button { Task { await store.toggleStar(c.view) } } label: {
             Label(starred ? LocalizedStringKey("Unstar") : LocalizedStringKey("Star"), systemImage: starred ? "star.slash" : "star")
         }

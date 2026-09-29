@@ -1836,6 +1836,7 @@ const table: Record<string, string> = {
   'Rename channel': 'Cambiar nombre del canal',
   'Everyone in the workspace sees the new name. Links to it keep working.': 'Todos en el espacio de trabajo verán el nuevo nombre. Los enlaces siguen funcionando.',
   'Renamed to #{name}': 'Renombrado a #{name}',
+  'Mark as read': 'Marcar como leído',
 }
 
 export default table
