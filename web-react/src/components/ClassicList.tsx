@@ -1230,9 +1230,14 @@ export const ClassicList: React.FC<Props> = ({
   const openView = !special ? (current?.view || null) : null
   useEffect(() => { setOpenView(openView); return () => { setOpenView(null) } }, [openView])
   const [laterItems, setLaterItems] = useState<Array<{ id: string; remindAt: string | null; remindedAt: string | null; message: ChannelMessage }> | null>(null)
+  // Marked done here: kept out of the list even when a load that began
+  // before the Done lands after it.
+  const laterDone = useRef<Set<string>>(new Set())
   const loadLater = useCallback(() => {
     return fetch(`${api.httpBase}/channels/later?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
-      .then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setLaterItems(d.items || []) }).catch(() => {})
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setLaterItems(((d.items || []) as Array<{ id: string; remindAt: string | null; remindedAt: string | null; message: ChannelMessage }>).filter((x) => !laterDone.current.has(x.id))) })
+      .catch(() => {})
   }, [api.httpBase, api.orgId, authHeaders])
   useEffect(() => { void loadLater() }, [loadLater])
   const saveLater = async (channel: string, m: ChannelMessage, remindAt: string | null) => {
@@ -1244,8 +1249,11 @@ export const ClassicList: React.FC<Props> = ({
     void loadLater()
   }
   const finishLater = async (id: string) => {
+    laterDone.current.add(id)
+    setLaterItems((prev) => (prev || []).filter((x) => x.id !== id))
     const res = await fetch(`${api.httpBase}/channels/later`, { method: 'DELETE', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, id }) }).catch(() => null)
-    if (res?.ok) setLaterItems((prev) => (prev || []).filter((x) => x.id !== id))
+    // It did not go: back in the list, and said so.
+    if (!res?.ok) { laterDone.current.delete(id); setProblem(t('That did not save.')); void loadLater() }
   }
 
   // A clip: messages gathered from anywhere, made one decision.
