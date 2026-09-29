@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The chat tab: Activity and Later on glass at the top, then channels and
 /// the people you work with — the Slack sidebar, laid out for a phone.
@@ -13,6 +14,11 @@ struct ChatHomeView: View {
     @State private var editingStatus = false
     @State private var startingMessage = false
     @State private var pickingAgent = false
+    // The long press on a conversation: renaming a channel, leaving a private one.
+    @State private var renaming: ChatConversation?
+    @State private var renameTo = ""
+    @State private var leaving: ChatConversation?
+    @State private var menuProblem: String?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -121,6 +127,24 @@ struct ChatHomeView: View {
                 }
                 Button("Cancel", role: .cancel) { newChannel = "" }
             } message: { Text("A channel for one business or project. Everyone on the team can see it.") }
+            .alert("Rename channel", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+                TextField("Channel name", text: $renameTo)
+                Button("Save") {
+                    let name = renameTo.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let c = renaming, !name.isEmpty else { return }
+                    Task { if let failed = await store.renameChannel(c.view, to: name) { menuProblem = failed } }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("Everyone in the workspace sees the new name. Links to it keep working.") }
+            .confirmationDialog(Text(verbatim: leaving.map { "#\($0.name)" } ?? ""), isPresented: Binding(get: { leaving != nil }, set: { if !$0 { leaving = nil } }), titleVisibility: .visible) {
+                Button("Leave channel", role: .destructive) {
+                    guard let c = leaving else { return }
+                    Task { if let failed = await store.leaveChannel(c.view) { menuProblem = failed } }
+                }
+            } message: { Text("You will need somebody inside to add you again.") }
+            .alert("That did not work", isPresented: Binding(get: { menuProblem != nil }, set: { if !$0 { menuProblem = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: { Text(verbatim: menuProblem ?? "") }
             .sheet(isPresented: $editingStatus) { ChatStatusEditor(store: store).environmentObject(appState) }
             .sheet(isPresented: $pickingAgent) {
                 ChatAgentPickerSheet(agents: store.agents) { a in
@@ -230,6 +254,46 @@ struct ChatHomeView: View {
                 } else if fresh {
                     Circle().fill(Theme.Colors.interactive).frame(width: 8, height: 8).accessibilityLabel("Unread")
                 }
+            }
+        }
+        .contextMenu { rowMenu(c) }
+    }
+
+    /// Hold a conversation: what the web's right-click offers — a star, a
+    /// section, how much it notifies you, its link, and for a channel its
+    /// name, or leaving a private one.
+    @ViewBuilder
+    private func rowMenu(_ c: ChatConversation) -> some View {
+        let starred = store.isStarred(c.view)
+        Button { Task { await store.toggleStar(c.view) } } label: {
+            Label(starred ? LocalizedStringKey("Unstar") : LocalizedStringKey("Star"), systemImage: starred ? "star.slash" : "star")
+        }
+        Menu {
+            ForEach(store.sidebar.sections) { s in
+                Button { Task { await store.move(c.view, to: s.id) } } label: {
+                    if store.section(of: c.view)?.id == s.id { Label(s.name, systemImage: "checkmark") } else { Text(verbatim: s.name) }
+                }
+            }
+            if store.section(of: c.view) != nil {
+                Button("Back to where it was") { Task { await store.move(c.view, to: nil) } }
+            }
+        } label: { Label("Move to a section", systemImage: "folder") }
+        .disabled(store.sidebar.sections.isEmpty)
+        Menu {
+            Picker("Notify me about", selection: Binding(get: { store.prefs[c.view] ?? "all" }, set: { v in Task { await store.setPref(c.view, level: v) } })) {
+                Text("All new posts").tag("all")
+                Text("Just mentions").tag("mentions")
+                Text("Mute").tag("mute")
+            }
+        } label: { Label("Notify me about", systemImage: store.prefs[c.view] == "mute" ? "bell.slash" : "bell") }
+        Button {
+            Task { if let link = await store.conversationLink(c.view) { UIPasteboard.general.url = link } }
+        } label: { Label("Copy link", systemImage: "link") }
+        if c.kind == .channel {
+            Divider()
+            Button { renameTo = c.name; renaming = c } label: { Label("Rename channel…", systemImage: "pencil") }
+            if c.isPrivate {
+                Button(role: .destructive) { leaving = c } label: { Label("Leave channel", systemImage: "rectangle.portrait.and.arrow.right") }
             }
         }
     }

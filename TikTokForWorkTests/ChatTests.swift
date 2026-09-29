@@ -302,6 +302,9 @@ final class ChatTranslationTests: XCTestCase {
         let web = URL(string: "https://app.example.com")!
         XCTAssertEqual(ChatStore.messageLink(web: web, messageId: "m-1", orgId: "personal:abc")?.absoluteString, "https://app.example.com/#/m/m-1/personal%3Aabc")
         XCTAssertEqual(ChatStore.messageLink(web: web, messageId: "m-1", orgId: nil)?.absoluteString, "https://app.example.com/#/m/m-1")
+        // A conversation's link, the same the web's "Copy link" makes.
+        XCTAssertEqual(ChatStore.conversationLink(web: web, view: "b:front-desk")?.absoluteString, "https://app.example.com/#/c/b%3Afront-desk")
+        XCTAssertEqual(ChatStore.conversationLink(web: web, view: "b:日報")?.absoluteString, "https://app.example.com/#/c/b%3A%E6%97%A5%E5%A0%B1")
     }
 
     func testChannelsFollowTheOrderDraggedOnTheWebAndTheRestKeepTheirs() {
