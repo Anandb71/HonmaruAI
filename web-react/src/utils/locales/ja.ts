@@ -1873,6 +1873,9 @@ const table: Record<string, string> = {
   'Read pictures and scanned PDFs': '画像とスキャンしたPDFも読む',
   'Photos, screenshots and scanned pages have no text of their own. With this on, each one attached is sent to the workspace’s AI model to be read, checked against these rules, and dropped. It uses the AI allowance.': '写真・スクリーンショット・スキャンしたページには文字データがありません。オンにすると、添付されたものをワークスペースのAIモデルに送って読み取り、ルールと照らし合わせたあと破棄します。AIの利用枠を使います。',
   'This needs an OpenAI model for the workspace, which is not set up.': 'ワークスペースにOpenAIのモデルが必要ですが、まだ設定されていません。',
+  'Your daily report is posted to {channel}, not to the daily-report channel.': '日報が{channel}に投稿される設定になっています。日報チャンネルではありません。',
+  'Move it to #{channel}': '#{channel} に移す',
+  'Move it to a new channel, #{channel}': '新しいチャンネル #{channel} に移す',
 }
 
 export default table

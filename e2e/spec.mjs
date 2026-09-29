@@ -1867,6 +1867,9 @@ await step('the daily report: morning and evening at the person’s own times, d
     await d.waitForFunction(() => !document.querySelector('.routine-row.editing'), null, { timeout: 10000 })
     const ev = await d.$eval(evRow, (el) => el.innerText)
     if (!/21:30/.test(ev) || !/#kitchen/.test(ev)) throw new Error(`the evening row did not take the new time and channel: ${ev.slice(0, 160)}`)
+    // Posted somewhere other than the daily-report channel: said, with a way back.
+    const moved = await d.waitForSelector('[data-daily-misplaced] [data-daily-move]', { timeout: 5000 }).catch(() => null)
+    if (!moved || !/daily-reports/.test(await moved.innerText())) throw new Error('a daily report in #kitchen is not offered a move back to #daily-reports')
 
     // Run now: the draft, in the feed, for its owner to change.
     await d.click(`${evRow} .btn-text:has-text("Run now")`)

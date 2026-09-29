@@ -1806,6 +1806,9 @@ const table: Record<string, string> = {
   'Read pictures and scanned PDFs': 'Leer imágenes y PDF escaneados',
   'Photos, screenshots and scanned pages have no text of their own. With this on, each one attached is sent to the workspace’s AI model to be read, checked against these rules, and dropped. It uses the AI allowance.': 'Las fotos, capturas de pantalla y páginas escaneadas no contienen texto propio. Con esta opción activada, cada una que se adjunte se envía al modelo de IA del espacio de trabajo para leerla, se compara con estas reglas y se descarta. Consume la cuota de IA.',
   'This needs an OpenAI model for the workspace, which is not set up.': 'Esto requiere un modelo de OpenAI para el espacio de trabajo, que no está configurado.',
+  'Your daily report is posted to {channel}, not to the daily-report channel.': 'Tu informe diario se publica en {channel}, no en el canal de informes diarios.',
+  'Move it to #{channel}': 'Moverlo a #{channel}',
+  'Move it to a new channel, #{channel}': 'Moverlo a un canal nuevo, #{channel}',
 }
 
 export default table

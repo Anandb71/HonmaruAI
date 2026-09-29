@@ -8,6 +8,7 @@ import {
   type Routine, type RoutineDraft,
 } from '../utils/automation'
 import type { Business, Cadence } from '../types/card'
+import { DAILY_CHANNEL_SLUGS, NEW_CHANNEL } from '../utils/dailySetup'
 
 interface Props {
   httpBase: string
@@ -164,16 +165,37 @@ export const Automations: React.FC<Props> = ({ httpBase, orgId, sessionToken, on
   const hasBrief = (routines || []).some((r) => r.kind === 'brief')
   const hasPlan = (routines || []).some((r) => r.kind === 'daily_plan')
   const hasReport = (routines || []).some((r) => r.kind === 'daily_report')
+  // The team's daily-report channel, the one onboarding made or found: a
+  // daily report goes there, not to whichever channel happens to be first.
+  const dailyChannel = businesses.find((b) => DAILY_CHANNEL_SLUGS.includes(b.slug))
+  const isDailyChannel = (channel: string | null | undefined) => Boolean(channel && DAILY_CHANNEL_SLUGS.includes(channel.replace(/^b:/, '')))
+  /// The daily-report channel, made now when the team has none yet.
+  const ensureDailyChannel = async (name: string): Promise<string> => {
+    if (dailyChannel) return `b:${dailyChannel.slug}`
+    const data = await call('POST', '/businesses', { name: name.trim() || t('daily-reports') })
+    if (!data.business?.slug) throw new Error(t('That did not save.'))
+    setBusinesses((list) => [...list, data.business])
+    return `b:${data.business.slug}`
+  }
   // 08:00 and 22:00 where the person is, unless they say otherwise; only
-  // the half they do not have yet.
+  // the half they do not have yet; into the daily-report channel, or a new
+  // one of that name.
   const openDaily = () => setDaily({
     cadence: 'weekdays',
-    channel: businesses[0] ? `b:${businesses[0].slug}` : '',
+    channel: dailyChannel ? `b:${dailyChannel.slug}` : NEW_CHANNEL,
+    newName: t('daily-reports'),
     morning: { on: !hasPlan, hour: 8, minute: 0 },
     evening: { on: !hasReport, hour: 22, minute: 0 },
   })
+  // Daily reports already posted somewhere else: moved to the daily-report
+  // channel in one step.
+  const misplaced = (routines || []).filter((r) => (r.kind === 'daily_plan' || r.kind === 'daily_report') && r.channel && !isDailyChannel(r.channel))
+  const moveToDaily = () => act('daily-move', async () => {
+    const channel = await ensureDailyChannel(t('daily-reports'))
+    for (const r of misplaced) replace((await call('PUT', `/routines/${encodeURIComponent(r.id)}`, { channel })).routine)
+  })
   const createDaily = async () => {
-    if (!daily?.channel) return
+    if (!daily?.channel || (daily.channel === NEW_CHANNEL && !daily.newName.trim())) return
     const wanted = [
       ...(daily.morning.on && !hasPlan ? [{ kind: 'daily_plan', ...daily.morning }] : []),
       ...(daily.evening.on && !hasReport ? [{ kind: 'daily_report', ...daily.evening }] : []),
@@ -181,10 +203,11 @@ export const Automations: React.FC<Props> = ({ httpBase, orgId, sessionToken, on
     if (!wanted.length) return
     setCreating(true); setError(null)
     try {
+      const channel = daily.channel === NEW_CHANNEL ? await ensureDailyChannel(daily.newName) : daily.channel
       const made: Routine[] = []
       for (const w of wanted) {
         const data = await call('POST', '/routines', {
-          kind: w.kind, cadence: daily.cadence, hour: w.hour, minute: w.minute, timezone: localTimeZone(), channel: daily.channel, recipient: 'me',
+          kind: w.kind, cadence: daily.cadence, hour: w.hour, minute: w.minute, timezone: localTimeZone(), channel, recipient: 'me',
         })
         made.push(data.routine)
       }
@@ -304,6 +327,16 @@ export const Automations: React.FC<Props> = ({ httpBase, orgId, sessionToken, on
         {error && <div className="form-error">{error}</div>}
 
         <div className="rows-title">{t('Your automations')}</div>
+        {misplaced.length > 0 && (
+          <div className="auto-compose open daily-misplaced" data-daily-misplaced>
+            <p className="auto-hint">{t('Your daily report is posted to {channel}, not to the daily-report channel.', { channel: `#${(misplaced[0].channel || '').replace(/^b:/, '')}` })}</p>
+            <div className="auto-actions">
+              <button type="button" className="pill-btn" disabled={busy === 'daily-move'} onClick={moveToDaily} data-daily-move>
+                {dailyChannel ? t('Move it to #{channel}', { channel: dailyChannel.slug }) : t('Move it to a new channel, #{channel}', { channel: t('daily-reports') })}
+              </button>
+            </div>
+          </div>
+        )}
         {routines === null && <div className="empty">{t('Loading…')}</div>}
         {routines !== null && routines.length === 0 && (
           <div className="empty auto-empty">{t('Nothing runs on a schedule yet. Say what you want above, and when — the result arrives in your feed as a card.')}</div>
@@ -478,10 +511,12 @@ const DailyFields: React.FC<{
   businesses: Business[]
   /// Off where the times are chosen separately, morning and evening.
   withTime?: boolean
+  /// A new channel may be made for it (setting one up, not editing).
+  allowNew?: boolean
   onChange: (patch: Partial<RoutineDraft>) => void
-}> = ({ draft, businesses, withTime = true, onChange }) => {
+}> = ({ draft, businesses, withTime = true, allowNew = false, onChange }) => {
   const t = useT()
-  const known = businesses.some((b) => `b:${b.slug}` === draft.channel)
+  const known = businesses.some((b) => `b:${b.slug}` === draft.channel) || draft.channel === NEW_CHANNEL
   return (
     <>
       <div className="auto-field">
@@ -504,10 +539,11 @@ const DailyFields: React.FC<{
       </div>
       <div className="auto-field">
         <span className="auto-label">{t('Post to')}</span>
-        {businesses.length || draft.channel ? (
-          <select className="row-select" value={draft.channel || ''} onChange={(e) => onChange({ channel: e.target.value })} aria-label={t('Post to')}>
+        {businesses.length || draft.channel || allowNew ? (
+          <select className="row-select" value={draft.channel || ''} onChange={(e) => onChange({ channel: e.target.value })} aria-label={t('Post to')} data-daily-channel>
             {!known && draft.channel && <option value={draft.channel}>#{draft.channel.replace(/^b:/, '')}</option>}
             {businesses.map((b) => <option key={b.slug} value={`b:${b.slug}`}>#{b.slug}{b.name && b.name !== b.slug ? ` — ${b.name}` : ''}</option>)}
+            {allowNew && <option value={NEW_CHANNEL}>{t('A new channel…')}</option>}
           </select>
         ) : (
           <span className="auto-hint">{t('Make a channel first: the daily report is posted to one.')}</span>
@@ -519,7 +555,9 @@ const DailyFields: React.FC<{
 
 interface DailySetupDraft {
   cadence: Cadence
+  /// `b:<slug>`, or NEW_CHANNEL with `newName` for one to make.
   channel: string
+  newName: string
   morning: { on: boolean; hour: number; minute: number }
   evening: { on: boolean; hour: number; minute: number }
 }
@@ -560,8 +598,15 @@ const DailySetup: React.FC<{
         draft={{ ...emptyDraft(), cadence: draft.cadence, channel: draft.channel }}
         businesses={businesses}
         withTime={false}
+        allowNew
         onChange={(patch) => onChange({ ...(patch.cadence ? { cadence: patch.cadence } : {}), ...(patch.channel !== undefined ? { channel: patch.channel } : {}) })}
       />
+      {draft.channel === NEW_CHANNEL && (
+        <div className="auto-field">
+          <span className="auto-label">{t('New channel name')}</span>
+          <input className="row-select" value={draft.newName} maxLength={60} onChange={(e) => onChange({ newName: e.target.value })} aria-label={t('New channel name')} data-daily-new-name />
+        </div>
+      )}
       {!hasPlan && part('morning', t('Morning — today’s plan'))}
       {!hasReport && part('evening', t('Evening — how the day went'))}
     </>
