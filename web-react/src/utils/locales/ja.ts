@@ -1881,6 +1881,14 @@ const table: Record<string, string> = {
   '{names} reacted with {emoji}': '{names} が {emoji} でリアクションしました',
   '{names} reacted': '{names} がリアクションしました',
   '{n} others': 'ほか{n}人',
+  'Icon': 'アイコン',
+  'Change the picture': '画像を変更',
+  'Change': '変更',
+  'Picture…': '画像…',
+  'Use emoji': '絵文字に戻す',
+  'A picture is a PNG, JPEG, WebP or GIF.': '画像は PNG・JPEG・WebP・GIF のいずれかです。',
+  'A picture is at most 2 MB.': '画像は 2 MB までです。',
+  'Saved, but the picture did not upload: {why}': '保存しましたが、画像をアップロードできませんでした: {why}',
 }
 
 export default table

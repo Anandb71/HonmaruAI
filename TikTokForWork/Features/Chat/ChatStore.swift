@@ -258,9 +258,9 @@ final class ChatStore: ObservableObject {
 
     /// "@" suggestions for agents in one conversation: handle, then what the
     /// chip says. One somebody added to a channel is offered only there.
-    func agentMentions(in view: String) -> [(handle: String, label: String, emoji: String)] {
+    func agentMentions(in view: String) -> [(handle: String, label: String, emoji: String, avatarUrl: String?)] {
         agents.filter { $0.placed != true || ($0.channels ?? []).contains(view) }
-            .map { (handle: $0.handle, label: $0.name, emoji: $0.glyph) }
+            .map { (handle: $0.handle, label: $0.name, emoji: $0.glyph, avatarUrl: $0.avatarUrl) }
     }
 
     /// The agents in a channel or a group, and the ones you could add.

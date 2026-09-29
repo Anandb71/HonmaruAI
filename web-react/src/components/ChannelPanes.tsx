@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AgentAvatar } from './AgentAvatar'
 import { useT } from '../utils/i18n'
 import { JAM_MODES, audioDevices, canPickSpeaker, recordingMime } from '../utils/jam'
 import type { JamCall, JamMode, JamState } from '../utils/jam'
@@ -24,11 +25,11 @@ interface Details {
   channel: { key: string; view: string; kind: 'channel' | 'dm' | 'group'; private?: boolean; name: string; slug: string | null; description: string | null; createdAt: string | null; createdBy: string | null }
   members: {
     people: Array<{ ref: string; name: string; handle: string | null; title: string | null; status: { emoji?: string; text?: string } | null; awayUntil: string | null; you: boolean; avatarUrl?: string | null }>
-    agents: Array<{ name: string; kind: 'ai' | 'agent' | 'custom'; owner: string | null; lastSeenAt?: string | null; id?: string; handle?: string; emoji?: string | null; description?: string; canRemove?: boolean }>
+    agents: Array<{ name: string; kind: 'ai' | 'agent' | 'custom'; owner: string | null; lastSeenAt?: string | null; id?: string; handle?: string; emoji?: string | null; avatarUrl?: string | null; description?: string; canRemove?: boolean }>
   }
   /// The agents you could add here — yours and the team's — or null where
   /// agents are not added (a DM).
-  addableAgents?: Array<{ id: string; handle: string; name: string; emoji?: string | null; description?: string; scope?: 'team' | 'personal' }> | null
+  addableAgents?: Array<{ id: string; handle: string; name: string; emoji?: string | null; avatarUrl?: string | null; description?: string; scope?: 'team' | 'personal' }> | null
   attachments: Array<{ url: string; host: string; messageId: string; authorName: string | null; at: string }>
   automations: Array<{ id: string; kind: string; title: string; schedule: string; enabled: boolean; ownerName: string | null; mine: boolean; nextRunAt: string | null }>
   counts: { members: number; automations: number; attachments: number }
@@ -337,7 +338,7 @@ export function ChannelDetails({
                 <li key={`${a.name}-${i}`}>
                   {a.kind === 'custom' ? (
                     <div className="slk-member-row static" data-agent={a.handle}>
-                      <span className="cl-lead cl-app sz-row slk-agent-face" aria-hidden="true">{a.emoji || '🤖'}</span>
+                      <AgentAvatar className="cl-lead cl-app sz-row slk-agent-face" agent={a} />
                       <span className="slk-member-main">
                         <span className="slk-member-name">{a.name} <span className="slk-member-handle">@{a.handle}</span></span>
                         <span className="slk-member-title">{a.description || (a.owner ? t('Added by {name}', { name: a.owner }) : t('Agent'))}</span>
@@ -371,7 +372,7 @@ export function ChannelDetails({
                     {d.addableAgents.map((a) => (
                       <li key={a.id}>
                         <button type="button" className="slk-member-row" onClick={() => void placeAgent(a.id, true)} data-add-agent={a.handle}>
-                          <span className="cl-lead cl-app sz-row slk-agent-face" aria-hidden="true">{a.emoji || '🤖'}</span>
+                          <AgentAvatar className="cl-lead cl-app sz-row slk-agent-face" agent={a} />
                           <span className="slk-member-main">
                             <span className="slk-member-name">{a.name} <span className="slk-member-handle">@{a.handle}</span></span>
                             <span className="slk-member-title">{a.scope === 'personal' ? t('Your own agent') : (a.description || t('Team agent'))}</span>

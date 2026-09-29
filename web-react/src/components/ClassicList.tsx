@@ -1,4 +1,5 @@
 import { ChannelCanvas } from './ChannelCanvas'
+import { AgentAvatar } from './AgentAvatar'
 import { BookmarksBar } from './BookmarksBar'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -148,10 +149,10 @@ interface Member {
 /// to be put into the reader's language.
 interface Activity { channel: string; lastAt: string; preview: string; lastBy: string | null; last?: ChannelMessage }
 /// One of the team's agents answering somewhere.
-interface AgentWriting { id: string; name: string; emoji: string | null; parentId: string | null; at?: number }
+interface AgentWriting { id: string; name: string; emoji: string | null; avatarUrl?: string | null; parentId: string | null; at?: number }
 /// Whose face goes beside something: a name, and their photo if they have one.
 /// `emoji`: an agent's face — a tile, not a person's photo.
-interface Face { name: string; url?: string | null; emoji?: string | null }
+interface Face { name: string; url?: string | null; emoji?: string | null; picture?: string | null }
 /// One notification: somebody named you, replied in your thread, or reacted
 /// to what you wrote.
 /// A thread you are in: its first message, the last replies, how many.
@@ -824,7 +825,7 @@ export const ClassicList: React.FC<Props> = ({
       )
     }
     if (thread.kind === 'agent') {
-      return <span className={`cl-lead cl-agent sz-${size}`} aria-hidden="true">{thread.agent?.emoji || '🤖'}</span>
+      return <AgentAvatar className={`cl-lead cl-agent sz-${size}`} agent={thread.agent} />
     }
     if (thread.kind === 'person') {
       return (
@@ -924,7 +925,7 @@ export const ClassicList: React.FC<Props> = ({
       {agents.map((a) => (
         <li key={a.id}>
           <button type="button" role="menuitem" className="cl-agent-option" onClick={() => openAgent(a.id)} data-pick-agent={a.id}>
-            <span className="cl-lead cl-agent sz-row" aria-hidden="true">{a.emoji || '🤖'}</span>
+            <AgentAvatar className="cl-lead cl-agent sz-row" agent={a} />
             <span className="cl-agent-option-name">{a.name}</span>
             <span className="cl-agent-option-handle">@{a.handle}</span>
           </button>
@@ -1134,7 +1135,7 @@ export const ClassicList: React.FC<Props> = ({
   // The AI's steps, as it takes them.
   useEffect(() => {
     const on = (e: Event) => {
-      const p = (e as CustomEvent<{ channel: string; step: string; parentId?: string | null; agent?: { id: string; name: string; emoji?: string | null } }>).detail
+      const p = (e as CustomEvent<{ channel: string; step: string; parentId?: string | null; agent?: { id: string; name: string; emoji?: string | null; avatarUrl?: string | null } }>).detail
       if (!p?.channel) return
       // One of the team's agents: its own line, not the AI's steps.
       if (p.agent?.id) {
@@ -1142,7 +1143,7 @@ export const ClassicList: React.FC<Props> = ({
         if (p.step === 'agent') {
           setAgentsWriting((prev) => ({
             ...prev,
-            [p.channel]: [...(prev[p.channel] || []).filter((x) => x.id !== a.id), { id: a.id, name: a.name, emoji: a.emoji || null, parentId: p.parentId || null, at: Date.now() }],
+            [p.channel]: [...(prev[p.channel] || []).filter((x) => x.id !== a.id), { id: a.id, name: a.name, emoji: a.emoji || null, avatarUrl: a.avatarUrl || null, parentId: p.parentId || null, at: Date.now() }],
           }))
           // A "done" that never came does not leave it writing forever. A
           // long research says it is still at it every round; only silence
@@ -2110,7 +2111,7 @@ export const ClassicList: React.FC<Props> = ({
     : m.mine ? t('You') : (m.authorName || t('a teammate')))
   /// The face beside a message: yours, or whoever wrote it.
   const faceOfMessage = (m: ChannelMessage): Face => (m.kind === 'agent'
-    ? { name: whoSaid(m), emoji: m.agent?.emoji || '🤖' }
+    ? { name: whoSaid(m), emoji: m.agent?.emoji || '🤖', picture: m.agent?.avatarUrl || null }
     : m.mine
     ? { name: myName || t('You'), url: myAvatar }
     : { name: m.authorName || t('a teammate'), url: m.authorAvatar || memberByRef(m.authorRef)?.avatarUrl || null })
@@ -2194,7 +2195,7 @@ export const ClassicList: React.FC<Props> = ({
     ? <span className="slk-avatar app">{app === 'ai'
         ? <img src="/icon.svg" alt="" width={36} height={36} />
         : isBrand(app) ? <BrandLogo brand={app} size={20} /> : <Icon name={APP_ICON[app] || 'box'} size={18} />}</span>
-    : face?.emoji ? <span className="slk-avatar agent">{face.emoji}</span>
+    : face?.emoji ? <AgentAvatar className="slk-avatar agent" agent={{ emoji: face.emoji, avatarUrl: face.picture }} />
     : <span className="slk-avatar face"><Avatar name={face?.name || '?'} url={face?.url} size={36} /></span>
 
   /// One block of a conversation: a gutter, a name and a time — or, joined
@@ -2243,7 +2244,7 @@ export const ClassicList: React.FC<Props> = ({
     if (r === 'ai') return <img key={r} className="slk-face slk-face-ai" src="/icon.svg" alt="" width={20} height={20} />
     if (r.startsWith('agent:')) {
       const a = agents.find((x) => `agent:${x.id}` === r)
-      return <span key={r} className="slk-face slk-face-agent">{a?.emoji || '🤖'}</span>
+      return <AgentAvatar key={r} className="slk-face slk-face-agent" agent={a} />
     }
     const mine = r === myRef
     return <Avatar key={r} className="slk-face" name={mine ? (myName || t('You')) : nameOfRef(r)} url={mine ? myAvatar : memberByRef(r)?.avatarUrl} size={20} />
@@ -2374,7 +2375,7 @@ export const ClassicList: React.FC<Props> = ({
         {list.map((a) => (
           <span key={a.id} className="slk-agent-writing" data-agent-writing={a.id}>
             <span className="slk-dots" aria-hidden="true"><i /><i /><i /></span>
-            <span aria-hidden="true">{a.emoji || '🤖'}</span> {t('{name} is writing…', { name: a.name })}
+            <AgentAvatar agent={a} /> {t('{name} is writing…', { name: a.name })}
           </span>
         ))}
       </div>
@@ -2536,7 +2537,7 @@ export const ClassicList: React.FC<Props> = ({
                   <span className="slk-note-avatar" aria-hidden="true">{m.kind === 'ai' && i.type !== 'reaction'
                     ? <img src="/icon.svg" alt="" width={32} height={32} />
                     : m.kind === 'agent' && i.type !== 'reaction'
-                    ? <span className="slk-agent-tile">{m.agent?.emoji || '🤖'}</span>
+                    ? <AgentAvatar className="slk-agent-tile" agent={m.agent} />
                     : <Avatar name={who} url={i.type === 'reaction' ? i.byAvatar : (m.authorAvatar || memberByRef(m.authorRef)?.avatarUrl)} size={32} />}</span>
                   <span className="slk-note-main">
                     <span className="slk-note-line">
@@ -3313,7 +3314,7 @@ export const ClassicList: React.FC<Props> = ({
                   {th.app === 'ai'
                     ? <span className="cl-dm-face app" aria-hidden="true"><img src="/icon.svg" alt="" width={40} height={40} /></span>
                     : th.kind === 'agent'
-                    ? <span className="cl-dm-face agent" aria-hidden="true">{th.agent?.emoji || '🤖'}</span>
+                    ? <AgentAvatar className="cl-dm-face agent" agent={th.agent} />
                     : th.kind === 'group'
                       ? <span className="cl-dm-face group" aria-hidden="true">{lead(th, 'head')}</span>
                       : <span className="cl-dm-face" aria-hidden="true"><Avatar name={th.name} url={face?.avatarUrl} size={40} /></span>}

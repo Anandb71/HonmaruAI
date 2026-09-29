@@ -1814,6 +1814,14 @@ const table: Record<string, string> = {
   '{names} reacted with {emoji}': '{names} reaccionó con {emoji}',
   '{names} reacted': '{names} reaccionó',
   '{n} others': '{n} más',
+  'Icon': 'Icono',
+  'Change the picture': 'Cambiar la imagen',
+  'Change': 'Cambiar',
+  'Picture…': 'Imagen…',
+  'Use emoji': 'Usar emoji',
+  'A picture is a PNG, JPEG, WebP or GIF.': 'La imagen debe ser PNG, JPEG, WebP o GIF.',
+  'A picture is at most 2 MB.': 'La imagen puede ocupar como máximo 2 MB.',
+  'Saved, but the picture did not upload: {why}': 'Guardado, pero la imagen no se subió: {why}',
 }
 
 export default table

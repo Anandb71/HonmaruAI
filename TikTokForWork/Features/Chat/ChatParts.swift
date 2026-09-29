@@ -186,21 +186,23 @@ struct ChatRichText: View {
 
 /// A person as a chat client draws them: their photo when they have one,
 /// otherwise their initial in a rounded square. An agent the team wrote is
-/// its emoji on a tile.
+/// its picture, when somebody gave it one, else its emoji on a tile.
 struct ChatAvatar: View {
     let name: String
     var isAI = false
     var size: CGFloat = 36
     /// Set for one of the team's agents: the face it was given.
     var agentEmoji: String? = nil
-    /// Their photo, when they have one.
+    /// Their photo — or an agent's picture — when they have one.
     var url: String? = nil
     var body: some View {
         Group {
-            if agentEmoji == nil, !isAI, let raw = url, let photo = URL(string: raw) {
+            if !isAI, let raw = url, !raw.isEmpty, let photo = URL(string: raw) {
                 AsyncImage(url: photo) { phase in
                     if let image = phase.image {
                         image.resizable().scaledToFill()
+                    } else if let agentEmoji {
+                        emojiTile(agentEmoji)
                     } else {
                         initial
                     }
@@ -208,10 +210,7 @@ struct ChatAvatar: View {
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
             } else if let agentEmoji {
-                Text(agentEmoji).font(.system(size: size * 0.55))
-                    .frame(width: size, height: size)
-                    .background(Theme.Colors.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).stroke(Theme.Colors.accent.opacity(0.35), lineWidth: 1))
+                emojiTile(agentEmoji)
             } else if isAI {
                 Image(systemName: "sparkles").font(.system(size: size * 0.42, weight: .semibold))
                     .foregroundStyle(.white)
@@ -221,6 +220,13 @@ struct ChatAvatar: View {
                 initial
             }
         }.accessibilityHidden(true)
+    }
+
+    private func emojiTile(_ emoji: String) -> some View {
+        Text(emoji).font(.system(size: size * 0.55))
+            .frame(width: size, height: size)
+            .background(Theme.Colors.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).stroke(Theme.Colors.accent.opacity(0.35), lineWidth: 1))
     }
 
     private var initial: some View {
@@ -456,7 +462,7 @@ struct ChatAgentTypingRow: View {
     let agent: ChatAgentFace
     var body: some View {
         HStack(spacing: 10) {
-            ChatAvatar(name: agent.name, size: 28, agentEmoji: agent.glyph)
+            ChatAvatar(name: agent.name, size: 28, agentEmoji: agent.glyph, url: agent.avatarUrl)
             Text("\(agent.name) is writing…").font(.footnote.weight(.semibold)).foregroundStyle(Theme.Colors.textPrimary)
             ProgressView().controlSize(.mini)
             Spacer(minLength: 0)
@@ -504,7 +510,7 @@ struct ChatMessageRow: View {
                 Color.clear.frame(width: 36, height: 1)
             } else {
                 Button { if let ref = message.authorRef, !message.mine { onProfile(ref) } } label: {
-                    ChatAvatar(name: message.mine ? assets.myName ?? author : author, isAI: message.isAI, agentEmoji: message.isAgent ? (message.agent?.glyph ?? "🤖") : nil, url: assets.avatar(of: message))
+                    ChatAvatar(name: message.mine ? assets.myName ?? author : author, isAI: message.isAI, agentEmoji: message.isAgent ? (message.agent?.glyph ?? "🤖") : nil, url: message.isAgent ? message.agent?.avatarUrl : assets.avatar(of: message))
                 }.buttonStyle(.plain).disabled(message.authorRef == nil || message.mine)
             }
             VStack(alignment: .leading, spacing: 4) {
