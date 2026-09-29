@@ -169,8 +169,10 @@ test("required: only after the owner came through it; then an email-code sign-in
   const on = await call("/orgs/sso/enforce", viaSso, { method: "PUT", body: { orgId: ORG, enforce: true } });
   expect(on.status).toBe(200);
   expect(await on.json()).toMatchObject({ breakGlass: 1 });
-  // Mika's code-based session went when it was required.
-  expect(await env.DB.prepare("SELECT 1 FROM sessions WHERE token = ?1").bind(mikaOld).first()).toBe(null);
+  // Mika's code-based session was signed out of this workspace when it was
+  // required — not out of the others the account is in.
+  expect(await env.DB.prepare("SELECT 1 FROM session_workspaces WHERE token = ?1 AND org_id = ?2 AND ended_at IS NOT NULL").bind(mikaOld, ORG).first()).toBeTruthy();
+  expect((await call(`/members?orgId=${ORG}`, mikaOld)).status).toBe(403);
   const mikaNew = await createSession(env.DB, "7803", "x");
   const refused = await call(`/members?orgId=${ORG}`, mikaNew);
   expect(refused.status).toBe(403);

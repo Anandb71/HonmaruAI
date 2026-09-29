@@ -24,10 +24,13 @@ struct OnboardingView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: max(360, geometry.size.height - 252))
+                    .padding(.bottom, 24)
                     VStack(spacing: 10) {
                         PrimaryButton(title: String(localized: "Get started")) { showEmail = true }
                         Button { showEmail = true } label: {
                             Text("I already have an account").font(.subheadline)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 16).padding(.vertical, 12)
                                 .frame(maxWidth: .infinity, minHeight: 48)
                                 .overlay(Capsule().stroke(Theme.Colors.border, lineWidth: 1))
                         }.buttonStyle(.plain)

@@ -2,6 +2,37 @@ import XCTest
 
 final class ReviewFlowUITests: XCTestCase {
     @MainActor
+    func testJapaneseChatShortcutsRemainReadable() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP", "-appLanguage", "ja",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"]
+        app.launch()
+        let demo = app.buttons["デモを試す"]
+        XCTAssertTrue(demo.waitForExistence(timeout: 20))
+        demo.tap()
+        let chat = app.buttons["チャット"].firstMatch
+        XCTAssertTrue(chat.waitForExistence(timeout: 15))
+        chat.tap()
+        for title in ["アクティビティ", "スレッド", "後で"] {
+            let button = app.buttons[title].firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 5))
+            XCTAssertTrue(button.isHittable)
+            // A normal-size shortcut must not turn into a tall column of
+            // single characters on a small iPhone (Japanese labels are longer).
+            XCTAssertLessThanOrEqual(button.frame.height, 64, title)
+            XCTAssertTrue(app.frame.contains(button.frame), title)
+        }
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Japanese chat shortcuts fit the phone"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["スレッド"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["スレッド"].waitForExistence(timeout: 5))
+        app.terminate()
+    }
+
+    @MainActor
     func testOrdinaryAccountCanSignInThroughTheActualUI() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["HONMARU_LIVE_AUTH_TEST"] == "1", "Live UI account lifecycle is opt-in")
         continueAfterFailure = false
@@ -12,7 +43,7 @@ final class ReviewFlowUITests: XCTestCase {
         signup.httpMethod = "POST"
         signup.timeoutInterval = 30
         signup.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        signup.httpBody = try JSONSerialization.data(withJSONObject: ["email": email, "password": password, "name": "UI QA"])
+        signup.httpBody = try JSONSerialization.data(withJSONObject: ["email": email, "password": password, "name": "UI QA", "locale": "en"])
         let (data, response) = try await URLSession.shared.data(for: signup)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -60,6 +91,10 @@ final class ReviewFlowUITests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(app.buttons["New request"].waitForExistence(timeout: 25), "Saved session must survive relaunch")
+        // New accounts are offered daily-report setup after the workspace
+        // finishes loading, including when that finishes on the next launch.
+        let later = app.navigationBars.buttons["Later"]
+        if later.waitForExistence(timeout: 5) { later.tap() }
         XCTAssertTrue(app.staticTexts["You're all caught up"].waitForExistence(timeout: 25))
         app.terminate()
     }

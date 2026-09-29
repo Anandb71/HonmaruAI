@@ -1,3 +1,4 @@
+import { NOT_PERSONAL_SQL } from "./access.js";
 import { CADENCES, isTimeZone, nextRunAt, describeSchedule } from "./schedule.js";
 import { saveCard, getUserByLogin, isMember, businessSlug } from "./db.js";
 import { searchDecisions } from "./insights.js";
@@ -278,17 +279,17 @@ export async function gatherMaterial(db, orgId, routine, { now = new Date() } = 
   const [decidedRows, waitingRows, stuckRows, createdRow] = await Promise.all([
     db.prepare(
       `SELECT data FROM cards WHERE org_id = ?1 AND decided_at >= ?2 AND decided_at IS NOT NULL
-          AND ${NOT_THE_AIS_OWN}
+          AND ${NOT_THE_AIS_OWN} AND ${NOT_PERSONAL_SQL}
         ORDER BY decided_at DESC LIMIT 40`
     ).bind(orgId, since).all(),
     db.prepare(
       `SELECT data FROM cards WHERE org_id = ?1 AND recipient_user_id = ?2 AND status = 'pending'
-          AND ${NOT_THE_AIS_OWN}
+          AND ${NOT_THE_AIS_OWN} AND ${NOT_PERSONAL_SQL}
         ORDER BY created_at ASC LIMIT 20`
     ).bind(orgId, routine.recipient_login).all(),
     db.prepare(
       `SELECT data FROM cards WHERE org_id = ?1 AND status = 'pending' AND created_at < ?2
-          AND ${NOT_THE_AIS_OWN}
+          AND ${NOT_THE_AIS_OWN} AND ${NOT_PERSONAL_SQL}
         ORDER BY created_at ASC LIMIT 15`
     ).bind(orgId, stuckBefore).all(),
     db.prepare("SELECT COUNT(*) AS n FROM cards WHERE org_id = ?1 AND created_at >= ?2").bind(orgId, since).first(),
@@ -427,7 +428,8 @@ export async function writeReport(env, routine, material, { locale, provider, al
       terms ? searchDecisions(env.DB, routine.org_id, terms) : [],
       relevantMemories(env.DB, routine.org_id, `${routine.title} ${routine.instruction}`),
       Promise.all([
-        available.notion && terms ? searchNotion(env, session.github_id, terms).catch(() => []) : [],
+        // A person's own notes never go into a report posted to a channel.
+        available.notion && terms && !routine.channel ? searchNotion(env, session.github_id, terms).catch(() => []) : [],
         available.github && terms ? searchGithubIssues(session, routine.org_id, terms, env).catch(() => []) : [],
       ]).then((lists) => lists.flat()),
     ]);

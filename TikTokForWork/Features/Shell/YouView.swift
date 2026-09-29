@@ -12,6 +12,7 @@ struct YouView: View {
     @EnvironmentObject private var subscription: SubscriptionService
     @ObservedObject private var updates = AppUpdateService.shared
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showEmail = false
     @State private var translateMessages = true
     @State private var showGitHub = false
@@ -172,14 +173,14 @@ struct YouView: View {
                 }
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 12) {
+            assistantLayout {
                 Image(systemName: "sparkles").font(.title3).foregroundStyle(Theme.Colors.accent).frame(width: 30, height: 34)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Your AI assistant").font(.subheadline)
                     Text(appState.isGuest ? String(localized: "Sample data only") : (appState.aiService.modelName ?? String(localized: "Manual requests are available")))
                         .font(.caption).foregroundStyle(Theme.Colors.textSecondary)
                 }
-                Spacer(minLength: 4)
+                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 4) }
                 Text(appState.isGuest ? String(localized: "Demo") : (appState.aiService.isConfigured ? String(localized: "Configured") : String(localized: "Set up")))
                     .font(.caption.weight(.medium)).padding(.horizontal, 12).padding(.vertical, 8)
                     .foregroundStyle(Theme.Colors.ctaText).background(Theme.Colors.ctaFill, in: Capsule())
@@ -187,6 +188,12 @@ struct YouView: View {
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.Colors.background, in: RoundedRectangle(cornerRadius: 22))
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.Colors.border, lineWidth: 1))
+    }
+
+    private var assistantLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
     }
 
     /// The photo picked, made small and sent; everyone sees it next time

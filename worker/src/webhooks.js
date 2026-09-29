@@ -1,4 +1,4 @@
-import { audienceOf } from "./access.js";
+import { audienceOf, isPersonal } from "./access.js";
 import { getSession, isMember, getUserByGithubId } from "./db.js";
 import { enforce } from "./ratelimit.js";
 import { allowed } from "./permissions.js";
@@ -280,6 +280,12 @@ export async function emitCard(env, orgId, card, type) {
   };
   // A public channel's decision is the channel's; a private channel's is
   // its members' and the two people on it; any other is its two people's.
+  // A personal card (their mail, a reminder) is its person's alone, and as
+  // private as a direct conversation: only a webhook of theirs that asked
+  // for direct conversations hears it.
+  if (isPersonal(card)) {
+    return emitWebhook(env, orgId, type, data, { participants: [card.recipientUserID, card.senderUserID].filter(Boolean), direct: true });
+  }
   const closed = card.business ? await audienceOf(env.DB, orgId, `b:${card.business}`) : null;
   const scope = card.business && !closed ? {} : { participants: [...(closed || []), card.senderUserID, card.recipientUserID].filter(Boolean) };
   return emitWebhook(env, orgId, type, data, scope);

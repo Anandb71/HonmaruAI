@@ -149,12 +149,18 @@ struct ChatHomeView: View {
 
     private var shortcuts: some View {
         GlassGroup(spacing: 10) {
-            HStack(spacing: 10) {
-                shortcut("Activity", icon: "bell", badge: store.unreadInbox, route: .activity)
-                shortcut("Threads", icon: "bubble.left.and.bubble.right", badge: store.unreadThreads, route: .threads)
-                shortcut("Later", icon: "bookmark", badge: store.saved.count, route: .later)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { shortcutButtons }
+                    .fixedSize(horizontal: true, vertical: false)
+                VStack(spacing: 10) { shortcutButtons }
             }
         }
+    }
+
+    @ViewBuilder private var shortcutButtons: some View {
+        shortcut("Activity", icon: "bell", badge: store.unreadInbox, route: .activity)
+        shortcut("Threads", icon: "bubble.left.and.bubble.right", badge: store.unreadThreads, route: .threads)
+        shortcut("Later", icon: "bookmark", badge: store.saved.count, route: .later)
     }
 
     private func shortcut(_ title: LocalizedStringKey, icon: String, badge: Int, route: ChatRoute) -> some View {
@@ -162,6 +168,7 @@ struct ChatHomeView: View {
             HStack(spacing: 8) {
                 Image(systemName: icon).font(.system(size: 16, weight: .semibold))
                 Text(title).font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if badge > 0 {
                     Text(verbatim: "\(badge)").font(.caption.weight(.bold)).foregroundStyle(.white)

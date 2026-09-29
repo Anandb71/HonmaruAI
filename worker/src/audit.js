@@ -247,10 +247,14 @@ export function person(user, type = "user") {
 
 /// The same event in every workspace this person is in — a sign-in, a
 /// sign-out, a download of their own data.
-export async function auditEverywhere(env, request, githubId, event) {
+///
+/// Where it came from — the IP, the device — is written only in `home`, the
+/// workspace it was done for when there is one: every other workspace learns
+/// that it happened, not where the person was.
+export async function auditEverywhere(env, request, githubId, event, { home = null } = {}) {
   try {
     const { results } = await env.DB.prepare("SELECT org_id FROM memberships WHERE user_github_id = ?1").bind(String(githubId)).all();
-    for (const r of results || []) await audit(env, request, { ...event, orgId: r.org_id });
+    for (const r of results || []) await audit(env, r.org_id === home ? request : null, { ...event, orgId: r.org_id });
   } catch (err) {
     console.error("audit everywhere failed", safe(err?.message));
   }

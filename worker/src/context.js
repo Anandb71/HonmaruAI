@@ -9,7 +9,7 @@
 // tool that is down is a card routed the old way, not a card not routed.
 
 import { executeTool } from "./composio.js";
-import { getConnectorConfig } from "./db.js";
+import { getConnectorConfig, ingestWorkspaceOf } from "./db.js";
 import { getWorkspaceGitHub } from "./githubWorkspace.js";
 import { EMAIL_AUTH_TOKEN } from "./auth.js";
 
@@ -20,7 +20,9 @@ const TIMEOUT_MS = 6000;
 export async function connectedSources(env, session, orgId) {
   const sources = { notion: false, github: false };
   if (!session) return sources;
-  if (env.COMPOSIO_API_KEY) {
+  // A person's own Notion is read only in the one workspace their tools
+  // pull into (db.js ingestWorkspaceOf): not in every team they belong to.
+  if (env.COMPOSIO_API_KEY && orgId && (await ingestWorkspaceOf(env.DB, session.github_id)) === orgId) {
     try {
       const notion = await getConnectorConfig(env.DB, session.github_id, "notion");
       sources.notion = Boolean(notion?.connected || notion?.databaseId);

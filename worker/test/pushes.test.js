@@ -50,7 +50,7 @@ test("@channel reaches everyone who can read the conversation; @here only who is
   const all = await recipientsOf(env.DB, ORG, { id: "h1", kind: "message", channel: "b:cafe", author_login: "toru", body: "@channel standup in 5" }, members);
   expect(all.map((r) => r.login).sort()).toEqual(["kenji", "mika"]);
   expect(all.every((r) => r.reason === "mention")).toBe(true);
-  await noteActivity(env.DB, "mika");
+  await noteActivity(env.DB, ORG, "mika");
   const here = await recipientsOf(env.DB, ORG, { id: "h2", kind: "message", channel: "b:cafe", author_login: "toru", body: "@here standup in 5" }, members);
   expect(here.map((r) => r.login)).toEqual(["mika"]);
 });
@@ -83,14 +83,16 @@ test("read it, or at the app since, and the phone stays still", async () => {
   await env.DB.prepare("INSERT INTO channel_messages (id, org_id, channel, author_login, body, kind, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'message', ?6)")
     .bind(row.id, ORG, row.channel, row.author_login, row.body, at).run();
   await queueMessagePushes(env, ORG, row, { members, now: t0 });
-  await noteActivity(env.DB, "mika", "web", t0 + 5000);
-  expect(await isActive(env.DB, "mika", t0 + 10_000)).toBe(true);
-  expect(await isActive(env.DB, "mika", t0 + 10 * 60_000)).toBe(false);
+  await noteActivity(env.DB, ORG, "mika", "web", t0 + 5000);
+  expect(await isActive(env.DB, ORG, "mika", t0 + 10_000)).toBe(true);
+  // At this workspace's app is not at another's.
+  expect(await isActive(env.DB, "team:another", "mika", t0 + 10_000)).toBe(false);
+  expect(await isActive(env.DB, ORG, "mika", t0 + 10 * 60_000)).toBe(false);
   expect(await sendDuePushes(env, t0 + PUSH_DELAY_MS + 1000)).toEqual({ sent: 0, skipped: 1 });
 
   // Asking for pushes anyway turns "at the app" off.
   await env.DB.prepare("UPDATE users SET push_while_active = 1 WHERE login = 'mika'").run();
-  expect(await isActive(env.DB, "mika", t0 + 10_000)).toBe(false);
+  expect(await isActive(env.DB, ORG, "mika", t0 + 10_000)).toBe(false);
 });
 
 test("a muted conversation is nobody's push", async () => {

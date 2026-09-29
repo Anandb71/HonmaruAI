@@ -1,3 +1,4 @@
+import { NOT_PERSONAL_SQL } from "./access.js";
 import { saveCard, getUserByLogin } from "./db.js";
 import { sha256Hex } from "./auth.js";
 import { termsOf } from "./memory.js";
@@ -111,7 +112,7 @@ export async function proposeForOrg(env, orgId, { now = new Date() } = {}) {
   const db = env.DB;
   const since = new Date(now.getTime() - LOOKBACK_DAYS * 86400000).toISOString();
   const { results } = await db
-    .prepare("SELECT data FROM cards WHERE org_id = ?1 AND created_at >= ?2 ORDER BY created_at DESC LIMIT 500")
+    .prepare(`SELECT data FROM cards WHERE org_id = ?1 AND created_at >= ?2 AND ${NOT_PERSONAL_SQL} ORDER BY created_at DESC LIMIT 500`)
     .bind(orgId, since)
     .all();
   // The newest five hundred, oldest first: a busy team's recent Mondays are

@@ -25,7 +25,7 @@ import { validateIncomingCard, MAX_CONTEXT_BYTES } from "./agui/validate.js";
 import { applyAutoRule } from "./autorules.js";
 import { redirectIfAway } from "./people.js";
 import { listMembers } from "./team.js";
-import { isGuest } from "./access.js";
+import { isGuest, isPersonal } from "./access.js";
 import { learnFromDecision } from "./memory.js";
 import { settleProposal } from "./proposals.js";
 import { JAM_TYPES, JAM_SIGNAL_BUDGET, handleJamMessage, leaveJam, jamStatesFor } from "./jam.js";
@@ -76,7 +76,7 @@ export class OrgRelay {
       for (const card of cards) {
         if (!card?.id) continue;
         const { forEveryone, forRecipient } = upsertEvents(card, { isNew });
-        for (const ev of forEveryone) this.broadcast(orgId, ev);
+        for (const ev of forEveryone) this.broadcastCard(orgId, card, ev);
         for (const ev of forRecipient) this.sendTo(orgId, card.recipientUserID, ev);
       }
       return new Response(JSON.stringify({ announced: cards.length }), {
@@ -154,6 +154,13 @@ export class OrgRelay {
       const att = ws.deserializeAttachment();
       if (att?.orgId === orgId && ws !== exclude && (!att.guest || forGuests)) OrgRelay.deliver(ws, text);
     }
+  }
+
+  /// A card's news: the room's, or — for a personal card — only the two
+  /// people on it.
+  broadcastCard(orgId, card, obj) {
+    if (!isPersonal(card)) return this.broadcast(orgId, obj);
+    for (const who of new Set([card.recipientUserID, card.senderUserID].filter(Boolean))) this.sendTo(orgId, who, obj);
   }
 
   sendTo(orgId, userId, obj) {
@@ -297,8 +304,9 @@ export class OrgRelay {
       // The workspace's login rules: refused if outgrown, and closed when the
       // longest a sign-in may last here runs out, however busy the socket.
       const { sessionPolicy, brokenRule, sessionDeadline } = await import("./policy.js");
+      const { endedHere } = await import("./sessions.js");
       const policy = await sessionPolicy(this.db, orgId);
-      if (brokenRule(policy, session)) {
+      if (brokenRule(policy, session) || await endedHere(this.db, session.token, orgId)) {
         return this.refuse(ws, agui, "This workspace asks you to sign in again.", "session-policy");
       }
       const { ssoDenial } = await import("./sso.js");
@@ -325,15 +333,16 @@ export class OrgRelay {
       const guest = await isGuest(this.db, orgId, session.github_id);
       ws.serializeAttachment({ ...att, joins, userId, githubId: String(session.github_id), agui, authed: true, guest, deadline: deadline || null });
       const store = await loadStore(this.db, orgId);
-      // A guest's feed is the decisions they are on, nobody else's.
-      if (guest) {
-        for (const [owner, cards] of Object.entries(store)) {
-          store[owner] = cards.filter((c) => c.recipientUserID === userId || c.senderUserID === userId);
-          if (!store[owner].length) delete store[owner];
-        }
+      // A guest's feed is the decisions they are on, nobody else's; and
+      // nobody's feed carries another person's personal cards.
+      for (const [owner, cards] of Object.entries(store)) {
+        store[owner] = cards.filter((c) => c.recipientUserID === userId || c.senderUserID === userId || (!guest && !isPersonal(c)));
+        if (!store[owner].length) delete store[owner];
       }
       const everyContext = await loadContexts(this.db, orgId);
-      const contexts = guest ? (everyContext[userId] ? { [userId]: everyContext[userId] } : {}) : everyContext;
+      // Your own "How I work", nobody else's: the router reads the team's on
+      // the server, and a device only ever shows its own person's.
+      const contexts = everyContext[userId] ? { [userId]: everyContext[userId] } : {};
       for (const ev of joinEvents(userId, store, contexts)) ws.send(JSON.stringify(ev));
       // Who is already here. Presence otherwise only moves when someone joins
       // or leaves, so a joiner without this sees an empty room until the next
@@ -370,7 +379,7 @@ export class OrgRelay {
       if (!att.activityAt || now - att.activityAt >= 30_000) {
         ws.serializeAttachment({ ...att, activityAt: now });
         const client = payload.client === "ios" ? "ios" : "web";
-        await noteActivity(this.db, att.userId, client, now).catch(() => {});
+        await noteActivity(this.db, orgId, att.userId, client, now).catch(() => {});
       }
       return;
     }
@@ -598,7 +607,7 @@ export class OrgRelay {
         if (isNew) this.state.waitUntil(this.afterDecision(orgId, card, att.userId, att.githubId));
       }
       const { forEveryone, forRecipient } = upsertEvents(card, { isNew: type === "card_created" });
-      for (const ev of forEveryone) this.broadcast(orgId, ev);
+      for (const ev of forEveryone) this.broadcastCard(orgId, card, ev);
       for (const ev of forRecipient) this.sendTo(orgId, card.recipientUserID, ev);
       // Whoever now has to act hears about it, wherever they are. Same rule as
       // the Notion write and for the same reason: deferred, never awaited, and
@@ -641,7 +650,7 @@ export class OrgRelay {
         cardId: card.id, type: "filed", action: business || null, actorUserId: att.userId, snapshot: updated,
       });
       const { forEveryone } = upsertEvents(updated, { isNew: false });
-      for (const ev of forEveryone) this.broadcast(orgId, ev);
+      for (const ev of forEveryone) this.broadcastCard(orgId, updated, ev);
       return;
     }
 
@@ -661,7 +670,7 @@ export class OrgRelay {
           cardId: doomed.id, type: "deleted", actorUserId: att.userId, snapshot: doomed,
         });
       }
-      for (const ev of removeEvents(payload.cardId)) this.broadcast(orgId, ev);
+      for (const ev of removeEvents(payload.cardId)) this.broadcastCard(orgId, doomed || {}, ev);
       return;
     }
 
@@ -679,7 +688,7 @@ export class OrgRelay {
       const existing = await loadContexts(this.db, orgId);
       const isNew = !(userId in existing);
       await saveContext(this.db, orgId, userId, payload.context);
-      for (const ev of contextEvents(userId, payload.context, { isNew })) this.broadcast(orgId, ev);
+      for (const ev of contextEvents(userId, payload.context, { isNew })) this.sendTo(orgId, userId, ev);
       return;
     }
 
@@ -704,7 +713,7 @@ export class OrgRelay {
       });
       this.broadcast(orgId, notice);
       const { forEveryone } = upsertEvents(card, { isNew: false });
-      for (const ev of forEveryone) this.broadcast(orgId, ev);
+      for (const ev of forEveryone) this.broadcastCard(orgId, card, ev);
       return;
     }
 
@@ -789,7 +798,7 @@ export class OrgRelay {
           current = synced;
           await saveCard(this.db, orgId, current);
           const { forEveryone } = upsertEvents(current, { isNew: false });
-          for (const ev of forEveryone) this.broadcast(orgId, ev);
+          for (const ev of forEveryone) this.broadcastCard(orgId, current, ev);
         }
       } catch (err) {
         console.error("github sync failed", err?.message || err);
@@ -815,7 +824,7 @@ export class OrgRelay {
         if (changed) {
           await saveCard(this.db, orgId, current);
           const { forEveryone } = upsertEvents(current, { isNew: false });
-          for (const ev of forEveryone) this.broadcast(orgId, ev);
+          for (const ev of forEveryone) this.broadcastCard(orgId, current, ev);
         }
       }
     } catch (err) {
@@ -844,7 +853,8 @@ export class OrgRelay {
   async afterDecision(orgId, card, actorLogin, actorGithubId) {
     try {
       if (card?.proposal) await settleProposal(this.env, orgId, card);
-      else await learnFromDecision(this.env, { orgId, card, actorLogin, actorGithubId });
+      // A personal card's reasons are its person's, not the team's rules.
+      else if (!isPersonal(card)) await learnFromDecision(this.env, { orgId, card, actorLogin, actorGithubId });
     } catch (err) {
       console.error("after decision failed", err?.message || err);
     }
@@ -866,7 +876,7 @@ export class OrgRelay {
         cardId: out.card.id, type: "deleted", action: content.action,
         actorUserId: content.actorUserID, note: content.note, snapshot: out.card,
       });
-      for (const ev of removeEvents(out.card.id)) this.broadcast(orgId, ev);
+      for (const ev of removeEvents(out.card.id)) this.broadcastCard(orgId, out.card, ev);
     } else if (!out.unchanged) {
       await saveCard(this.db, orgId, out.card);
       await this.log(orgId, {
@@ -901,7 +911,7 @@ export class OrgRelay {
         );
       }
       const { forEveryone } = upsertEvents(out.card, { isNew: false });
-      for (const ev of forEveryone) this.broadcast(orgId, ev);
+      for (const ev of forEveryone) this.broadcastCard(orgId, out.card, ev);
     }
     if (toolCallId) this.broadcast(orgId, toolCallResult(toolCallId, out.card));
   }
