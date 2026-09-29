@@ -2,6 +2,35 @@ import XCTest
 
 final class ReviewFlowUITests: XCTestCase {
     @MainActor
+    func testJapaneseChatShortcutsRemainReadable() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP", "-appLanguage", "ja",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"]
+        app.launch()
+        let demo = app.buttons["デモを試す"]
+        XCTAssertTrue(demo.waitForExistence(timeout: 20))
+        demo.tap()
+        app.buttons["チャット"].firstMatch.tap()
+        for title in ["アクティビティ", "スレッド", "後で"] {
+            let button = app.buttons[title].firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 5))
+            XCTAssertTrue(button.isHittable)
+            // A normal-size shortcut must not turn into a tall column of
+            // single characters on a small iPhone (Japanese labels are longer).
+            XCTAssertLessThanOrEqual(button.frame.height, 64, title)
+            XCTAssertTrue(app.frame.contains(button.frame), title)
+        }
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Japanese chat shortcuts fit the phone"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["スレッド"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["スレッド"].waitForExistence(timeout: 5))
+        app.terminate()
+    }
+
+    @MainActor
     func testOrdinaryAccountCanSignInThroughTheActualUI() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["HONMARU_LIVE_AUTH_TEST"] == "1", "Live UI account lifecycle is opt-in")
         continueAfterFailure = false
