@@ -1143,8 +1143,6 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
                 <Icon name={n.icon} size={15} /> {n.label}
               </button>
             ))}
-            <div className="studio-nav-sep" />
-            <button type="button" className="studio-nav-invite" onClick={() => setInviting('people')}><Icon name="invite" size={15} /> {t('Invite')}</button>
           </nav>
           <main className="studio-main">
             {page === 'apps' && appsPage}
