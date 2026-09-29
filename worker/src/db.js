@@ -539,10 +539,10 @@ export async function isIngested(db, connector, externalId, githubId) {
 
 /// The message a card was made from, if this person's sync made it. The
 /// one link between a card and an outside thread that a client cannot write.
-export async function ingestedItemForCard(db, cardId, githubId) {
+export async function ingestedItemForCard(db, cardId, githubId, orgId) {
   const row = await db
-    .prepare("SELECT connector, external_id AS externalId FROM ingested_items WHERE card_id = ?1 AND user_github_id = ?2")
-    .bind(cardId, String(githubId))
+    .prepare("SELECT connector, external_id AS externalId FROM ingested_items WHERE card_id = ?1 AND user_github_id = ?2 AND org_id = ?3")
+    .bind(cardId, String(githubId), orgId)
     .first();
   return row || null;
 }

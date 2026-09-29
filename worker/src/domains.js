@@ -101,10 +101,14 @@ export async function verifyDomain(env, orgId, domain) {
   const now = new Date().toISOString();
   const want = `honmaru-verify=${row.verify_token}`;
   if (!found.includes(want)) {
-    await env.DB.prepare("UPDATE org_domains SET last_checked_at = ?2 WHERE domain = ?1").bind(domain, now).run();
+    await env.DB.prepare("UPDATE org_domains SET last_checked_at = ?2 WHERE domain = ?1 AND org_id = ?3").bind(domain, now, orgId).run();
     return { error: "The record is not there yet. DNS can take a few minutes to update.", status: 409, found };
   }
-  await env.DB.prepare("UPDATE org_domains SET verified_at = COALESCE(verified_at, ?2), last_checked_at = ?2, fail_count = 0 WHERE domain = ?1").bind(domain, now).run();
+  // The row this record proves: another workspace that claimed the domain
+  // while DNS was being asked holds another token, and is not proved by ours.
+  const proved = await env.DB.prepare("UPDATE org_domains SET verified_at = COALESCE(verified_at, ?2), last_checked_at = ?2, fail_count = 0 WHERE domain = ?1 AND org_id = ?3 AND verify_token = ?4")
+    .bind(domain, now, orgId, row.verify_token).run();
+  if (!(proved?.meta?.changes > 0)) return { error: "That domain is not on this workspace.", status: 404 };
   return { verified: true, first: !row.verified_at };
 }
 

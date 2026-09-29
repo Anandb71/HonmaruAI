@@ -1393,3 +1393,13 @@ CREATE TABLE IF NOT EXISTS app_connection_tombstones (
   id          TEXT PRIMARY KEY,
   created_at  TEXT NOT NULL
 );
+
+/* Lookups by person across workspaces, and the sweeps that run every
+   minute, without reading whole tables as the data grows. */
+CREATE INDEX IF NOT EXISTS idx_sessions_github ON sessions(github_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_sso_connection ON sessions(sso_connection_id);
+CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_github_id);
+CREATE INDEX IF NOT EXISTS idx_cards_org_created ON cards(org_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_channel_messages_author ON channel_messages(org_id, author_login, created_at);
+CREATE INDEX IF NOT EXISTS idx_push_queue_created ON push_queue(created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_reads_read ON activity_reads(read_at);
