@@ -173,12 +173,14 @@ async function hash16(text: string): Promise<string> {
 
 const seenKey = (orgId: string, view: string) => `seen:${orgId}:${view}`
 /// This browser's notifications for a conversation, taken down once it is
-/// read — here or anywhere. A push is tagged with the conversation.
-function closeNotifications(view: string) {
+/// read — here or anywhere. A push is tagged with its workspace and the
+/// conversation (two teams' #general are not one), or, from before, the
+/// conversation alone.
+function closeNotifications(orgId: string, view: string) {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
   navigator.serviceWorker.getRegistration()
-    .then((reg) => reg?.getNotifications({ tag: view }))
-    .then((list) => { for (const n of list || []) n.close() })
+    .then((reg) => Promise.all([`${orgId}|${view}`, view].map((tag) => reg?.getNotifications({ tag }))))
+    .then((lists) => { for (const n of lists.flat()) if (n) n.close() })
     .catch(() => { /* nothing shown, nothing to take down */ })
 }
 
@@ -1144,7 +1146,7 @@ export const ClassicList: React.FC<Props> = ({
         method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
         body: JSON.stringify({ orgId: api.orgId, channel: view }),
       }).then(() => setServerReads((prev) => ({ ...prev, [view]: now }))).catch(() => { /* this device still remembers */ })
-      closeNotifications(view)
+      closeNotifications(api.orgId, view)
       // Read here, so no longer new in Activity: what was said in this
       // conversation (a reply waits for its thread).
       setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === view && !i.message.parentId && (i.at || i.message.createdAt) <= now ? { ...i, unread: false } : i)))
@@ -1733,7 +1735,7 @@ export const ClassicList: React.FC<Props> = ({
       }
       setServerReads((prev) => ({ ...prev, [v]: [prev[v] || '', at].sort().pop() || at }))
       setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === v && !i.message.parentId && (i.at || i.message.createdAt) <= at ? { ...i, unread: false } : i)))
-      closeNotifications(v)
+      closeNotifications(api.orgId, v)
     }
     window.addEventListener('honmaru:reads-changed', on)
     return () => window.removeEventListener('honmaru:reads-changed', on)
