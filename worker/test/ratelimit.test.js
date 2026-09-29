@@ -38,9 +38,13 @@ test("RATE_LIMIT_SCALE (the end-to-end run's) multiplies the allowance, at most 
   const scaled = { ...env, RATE_LIMIT_SCALE: "3" };
   for (let i = 0; i < max * 3; i += 1) expect(await enforce(scaled, req, "ai/route")).toBeNull();
   expect((await enforce(scaled, req, "ai/route")).status).toBe(429);
-  const wild = requestFrom("203.0.113.10");
+  // At most a hundredfold: the window already holds a hundred allowances'
+  // worth (written directly — three thousand round trips to count up to it
+  // ran into the test's time limit), and the next call is refused.
+  const wild = requestFrom("203.0.113.20");
   const huge = { ...env, RATE_LIMIT_SCALE: "100000" };
-  for (let i = 0; i < max * 100; i += 1) await enforce(huge, wild, "ai/route");
+  expect(await enforce(huge, wild, "ai/route")).toBeNull();
+  await env.DB.prepare("UPDATE rate_limits SET count = ?1 WHERE bucket = 'ai/route' AND subject = 'i:203.0.113.20'").bind(max * 100).run();
   expect((await enforce(huge, wild, "ai/route")).status).toBe(429);
 });
 
