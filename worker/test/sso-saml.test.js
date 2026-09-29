@@ -52,9 +52,9 @@ function samlResponse(o) {
   const {
     requestId, sp, email = "ken@acme.co.jp", issuer = IDP, audience = sp.entityId, recipient = sp.acs, inResponseTo = requestId,
     expiresIn = 300_000, key = "idp", algorithm = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256", sign = "assertion", status = "Success",
-    sessionIndex = null,
+    sessionIndex = null, mail = null,
   } = o;
-  const assertion = `<saml:Assertion xmlns:saml="${S.saml}" ID="_a1" Version="2.0" IssueInstant="${iso(0)}"><saml:Issuer>${issuer}</saml:Issuer><saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">${email}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${inResponseTo}" Recipient="${recipient}" NotOnOrAfter="${iso(expiresIn)}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="${iso(-60_000)}" NotOnOrAfter="${iso(expiresIn)}"><saml:AudienceRestriction><saml:Audience>${audience}</saml:Audience></saml:AudienceRestriction></saml:Conditions>${sessionIndex ? `<saml:AuthnStatement AuthnInstant="${iso(0)}" SessionIndex="${sessionIndex}"/>` : ""}<saml:AttributeStatement><saml:Attribute Name="displayName"><saml:AttributeValue>Ken Sato</saml:AttributeValue></saml:Attribute></saml:AttributeStatement></saml:Assertion>`;
+  const assertion = `<saml:Assertion xmlns:saml="${S.saml}" ID="_a1" Version="2.0" IssueInstant="${iso(0)}"><saml:Issuer>${issuer}</saml:Issuer><saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">${email}</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${inResponseTo}" Recipient="${recipient}" NotOnOrAfter="${iso(expiresIn)}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="${iso(-60_000)}" NotOnOrAfter="${iso(expiresIn)}"><saml:AudienceRestriction><saml:Audience>${audience}</saml:Audience></saml:AudienceRestriction></saml:Conditions>${sessionIndex ? `<saml:AuthnStatement AuthnInstant="${iso(0)}" SessionIndex="${sessionIndex}"/>` : ""}<saml:AttributeStatement><saml:Attribute Name="displayName"><saml:AttributeValue>Ken Sato</saml:AttributeValue></saml:Attribute>${mail ? `<saml:Attribute Name="mail"><saml:AttributeValue>${mail}</saml:AttributeValue></saml:Attribute>` : ""}</saml:AttributeStatement></saml:Assertion>`;
   let xml = `<samlp:Response xmlns:samlp="${S.samlp}" xmlns:saml="${S.saml}" ID="_r1" Version="2.0" IssueInstant="${iso(0)}" Destination="${sp.acs}" InResponseTo="${requestId}"><saml:Issuer>${issuer}</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:${status}"/></samlp:Status>${assertion}</samlp:Response>`;
   if (sign) {
     const target = sign === "assertion" ? "Assertion" : "Response";
@@ -169,6 +169,38 @@ test("every check on the assertion refuses what it should", async () => {
   })).toThrow();
   // Two assertions, one signed and one not.
   expect(check({ mutate: (x) => x.replace("</samlp:Response>", `${x.match(/<saml:Assertion[\s\S]*<\/saml:Assertion>/)[0].replace(' ID="_a1"', ' ID="_a2"')}</samlp:Response>`) })).toThrow(/exactly one/);
+});
+
+test("another workspace naming the same SAML issuer cannot sign in as someone linked here", async () => {
+  // Toru signs in through Acme's IdP once, and is linked.
+  const acme = await makeSaml({ name: "Acme Okta", metadataXml: metadata(IDP, IDP_SSO, idpCert), allowedDomains: ["acme.co.jp"] });
+  await activate(acme.id);
+  const s = await start(acme.id);
+  const first = await call(`/sso/saml/${acme.id}/acs`, null, { method: "POST", form: { SAMLResponse: encode(samlResponse({ requestId: s.requestId, sp: acme.sp, email: "toru@acme.co.jp" })), RelayState: s.relay } });
+  expect((await (await call("/sso/exchange", null, { method: "POST", body: { code: params(first).get("code"), client: "web" } })).json()).userId).toBe("8101");
+
+  // Somebody else's workspace, its own proved domain, the same issuer typed
+  // in and a certificate of its own; its IdP says the subject is Toru's.
+  const EVIL = "team:evil";
+  const { createSession, upsertMembership } = await import("../src/db.js");
+  await upsertMembership(env.DB, EVIL, "8102", "owner");
+  await env.DB.prepare("INSERT INTO org_domains (domain, org_id, verify_token, verified_at, created_by, created_at) VALUES ('evil.test', ?1, 't', ?2, '8102', ?2)").bind(EVIL, new Date().toISOString()).run();
+  const root = await createSession(env.DB, "8102", "z");
+  const made = await call("/orgs/sso/connections", root, { method: "POST", body: { orgId: EVIL, provider: "saml", metadataXml: metadata(IDP, "https://evil.test/sso", otherCert), allowedDomains: ["evil.test"] } });
+  const evil = (await made.json()).connection;
+  await activate(evil.id);
+  const res = await call(`/sso/start?orgId=${encodeURIComponent(EVIL)}&connection=${evil.id}`);
+  const at = new URL(res.headers.get("location"));
+  const deflated = Uint8Array.from(atob(at.searchParams.get("SAMLRequest")), (c) => c.charCodeAt(0));
+  const requestId = (await new Response(new Blob([deflated]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text()).match(/ ID="([^"]+)"/)[1];
+  const forged = await call(`/sso/saml/${evil.id}/acs`, null, { method: "POST", form: { SAMLResponse: encode(samlResponse({ requestId, sp: evil.sp, email: "toru@acme.co.jp", mail: "mallory@evil.test", key: "other" })), RelayState: at.searchParams.get("RelayState") } });
+  const code = params(forged).get("code");
+  const who = code ? (await (await call("/sso/exchange", null, { method: "POST", body: { code, client: "web" } })).json()).userId : null;
+  expect(who).not.toBe("8101");
+  // Toru's link and address are untouched.
+  expect(await env.DB.prepare("SELECT org_id, email FROM sso_identities WHERE subject = 'toru@acme.co.jp'").first()).toEqual({ org_id: ORG, email: "toru@acme.co.jp" });
+  expect((await env.DB.prepare("SELECT email FROM users WHERE github_id = '8101'").first()).email).toBe("toru@acme.co.jp");
+  expect(await env.DB.prepare("SELECT 1 FROM memberships WHERE org_id = ?1 AND user_github_id = '8101'").bind(EVIL).first()).toBeNull();
 });
 
 test("two identity providers, each for its own domains; one address, one way in", async () => {

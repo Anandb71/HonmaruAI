@@ -372,7 +372,10 @@ const back = (env, client, params) => {
 /// The account this identity is: already linked, the same proved address,
 /// or a new one.
 async function accountFor(env, conn, identity) {
-  const linked = await env.DB.prepare("SELECT user_github_id FROM sso_identities WHERE issuer = ?1 AND subject = ?2").bind(conn.issuer, identity.subject).first();
+  // Linked in this workspace only. A SAML issuer is whatever an owner typed,
+  // signed by a certificate they uploaded: another workspace naming the same
+  // issuer must never reach an identity linked here.
+  const linked = await env.DB.prepare("SELECT user_github_id FROM sso_identities WHERE org_id = ?1 AND issuer = ?2 AND subject = ?3").bind(conn.org_id, conn.issuer, identity.subject).first();
   if (linked) return { githubId: String(linked.user_github_id), linked: true };
   const byEmail = await env.DB.prepare("SELECT github_id, email_verified_at FROM users WHERE email = ?1").bind(identity.email).first();
   // The same address is the same person only where it was proved, or the
@@ -422,7 +425,7 @@ async function finishSignIn(env, request, row, conn, identity, grant = {}) {
   const now = new Date().toISOString();
   await env.DB.prepare(
     `INSERT INTO sso_identities (org_id, issuer, subject, user_github_id, email, last_login_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-     ON CONFLICT(issuer, subject) DO UPDATE SET email = excluded.email, last_login_at = excluded.last_login_at`
+     ON CONFLICT(issuer, subject) DO UPDATE SET email = excluded.email, last_login_at = excluded.last_login_at WHERE sso_identities.org_id = excluded.org_id`
   ).bind(conn.org_id, conn.issuer, identity.subject, account.githubId, identity.email, now).run();
   await env.DB.prepare("UPDATE users SET email = ?2, email_verified_at = COALESCE(email_verified_at, ?3) WHERE github_id = ?1").bind(account.githubId, identity.email, now).run();
   // Being in the company's identity provider is being in the company: in,
