@@ -42,9 +42,14 @@ test("a person who takes an invitation is introduced in the channels it named, a
   expect(made.channels).toEqual(["cafe"]);
   const joined = await call("/invites/accept", newcomer, { method: "POST", body: { code: made.code } });
   expect(joined.status).toBe(200);
-  // In the inviter's language, since the channel is theirs.
-  expect(await said("cafe")).toEqual(["Gotaさんがワークスペースに参加しました。ようこそ！"]);
+  // A quiet system line, not the AI speaking: who came in, which each
+  // reader's screen says in its own language. Only there — the team's first
+  // channel is not told again — and the AI's welcome still opens the DM.
+  const rows = (await env.DB.prepare("SELECT channel, kind, author_login FROM channel_messages WHERE org_id = ?1 AND channel LIKE 'b:%'").bind(ORG).all()).results;
+  expect(rows).toEqual([{ channel: "b:cafe", kind: "joined", author_login: "u:gota@x.jp" }]);
   expect(await said("roastery")).toEqual([]);
+  const dm = await env.DB.prepare("SELECT kind FROM channel_messages WHERE org_id = ?1 AND channel LIKE 'dm:%'").bind(ORG).all();
+  expect(dm.results).toEqual([{ kind: "ai" }]);
   // Taking it again adds nobody, and says nothing twice.
   await call("/invites/accept", newcomer, { method: "POST", body: { code: made.code } });
   expect(await said("cafe")).toHaveLength(1);
