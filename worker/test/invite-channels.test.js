@@ -42,9 +42,14 @@ test("a person who takes an invitation is introduced in the channels it named, a
   expect(made.channels).toEqual(["cafe"]);
   const joined = await call("/invites/accept", newcomer, { method: "POST", body: { code: made.code } });
   expect(joined.status).toBe(200);
-  // In the inviter's language, since the channel is theirs.
-  expect(await said("cafe")).toEqual(["Gotaさんがワークスペースに参加しました。ようこそ！"]);
+  // A quiet system line, not the AI speaking: who came in, which each
+  // reader's screen says in its own language. Only there — the team's first
+  // channel is not told again — and the AI's welcome still opens the DM.
+  const rows = (await env.DB.prepare("SELECT channel, kind, author_login FROM channel_messages WHERE org_id = ?1 AND channel LIKE 'b:%'").bind(ORG).all()).results;
+  expect(rows).toEqual([{ channel: "b:cafe", kind: "joined", author_login: "u:gota@x.jp" }]);
   expect(await said("roastery")).toEqual([]);
+  const dm = await env.DB.prepare("SELECT kind FROM channel_messages WHERE org_id = ?1 AND channel LIKE 'dm:%'").bind(ORG).all();
+  expect(dm.results).toEqual([{ kind: "ai" }]);
   // Taking it again adds nobody, and says nothing twice.
   await call("/invites/accept", newcomer, { method: "POST", body: { code: made.code } });
   expect(await said("cafe")).toHaveLength(1);
@@ -98,4 +103,30 @@ test("an expired agent link lets nobody in", async () => {
   const link = await (await call("/agents/invite", toru, { method: "POST", body: { orgId: ORG } })).json();
   await env.DB.prepare("UPDATE agent_invites SET expires_at = ?1").bind(new Date(Date.now() - 1000).toISOString()).run();
   expect((await call(new URL(link.url).pathname, null)).status).toBe(410);
+});
+
+test("somebody brand new who signs up with an invitation is announced and welcomed like any other arrival", async () => {
+  const made = await (await call("/invites/create", toru, { method: "POST", body: { orgId: ORG, role: "member" } })).json();
+  const res = await call("/auth/signup", null, { method: "POST", body: { email: "new@x.jp", password: "correct horse battery", name: "Nana", inviteCode: made.code } });
+  expect(res.status).toBe(200);
+  const { orgId } = await res.json();
+  expect(orgId).toBe(ORG);
+  // The team's first channel says who came in…
+  const joined = await env.DB.prepare("SELECT author_login FROM channel_messages WHERE org_id = ?1 AND kind = 'joined'").bind(ORG).all();
+  expect(joined.results).toHaveLength(1);
+  // …the AI opens a DM with the owner…
+  const dm = await env.DB.prepare("SELECT kind, body FROM channel_messages WHERE org_id = ?1 AND channel LIKE 'dm:%'").bind(ORG).all();
+  expect(dm.results).toEqual([expect.objectContaining({ kind: "ai" })]);
+  expect(dm.results[0].body).toContain("Nana");
+  // …and the log has the arrival, which is what tells open screens.
+  const logged = await env.DB.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE org_id = ?1 AND action = 'member.joined'").bind(ORG).first();
+  expect(logged.n).toBe(1);
+});
+
+test("an invitation taken on sign-in by an existing account is announced once", async () => {
+  const made = await (await call("/invites/create", toru, { method: "POST", body: { orgId: ORG, role: "member" } })).json();
+  await call("/invites/accept", newcomer, { method: "POST", body: { code: made.code } });
+  await call("/invites/accept", newcomer, { method: "POST", body: { code: made.code } });
+  const logged = await env.DB.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE org_id = ?1 AND action = 'member.joined'").bind(ORG).first();
+  expect(logged.n).toBe(1);
 });

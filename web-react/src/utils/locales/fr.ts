@@ -1809,6 +1809,8 @@ const table: Record<string, string> = {
   'Read pictures and scanned PDFs': 'Lire les images et les PDF numérisés',
   'Photos, screenshots and scanned pages have no text of their own. With this on, each one attached is sent to the workspace’s AI model to be read, checked against these rules, and dropped. It uses the AI allowance.': 'Les photos, captures d’écran et pages numérisées n’ont pas de texte propre. Si cette option est activée, chacune d’elles est envoyée au modèle d’IA de l’espace de travail pour être lue, vérifiée selon ces règles, puis supprimée. Cela utilise le quota d’IA.',
   'This needs an OpenAI model for the workspace, which is not set up.': 'Cela nécessite un modèle OpenAI pour l’espace de travail, qui n’est pas configuré.',
+  'Discard this draft? It will not be posted.': 'Supprimer ce brouillon ? Il ne sera pas publié.',
+  'Discard draft': 'Supprimer le brouillon',
 }
 
 export default table

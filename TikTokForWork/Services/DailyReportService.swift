@@ -85,6 +85,13 @@ enum DailyReportService {
         return try JSONDecoder().decode(Refined.self, from: data)
     }
 
+    /// Put the draft away without posting it. Returns the card as closed.
+    static func discard(cardId: String, orgId: String, backendBaseURL: URL, session: URLSession = .shared) async throws -> DecisionCard {
+        let body = try JSONSerialization.data(withJSONObject: ["orgId": orgId, "cardId": cardId])
+        let data = try await send("DELETE", path: "channels/daily-report/draft", body: body, base: backendBaseURL, session: session)
+        return try JSONDecoder.relay().decode(Posted.self, from: data).card
+    }
+
     /// Keep the draft as typed, for the laptop to open where the phone left off.
     static func saveDraft(cardId: String, orgId: String, text: String, backendBaseURL: URL, session: URLSession = .shared) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["orgId": orgId, "cardId": cardId, "text": text])

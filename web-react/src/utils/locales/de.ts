@@ -1809,6 +1809,8 @@ const table: Record<string, string> = {
   'Read pictures and scanned PDFs': 'Bilder und gescannte PDFs lesen',
   'Photos, screenshots and scanned pages have no text of their own. With this on, each one attached is sent to the workspace’s AI model to be read, checked against these rules, and dropped. It uses the AI allowance.': 'Fotos, Screenshots und gescannte Seiten enthalten keinen eigenen Text. Ist dies aktiviert, wird jeder Anhang dieser Art an das KI-Modell des Workspaces gesendet, gelesen, mit diesen Regeln abgeglichen und danach verworfen. Das zählt zum KI-Kontingent.',
   'This needs an OpenAI model for the workspace, which is not set up.': 'Dafür ist ein OpenAI-Modell für den Workspace nötig, das nicht eingerichtet ist.',
+  'Discard this draft? It will not be posted.': 'Diesen Entwurf verwerfen? Er wird nicht gepostet.',
+  'Discard draft': 'Entwurf verwerfen',
 }
 
 export default table

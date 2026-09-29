@@ -218,6 +218,31 @@ test("with a model the journal is written in the reader's language, cited, and k
   expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM channel_journal").first()).toEqual({ n: 0 });
 });
 
+test("the journal leaves out what the app said, skips a day with nothing in it, and rewrites days kept the old way", async () => {
+  await say("b:cafe", "yusuf", "joined", "2026-09-24T01:00:00Z", { kind: "joined" });
+  await say("b:cafe", null, "Yusufさんがワークスペースに参加しました。ようこそ！", "2026-09-24T01:01:00Z", { kind: "ai" });
+  const a = await say("b:cafe", "toru", "Bugs and requests go in this thread, with a screenshot", "2026-09-24T02:00:00Z");
+  await say("b:cafe", "mika", "thanks!", "2026-09-25T02:00:00Z");
+  // A day kept by an older version of the journal is not trusted.
+  await env.DB.prepare(
+    "INSERT INTO channel_journal (org_id, channel, day, tz, locale, count, items, by_model, updated_at) VALUES (?1, 'b:cafe', '2026-09-24', 'UTC', 'ja', 1, ?2, 1, ?3)"
+  ).bind(ORG, JSON.stringify([{ text: "old line", messageIds: [] }]), new Date().toISOString()).run();
+  let prompt;
+  fetchMock.activate();
+  const pool = fetchMock.get("https://api.openai.com");
+  pool.intercept({ path: "/v1/chat/completions", method: "POST" }).reply(200, { choices: [{ message: { content: JSON.stringify({ items: [] }) } }] });
+  pool.intercept({ path: "/v1/chat/completions", method: "POST", body: (x) => { prompt = JSON.parse(x); return true; } })
+    .reply(200, { choices: [{ message: { content: JSON.stringify({ items: [{ text: "*不具合の報告先* — スクショ付きでこのスレッドへ（Toru）", cites: [1] }] }) } }] });
+  const page = await (await get(`/channels/journal?${q({ orgId: ORG, channel: "b:cafe", tz: "UTC" })}`, toru, { OPENAI_API_KEY: "sk-test" })).json();
+  // Only the team's words reach the model; the joins never do.
+  expect(prompt.messages[1].content).not.toContain("参加しました");
+  expect(prompt.messages[1].content).not.toContain("joined");
+  expect(prompt.messages[0].content).toContain("Merge every message about the same topic");
+  // "thanks!" alone is no day at all; the 24th is written again, compressed.
+  expect(page.days.map((d) => [d.day, d.count])).toEqual([["2026-09-24", 1]]);
+  expect(page.days[0].items).toEqual([expect.objectContaining({ text: "*不具合の報告先* — スクショ付きでこのスレッドへ（Toru）", messageIds: [a] })]);
+});
+
 test("a Jam's recording becomes notes in the channel; a full recording is kept and played back", async () => {
   fetchMock.activate();
   fetchMock.get("https://api.openai.com")

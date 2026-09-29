@@ -7,7 +7,8 @@
 ///
 /// And the newcomer is greeted: a direct conversation with the workspace's
 /// owner opens with the AI saying, in the newcomer's language, how the place
-/// works — channels, "@AI" for a decision, "@" for an agent, translation.
+/// works — channels, "@AI" to ask, ✦ for a decision, "@" for an agent,
+/// translation.
 
 import { postMessage } from "./channels.js";
 import { loadCopy } from "./copy.js";
@@ -23,12 +24,15 @@ export async function announceJoin(env, orgId, login) {
     `SELECT u.login, u.name, u.locale, m.role FROM users u JOIN memberships m ON m.user_github_id = u.github_id AND m.org_id = ?1 WHERE u.login = ?2`
   ).bind(orgId, login).first().catch(() => null);
   if (!who || String(who.role || "").toLowerCase() === "guest") return null;
+  // The welcome DM first: it keeps itself to once (not when the two have
+  // already talked), whatever has been said in the channels.
+  await welcome(env, orgId, who).catch((err) => console.error("welcome DM failed", err?.message || err));
+  // Said already — by an invitation that named channels, or a moment ago.
   const since = new Date(Date.now() - RECENT_MS).toISOString();
   const said = await db.prepare(
     "SELECT 1 FROM channel_messages WHERE org_id = ?1 AND kind = 'joined' AND author_login = ?2 AND created_at >= ?3 LIMIT 1"
   ).bind(orgId, login, since).first().catch(() => null);
   if (said) return null;
-  await welcome(env, orgId, who).catch((err) => console.error("welcome DM failed", err?.message || err));
   const room = await db.prepare(
     "SELECT slug FROM businesses WHERE org_id = ?1 AND archived_at IS NULL AND COALESCE(private, 0) = 0 ORDER BY created_at LIMIT 1"
   ).bind(orgId).first().catch(() => null);

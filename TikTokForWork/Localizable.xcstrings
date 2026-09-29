@@ -39263,6 +39263,62 @@
           }
         }
       }
+    },
+    "Discard this draft? It will not be posted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この下書きを破棄しますか？投稿はされません。"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Descartar este borrador? No se publicará."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer ce brouillon ? Il ne sera pas publié."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diesen Entwurf verwerfen? Er wird nicht gepostet."
+          }
+        }
+      }
+    },
+    "Discarded without posting.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投稿せずに破棄しました。"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descartado sin publicar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimé sans être publié."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ohne Posten verworfen."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

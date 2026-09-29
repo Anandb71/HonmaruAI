@@ -189,6 +189,7 @@ export async function signup(env, { email, password, name, inviteCode, locale, p
     await introduce(env, { orgId: org, channels: JSON.parse(joinedBy.channels), githubId: userId, invitedBy: joinedBy.created_by })
       .catch((err) => console.error("welcome failed", err?.message || err));
   }
+  if (joinedBy) await joinedByInvite(env, org, userId, joinRole);
   const token = await createSession(env.DB, userId, EMAIL_AUTH_TOKEN);
   return { token, userId, login, orgId: org, ...(inviteError ? { inviteError } : {}) };
 }
@@ -236,6 +237,21 @@ export async function login(env, { email, password, inviteCode }) {
 // lets two concurrent redemptions both see room on a single-use code; making
 // the condition part of the UPDATE lets the database decide who got there
 // first. Returns the invite when the use was granted, null when it was not.
+/// Somebody new came in by an invitation: said the way every other way in
+/// says it (audit "member.joined"), which is what tells every open screen
+/// the team changed, puts "joined" in the first channel and opens the AI's
+/// welcome DM. Every door an invitation opens goes through here.
+async function joinedByInvite(env, orgId, githubId, role) {
+  try {
+    const user = await env.DB.prepare("SELECT login, name FROM users WHERE github_id = ?1").bind(String(githubId)).first();
+    if (!user) return;
+    const { audit, person } = await import("./audit.js");
+    await audit(env, null, { orgId, action: "member.joined", actor: person(user), details: { role, via: "invite" } });
+  } catch (err) {
+    console.error("join announce failed", err?.message || err);
+  }
+}
+
 async function readInvite(db, code) {
   const row = await db
     .prepare("SELECT org_id, role, expires_at, max_uses, uses, created_by, channels FROM invites WHERE code = ?1")
@@ -423,6 +439,7 @@ export async function acceptInvite(env, { code, userId }) {
       await introduce(env, { orgId: row.org_id, channels: JSON.parse(row.channels), githubId: userId, invitedBy: row.created_by })
         .catch((err) => console.error("welcome failed", err?.message || err));
     }
+    if (!existing) await joinedByInvite(env, row.org_id, userId, keep);
   }
   return { orgId: row.org_id, joined: !existing, role: existing && keep === held ? held : keep };
 }

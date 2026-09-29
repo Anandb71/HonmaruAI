@@ -267,6 +267,8 @@ struct ChatSidebar: Codable, Hashable {
     }
     var starred: [String] = []
     var sections: [Section] = []
+    /// The order the person dragged their channels into, on the web.
+    var order: [String]? = nil
 }
 
 struct ChatThread: Codable {
@@ -650,6 +652,7 @@ enum ChatService {
             "sidebar": [
                 "starred": sidebar.starred,
                 "sections": sidebar.sections.map { ["id": $0.id, "name": $0.name, "views": $0.views] as [String: Any] },
+                "order": sidebar.order ?? [],
             ] as [String: Any],
         ]
         return try await call("PUT", "/channels/sidebar", base: base, body: body, as: R.self).sidebar

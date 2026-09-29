@@ -5,8 +5,10 @@ import { serverText } from "./serverCopy.js";
 import { isPrivate, addMembers, isGuestLogin } from "./access.js";
 
 // Somebody new — a person who took an invitation, or an agent that opened
-// its link — said in the channels the invitation named, by the AI, in the
-// language of whoever invited them.
+// its link — said in the channels the invitation named. A person is a quiet
+// system line ("Mika joined"), written by each reader's screen in their own
+// language — not something the AI says. An agent, which has no account to
+// point at, is said in the inviter's language.
 
 export async function introduce(env, { orgId, channels, githubId = null, agentName = null, invitedBy }) {
   if (!Array.isArray(channels) || !channels.length) return 0;
@@ -31,7 +33,9 @@ export async function introduce(env, { orgId, channels, githubId = null, agentNa
     if (newcomer?.login && (guest || await isPrivate(env.DB, orgId, slug))) {
       await addMembers(env.DB, { orgId, key: `b:${slug}`, logins: [newcomer.login], addedBy: inviter?.login || null });
     }
-    const out = await postMessage(env.DB, { orgId, key: `b:${slug}`, authorLogin: null, body: line, kind: "ai" });
+    const out = newcomer?.login && !agentName
+      ? await postMessage(env.DB, { orgId, key: `b:${slug}`, authorLogin: newcomer.login, body: "joined", kind: "joined" })
+      : await postMessage(env.DB, { orgId, key: `b:${slug}`, authorLogin: null, body: line, kind: "ai" });
     if (!out.row) continue;
     said += 1;
     await broadcastStored(env, orgId, `b:${slug}`, out.row).catch(() => {});

@@ -8,7 +8,7 @@ import { registerCatalog } from "./copy.js";
 const EN = {
   "jam.transcript": "Transcript",
   "invite.joined": "{name} joined the workspace. Say hello!",
-  "welcome.dm": "Welcome to {team}, {name}! A few things to get you going:\n- Channels on the left hold the team's conversations, one topic each.\n- Write *@AI* in a message and it becomes a decision card for whoever should decide.\n- Write *@* and an agent's name to have it research, summarise or draft for you.\n- Messages in other languages are translated into yours automatically.\nAnything else, ask {owner} right here.",
+  "welcome.dm": "Welcome to {team}, {name}! A few things to get you going:\n- Channels on the left hold the team's conversations, one topic each.\n- Write *@AI* to ask your AI anything; it answers in the thread. To have someone decide, send it as a decision (✦).\n- Write *@* and an agent's name to have it research, summarise or draft for you.\n- Messages in other languages are translated into yours automatically.\nAnything else, ask {owner} right here.",
   "welcome.yourTeam": "your team",
   "invite.someone": "Someone new",
   "invite.agentJoined": "The agent “{name}” joined, working for {by}.",
@@ -98,7 +98,7 @@ const EN = {
 const JA = {
   "jam.transcript": "文字起こし",
   "invite.joined": "{name}さんがワークスペースに参加しました。ようこそ！",
-  "welcome.dm": "{name}さん、{team}へようこそ！はじめに知っておくと便利なこと：\n- 左のチャンネルに、話題ごとのチームの会話があります。\n- メッセージに *@AI* と書くと、決めるべき人に決定カードが届きます。\n- *@* とエージェント名を書くと、調べもの・要約・下書きを頼めます。\n- ほかの言語のメッセージは自動であなたの言語に翻訳されます。\nわからないことは、このDMで{owner}さんに聞いてください。",
+  "welcome.dm": "{name}さん、{team}へようこそ！はじめに知っておくと便利なこと：\n- 左のチャンネルに、話題ごとのチームの会話があります。\n- *@AI* と書けばAIに何でも質問でき、スレッドで答えます。誰かに決めてほしいときは「決定事項として送信」（✦）で送ってください。\n- *@* とエージェント名を書くと、調べもの・要約・下書きを頼めます。\n- ほかの言語のメッセージは自動であなたの言語に翻訳されます。\nわからないことは、このDMで{owner}さんに聞いてください。",
   "welcome.yourTeam": "チーム",
   "invite.someone": "新しいメンバー",
   "invite.agentJoined": "エージェント「{name}」が参加しました（{by}さんの代わりに動きます）。",
@@ -188,7 +188,7 @@ const JA = {
 const ES = {
   "jam.transcript": "Transcripción",
   "invite.joined": "{name} se unió al espacio de trabajo. ¡Salúdale!",
-  "welcome.dm": "¡Bienvenido a {team}, {name}! Algunas cosas para empezar:\n- Los canales de la izquierda tienen las conversaciones del equipo, un tema cada uno.\n- Escribe *@AI* en un mensaje y se convierte en una tarjeta de decisión para quien deba decidir.\n- Escribe *@* y el nombre de un agente para que investigue, resuma o redacte por ti.\n- Los mensajes en otros idiomas se traducen al tuyo automáticamente.\nCualquier otra cosa, pregúntale a {owner} aquí mismo.",
+  "welcome.dm": "¡Bienvenido a {team}, {name}! Algunas cosas para empezar:\n- Los canales de la izquierda tienen las conversaciones del equipo, un tema cada uno.\n- Escribe *@AI* para preguntar lo que sea a tu IA; responde en el hilo. Para que alguien decida, envíalo como decisión (✦).\n- Escribe *@* y el nombre de un agente para que investigue, resuma o redacte por ti.\n- Los mensajes en otros idiomas se traducen al tuyo automáticamente.\nCualquier otra cosa, pregúntale a {owner} aquí mismo.",
   "welcome.yourTeam": "tu equipo",
   "invite.someone": "Alguien nuevo",
   "invite.agentJoined": "El agente «{name}» se unió y trabaja para {by}.",
@@ -278,7 +278,7 @@ const ES = {
 const FR = {
   "jam.transcript": "Transcription",
   "invite.joined": "{name} a rejoint l’espace de travail. Dites bonjour !",
-  "welcome.dm": "Bienvenue dans {team}, {name} ! Quelques repères pour démarrer :\n- Les canaux à gauche rassemblent les conversations de l’équipe, un sujet chacun.\n- Écrivez *@AI* dans un message et il devient une carte de décision pour la bonne personne.\n- Écrivez *@* et le nom d’un agent pour qu’il cherche, résume ou rédige pour vous.\n- Les messages dans d’autres langues sont traduits dans la vôtre automatiquement.\nPour tout le reste, demandez à {owner} ici même.",
+  "welcome.dm": "Bienvenue dans {team}, {name} ! Quelques repères pour démarrer :\n- Les canaux à gauche rassemblent les conversations de l’équipe, un sujet chacun.\n- Écrivez *@AI* pour poser n’importe quelle question à votre IA ; elle répond dans le fil. Pour faire décider quelqu’un, envoyez-le comme décision (✦).\n- Écrivez *@* et le nom d’un agent pour qu’il cherche, résume ou rédige pour vous.\n- Les messages dans d’autres langues sont traduits dans la vôtre automatiquement.\nPour tout le reste, demandez à {owner} ici même.",
   "welcome.yourTeam": "votre équipe",
   "invite.someone": "Une nouvelle personne",
   "invite.agentJoined": "L’agent « {name} » a rejoint l’espace et travaille pour {by}.",
@@ -368,7 +368,7 @@ const FR = {
 const DE = {
   "jam.transcript": "Transkript",
   "invite.joined": "{name} ist dem Workspace beigetreten. Sag hallo!",
-  "welcome.dm": "Willkommen bei {team}, {name}! Ein paar Dinge für den Anfang:\n- Die Kanäle links enthalten die Gespräche des Teams, je ein Thema.\n- Schreib *@AI* in eine Nachricht, und sie wird zur Entscheidungskarte für die richtige Person.\n- Schreib *@* und den Namen eines Agenten, damit er recherchiert, zusammenfasst oder entwirft.\n- Nachrichten in anderen Sprachen werden automatisch in deine übersetzt.\nAlles andere frag {owner} direkt hier.",
+  "welcome.dm": "Willkommen bei {team}, {name}! Ein paar Dinge für den Anfang:\n- Die Kanäle links enthalten die Gespräche des Teams, je ein Thema.\n- Schreib *@AI*, um deiner KI etwas zu fragen; sie antwortet im Thread. Soll jemand entscheiden, sende es als Entscheidung (✦).\n- Schreib *@* und den Namen eines Agenten, damit er recherchiert, zusammenfasst oder entwirft.\n- Nachrichten in anderen Sprachen werden automatisch in deine übersetzt.\nAlles andere frag {owner} direkt hier.",
   "welcome.yourTeam": "dein Team",
   "invite.someone": "Jemand Neues",
   "invite.agentJoined": "Der Agent „{name}“ ist beigetreten und arbeitet für {by}.",

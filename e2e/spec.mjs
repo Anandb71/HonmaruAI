@@ -1034,6 +1034,18 @@ await step('your role is whatever you say it is', async () => {
 
 // What the workspace's AI runs on is chosen here, by its admin — not by
 // whoever deploys the Worker.
+await step('You on a laptop lists where to go the way Tools does, and nothing twice', async () => {
+  const d = desk.pages()[0]
+  await d.evaluate(() => { location.hash = '#/profile' })
+  await d.click('nav [data-tab="you"]').catch(() => {})
+  await d.waitForSelector('.profile-stats', { timeout: 15000 })
+  // Tools and History have their own tabs on the rail: not rows here too.
+  const shown = await d.$$eval('.pf-ws .row', (rows) => rows.filter((r) => r.offsetParent !== null).map((r) => (r.querySelector('.row-main')?.firstChild?.textContent || '').trim()))
+  for (const twice of ['Tools', 'History']) if (shown.includes(twice)) throw new Error(`${twice} is both a tab and a row under You`)
+  for (const kept of ['Automations', 'Notifications', 'Your team', 'Plan']) if (!shown.includes(kept)) throw new Error(`${kept} is missing under You`)
+  await d.screenshot({ path: `${SHOTS}/34-you-laptop.png` })
+})
+
 await step('the Tools screen lets the admin pick the model and enter keys', async () => {
   const d = desk.pages()[0]
   await d.evaluate(() => { location.hash = '#/tools/ai' })

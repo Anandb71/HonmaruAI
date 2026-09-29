@@ -28,6 +28,14 @@ struct ChatConversation: Identifiable, Hashable {
         ChatConversation(kind: .agent, view: agentView(a.id), name: a.name, member: nil, agent: a)
     }
 
+    /// Conversations in the order a person set; the rest keep theirs.
+    static func inOrder(_ list: [ChatConversation], _ order: [String]) -> [ChatConversation] {
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        return list.enumerated()
+            .sorted { (rank[$0.element.view] ?? Int.max, $0.offset) < (rank[$1.element.view] ?? Int.max, $1.offset) }
+            .map(\.element)
+    }
+
     /// The agents you have talked with, the newest talk first.
     static func agentConversations(agents: [ChatAgent], activity: [String: ChatActivity]) -> [ChatConversation] {
         agents.filter { activity[agentView($0.id)] != nil }
@@ -150,8 +158,11 @@ final class ChatStore: ObservableObject {
 
     // MARK: The list
 
+    /// In the order the person dragged them into (on the web); the rest
+    /// follow in the team's order.
     var channels: [ChatConversation] {
-        businesses.map { ChatConversation(kind: .channel, view: "b:\($0.slug)", name: $0.name, member: nil, isPrivate: $0.isPrivate == true) }
+        let list = businesses.map { ChatConversation(kind: .channel, view: "b:\($0.slug)", name: $0.name, member: nil, isPrivate: $0.isPrivate == true) }
+        return ChatConversation.inOrder(list, sidebar.order ?? [])
     }
     /// Group DMs, named by their people, newest talk first.
     var groupConversations: [ChatConversation] {
@@ -167,6 +178,19 @@ final class ChatStore: ObservableObject {
         return URL(string: e.url)
     }
     var baseURL: URL? { base }
+
+    /// A link to one message, the same the web copies: it opens where the
+    /// message is, for whoever can read it, in the workspace it was said in.
+    func messageLink(_ m: ChatMessage) async -> URL? {
+        guard let base, let web = await ChatJamLink.webURL(base: base) else { return nil }
+        return Self.messageLink(web: web, messageId: m.id, orgId: orgId)
+    }
+    nonisolated static func messageLink(web: URL, messageId: String, orgId: String?) -> URL? {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        guard let id = messageId.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        let org = orgId.flatMap { $0.addingPercentEncoding(withAllowedCharacters: allowed) }.map { "/\($0)" } ?? ""
+        return URL(string: "\(web.absoluteString)/#/m/\(id)\(org)")
+    }
     var people: [ChatConversation] {
         members.filter { !$0.mine }.map { ChatConversation(kind: .person, view: "dm:\($0.ref)", name: $0.name, member: $0) }
             .sorted { (activity[$0.view]?.lastAt ?? "") > (activity[$1.view]?.lastAt ?? "") }

@@ -10,7 +10,8 @@ import { useCallback, useEffect, useState } from 'react'
 //   #/feed            the cards, whichever is first
 //   #/feed/<cardId>   this card
 //   #/list            the same cards as a list
-//   #/m/<messageId>   one message in the list, for whoever can read it
+//   #/m/<messageId>[/<orgId>]   one message in the list, for whoever can read
+//                     it — in the workspace it was said in, switched to
 //   #/jam/<view>      a conversation's Jam, joined — what the phone app opens
 //   #/c/<view>        a conversation, opened in the list — `ag:<id>` is one with an agent
 //   #/history … #/tools … #/you … #/team … #/insights … #/plans … #/notifications
@@ -32,6 +33,8 @@ export interface Route {
   join: string | null
   /// A message, from "Copy link": the list finds where it is for you.
   messageId?: string | null
+  /// The workspace that message is in, when the link says.
+  messageOrg?: string | null
   /// A conversation (as this person names it) whose Jam to join.
   jamView?: string | null
   /// A conversation (as this person names it) to open in the list.
@@ -62,7 +65,10 @@ export function parseRoute(hash: string): Route {
   if (head === 'm') {
     let id = rest[0] || ''
     try { id = decodeURIComponent(id) } catch { /* as written */ }
-    return { screen: null, mode: 'classic', cardId: null, join: null, messageId: /^[\w-]{1,80}$/.test(id) ? id : null }
+    let org = rest[1] || ''
+    try { org = decodeURIComponent(org) } catch { /* as written */ }
+    const messageId = /^[\w-]{1,80}$/.test(id) ? id : null
+    return { screen: null, mode: 'classic', cardId: null, join: null, messageId, messageOrg: messageId && /^[\w:.@|+-]{1,160}$/.test(org) ? org : null }
   }
   if (head === 'jam') {
     let view = rest.join('/')
@@ -89,6 +95,10 @@ export function hashForMode(mode: Mode): string { return mode === 'classic' ? '#
 /// A conversation, opened in the list: `#/c/ag%3A<id>` for one with an agent.
 export function hashForView(view: string): string { return `#/c/${encodeURIComponent(view)}` }
 export function hashForJoin(code: string): string { return `#/join/${encodeURIComponent(code)}` }
+/// A message, to paste anywhere: opens where it is, in its workspace.
+export function hashForMessage(messageId: string, orgId?: string | null): string {
+  return `#/m/${encodeURIComponent(messageId)}${orgId ? `/${encodeURIComponent(orgId)}` : ''}`
+}
 
 function currentHash(): string {
   return typeof location !== 'undefined' ? location.hash : ''

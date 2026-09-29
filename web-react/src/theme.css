@@ -940,6 +940,9 @@
   .hist-pane .hist-undo { margin-right: 8px; margin-bottom: 8px; }
 }
 
+/* Reached from the rail's own tabs above a phone's width: not twice. */
+@media (min-width: 720px) { .pf-ws .row.phone-only { display: none; } }
+
 /* ---- You, on a laptop ----
    Who you are and where to go on the left, kept in view; what you set on
    the right. On a phone it is one column in the order it always was. */
@@ -960,13 +963,25 @@
   .pf-head .profile-head b { font-size: 22px; }
   .pf-head .profile-head span { word-break: break-all; }
   .shell .pf-stats .profile-stats { border-radius: 0 0 18px 18px; margin: 0 0 18px; }
-  .pf-ws .rows .row-sub { display: none; }
-  .pf-ws .rows .row { min-height: 0; padding-top: 10px; padding-bottom: 10px; }
+  /* Where to go, as the Tools studio lists its pages: a quiet list under
+     small group names, not a stack of cards. */
+  .pf-ws .rows-title { margin: 18px 0 6px; padding: 0 10px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .pf-ws .rows { background: none; border: none; box-shadow: none; border-radius: 0; overflow: visible; display: flex; flex-direction: column; gap: 2px; }
+  .pf-ws .rows .row { min-height: 0; height: 34px; padding: 0 10px; gap: 8px; border: none; border-radius: 8px; background: none; font-size: 13.5px; font-weight: 500; }
+  .pf-ws .rows .row:hover { background: rgba(0, 0, 0, 0.05); }
+  .pf-ws .rows .row-sub, .pf-ws .rows .row-value, .pf-ws .rows .row-chevron { display: none; }
+  .pf-ws .rows .row-icon { width: 18px; height: 18px; background: none; border: none; }
+  .pf-ws .rows .row-icon svg { width: 15px; height: 15px; }
+  .pf-ws .rows .row.static { height: auto; padding: 6px 10px; gap: 8px; }
   .pf-main-first, .profile-main > .pf-sec:first-child .rows-title:first-child { margin-top: 0; }
 }
 @media (min-width: 1024px) and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .pf-head .profile-head { background: #1a1a1a; border-color: #2a2a2a; }
 }
+@media (min-width: 1024px) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pf-ws .rows .row:hover { background: rgba(255, 255, 255, 0.06); }
+}
+@media (min-width: 1024px) { :root[data-theme="dark"] .pf-ws .rows .row:hover { background: rgba(255, 255, 255, 0.06); } }
 @media (min-width: 1024px) { :root[data-theme="dark"] .pf-head .profile-head { background: #1a1a1a; border-color: #2a2a2a; } }
 
 /* Status and away, on You. */
