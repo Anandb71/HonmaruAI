@@ -6,7 +6,7 @@
 // short), never by the token: the list is read in a browser, and a token in
 // it would be a way in.
 
-import { getSession, isMember, getUserByGithubId } from "./db.js";
+import { getSession, isMember, getUserByGithubId, primaryOrgId } from "./db.js";
 import { ROLE_RANK, sha256Hex } from "./auth.js";
 import { audit, auditEverywhere, clientOf, person } from "./audit.js";
 import { listMembers } from "./team.js";
@@ -85,16 +85,59 @@ export async function signedIn(env, request, token, githubId, method) {
     const { domainJoin } = await import("./domains.js");
     await domainJoin(env, githubId, { via: method === "sso" ? "sso" : "domain" }).catch((err) => console.error("domain join failed", err?.message || err));
   }
-  await auditEverywhere(env, request, githubId, { action: "auth.login", actor: person(user), details: { method } });
+  // Where from (IP, device) only in the workspace the sign-in opens — its
+  // identity provider's, or the one a sign-in lands in; the others learn
+  // that it happened.
+  const row = await env.DB.prepare("SELECT sso_org_id FROM sessions WHERE token = ?1").bind(token).first().catch(() => null);
+  const home = row?.sso_org_id || (await primaryOrgId(env.DB, githubId).catch(() => null));
+  await auditEverywhere(env, request, githubId, { action: "auth.login", actor: person(user), details: { method } }, { home });
 }
 
-/// Every live session of one account, the one asking first.
-export async function sessionsOf(db, githubId, currentToken = null) {
+// ---- A session in one workspace ----
+//
+// A session is the account's and opens every workspace the person is in.
+// One workspace sees, and can end, only its own part of it: the sessions
+// used there, signed out there — the person stays signed in everywhere else.
+
+const SEEN_EVERY_MS = 5 * 60 * 1000;
+
+/// Signed out of this workspace, by its admin or its rules.
+export async function endedHere(db, token, orgId) {
+  if (!token || !orgId) return false;
+  const row = await db.prepare("SELECT last_seen_at, ended_at FROM session_workspaces WHERE token = ?1 AND org_id = ?2").bind(token, orgId).first().catch(() => null);
+  if (row?.ended_at) return true;
+  // Used here: noted, at most every few minutes.
+  if (!row || Date.now() - Date.parse(row.last_seen_at) > SEEN_EVERY_MS) {
+    await db.prepare(
+      `INSERT INTO session_workspaces (token, org_id, last_seen_at) VALUES (?1, ?2, ?3)
+       ON CONFLICT(token, org_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`
+    ).bind(token, orgId, new Date().toISOString()).run().catch(() => {});
+  }
+  return false;
+}
+
+/// Sign these sessions out of one workspace only.
+export async function endHere(db, orgId, tokens) {
+  const now = new Date().toISOString();
+  const list = [...new Set(tokens.filter(Boolean))];
+  if (!list.length) return 0;
+  await db.batch(list.map((t) => db.prepare(
+    `INSERT INTO session_workspaces (token, org_id, last_seen_at, ended_at) VALUES (?1, ?2, ?3, ?3)
+     ON CONFLICT(token, org_id) DO UPDATE SET ended_at = COALESCE(session_workspaces.ended_at, excluded.ended_at)`
+  ).bind(t, orgId, now)));
+  return list.length;
+}
+
+/// Every live session of one account, the one asking first — or, for a
+/// workspace's admin (`orgId`), only those used in that workspace and not
+/// signed out of it.
+export async function sessionsOf(db, githubId, currentToken = null, { orgId = null } = {}) {
   const { results } = await db.prepare(
-    `SELECT token, client, user_agent, place, created_at, last_seen_at FROM sessions
-      WHERE github_id = ?1 AND (expires_at IS NULL OR expires_at > ?2)
-      ORDER BY COALESCE(last_seen_at, created_at) DESC`
-  ).bind(String(githubId), new Date().toISOString()).all();
+    `SELECT s.token, s.client, s.user_agent, s.place, s.created_at, s.last_seen_at FROM sessions s
+      WHERE s.github_id = ?1 AND (s.expires_at IS NULL OR s.expires_at > ?2)
+        ${orgId ? "AND EXISTS (SELECT 1 FROM session_workspaces w WHERE w.token = s.token AND w.org_id = ?3 AND w.ended_at IS NULL)" : ""}
+      ORDER BY COALESCE(s.last_seen_at, s.created_at) DESC`
+  ).bind(...[String(githubId), new Date().toISOString(), ...(orgId ? [orgId] : [])]).all();
   const out = [];
   for (const r of results || []) {
     out.push({
@@ -181,7 +224,8 @@ export async function handleSessions(request, env, url) {
       return json({ message: "Only an admin can see or end someone else's sessions." }, 403);
     }
     if (request.method === "GET") {
-      const list = await sessionsOf(env.DB, target.userId, token);
+      // Someone else's: only what they use here — nothing of their other workspaces.
+      const list = await sessionsOf(env.DB, target.userId, token, self ? {} : { orgId });
       return json({ sessions: list.map(({ ref: r, ...s }) => ({ ...s })) });
     }
     if (request.method === "DELETE") {
@@ -190,8 +234,16 @@ export async function handleSessions(request, env, url) {
         const again = await reauthDenial(env, session, orgId, { owner: mine === "owner" });
         if (again) return json(again.body, again.status);
       }
-      const ended = await endSessions(env.DB, target.userId, self ? { keep: token } : {});
-      await audit(env, request, { orgId, action: "auth.session_revoked", actor: person(user), entity: { type: "user", id: target.login, name: target.name }, details: { count: ended, everywhere: true } });
+      // Yours: every other session of the account. Someone else's: signed out
+      // of this workspace, every session they have — their other workspaces
+      // are not this admin's to end.
+      let ended;
+      if (self) ended = await endSessions(env.DB, target.userId, { keep: token });
+      else {
+        const { results } = await env.DB.prepare("SELECT token FROM sessions WHERE github_id = ?1").bind(String(target.userId)).all();
+        ended = await endHere(env.DB, orgId, (results || []).map((r) => r.token));
+      }
+      await audit(env, request, { orgId, action: "auth.session_revoked", actor: person(user), entity: { type: "user", id: target.login, name: target.name }, details: { count: ended, everywhere: self } });
       // And, if asked, their link to this workspace's identity provider:
       // the next SSO sign-in has to match them afresh.
       if (!self && body.unlinkSso === true) {

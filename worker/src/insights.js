@@ -1,3 +1,4 @@
+import { NOT_PERSONAL_SQL } from "./access.js";
 import { aiSpend } from "./ledger.js";
 // What the team can learn from its own decisions, and what the router can
 // learn from the team.
@@ -157,7 +158,7 @@ export async function recentDecisions(db, orgId, { limit = 12 } = {}) {
   const { results } = await db
     .prepare(
       `SELECT recipient_user_id, sender_user_id, decided_at, data
-         FROM cards WHERE org_id = ?1 AND decided_at IS NOT NULL
+         FROM cards WHERE org_id = ?1 AND decided_at IS NOT NULL AND ${NOT_PERSONAL_SQL}
         ORDER BY decided_at DESC LIMIT ?2`
     )
     .bind(orgId, Math.max(1, Math.min(Number(limit) || 12, 30)))
@@ -189,7 +190,7 @@ export async function exportGolden(db, orgId, { limit = 200 } = {}) {
               f.verdict, f.reason, f.note
          FROM cards c
          LEFT JOIN card_feedback f ON f.org_id = c.org_id AND f.card_id = c.card_id
-        WHERE c.org_id = ?1
+        WHERE c.org_id = ?1 AND ${NOT_PERSONAL_SQL}
         ORDER BY c.created_at DESC LIMIT ?2`
     )
     .bind(orgId, Math.max(1, Math.min(Number(limit) || 200, 1000)))
@@ -234,7 +235,7 @@ export async function searchDecisions(db, orgId, query, { limit = 8 } = {}) {
   const { results } = await db
     .prepare(
       `SELECT recipient_user_id, decided_at, data FROM cards
-        WHERE org_id = ?1 AND (${clauses})
+        WHERE org_id = ?1 AND (${clauses}) AND ${NOT_PERSONAL_SQL}
         ORDER BY COALESCE(decided_at, created_at) DESC LIMIT ?${words.length + 2}`
     )
     .bind(orgId, ...words.map((w) => `%${w}%`), Math.max(1, Math.min(Number(limit) || 8, 20)))

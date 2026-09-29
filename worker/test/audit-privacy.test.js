@@ -152,3 +152,20 @@ test("no route puts a name or an address into an entry's details", async () => {
     for (const secret of ["Aya Ito", "aya@corp.jp", "Toru Tanaka", "toru@corp.jp", "@corp.jp"]) expect(details).not.toContain(secret);
   }
 });
+
+test("an event written in every workspace keeps where it came from in one", async () => {
+  const { auditEverywhere } = await import("../src/audit.js");
+  const { upsertUser, upsertMembership } = await import("../src/db.js");
+  await upsertUser(env.DB, { githubId: "8801", login: "roamer", name: "Roamer", avatarUrl: null, locale: "en" });
+  await upsertMembership(env.DB, "team:home", "8801", "member");
+  await upsertMembership(env.DB, "team:elsewhere", "8801", "member");
+  const req = new Request("https://x", { headers: { "cf-connecting-ip": "198.51.100.4", "cf-ipcountry": "JP", "user-agent": "Roamer's laptop" } });
+  await auditEverywhere(env, req, "8801", { action: "auth.login", actor: { type: "user", id: "roamer", name: "Roamer" } }, { home: "team:home" });
+  const { readAudit } = await import("../src/audit.js");
+  const login = async (org) => (await readAudit(env.DB, org)).entries.find((e) => e.action === "auth.login");
+  expect(await login("team:elsewhere")).toBeTruthy();
+  // Where from is written in the one workspace only (the IP and device are
+  // sealed under the person's key there; the country is plain).
+  expect((await login("team:elsewhere")).context?.country || null).toBeNull();
+  expect((await login("team:home")).context?.country).toBe("JP");
+});

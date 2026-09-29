@@ -576,8 +576,9 @@ async function endNonSsoSessions(env, orgId, conns) {
   for (const s of results || []) {
     if (!conns.some((c) => covers(c, s.email))) continue;
     if (s.auth_method === "sso" && s.sso_org_id === orgId) continue;
-    await env.DB.prepare("DELETE FROM sessions WHERE token = ?1").bind(s.token).run();
-    ended += 1;
+    // Out of this workspace, not out of the others the account is in.
+    const { endHere } = await import("./sessions.js");
+    ended += await endHere(env.DB, orgId, [s.token]);
   }
   return ended;
 }

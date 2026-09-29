@@ -108,12 +108,15 @@ final class PushService: NSObject, ObservableObject {
         }
     }
 
-    nonisolated static func clearDelivered(channel: String, parentId: String?) {
+    /// A conversation read elsewhere: its notifications, in that workspace
+    /// only — two teams' #general are different conversations.
+    nonisolated static func clearDelivered(channel: String, parentId: String?, orgId: String? = nil) {
         let center = UNUserNotificationCenter.current()
         center.getDeliveredNotifications { list in
             let ids = list.filter { n in
                 let info = n.request.content.userInfo
-                guard info["kind"] as? String == "message", (info["channel"] as? String ?? n.request.content.threadIdentifier) == channel else { return false }
+                guard info["kind"] as? String == "message", (info["channel"] as? String) == channel else { return false }
+                if let orgId, let theirs = info["orgId"] as? String, theirs != orgId { return false }
                 let reply = info["parentId"] as? String
                 return parentId == nil ? (reply == nil || reply?.isEmpty == true) : reply == parentId
             }.map(\.request.identifier)

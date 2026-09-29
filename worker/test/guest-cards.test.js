@@ -29,6 +29,7 @@ beforeEach(async () => {
   await card("mine", { recipientUserID: "guest", senderUserID: "owner" });
   await card("team", { recipientUserID: "member", senderUserID: "owner" });
   await card("board", { recipientUserID: "owner", senderUserID: "owner", business: "board" });
+  await card("mail", { recipientUserID: "member", senderUserID: "member", sourceApp: "Gmail", summary: "Payslip from the bank" });
 });
 
 test("a guest opens the cards they are on and nobody else's", async () => {
@@ -50,4 +51,14 @@ test("a private channel's card is its members' and the two on it", async () => {
   expect((await get(q("/cards/team"), member)).status).toBe(200);
   const hits = (await (await get(q("/search?q=Budget"), member)).json()).hits.map((h) => h.id).sort();
   expect(hits).toEqual(["mine", "team"]);
+});
+
+test("a card from someone's own mail is theirs: nobody else opens, finds or records it", async () => {
+  expect((await get(q("/cards/mail"), member)).status).toBe(200);
+  expect((await get(q("/cards/mail"), owner)).status).toBe(404);
+  expect((await get(q("/cards/mail/comments"), owner)).status).toBe(404);
+  const hits = (await (await get(q("/search?q=Budget"), owner)).json()).hits.map((h) => h.id);
+  expect(hits).not.toContain("mail");
+  expect(JSON.stringify(await (await get(q("/record"), owner)).json())).not.toContain("Budget mail");
+  expect(JSON.stringify(await (await get(q("/eval/export"), owner)).json())).not.toContain("Payslip");
 });

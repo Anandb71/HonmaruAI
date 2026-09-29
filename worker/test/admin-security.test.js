@@ -76,7 +76,7 @@ test("where you are signed in: each device by name, one signed out, then all the
   expect(log.results.map((r) => r.action)).toEqual(["auth.session_revoked", "auth.logout"]);
 });
 
-test("an admin signs a member out everywhere; a member cannot do it to anyone", async () => {
+test("an admin signs a member out of this workspace; a member cannot do it to anyone", async () => {
   const members = await (await call(`/members?${q({ orgId: ORG })}`, toru)).json();
   const mikaRef = members.members.find((m) => m.name === "Mika").ref;
   const toruRef = members.members.find((m) => m.name === "Toru").ref;
@@ -85,7 +85,14 @@ test("an admin signs a member out everywhere; a member cannot do it to anyone", 
   expect(seen.sessions).toHaveLength(1);
   expect(seen.sessions[0].ref).toBeUndefined();
   expect((await (await call("/members/sessions", toru, { method: "DELETE", body: { orgId: ORG, ref: mikaRef } })).json()).ended).toBe(1);
-  expect((await call("/sessions", mika)).status).toBe(401);
+  // Out of this workspace; the account itself, and any other workspace, are
+  // not this admin's to end.
+  const out = await call(`/members?${q({ orgId: ORG })}`, mika);
+  expect(out.status).toBe(401);
+  expect((await out.json()).code).toBe("session-policy");
+  expect((await call("/sessions", mika)).status).toBe(200);
+  // And what the admin sees of them now is nothing: no session used here.
+  expect((await (await call(`/members/sessions?${q({ orgId: ORG, ref: mikaRef })}`, toru)).json()).sessions).toHaveLength(0);
 });
 
 test("the audit log: admins only, filtered, exported, and its chain holds", async () => {

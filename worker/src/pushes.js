@@ -7,7 +7,7 @@
 // laptop hears it once, from the laptop, and their phone stays still.
 //
 // A message is queued for each person it is for; the every-minute cron
-// sends what is due. "At the app" is `user_activity`: the web and iOS
+// sends what is due. "At the app" is `workspace_activity`, per workspace: the web and iOS
 // clients say so over the relay while someone is using them (not merely
 // while a tab is open), at most every thirty seconds.
 //
@@ -27,27 +27,29 @@ export const PUSH_DELAY_MS = 60_000;
 /// How recent "at the app" has to be for a card not to be pushed.
 export const ACTIVE_WINDOW_MS = 2 * 60_000;
 
-/// Somebody is using the app, on this client. Written at most every thirty
-/// seconds per socket by the relay.
-export async function noteActivity(db, login, client = "web", now = Date.now()) {
-  if (!login) return;
+/// Somebody is using the app, on this client, in this workspace. Written at
+/// most every thirty seconds per socket by the relay. Per workspace: being
+/// at one team's app is not seeing another's, so it neither silences that
+/// team's pushes nor counts as "@here" there.
+export async function noteActivity(db, orgId, login, client = "web", now = Date.now()) {
+  if (!login || !orgId) return;
   await db.prepare(
-    `INSERT INTO user_activity (login, last_active_at, client) VALUES (?1, ?2, ?3)
-     ON CONFLICT(login) DO UPDATE SET last_active_at = excluded.last_active_at, client = excluded.client`
-  ).bind(login, new Date(now).toISOString(), String(client).slice(0, 16)).run();
+    `INSERT INTO workspace_activity (org_id, login, last_active_at, client) VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT(org_id, login) DO UPDATE SET last_active_at = excluded.last_active_at, client = excluded.client`
+  ).bind(orgId, login, new Date(now).toISOString(), String(client).slice(0, 16)).run();
 }
 
 const HERE_WINDOW_MS = 10 * 60_000;
 
 /// Who has been at the app in the last ten minutes: "@here" reaches them.
-export async function onlineLogins(db, now = Date.now()) {
+export async function onlineLogins(db, orgId, now = Date.now()) {
   const since = new Date(now - HERE_WINDOW_MS).toISOString();
-  const { results } = await db.prepare("SELECT login FROM user_activity WHERE last_active_at >= ?1").bind(since).all().catch(() => ({ results: [] }));
+  const { results } = await db.prepare("SELECT login FROM workspace_activity WHERE org_id = ?1 AND last_active_at >= ?2").bind(orgId, since).all().catch(() => ({ results: [] }));
   return new Set((results || []).map((r) => r.login));
 }
 
-async function lastActive(db, login) {
-  const row = await db.prepare("SELECT last_active_at FROM user_activity WHERE login = ?1").bind(login).first().catch(() => null);
+async function lastActive(db, orgId, login) {
+  const row = await db.prepare("SELECT last_active_at FROM workspace_activity WHERE org_id = ?1 AND login = ?2").bind(orgId, login).first().catch(() => null);
   return row?.last_active_at || "";
 }
 
@@ -58,10 +60,11 @@ async function pushesWhileActive(db, login) {
   return Boolean(row?.push_while_active);
 }
 
-/// At the app in the last two minutes, and not asking to be pushed anyway.
-export async function isActive(db, login, now = Date.now()) {
+/// At this workspace's app in the last two minutes, and not asking to be
+/// pushed anyway.
+export async function isActive(db, orgId, login, now = Date.now()) {
   if (await pushesWhileActive(db, login)) return false;
-  const at = await lastActive(db, login);
+  const at = await lastActive(db, orgId, login);
   return Boolean(at) && now - Date.parse(at) < ACTIVE_WINDOW_MS;
 }
 
@@ -81,7 +84,7 @@ export async function recipientsOf(db, orgId, row, members) {
     for (const login of (await audienceOf(db, orgId, key)) || []) add(login, "direct");
   }
   // "@here": the people at the app in the last ten minutes.
-  const online = mentionTokens(row.body || "").some((t) => broadcastOf(t) === "here") ? await onlineLogins(db) : null;
+  const online = mentionTokens(row.body || "").some((t) => broadcastOf(t) === "here") ? await onlineLogins(db, orgId) : null;
   for (const m of resolveMentions(row.body || "", members, { online })) add(m.login, "mention");
   // Words they asked to hear about, said anywhere they can read.
   for (const k of await keywordsIn(db, orgId)) if (keywordHit(row.body, k.keywords)) add(k.login, "keyword");
@@ -152,7 +155,7 @@ export async function sendDuePushes(env, now = Date.now()) {
       // Paused, or outside the hours they set.
       if (await quietFor(db, job.login, new Date(now))) { skipped += 1; continue; }
       if (!(await pushesWhileActive(db, job.login))) {
-        const active = await lastActive(db, job.login);
+        const active = await lastActive(db, job.org_id, job.login);
         if (active && active >= msg.created_at) { skipped += 1; continue; }
       }
       if (!membersOf.has(job.org_id)) membersOf.set(job.org_id, await listMembers(db, job.org_id, null));
@@ -257,7 +260,8 @@ async function pushMessage(env, login, { title, body, orgId, channel, messageId,
       const result = await sendPush(env, {
         deviceToken: device.device_token,
         collapseId: messageId,
-        payload: { aps: { alert: { title, body }, sound: "default", "thread-id": channel }, kind: "message", orgId, channel, messageId, parentId },
+        // Grouped by workspace and conversation: two teams' #general are not one thread.
+        payload: { aps: { alert: { title, body }, sound: "default", "thread-id": `${orgId}|${channel}` }, kind: "message", orgId, channel, messageId, parentId },
       });
       if (result.ok) delivered += 1;
       else if (isDeadToken(result)) await removeDevice(env.DB, device.device_token);
@@ -268,7 +272,7 @@ async function pushMessage(env, login, { title, body, orgId, channel, messageId,
     for (const subscription of await subscriptionsForLogin(env.DB, login)) {
       const result = await sendWebPush(env, {
         subscription, topic: messageId.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32),
-        payload: { title, body, kind: "message", tag: channel, orgId, channel, messageId, ...(base ? { url: `${base}/#/m/${encodeURIComponent(messageId)}` } : {}) },
+        payload: { title, body, kind: "message", tag: `${orgId}|${channel}`, orgId, channel, messageId, ...(base ? { url: `${base}/#/m/${encodeURIComponent(messageId)}/${encodeURIComponent(orgId)}` } : {}) },
       });
       if (result.ok) delivered += 1;
       else if (isDeadSubscription(result)) await removeSubscription(env.DB, subscription.endpoint);

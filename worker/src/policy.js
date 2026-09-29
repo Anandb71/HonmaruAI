@@ -12,7 +12,7 @@
 import { getSession, getUserByGithubId, isMember } from "./db.js";
 import { audit, person } from "./audit.js";
 import { allowed } from "./permissions.js";
-import { sessionRef, endSessions } from "./sessions.js";
+import { endedHere, endHere } from "./sessions.js";
 import { hashPassword, safeEqual } from "./auth.js";
 
 /// Each rule, the range it may take, and what it is called in the API.
@@ -102,6 +102,11 @@ export async function policyDenial(env, session, orgId) {
   const { ipDenial } = await import("./governance.js");
   const offNetwork = await ipDenial(env, orgId, currentIp());
   if (offNetwork) return offNetwork;
+  // Signed out of this workspace (by its admin, or its rules), whatever
+  // the session may still open elsewhere.
+  if (await endedHere(env.DB, session.token, orgId)) {
+    return { status: 401, body: { message: "This workspace asks you to sign in again.", code: "session-policy", orgId, rule: "ended" } };
+  }
   const policy = await sessionPolicy(env.DB, orgId);
   const rule = brokenRule(policy, session);
   if (!rule) return null;
@@ -155,8 +160,8 @@ export async function savePolicy(db, orgId, input, updatedBy) {
   return { row };
 }
 
-/// End, now, every session of this workspace's people that its rules have
-/// outgrown. Their other workspaces lose them too: a session is one thing.
+/// End, now, in this workspace, every session of its people that its rules
+/// have outgrown. Their other workspaces keep them: those rules are not these.
 export async function applyPolicyNow(env, orgId) {
   const policy = await sessionPolicy(env.DB, orgId);
   if (!policy) return 0;
@@ -164,12 +169,7 @@ export async function applyPolicyNow(env, orgId) {
     `SELECT s.token, s.github_id, s.created_at, s.last_seen_at, s.client, s.longest_idle_ms FROM sessions s
        JOIN memberships m ON m.user_github_id = s.github_id AND m.org_id = ?1`
   ).bind(orgId).all();
-  let ended = 0;
-  for (const s of results || []) {
-    if (!brokenRule(policy, s)) continue;
-    ended += await endSessions(env.DB, s.github_id, { refs: [await sessionRef(s.token)] });
-  }
-  return ended;
+  return endHere(env.DB, orgId, (results || []).filter((s) => brokenRule(policy, s)).map((s) => s.token));
 }
 
 /// GET/PUT /orgs/session-policy · POST /orgs/session-policy/apply ·
