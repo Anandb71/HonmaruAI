@@ -1538,6 +1538,28 @@ export const ClassicList: React.FC<Props> = ({
     requestAnimationFrame(() => threadComposer.current?.focus())
     markThreadRead(channel, m.id)
   }
+  /// A thread shown in Activity: loaded whole, read, and the message you
+  /// picked picked out in it.
+  const threadInActivity = useRef(false)
+  // Leaving Activity leaves its thread behind: it is not the one a
+  // conversation opened.
+  useEffect(() => {
+    if (!activityOpen && threadInActivity.current) { threadInActivity.current = false; setThread(null) }
+  }, [activityOpen])
+  const showThreadIn = async (channel: string, parentId: string, focusId: string) => {
+    const res = await fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(parentId)}`, { headers: authHeaders }).catch(() => null)
+    const data = res?.ok ? await res.json().catch(() => null) : null
+    if (!data?.parent) { setThread(null); return }
+    threadInActivity.current = true
+    setThreadDraft('')
+    setThread({ channel, parent: data.parent, replies: data.replies || [] })
+    markThreadRead(channel, parentId)
+    requestAnimationFrame(() => {
+      const id = focusId === parentId ? `thread-${focusId}` : focusId
+      const el = document.querySelector(`.slk-inbox-thread #${CSS.escape(`msg-${id}`)}`)
+      if (el) { el.scrollIntoView({ block: 'center' }); setFlash(id); setTimeout(() => setFlash(null), 1600) }
+    })
+  }
   /// Read this thread, here and on every other device: Threads stops
   /// calling it unread.
   const markThreadRead = (channel: string, parentId: string) => {
@@ -2384,8 +2406,13 @@ export const ClassicList: React.FC<Props> = ({
     const picked = (activityItems || []).find((i) => keyOf(i) === activityPick) || null
     const open = (i: ActivityItem) => {
       markActivitySeen([keyOf(i)])
-      if (wide) setActivityPick(keyOf(i))
-      else openAt({ view: i.message.channel, id: i.message.id, parentId: i.message.parentId })
+      if (wide) {
+        setActivityPick(keyOf(i))
+        // Part of a thread: the whole of it, open, beside the list.
+        const parentId = i.message.parentId || ((i.message.replyCount || 0) > 0 ? i.message.id : null)
+        if (parentId) void showThreadIn(i.message.channel, parentId, i.message.id)
+        else setThread(null)
+      } else openAt({ view: i.message.channel, id: i.message.id, parentId: i.message.parentId })
     }
     const where = (v: string) => (
       <span className="slk-note-where">
@@ -2454,9 +2481,17 @@ export const ClassicList: React.FC<Props> = ({
                   {where(picked.message.channel)}
                 </div>
                 <button type="button" className="slk-pane-feed" onClick={() => openAt({ view: picked.message.channel, id: picked.message.id, parentId: picked.message.parentId })}>
-                  {picked.message.parentId ? t('Open the thread') : t('Open in the conversation')}
+                  {t('Open in the conversation')}
                 </button>
               </header>
+              {thread && (thread.parent.id === picked.message.parentId || thread.parent.id === picked.message.id) ? (
+                <div className="slk-inbox-thread">
+                  {picked.type === 'reaction' && picked.emoji && (
+                    <p className="slk-inbox-said"><span className="slk-note-reaction big"><span><EmojiGlyph emoji={picked.emoji} /></span></span> {t('{name} reacted to your message', { name: whoOf(picked) })}</p>
+                  )}
+                  {threadBody(thread)}
+                </div>
+              ) : (
               <div className="slk-inbox-view-body">
                 {picked.type === 'reaction' && picked.emoji && (
                   <p className="slk-inbox-said"><span className="slk-note-reaction big"><span><EmojiGlyph emoji={picked.emoji} /></span></span> {t('{name} reacted to your message', { name: whoOf(picked) })}</p>
@@ -2483,6 +2518,7 @@ export const ClassicList: React.FC<Props> = ({
                   </div>
                 </article>
               </div>
+              )}
             </>
           )}
         </section>
@@ -2490,6 +2526,71 @@ export const ClassicList: React.FC<Props> = ({
     )
   }
 
+  /// A thread's messages and the box to answer in: in the pane beside a
+  /// conversation, and in Activity when what you picked is part of one.
+  const threadBody = (thread: { channel: string; parent: ChannelMessage; replies: ChannelMessage[] }) => (
+    <>
+          <div className="slk-thread-log">
+            {[thread.parent, ...thread.replies].map((m, i) => (
+              <React.Fragment key={m.id}>
+                {block(m.id, {
+                  joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
+                  name: whoSaid(m),
+                  face: m.kind !== 'ai' ? faceOfMessage(m) : null,
+                  msgId: i === 0 ? `thread-${m.id}` : m.id,
+                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true),
+                }, (
+                  <>
+                    {words(thread.channel, m)}
+                    {m.cardId && cardsById.get(m.cardId) && attachment(cardsById.get(m.cardId)!)}
+                    {underneath(thread.channel, m, true)}
+                  </>
+                ))}
+                {i === 0 && (
+                  <div className="slk-thread-count" role="separator">
+                    <span>{thread.replies.length === 1 ? t('1 reply') : t('{n} replies', { n: thread.replies.length })}</span>
+                  </div>
+                )}
+              </React.Fragment>
+            ))}
+            {aiSteps(thinking[thread.channel])}
+            {agentLines(thread.channel, { parentId: thread.parent.id })}
+          </div>
+          <form className="slk-composer thread" onSubmit={(e) => { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }}>
+            <PendingUploads items={threadUploads.items} onRemove={threadUploads.remove} />
+            {threadHl.layer}
+            <textarea
+              ref={threadComposer}
+              onPaste={(e) => { const files = [...e.clipboardData.files]; if (files.length) { e.preventDefault(); threadUploads.add(files, thread.channel) } }}
+              className={`slk-input${threadHl.active ? ' has-mentions' : ''}`}
+              value={threadDraft}
+              rows={1}
+              maxLength={4000}
+              placeholder={t('Reply… — @AI to ask the AI')}
+              aria-label={t('Reply in thread')}
+              onChange={(e) => { setThreadDraft(e.target.value); threadMention.track() }}
+              onKeyUp={threadMention.track}
+              onClick={threadMention.track}
+              onKeyDown={(e) => {
+                if (threadMention.onKeyDown(e)) return
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
+              }}
+              disabled={sending}
+            />
+            {threadMention.menu}
+            <div className="slk-composer-bar">
+              <button type="button" className="slk-attach" onClick={() => threadAttachInput.current?.click()} aria-label={t('Attach files')} title={t('Attach files')}><Icon name="paperclip" size={17} /></button>
+              <input ref={threadAttachInput} type="file" multiple hidden onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) threadUploads.add(files, thread.channel) }} />
+              <FormatBar target={threadComposer} value={threadDraft} set={setThreadDraft} />
+              <span className="slk-composer-hint" />
+              <button type="submit" className="slk-send" disabled={sending || threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
+                <Icon name="send" size={16} />
+              </button>
+            </div>
+          </form>
+    </>
+  )
   /// How many people a conversation has: a public channel is everyone.
   const headCount = (th: Thread) => th.kind === 'group' ? (th.refs || []).length + 1
     : th.kind === 'channel' ? (th.private ? (th.memberCount || 1) : members.length) : 2
@@ -3509,7 +3610,7 @@ export const ClassicList: React.FC<Props> = ({
             />
           )
       )}
-      {!detail && thread && (
+      {!detail && thread && !(activityOpen && wide) && (
         <aside className="slk-pane slk-thread-pane" aria-label={t('Thread')}>
           <header className="slk-pane-head">
             <button className="slk-back pane" onClick={() => setThread(null)} aria-label={t('Back')}><Icon name="chevron-left" size={20} /></button>
@@ -3517,65 +3618,7 @@ export const ClassicList: React.FC<Props> = ({
             {current && <span className="slk-pane-where">{current.kind === 'channel' ? `#${current.name}` : current.name}</span>}
             <button className="slk-pane-close" onClick={() => setThread(null)} aria-label={t('Close')}><Icon name="x" size={16} /></button>
           </header>
-          <div className="slk-thread-log">
-            {[thread.parent, ...thread.replies].map((m, i) => (
-              <React.Fragment key={m.id}>
-                {block(m.id, {
-                  joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
-                  name: whoSaid(m),
-                  face: m.kind !== 'ai' ? faceOfMessage(m) : null,
-                  msgId: i === 0 ? `thread-${m.id}` : m.id,
-                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true),
-                }, (
-                  <>
-                    {words(thread.channel, m)}
-                    {m.cardId && cardsById.get(m.cardId) && attachment(cardsById.get(m.cardId)!)}
-                    {underneath(thread.channel, m, true)}
-                  </>
-                ))}
-                {i === 0 && (
-                  <div className="slk-thread-count" role="separator">
-                    <span>{thread.replies.length === 1 ? t('1 reply') : t('{n} replies', { n: thread.replies.length })}</span>
-                  </div>
-                )}
-              </React.Fragment>
-            ))}
-            {aiSteps(thinking[thread.channel])}
-            {agentLines(thread.channel, { parentId: thread.parent.id })}
-          </div>
-          <form className="slk-composer thread" onSubmit={(e) => { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }}>
-            <PendingUploads items={threadUploads.items} onRemove={threadUploads.remove} />
-            {threadHl.layer}
-            <textarea
-              ref={threadComposer}
-              onPaste={(e) => { const files = [...e.clipboardData.files]; if (files.length) { e.preventDefault(); threadUploads.add(files, thread.channel) } }}
-              className={`slk-input${threadHl.active ? ' has-mentions' : ''}`}
-              value={threadDraft}
-              rows={1}
-              maxLength={4000}
-              placeholder={t('Reply… — @AI to ask the AI')}
-              aria-label={t('Reply in thread')}
-              onChange={(e) => { setThreadDraft(e.target.value); threadMention.track() }}
-              onKeyUp={threadMention.track}
-              onClick={threadMention.track}
-              onKeyDown={(e) => {
-                if (threadMention.onKeyDown(e)) return
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
-              }}
-              disabled={sending}
-            />
-            {threadMention.menu}
-            <div className="slk-composer-bar">
-              <button type="button" className="slk-attach" onClick={() => threadAttachInput.current?.click()} aria-label={t('Attach files')} title={t('Attach files')}><Icon name="paperclip" size={17} /></button>
-              <input ref={threadAttachInput} type="file" multiple hidden onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) threadUploads.add(files, thread.channel) }} />
-              <FormatBar target={threadComposer} value={threadDraft} set={setThreadDraft} />
-              <span className="slk-composer-hint" />
-              <button type="submit" className="slk-send" disabled={sending || threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
-                <Icon name="send" size={16} />
-              </button>
-            </div>
-          </form>
+          {threadBody(thread)}
         </aside>
       )}
       {inviting && (

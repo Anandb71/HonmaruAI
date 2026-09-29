@@ -77,7 +77,7 @@ export interface DailyReport {
   /// The day it covers, in the owner's time zone: "2026-09-24".
   date: string
   /// `expired`: a newer draft from the same routine replaced it unposted.
-  status: 'draft' | 'posting' | 'posted' | 'expired'
+  status: 'draft' | 'posting' | 'posted' | 'expired' | 'discarded'
   /// The draft, or — once posted — the words as posted.
   text: string
   messageId?: string
