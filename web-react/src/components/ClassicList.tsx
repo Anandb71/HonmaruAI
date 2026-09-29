@@ -3,6 +3,7 @@ import { BookmarksBar } from './BookmarksBar'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { awaitsPost } from '../utils/automation'
+import { hashForMessage } from '../utils/route'
 import type { DecisionCard, Business, ChannelMessage } from '../types/card'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
@@ -1449,7 +1450,7 @@ export const ClassicList: React.FC<Props> = ({
   /// Forward into another conversation. From a closed one only a link goes.
   const isClosed = (view: string) => view.startsWith('dm:') || view.startsWith('g:') || view.startsWith('ag:') || Boolean(everything.find((x) => x.view === view)?.private)
   const forwardTo = async (from: string, m: ChannelMessage, to: string, comment: string) => {
-    const link = `${location.origin}${location.pathname}#/m/${encodeURIComponent(m.id)}`
+    const link = `${location.origin}${location.pathname}${hashForMessage(m.id, api.orgId)}`
     const src = everything.find((x) => x.view === from)
     const who = m.kind === 'ai' ? t('Your AI') : (m.authorName || t('a teammate'))
     const quoted = m.body ? m.body.slice(0, 600).split('\n').map((l) => `> ${l}`).join('\n') : '> 📎'
@@ -1632,7 +1633,11 @@ export const ClassicList: React.FC<Props> = ({
     pendingJump.current = null
     if (j.parentId) {
       const parent = list.find((m) => m.id === j.parentId) || ({ id: j.parentId, channel: j.view, kind: 'message', body: '', authorName: null, authorRef: null, mine: false, cardId: null, createdAt: '' } as ChannelMessage)
-      void openThread(j.view, parent)
+      // The reply itself, found in the thread once it has loaded.
+      void openThread(j.view, parent).then(() => requestAnimationFrame(() => {
+        const el = document.querySelector(`.slk-thread-pane #${CSS.escape(`msg-${j.id}`)}`)
+        if (el) { el.scrollIntoView({ block: 'center' }); setFlash(j.id); setTimeout(() => setFlash(null), 1600) }
+      }))
     } else {
       requestAnimationFrame(() => jumpTo(j.id))
     }
@@ -2255,7 +2260,8 @@ export const ClassicList: React.FC<Props> = ({
   /// A link to one message that opens it for anyone who can read it — the
   /// message's id, not the conversation's name, which differs per reader.
   const copyLink = (m: ChannelMessage) => {
-    const url = `${location.origin}${location.pathname}#/m/${encodeURIComponent(m.id)}`
+    // With the workspace: someone in two opens it in the right one.
+    const url = `${location.origin}${location.pathname}${hashForMessage(m.id, api.orgId)}`
     void navigator.clipboard?.writeText(url).then(() => setToast(t('Link copied')), () => setToast(url))
   }
 

@@ -294,4 +294,10 @@ final class ChatTranslationTests: XCTestCase {
         XCTAssertEqual(ChatRichText.numbered("12. twelve")?.n, 12)
         XCTAssertNil(ChatRichText.numbered("1.5 million"))
     }
+
+    func testAMessageLinkIsTheWebsOwnWithItsWorkspace() {
+        let web = URL(string: "https://app.example.com")!
+        XCTAssertEqual(ChatStore.messageLink(web: web, messageId: "m-1", orgId: "personal:abc")?.absoluteString, "https://app.example.com/#/m/m-1/personal%3Aabc")
+        XCTAssertEqual(ChatStore.messageLink(web: web, messageId: "m-1", orgId: nil)?.absoluteString, "https://app.example.com/#/m/m-1")
+    }
 }

@@ -167,6 +167,19 @@ final class ChatStore: ObservableObject {
         return URL(string: e.url)
     }
     var baseURL: URL? { base }
+
+    /// A link to one message, the same the web copies: it opens where the
+    /// message is, for whoever can read it, in the workspace it was said in.
+    func messageLink(_ m: ChatMessage) async -> URL? {
+        guard let base, let web = await ChatJamLink.webURL(base: base) else { return nil }
+        return Self.messageLink(web: web, messageId: m.id, orgId: orgId)
+    }
+    nonisolated static func messageLink(web: URL, messageId: String, orgId: String?) -> URL? {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        guard let id = messageId.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        let org = orgId.flatMap { $0.addingPercentEncoding(withAllowedCharacters: allowed) }.map { "/\($0)" } ?? ""
+        return URL(string: "\(web.absoluteString)/#/m/\(id)\(org)")
+    }
     var people: [ChatConversation] {
         members.filter { !$0.mine }.map { ChatConversation(kind: .person, view: "dm:\($0.ref)", name: $0.name, member: $0) }
             .sorted { (activity[$0.view]?.lastAt ?? "") > (activity[$1.view]?.lastAt ?? "") }

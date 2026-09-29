@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseRoute, hashForJoin, hashForCard, hashForScreen, hashForView } from './route'
+import { parseRoute, hashForJoin, hashForCard, hashForScreen, hashForView, hashForMessage } from './route'
 
 // The URL says where you are, and what a link you were sent opens.
 describe('parseRoute', () => {
@@ -52,4 +52,11 @@ it('a conversation link opens the list on it — an agent’s too', () => {
   expect(parseRoute(hashForView('ag:agent_1'))).toMatchObject({ mode: 'classic', openView: 'ag:agent_1' })
   expect(parseRoute('#/c/b:kitchen').openView).toBe('b:kitchen')
   expect(parseRoute('#/c/javascript:alert(1)').openView).toBeNull()
+})
+
+it('a message link carries its workspace, and is read back with it', () => {
+  expect(hashForMessage('msg_1', 'personal:abc')).toBe('#/m/msg_1/personal%3Aabc')
+  expect(parseRoute('#/m/msg_1/personal%3Aabc')).toMatchObject({ messageId: 'msg_1', messageOrg: 'personal:abc' })
+  expect(parseRoute('#/m/msg_1')).toMatchObject({ messageId: 'msg_1', messageOrg: null })
+  expect(parseRoute('#/m/msg_1/<script>').messageOrg).toBeNull()
 })
