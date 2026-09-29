@@ -79,12 +79,29 @@ test("the relay pushes an announced card to the sockets already open", async () 
   ));
   expect(res.status).toBe(200);
 
-  // Everyone in the org sees the state change; only the person who has to
-  // decide is asked to.
+  // A card from the person's own mail is theirs: they see it and are asked;
+  // the rest of the workspace hears nothing of it.
   expect(watcher.sent.some((m) => m.includes("STATE_DELTA") && m.includes("c-from-sync"))).toBe(true);
-  expect(bystander.sent.some((m) => m.includes("STATE_DELTA"))).toBe(true);
-  expect(bystander.sent.some((m) => m.includes("TOOL_CALL_START"))).toBe(false);
   expect(watcher.sent.some((m) => m.includes("TOOL_CALL_START"))).toBe(true);
+  expect(bystander.sent).toHaveLength(0);
   // A different organization hears nothing.
   expect(otherOrg.sent).toHaveLength(0);
+
+  // A decision between two people is the room's: everyone sees the state
+  // change; only the person who has to decide is asked to.
+  await relay.fetch(new Request(
+    `https://relay.internal${ANNOUNCE_PATH}?orgId=acme%2Fweb`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cards: [{ ...CARD, id: "c-team", senderUserID: "someone-else", sourceApp: undefined }] }) }
+  ));
+  expect(bystander.sent.some((m) => m.includes("STATE_DELTA") && m.includes("c-team"))).toBe(true);
+  expect(bystander.sent.some((m) => m.includes("TOOL_CALL_START"))).toBe(false);
+  expect(otherOrg.sent).toHaveLength(0);
+});
+
+test("a personal card: the machine made it for one person from their own things", async () => {
+  const { isPersonal } = await import("../src/access.js");
+  expect(isPersonal({ recipientUserID: "a", senderUserID: "a", sourceApp: "Gmail" })).toBe(true);
+  expect(isPersonal({ recipientUserID: "a", senderUserID: "b", sourceApp: "Agent" })).toBe(false);
+  expect(isPersonal({ recipientUserID: "a", senderUserID: "a" })).toBe(false);
+  expect(isPersonal({ recipientUserID: "a", senderUserID: "b", visibility: "personal" })).toBe(true);
 });

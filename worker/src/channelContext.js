@@ -8,6 +8,7 @@
 /// Kept per channel with the time of the newest message it read, so opening
 /// the record again costs nothing until somebody says something new.
 
+import { NOT_PERSONAL_SQL } from "./access.js";
 import { providerFor } from "./orgAI.js";
 import { allowanceFor } from "./gate.js";
 import { settleUsage, noteUsage } from "./ledger.js";
@@ -49,7 +50,7 @@ async function gather(db, orgId, key, locale) {
     db.prepare("SELECT body, updated_at FROM channel_canvases WHERE org_id = ?1 AND channel = ?2").bind(orgId, key).first().catch(() => null),
     db.prepare("SELECT title, url FROM channel_bookmarks WHERE org_id = ?1 AND channel = ?2 ORDER BY position").bind(orgId, key).all().catch(() => ({ results: [] })),
     db.prepare(
-      `SELECT data FROM cards WHERE org_id = ?1 AND json_extract(data, '$.business') = ?2 ORDER BY created_at ASC LIMIT 200`
+      `SELECT data FROM cards WHERE org_id = ?1 AND json_extract(data, '$.business') = ?2 AND ${NOT_PERSONAL_SQL} ORDER BY created_at ASC LIMIT 200`
     ).bind(orgId, key.slice(2)).all().catch(() => ({ results: [] })),
   ]);
   const kept = (messages.results || []).filter((m) => m.kind !== "joined" && !skip({ ...m, channel: key })).reverse();

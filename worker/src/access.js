@@ -85,13 +85,27 @@ export function mayRead(key, access) {
   return false;
 }
 
+/// A card the machine made for one person from their own things — their
+/// mail, a connected app, a reminder, a daily draft, a proposal: the same
+/// person on both ends and an app it came from. It is theirs, not the
+/// workspace's: nobody else's feed, search, record or playbook.
+export function isPersonal(card) {
+  if (!card) return false;
+  if (card.visibility === "personal") return true;
+  return Boolean(card.sourceApp) && Boolean(card.recipientUserID) && card.recipientUserID === card.senderUserID;
+}
+
+/// The same, in SQL over the cards table : a team-wide
+/// lookup leaves these rows out.
+export const NOT_PERSONAL_SQL = "NOT (COALESCE(json_extract(data, '$.visibility'), '') = 'personal' OR (json_extract(data, '$.sourceApp') IS NOT NULL AND json_extract(data, '$.sourceApp') != '' AND recipient_user_id = sender_user_id))";
+
 /// Whether `access` lets its person see a card, over HTTP as on the socket:
 /// the two people on it always; a guest nobody else's; anyone else every card
 /// but one filed under a private channel they are not in.
 export function mayReadCard(card, access) {
   if (!card) return false;
   if (card.recipientUserID === access.login || card.senderUserID === access.login) return true;
-  if (access.guest) return false;
+  if (access.guest || isPersonal(card)) return false;
   const k = card.business ? `b:${card.business}` : null;
   return !k || !access.closed.has(k) || access.in.has(k);
 }
