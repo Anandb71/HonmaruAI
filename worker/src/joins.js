@@ -7,7 +7,8 @@
 ///
 /// And the newcomer is greeted: a direct conversation with the workspace's
 /// owner opens with the AI saying, in the newcomer's language, how the place
-/// works — channels, "@AI" for a decision, "@" for an agent, translation.
+/// works — channels, "@AI" to ask, ✦ for a decision, "@" for an agent,
+/// translation.
 
 import { postMessage } from "./channels.js";
 import { loadCopy } from "./copy.js";
