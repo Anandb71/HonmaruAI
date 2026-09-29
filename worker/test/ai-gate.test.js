@@ -181,3 +181,22 @@ test("a workspace on its own key is never metered, and the plan says so", async 
   }), ENV())).json();
   expect(status).toMatchObject({ workspaceKey: true, accessSource: "workspace", remainingToday: null });
 });
+
+test("a workspace's own key is not spent by somebody who is not signed in", async () => {
+  // A workspace id is no secret ("owner/repo"); naming one without a
+  // session must not bill that team's key.
+  const { saveAISettings } = await import("../src/orgAI.js");
+  await saveAISettings(env.DB, "team:keyed", { openaiKey: "sk-workspace-abcdefghijkl1234" }, "700");
+  let calls = 0;
+  fetchMock.get("https://api.openai.com")
+    .intercept({ path: "/v1/chat/completions", method: "POST" })
+    .reply(200, () => { calls += 1; return {}; }).persist();
+  const res = await worker.fetch(new Request("https://example.com/ai/route", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "Ask octocat to review the deploy", orgId: "team:keyed" }),
+  }), ENV());
+  expect(res.status).toBe(200);
+  expect((await res.json()).routedBy).toBe("fallback");
+  expect(calls).toBe(0);
+});

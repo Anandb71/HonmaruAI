@@ -82,12 +82,12 @@ test("an object stored before this was fussy is not served as a document", async
   });
 
   for (const type of ["text/html", "image/svg+xml"]) {
-    const res = await serveMedia("legacy", stored(type));
+    const res = await serveMedia("0f8e2c1a-3b4d-4e5f-8a9b-0c1d2e3f4a5b", stored(type));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/octet-stream");
   }
 
-  const good = await serveMedia("fine", stored("video/mp4"));
+  const good = await serveMedia("1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d", stored("video/mp4"));
   expect(good.headers.get("content-type")).toBe("video/mp4");
   // And nothing downstream may sniff its way back to a document either.
   expect(good.headers.get("x-content-type-options")).toBe("nosniff");
@@ -96,4 +96,11 @@ test("an object stored before this was fussy is not served as a document", async
 test("a missing object is still a 404", async () => {
   const res = await serveMedia("gone", { MEDIA: { get: async () => null } });
   expect(res.status).toBe(404);
+});
+
+test("only a video this route stored is served: a file, an export or an avatar in the same bucket is not", async () => {
+  const every = { MEDIA: { get: async () => ({ body: new Uint8Array([1]), httpMetadata: { contentType: "application/gzip" } }) } };
+  for (const key of ["compliance-export-0f8e2c1a-3b4d-4e5f-8a9b-0c1d2e3f4a5b", "file-f_abc123", "jam/0f8e2c1a", "user-avatar-x", "../x"]) {
+    expect((await serveMedia(key, every)).status).toBe(404);
+  }
 });
