@@ -300,4 +300,10 @@ final class ChatTranslationTests: XCTestCase {
         XCTAssertEqual(ChatStore.messageLink(web: web, messageId: "m-1", orgId: "personal:abc")?.absoluteString, "https://app.example.com/#/m/m-1/personal%3Aabc")
         XCTAssertEqual(ChatStore.messageLink(web: web, messageId: "m-1", orgId: nil)?.absoluteString, "https://app.example.com/#/m/m-1")
     }
+
+    func testChannelsFollowTheOrderDraggedOnTheWebAndTheRestKeepTheirs() {
+        let c = { (v: String) in ChatConversation(kind: .channel, view: v, name: v, member: nil) }
+        let out = ChatConversation.inOrder([c("b:a"), c("b:b"), c("b:c"), c("b:d")], ["b:c", "b:a"])
+        XCTAssertEqual(out.map(\.view), ["b:c", "b:a", "b:b", "b:d"])
+    }
 }

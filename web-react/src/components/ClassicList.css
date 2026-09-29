@@ -1413,3 +1413,14 @@
 
 /* Activity and Threads: "Mark all as read", at the right of the header. */
 .classic.slk.slk .slk-mark-all { flex: none; white-space: nowrap; margin-left: auto; }
+
+/* Dragging a conversation to a new place: the one in hand fades, and a line
+   shows where it will land. */
+.cl-row.dragging { opacity: .45; }
+.cl-row.drop-before, .cl-row.drop-after { position: relative; }
+.cl-row.drop-before::before, .cl-row.drop-after::after {
+  content: ''; position: absolute; left: 8px; right: 8px; height: 2px; border-radius: 2px; background: #1d9bd1; pointer-events: none;
+}
+.cl-row.drop-before::before { top: -1px; }
+.cl-row.drop-after::after { bottom: -1px; }
+.cl-row[draggable="true"] .cl-open { cursor: pointer; }

@@ -157,7 +157,7 @@ interface Face { name: string; url?: string | null; emoji?: string | null }
 /// A thread you are in: its first message, the last replies, how many.
 interface ThreadItem { parent: ChannelMessage; replies: ChannelMessage[]; replyCount: number; lastReplyAt: string; unread: boolean }
 /// Your sidebar's own arrangement.
-interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name: string; views: string[]; collapsed?: boolean }> }
+interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name: string; views: string[]; collapsed?: boolean }>; order?: string[] }
 /// A user group: "@handle" names everyone in it.
 interface UserGroup { handle: string; name: string; refs: string[]; createdBy: string | null }
 interface ActivityItem { key?: string; type: 'mention' | 'reply' | 'reaction' | 'keyword'; message: ChannelMessage; unread: boolean; at?: string; emoji?: string; by?: string | null; byAvatar?: string | null; keyword?: string }
@@ -299,6 +299,27 @@ export const ClassicList: React.FC<Props> = ({
     }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.sidebar) setLayout(d.sidebar) }).catch(() => {})
   }
   const isStarred = (view: string) => layout.starred.includes(view)
+  /// Your channels in the order you dragged them into; any you have not
+  /// placed follow, in the team's order.
+  const inYourOrder = (list: Thread[]) => {
+    const at = new Map((layout.order || []).map((v, i) => [v, i]))
+    return list
+      .map((th, i) => ({ th, i, rank: th.view && at.has(th.view) ? at.get(th.view)! : Number.MAX_SAFE_INTEGER }))
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
+      .map((x) => x.th)
+  }
+  // Dragging a conversation to a new place in its list.
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropAt, setDropAt] = useState<{ view: string; after: boolean } | null>(null)
+  /// The list with the dragged one moved to where it was dropped.
+  const moved = (views: string[], from: string, to: { view: string; after: boolean }) => {
+    if (from === to.view) return views
+    const rest = views.filter((v) => v !== from)
+    const i = rest.indexOf(to.view)
+    if (i < 0) return views
+    rest.splice(to.after ? i + 1 : i, 0, from)
+    return rest
+  }
   /// Not starred and in none of your sections: where it always was.
   const unplaced = (th: { view?: string }) => !th.view || (!layout.starred.includes(th.view) && !layout.sections.some((x) => x.views.includes(th.view!)))
   const toggleStar = (view: string) => saveLayout({ ...layout, starred: isStarred(view) ? layout.starred.filter((v) => v !== view) : [...layout.starred, view] })
@@ -822,11 +843,31 @@ export const ClassicList: React.FC<Props> = ({
     )
   }
 
-  const row = (thread: Thread) => {
+  const row = (thread: Thread, reorder?: (to: { view: string; after: boolean }, from: string) => void) => {
     const on = !special && current?.key === thread.key
     const hasDraft = Boolean(thread.view && draftsFor(thread.view).length)
+    const view = thread.view
+    const drop = reorder && view && dropAt?.view === view && dragging && dragging !== view ? (dropAt.after ? ' drop-after' : ' drop-before') : ''
+    const drag = reorder && view && wide ? {
+      draggable: true,
+      onDragStart: (e: React.DragEvent) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-honmaru-view', view); setDragging(view) },
+      onDragOver: (e: React.DragEvent) => {
+        if (!dragging || !e.dataTransfer.types.includes('text/x-honmaru-view')) return
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move'
+        const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        const after = e.clientY > box.top + box.height / 2
+        if (dropAt?.view !== view || dropAt.after !== after) setDropAt({ view, after })
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault()
+        const from = e.dataTransfer.getData('text/x-honmaru-view') || dragging
+        if (from && dropAt) reorder(dropAt, from)
+        setDragging(null); setDropAt(null)
+      },
+      onDragEnd: () => { setDragging(null); setDropAt(null) },
+    } : {}
     return (
-      <li key={thread.key} data-view={thread.view} className={`cl-row cl-thread${thread.unread || (thread.fresh && !on) ? ' unread' : ''}${on ? ' on' : ''}${thread.view && prefs[thread.view] === 'mute' ? ' muted' : ''}`}>
+      <li key={thread.key} data-view={thread.view} {...drag} className={`cl-row cl-thread${thread.unread || (thread.fresh && !on) ? ' unread' : ''}${on ? ' on' : ''}${thread.view && prefs[thread.view] === 'mute' ? ' muted' : ''}${dragging === view ? ' dragging' : ''}${drop}`}>
         <button className="cl-open" onClick={() => choose(thread.key)} aria-current={on ? 'true' : undefined}>
           {lead(thread, 'row')}
           <span className="cl-title">{thread.name}</span>
@@ -845,7 +886,9 @@ export const ClassicList: React.FC<Props> = ({
     )
   }
 
-  const section = (id: string, label: string, threads: Thread[], empty: string, action?: React.ReactNode, below?: React.ReactNode) => {
+  const section = (id: string, label: string, threads: Thread[], empty: string, action?: React.ReactNode, below?: React.ReactNode, reorder?: (views: string[]) => void) => {
+    const views = threads.map((th) => th.view).filter((v): v is string => Boolean(v))
+    const place = reorder ? (to: { view: string; after: boolean }, from: string) => { if (views.includes(from)) reorder(moved(views, from, to)) } : undefined
     const shut = Boolean(folded[id])
     const unread = threads.reduce((n, th) => n + th.unread, 0)
     return (
@@ -859,7 +902,7 @@ export const ClassicList: React.FC<Props> = ({
           {action}
         </h2>
         {!shut && threads.length === 0 && <p className="cl-empty">{empty}</p>}
-        {!shut && threads.length > 0 && <ul>{threads.map(row)}</ul>}
+        {!shut && threads.length > 0 && <ul>{threads.map((th) => row(th, place))}</ul>}
         {!shut && below}
       </section>
     )
@@ -3348,16 +3391,19 @@ export const ClassicList: React.FC<Props> = ({
             const starred = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
             return (
               <>
-                {starred.length > 0 && section('starred', t('Starred'), starred, '')}
+                {starred.length > 0 && section('starred', t('Starred'), starred, '', undefined, undefined, (views) => saveLayout({ ...layout, starred: views }))}
                 {layout.sections.map((x) => section(`sec:${x.id}`, x.name, x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)), t('Move a conversation here from its header.'), (
                   <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
                     <Icon name="x" size={12} />
                   </button>
-                )))}
+                ), undefined, (views) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) })))}
               </>
             )
           })()}
-          {section('channels', t('Channels'), channels.filter(unplaced), t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm)}
+          {section('channels', t('Channels'), inYourOrder(channels.filter(unplaced)), t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm,
+            // Drag to reorder: the channels shown here in their new order,
+            // then any placed elsewhere, as they were.
+            (views) => saveLayout({ ...layout, order: [...views, ...inYourOrder(channels).map((th) => th.view!).filter((v) => v && !views.includes(v))] }))}
           {section('people', t('Direct messages'), people.filter(unplaced), t('Nobody has sent you a decision yet.'))}
           {agents.length > 0 && section('agents', t('Agents'), agentConvos.filter(unplaced), t('Talk to one of your team’s agents: it answers you here.'), addAgent, agentPicker)}
           <button type="button" className="cl-add-section" onClick={() => { setSectionName(''); setAddingSection({}) }} data-add-section="1">

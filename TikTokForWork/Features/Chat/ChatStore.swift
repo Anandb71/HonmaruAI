@@ -28,6 +28,14 @@ struct ChatConversation: Identifiable, Hashable {
         ChatConversation(kind: .agent, view: agentView(a.id), name: a.name, member: nil, agent: a)
     }
 
+    /// Conversations in the order a person set; the rest keep theirs.
+    static func inOrder(_ list: [ChatConversation], _ order: [String]) -> [ChatConversation] {
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        return list.enumerated()
+            .sorted { (rank[$0.element.view] ?? Int.max, $0.offset) < (rank[$1.element.view] ?? Int.max, $1.offset) }
+            .map(\.element)
+    }
+
     /// The agents you have talked with, the newest talk first.
     static func agentConversations(agents: [ChatAgent], activity: [String: ChatActivity]) -> [ChatConversation] {
         agents.filter { activity[agentView($0.id)] != nil }
@@ -150,8 +158,11 @@ final class ChatStore: ObservableObject {
 
     // MARK: The list
 
+    /// In the order the person dragged them into (on the web); the rest
+    /// follow in the team's order.
     var channels: [ChatConversation] {
-        businesses.map { ChatConversation(kind: .channel, view: "b:\($0.slug)", name: $0.name, member: nil, isPrivate: $0.isPrivate == true) }
+        let list = businesses.map { ChatConversation(kind: .channel, view: "b:\($0.slug)", name: $0.name, member: nil, isPrivate: $0.isPrivate == true) }
+        return ChatConversation.inOrder(list, sidebar.order ?? [])
     }
     /// Group DMs, named by their people, newest talk first.
     var groupConversations: [ChatConversation] {
