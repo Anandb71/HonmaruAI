@@ -40,7 +40,15 @@ test("RATE_LIMIT_SCALE (the end-to-end run's) multiplies the allowance, at most 
   expect((await enforce(scaled, req, "ai/route")).status).toBe(429);
   const wild = requestFrom("203.0.113.10");
   const huge = { ...env, RATE_LIMIT_SCALE: "100000" };
-  for (let i = 0; i < max * 100; i += 1) await enforce(huge, wild, "ai/route");
+  // Straight to the edge of a hundredfold: thousands of calls one after
+  // another ran past the test's five seconds on a busy runner.
+  expect(await enforce(huge, wild, "ai/route")).toBeNull();
+  const set = await env.DB
+    .prepare("UPDATE rate_limits SET count = ?1 WHERE bucket = 'ai/route' AND subject = ?2")
+    .bind(max * 100 - 1, subjectFor(wild, null))
+    .run();
+  expect(set.meta.changes).toBe(1);
+  expect(await enforce(huge, wild, "ai/route")).toBeNull();
   expect((await enforce(huge, wild, "ai/route")).status).toBe(429);
 });
 
