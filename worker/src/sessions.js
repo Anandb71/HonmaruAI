@@ -255,3 +255,13 @@ export async function handleSessions(request, env, url) {
   }
   return json({ message: "not found" }, 404);
 }
+
+/// Once a day: a workspace's part of sessions that no longer exist, and
+/// presence nobody has had for a month. Rows that only ever grow otherwise.
+export async function pruneSessionTraces(db, { now = Date.now() } = {}) {
+  const month = new Date(now - 30 * 86400000).toISOString();
+  await db.batch([
+    db.prepare("DELETE FROM session_workspaces WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.token = session_workspaces.token)"),
+    db.prepare("DELETE FROM workspace_activity WHERE last_active_at < ?1").bind(month),
+  ]);
+}

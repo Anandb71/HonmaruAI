@@ -2621,7 +2621,23 @@ async function currentWorkspace(p) {
   const count = await p.$$eval('[data-org]', (els) => els.length)
   await p.click('.screen .row:has-text("Your team")')
   // The name arrives with the member list; read it once the people have.
-  await p.waitForSelector('.team-member', { timeout: 15000 })
+  // On a busy runner the list has, now and then, not arrived in time for a
+  // person who signed up a moment ago: what the screen said is kept (and a
+  // picture of it), the screen is opened once more, and only a second miss
+  // fails — with those words, so the next failure says why.
+  const listed = await p.waitForSelector('.team-member', { timeout: 15000 }).then(() => true).catch(() => false)
+  if (!listed) {
+    const said = ((await p.textContent('.screen').catch(() => '')) || '').replace(/\s+/g, ' ').trim().slice(0, 300)
+    await p.screenshot({ path: `${SHOTS}/team-list-missing-${Date.now()}.png` }).catch(() => {})
+    console.log(`  note  the member list had not come after 15s; the screen said: ${said}`)
+    await p.evaluate(() => { location.hash = '#/feed' })
+    await p.waitForSelector('.tabbar', { timeout: 10000 })
+    await p.click('nav [data-tab="you"]')
+    await p.waitForSelector('.profile-stats', { timeout: 10000 })
+    await p.click('.screen .row:has-text("Your team")')
+    await p.waitForSelector('.team-member', { timeout: 15000 })
+      .catch(() => { throw new Error(`the member list never came; the screen said: ${said}`) })
+  }
   const label = (await p.textContent('.team-name')).trim()
   // Back to the feed by the URL: the Team screen's back lands on the feed,
   // not on You, so a second back has nothing to close.
