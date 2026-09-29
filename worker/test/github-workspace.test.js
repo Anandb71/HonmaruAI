@@ -61,6 +61,14 @@ test("an admin connects a repository with a token that can write issues", async 
   // Everyone in the workspace sees it connected; nobody outside sees it at all.
   expect((await (await get(`/connectors/github?orgId=${encodeURIComponent(ORG)}`, mika)).json()).connected).toBe(true);
   expect((await get(`/connectors/github?orgId=${encodeURIComponent(ORG)}`, out)).status).toBe(403);
+  // A member's own GitHub does not replace the repository an admin chose,
+  // nor does a guest's connect anything.
+  const swap = await call("/connectors/github", { method: "PUT", headers: headers(mika), body: JSON.stringify({ orgId: ORG, repo: "mika/elsewhere" }) }, { COMPOSIO_API_KEY: "ck" });
+  expect(swap.status).toBe(403);
+  expect((await (await get(`/connectors/github?orgId=${encodeURIComponent(ORG)}`, toru)).json()).repo).toBe("acme/ops");
+  const { upsertMembership } = await import("../src/db.js");
+  await upsertMembership(env.DB, ORG, "email:mika@x.jp", "guest");
+  expect((await (await get(`/connectors/github?orgId=${encodeURIComponent(ORG)}`, mika)).json()).canEdit).toBe(false);
 });
 
 test("a read-only token, a wrong name, a member, and a refused repository", async () => {
