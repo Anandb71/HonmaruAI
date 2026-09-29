@@ -428,7 +428,8 @@ export async function writeReport(env, routine, material, { locale, provider, al
       terms ? searchDecisions(env.DB, routine.org_id, terms) : [],
       relevantMemories(env.DB, routine.org_id, `${routine.title} ${routine.instruction}`),
       Promise.all([
-        available.notion && terms ? searchNotion(env, session.github_id, terms).catch(() => []) : [],
+        // A person's own notes never go into a report posted to a channel.
+        available.notion && terms && !routine.channel ? searchNotion(env, session.github_id, terms).catch(() => []) : [],
         available.github && terms ? searchGithubIssues(session, routine.org_id, terms, env).catch(() => []) : [],
       ]).then((lists) => lists.flat()),
     ]);

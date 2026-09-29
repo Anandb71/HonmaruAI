@@ -71,8 +71,14 @@ test("which sources a person has: Notion when connected, GitHub only in a reposi
   const none = await connectedSources({ ...env, COMPOSIO_API_KEY: "ck" }, { github_id: "9001", github_access_token: null }, "personal:me");
   expect(none).toEqual({ notion: false, github: false });
   await setConnectorConfig(env.DB, "9001", "notion", { connected: true });
+  const { upsertMembership } = await import("../src/db.js");
+  await upsertMembership(env.DB, "acme/ops", "9001", "member");
   const some = await connectedSources({ ...env, COMPOSIO_API_KEY: "ck" }, { github_id: "9001", github_access_token: "gho_x" }, "acme/ops");
   expect(some).toEqual({ notion: true, github: true });
+  // Their Notion is read in the one workspace their tools pull into, not in
+  // every team they are in.
+  await upsertMembership(env.DB, "team:other", "9001", "member");
+  expect((await connectedSources({ ...env, COMPOSIO_API_KEY: "ck" }, { github_id: "9001", github_access_token: "gho_x" }, "team:other")).notion).toBe(false);
   // No Composio on this deployment: Notion cannot be searched whatever the row says.
   expect((await connectedSources({ ...env, COMPOSIO_API_KEY: undefined }, { github_id: "9001", github_access_token: "gho_x" }, "acme/ops")).notion).toBe(false);
 });

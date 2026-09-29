@@ -1004,6 +1004,17 @@ export async function pullWorkspaceOf(db, githubId) {
   return row?.org_id || null;
 }
 
+/// The one workspace a person's own things land in — their connected apps'
+/// pulls, their forwarded mail — and the only one their own tools are read
+/// from: the one they pulled into, while they are still in it; else the one
+/// a sign-in would open. Never more than one, so employer A's mail and notes
+/// never reach employer B.
+export async function ingestWorkspaceOf(db, githubId) {
+  const kept = await pullWorkspaceOf(db, githubId);
+  if (kept && (await isMember(db, kept, githubId))) return kept;
+  return primaryOrgId(db, githubId);
+}
+
 /// A workspace with other people in it beats one with only you: the solo org
 /// handed out at sign-up is a starting point, and anywhere with a second
 /// person is where the work is. Ties go to the earliest join, so the answer

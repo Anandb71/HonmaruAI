@@ -4,7 +4,7 @@ import { signup, login, createInvite, acceptInvite, isGitHubSession, inviteLink,
 import { requestCode, verifyCode } from "./otp.js";
 import {
   createSession, getSession, upsertUser, upsertMembership, upsertAgent, isMember, listOrgNodes,
-  getConnectorConfig, setConnectorConfig, rememberPullWorkspace, pullWorkspaceOf, createOAuthState, consumeOAuthState,
+  getConnectorConfig, setConnectorConfig, rememberPullWorkspace, ingestWorkspaceOf, createOAuthState, consumeOAuthState,
   getUserByGithubId, getUserByLogin, registerDevice, removeDevice, retainMemberships, cardsCreatedSince,
   isIngested, markIngested, saveCard,
   saveCardLocalization, setUserLocale, setUserNotifyEmail, setUserEmail, normalizeLocale,
@@ -1669,8 +1669,7 @@ async function handle(request, env, url, ctx) {
       }
       // Where this person's pulls land. Each person's tools are their own,
       // and so is the workspace they feed — named, so the screen can say so.
-      const kept = await pullWorkspaceOf(env.DB, session.github_id);
-      const pullOrg = kept && (await isMember(env.DB, kept, session.github_id)) ? kept : await primaryOrgId(env.DB, session.github_id);
+      const pullOrg = await ingestWorkspaceOf(env.DB, session.github_id);
       return json({
         connectors: availableConnectors(env).map((c) => ({
           id: c.id, label: c.label, status: active.has(c.id) ? "active" : "none",
@@ -2369,7 +2368,8 @@ async function handle(request, env, url, ctx) {
       // organization, and wrong the moment joining a team became ordinary: a
       // forwarded email would land in a workspace by accident of insertion
       // order rather than in the one they actually work in.
-      const orgId = await primaryOrgId(env.DB, githubId);
+      // The same one workspace their connected apps pull into.
+      const orgId = await ingestWorkspaceOf(env.DB, githubId);
       if (!orgId) return json({ status: "no organization" });
 
       // A redelivered webhook is the same mail, not a second decision.
