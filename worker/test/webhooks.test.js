@@ -132,3 +132,24 @@ test("the inbound email hook is not one of these", async () => {
   const req = new Request("https://example.com/webhooks/email", { method: "POST", body: "{}" });
   expect(await handleWebhooks(req, env, new URL(req.url))).toBe(null);
 });
+
+test("a webhook stops when its maker leaves or becomes a guest; an admin reads that it went, not what it said", async () => {
+  await make(mika);
+  const row = { id: "m2", channel: "b:cafe", author_login: "u:toru@x.jp", body: "Payroll is late", created_at: "2026-09-25T10:00:00Z" };
+  const { upsertMembership } = await import("../src/db.js");
+  await upsertMembership(env.DB, ORG, "9802", "guest");
+  expect(await emitMessage(env, ORG, row)).toBe(0);
+  await env.DB.prepare("DELETE FROM memberships WHERE org_id = ?1 AND user_github_id = '9802'").bind(ORG).run();
+  expect(await emitMessage(env, ORG, row)).toBe(0);
+
+  const { webhook } = await (await make(toru)).json();
+  fetchMock.activate();
+  fetchMock.get("https://hooks.example.com").intercept({ path: "/in", method: "POST" }).reply(204, "");
+  expect(await emitMessage(env, ORG, row)).toBe(1);
+  await upsertMembership(env.DB, ORG, "9802", "admin");
+  const theirs = await (await call(`/webhooks/${webhook.id}/deliveries?orgId=${encodeURIComponent(ORG)}`, mika)).json();
+  expect(theirs.deliveries.length).toBe(1);
+  expect(theirs.deliveries[0].body).toBeUndefined();
+  const mine = await (await call(`/webhooks/${webhook.id}/deliveries?orgId=${encodeURIComponent(ORG)}`, toru)).json();
+  expect(JSON.stringify(mine.deliveries[0].body)).toContain("Payroll is late");
+});
