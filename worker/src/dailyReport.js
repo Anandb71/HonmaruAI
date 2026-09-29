@@ -3,7 +3,7 @@ import { zonedParts, zonedTime, describeSchedule } from "./schedule.js";
 import { serverText } from "./serverCopy.js";
 import { actionLabel, displayName } from "./notifyCopy.js";
 import { noteUsage } from "./ledger.js";
-import { getCard } from "./db.js";
+import { getCard, saveCard } from "./db.js";
 import { announceCards } from "./announce.js";
 import { notifyCard, anyChannelConfigured } from "./notify.js";
 import { safe } from "./log.js";
@@ -24,6 +24,76 @@ import { safe } from "./log.js";
 // the evening checks the morning's plan. Nothing is posted by the AI: the
 // draft arrives as a card they have to deal with, and only their own "Post"
 // puts it in the channel.
+
+/// The team's daily-report channel, by the names onboarding makes it under
+/// (web-react utils/dailySetup keeps the same list).
+export const DAILY_CHANNEL_SLUGS = ["daily-reports", "日報", "informes-diarios", "rapports-quotidiens", "tagesberichte"];
+const isDailyKey = (key) => DAILY_CHANNEL_SLUGS.includes(String(key || "").replace(/^b:/, ""));
+
+/// The team's daily-report channel (`b:<slug>`), or null when it has none.
+export async function dailyChannelOf(db, orgId) {
+  const marks = DAILY_CHANNEL_SLUGS.map((_, i) => `?${i + 2}`).join(", ");
+  const row = await db.prepare(
+    `SELECT slug FROM businesses WHERE org_id = ?1 AND archived_at IS NULL AND COALESCE(private, 0) = 0 AND slug IN (${marks}) ORDER BY created_at LIMIT 1`
+  ).bind(orgId, ...DAILY_CHANNEL_SLUGS).first().catch(() => null);
+  return row ? `b:${row.slug}` : null;
+}
+
+/// Where a daily report goes: the team's daily-report channel whenever it
+/// has one. Routines set up before it existed defaulted to the first
+/// channel (#general), and their reports kept landing there.
+export async function dailyChannelFor(db, orgId, current) {
+  if (isDailyKey(current)) return current;
+  return (await dailyChannelOf(db, orgId)) || current;
+}
+
+/// Daily reports still aimed elsewhere, moved to the daily-report channel:
+/// the routines, and the drafts already waiting (their words name the
+/// channel, so those move too). A few at a time, every run.
+export async function moveDailyToDailyChannel(env, { limit = 50 } = {}) {
+  const db = env.DB;
+  const marks = DAILY_CHANNEL_SLUGS.map((_, i) => `?${i + 1}`).join(", ");
+  const daily = DAILY_CHANNEL_SLUGS.map((s) => `b:${s}`);
+  const { results: routines } = await db.prepare(
+    `SELECT id, org_id, channel FROM routines WHERE kind IN ('daily_plan', 'daily_report') AND (channel IS NULL OR channel NOT IN (${marks})) LIMIT ${limit}`
+  ).bind(...daily).all().catch(() => ({ results: [] }));
+  const channelOf = new Map();
+  const target = async (orgId) => {
+    if (!channelOf.has(orgId)) channelOf.set(orgId, await dailyChannelOf(db, orgId));
+    return channelOf.get(orgId);
+  };
+  let moved = 0;
+  for (const r of routines || []) {
+    const to = await target(r.org_id);
+    if (!to) continue;
+    await db.prepare("UPDATE routines SET channel = ?3, updated_at = ?4 WHERE org_id = ?1 AND id = ?2").bind(r.org_id, r.id, to, new Date().toISOString()).run();
+    moved += 1;
+  }
+  const { results: drafts } = await db.prepare(
+    `SELECT org_id, data FROM cards WHERE json_extract(data, '$.dailyReport.status') = 'draft'
+      AND COALESCE(json_extract(data, '$.dailyReport.channel'), '') NOT IN (${marks}) LIMIT ${limit}`
+  ).bind(...daily).all().catch(() => ({ results: [] }));
+  const changed = new Map();
+  for (const row of drafts || []) {
+    let card;
+    try { card = JSON.parse(row.data); } catch { continue; }
+    const to = await target(row.org_id);
+    if (!to || !card?.dailyReport) continue;
+    const from = `#${String(card.dailyReport.channel || "").replace(/^b:/, "")}`;
+    const name = `#${to.slice(2)}`;
+    const rename = (text) => (typeof text === "string" && from !== "#" ? text.split(from).join(name) : text);
+    const next = { ...card, summary: rename(card.summary), dailyReport: { ...card.dailyReport, channel: to } };
+    if (card.localized && typeof card.localized === "object") {
+      next.localized = Object.fromEntries(Object.entries(card.localized).map(([k, v]) => [k, v && typeof v === "object" ? { ...v, summary: rename(v.summary) } : v]));
+    }
+    await saveCard(db, row.org_id, next);
+    if (!changed.has(row.org_id)) changed.set(row.org_id, []);
+    changed.get(row.org_id).push(next);
+    moved += 1;
+  }
+  for (const [orgId, cards] of changed) await announceCards(env, orgId, cards, { isNew: false }).catch(() => {});
+  return moved;
+}
 
 /// The routine kinds that draft a daily report, and which part of the day each is.
 export const DAILY_KINDS = ["daily_plan", "daily_report"];
@@ -352,6 +422,12 @@ ${JSON.stringify(morning
 /// closed when it arrives, so the feed holds today's, not a week of them.
 export async function draftDailyReport(env, routine, { now = new Date(), locale, provider, allowance, requestedBy }) {
   const part = partOf(routine.kind);
+  // Into the team's daily-report channel, and the routine with it.
+  const channel = await dailyChannelFor(env.DB, routine.org_id, routine.channel);
+  if (channel !== routine.channel) {
+    await env.DB.prepare("UPDATE routines SET channel = ?3 WHERE org_id = ?1 AND id = ?2").bind(routine.org_id, routine.id, channel).run().catch(() => {});
+    routine = { ...routine, channel };
+  }
   const day = await gatherDay(env.DB, routine.org_id, routine, { now, locale, part });
   const written = await writeDailyReport(day, { locale, provider, allowance, instruction: routine.instruction });
   const channelName = `#${String(routine.channel || "").replace(/^b:/, "")}`;
