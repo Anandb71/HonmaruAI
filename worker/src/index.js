@@ -57,7 +57,7 @@ import { handleWebhooks } from "./webhooks.js";
 import { handleAgentInvites } from "./agentInvites.js";
 import { handleUserAvatar } from "./userAvatar.js";
 import { serveFile } from "./files.js";
-import { addMembers, membersOf, isPrivate, mayRead, accessFor, isGuest } from "./access.js";
+import { addMembers, membersOf, isPrivate, mayRead, mayReadCard, accessFor, isGuest } from "./access.js";
 import { runMinuteJobs } from "./later.js";
 import { recentBusinessTalk } from "./channels.js";
 import { relevantMemories } from "./memory.js";
@@ -172,6 +172,17 @@ async function requireMember(env, request, orgId) {
   const held = await policyDenial(env, session, orgId);
   return held ? json(held.body, held.status) : null;
 }
+
+/// What the caller may see of this workspace's cards (access.js): a guest
+/// only the cards they are on, anyone else all but a private channel's.
+async function cardAccess(env, request, orgId) {
+  const session = await getSession(env.DB, request.headers.get("x-session-token"));
+  const me = session ? await getUserByGithubId(env.DB, session.github_id) : null;
+  return accessFor(env.DB, orgId, me?.login || "");
+}
+const hiddenCard = async (env, request, orgId, card) => !card || !mayReadCard(card, await cardAccess(env, request, orgId));
+const guestRefused = async (env, request, orgId) => (await cardAccess(env, request, orgId)).guest
+  ? json({ message: "A guest sees only the decisions they are on." }, 403) : null;
 
 export default {
   // Every 15 minutes, so a decision that arrived in someone's inbox is already
@@ -892,10 +903,14 @@ async function handle(request, env, url, ctx) {
         // situation", which the product promises to weigh, were never in the
         // prompt. Two queries, both bounded, both optional: a failure here is
         // a card routed the old way, not a card not routed.
+        // What the sender could open themselves, and nothing of the team's for
+        // a guest.
+        const routeAccess = await cardAccess(env, request, routeOrgId);
+        const routeVisible = (h) => mayReadCard({ recipientUserID: h.recipient, senderUserID: h.sender, business: h.business }, routeAccess);
         try {
-          const [load, recent, playbook] = await Promise.all([
+          const [load, recent, playbook] = routeAccess.guest ? [[], [], []] : await Promise.all([
             recipientLoad(env.DB, routeOrgId),
-            recentDecisions(env.DB, routeOrgId),
+            recentDecisions(env.DB, routeOrgId).then((hits) => hits.filter(routeVisible)),
             // The rules this team has set, the ones that bear on this
             // instruction first.
             relevantMemories(env.DB, routeOrgId, body.text),
@@ -907,7 +922,7 @@ async function handle(request, env, url, ctx) {
         // And the one thing the model may look up before it writes: what
         // this team already decided about the same thing.
         const lookupOrg = routeOrgId;
-        lookups = { searchDecisions: (query) => searchDecisions(env.DB, lookupOrg, query) };
+        lookups = { searchDecisions: async (query) => (await searchDecisions(env.DB, lookupOrg, query)).filter(routeVisible) };
         // And the person's own connected tools, when they have them.
         try {
           const routeSession = await getSession(env.DB, request.headers.get("x-session-token"));
@@ -1624,6 +1639,9 @@ async function handle(request, env, url, ctx) {
       const orgId = `${owner}/${repo}`;
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
+      // A card gone leaves its history to the members, not to a guest.
+      { const card = await getCard(env.DB, orgId, cardId);
+        if (card ? await hiddenCard(env, request, orgId, card) : (await cardAccess(env, request, orgId)).guest) return json({ message: "no such card" }, 404); }
       return json({ events: await withActorNames(env.DB, await listCardEvents(env.DB, orgId, cardId)) });
     }
     if (url.pathname === "/connectors" && request.method === "GET") {
@@ -1714,14 +1732,17 @@ async function handle(request, env, url, ctx) {
       // your credential, and the issues are written as you. A pasted token
       // and a disconnect are the workspace's, so an admin's (or the person
       // who connected it).
-      const canEdit = isAdmin || Boolean(env.COMPOSIO_API_KEY) || isGitHubSession(session);
+      // Never a guest's; and a member's own GitHub connects a repository only
+      // where none is, or replaces their own — not one an admin chose.
+      const current = request.method === "GET" ? null : await getWorkspaceGitHub(env.DB, orgId);
+      const guest = membershipIsOurs(orgId) && await isGuest(env.DB, orgId, session.github_id);
+      const canEdit = !guest && (isAdmin || Boolean(env.COMPOSIO_API_KEY) || isGitHubSession(session));
       if (request.method !== "GET") {
         if (!canEdit) return json({ message: "Only an admin of this workspace can connect its repository." }, 403);
+        if (!isAdmin && current && String(current.connectedBy) !== String(session.github_id)) {
+          return json({ message: "Only an admin, or whoever connected it, can change this repository." }, 403);
+        }
         if (request.method === "DELETE") {
-          const current = await getWorkspaceGitHub(env.DB, orgId);
-          if (!isAdmin && current && String(current.connectedBy) !== String(session.github_id)) {
-            return json({ message: "Only an admin, or whoever connected it, can disconnect this repository." }, 403);
-          }
           await disconnectWorkspaceGitHub(env.DB, orgId);
         } else {
           // A token they entered; else their GitHub connected through the
@@ -1911,7 +1932,7 @@ async function handle(request, env, url, ctx) {
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
       const card = await getCard(env.DB, orgId, cardId);
-      if (!card) return json({ message: "no such card" }, 404);
+      if (await hiddenCard(env, request, orgId, card)) return json({ message: "no such card" }, 404);
       const session = await getSession(env.DB, request.headers.get("x-session-token"));
       const userKey = request.headers.get("x-ai-key") || undefined;
       const provider = await providerFor(env, orgId, userKey);
@@ -1938,10 +1959,14 @@ async function handle(request, env, url, ctx) {
           // decision came out of is often the answer.
           card.business ? recentBusinessTalk(env.DB, orgId, [card.business], { limit: 12 }).catch(() => []) : [],
         ]);
-        talk = talkHit;
-        playbook = playbookHit;
-        related = decisionsHit;
-        recent = recentHit;
+        // Only what the asker could open themselves: a guest's own cards, a
+        // private channel's to its members.
+        const access = await cardAccess(env, request, orgId);
+        const visible = (h) => mayReadCard({ recipientUserID: h.recipient, senderUserID: h.sender, business: h.business }, access);
+        talk = card.business && mayRead(`b:${card.business}`, access) ? talkHit : [];
+        playbook = access.guest ? [] : playbookHit;
+        related = decisionsHit.filter(visible);
+        recent = recentHit.filter(visible);
         sources = [...notionHit, ...githubHit, ...talk.map((m) => ({ app: "Channel", title: `${m.channel} · ${m.who}`, snippet: m.text, when: m.when }))];
       } catch (err) {
         console.error("ask context failed", err?.message || err);
@@ -2036,7 +2061,7 @@ async function handle(request, env, url, ctx) {
         return json({ message: "Decide first; the reply follows the decision." }, 409);
       }
       if (!env.COMPOSIO_API_KEY) return json({ message: "Connected apps are not on this deployment. Copy the reply and send it yourself." }, 503);
-      const item = await ingestedItemForCard(env.DB, cardId, session.github_id);
+      const item = await ingestedItemForCard(env.DB, cardId, session.github_id, orgId);
       if (!item) return json({ message: "This card did not come from a connected app. Copy the reply and send it yourself." }, 409);
       const connector = connectorById(item.connector);
       const tool = connector?.replyTool ? connector.replyTool(card.source || {}, text) : null;
@@ -2062,7 +2087,9 @@ async function handle(request, env, url, ctx) {
       if (!orgId) return json({ message: "orgId is required" }, 400);
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
-      const hits = q ? await searchDecisions(env.DB, orgId, q, { limit: 12 }) : [];
+      const access = await cardAccess(env, request, orgId);
+      const found = q ? await searchDecisions(env.DB, orgId, q, { limit: 20 }) : [];
+      const hits = found.filter((h) => mayReadCard({ recipientUserID: h.recipient, senderUserID: h.sender, business: h.business }, access)).slice(0, 12);
       return json({ hits });
     }
 
@@ -2088,7 +2115,7 @@ async function handle(request, env, url, ctx) {
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
       const card = await getCard(env.DB, orgId, cardId);
-      if (!card) return json({ message: "no such card" }, 404);
+      if (await hiddenCard(env, request, orgId, card)) return json({ message: "no such card" }, 404);
       if (!needsLocalizing(card, locale)) {
         return json({ localized: card.localized?.[locale] || null, already: true });
       }
@@ -2136,7 +2163,7 @@ async function handle(request, env, url, ctx) {
       if (!user) return json({ message: "unknown user" }, 409);
       if (request.method === "GET") {
         const card = await getCard(env.DB, orgId, cardId);
-        if (!card) return json({ message: "no such card" }, 404);
+        if (await hiddenCard(env, request, orgId, card)) return json({ message: "no such card" }, 404);
         return json({
           comments: await listComments(env.DB, orgId, cardId),
           reactions: await listReactions(env.DB, orgId, cardId, user.login),
@@ -2144,6 +2171,7 @@ async function handle(request, env, url, ctx) {
           maxChars: MAX_COMMENT_CHARS,
         });
       }
+      if (await hiddenCard(env, request, orgId, await getCard(env.DB, orgId, cardId))) return json({ message: "no such card" }, 404);
       const result = await addComment(env.DB, { orgId, cardId, authorLogin: user.login, body: body.body });
       if (result.error) return json({ message: result.error }, result.status || 400);
       const { comment, card, mentioned } = result;
@@ -2182,6 +2210,7 @@ async function handle(request, env, url, ctx) {
       const session = await getSession(env.DB, request.headers.get("x-session-token"));
       const user = await getUserByGithubId(env.DB, session.github_id);
       if (!user) return json({ message: "unknown user" }, 409);
+      if (await hiddenCard(env, request, orgId, await getCard(env.DB, orgId, cardId))) return json({ message: "no such card" }, 404);
       const result = await toggleReaction(env.DB, { orgId, cardId, login: user.login, emoji: String(body.emoji || "") });
       if (result.error) return json({ message: result.error }, result.status || 400);
       after(ctx, async () => {
@@ -2199,7 +2228,7 @@ async function handle(request, env, url, ctx) {
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
       const card = await getCard(env.DB, orgId, cardId);
-      if (!card) return json({ message: "no such card" }, 404);
+      if (await hiddenCard(env, request, orgId, card)) return json({ message: "no such card" }, 404);
       return json({ card });
     }
 
@@ -2213,6 +2242,9 @@ async function handle(request, env, url, ctx) {
       if (!orgId) return json({ message: "orgId is required" }, 400);
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
+      // A card gone leaves its history to the members, not to a guest.
+      { const card = await getCard(env.DB, orgId, cardId);
+        if (card ? await hiddenCard(env, request, orgId, card) : (await cardAccess(env, request, orgId)).guest) return json({ message: "no such card" }, 404); }
       return json({ events: await withActorNames(env.DB, await listCardEvents(env.DB, orgId, cardId)) });
     }
 
@@ -2255,6 +2287,8 @@ async function handle(request, env, url, ctx) {
       if (!orgId) return json({ message: "orgId is required" }, 400);
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
+      const guest = await guestRefused(env, request, orgId);
+      if (guest) return guest;
       return json(await orgMetrics(env.DB, orgId, { days: url.searchParams.get("days") }));
     }
 
@@ -2264,6 +2298,8 @@ async function handle(request, env, url, ctx) {
       if (!orgId) return json({ message: "orgId is required" }, 400);
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
+      const guest = await guestRefused(env, request, orgId);
+      if (guest) return guest;
       return json({ entries: await exportGolden(env.DB, orgId, { limit: url.searchParams.get("limit") }) });
     }
 
@@ -2273,6 +2309,7 @@ async function handle(request, env, url, ctx) {
       const orgId = `${owner}/${repo}`;
       const denied = await requireMember(env, request, orgId);
       if (denied) return denied;
+      { const guest = await guestRefused(env, request, orgId); if (guest) return guest; }
       // Positive, or the default. `Number("-1") || 50` is -1, and SQLite
       // reads a negative LIMIT as "no limit" — every event the org has ever
       // logged, each with a full card snapshot, in one response.

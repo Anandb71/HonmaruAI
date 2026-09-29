@@ -109,6 +109,13 @@ export async function uploadMedia(request, env, url) {
 }
 
 export async function serveMedia(id, env) {
+  // Only what this route stored: a video's bare UUID. The same bucket holds
+  // message files, compliance exports, avatars and Jam recordings, each
+  // served by its own route with its own checks — never by guessing a key
+  // here.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id || ""))) {
+    return new Response("not found", { status: 404 });
+  }
   const object = await env.MEDIA.get(id);
   if (!object) return new Response("not found", { status: 404 });
   // Checked again on the way out, not only on the way in: objects stored

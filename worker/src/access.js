@@ -85,6 +85,17 @@ export function mayRead(key, access) {
   return false;
 }
 
+/// Whether `access` lets its person see a card, over HTTP as on the socket:
+/// the two people on it always; a guest nobody else's; anyone else every card
+/// but one filed under a private channel they are not in.
+export function mayReadCard(card, access) {
+  if (!card) return false;
+  if (card.recipientUserID === access.login || card.senderUserID === access.login) return true;
+  if (access.guest) return false;
+  const k = card.business ? `b:${card.business}` : null;
+  return !k || !access.closed.has(k) || access.in.has(k);
+}
+
 /// Everyone in a closed conversation, by login — or null for a public
 /// channel, which is the whole workspace. In a workspace with guests a
 /// public channel is named person by person too, so a guest outside it is

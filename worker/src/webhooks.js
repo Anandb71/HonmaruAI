@@ -179,8 +179,13 @@ function eventOf(type, orgId, data) {
 export async function emitWebhook(env, orgId, type, data, scope = {}) {
   try {
     if (!env?.DB || !orgId) return 0;
+    // Only while whoever made it is still here, and not a guest: a webhook
+    // hears what its maker could see, and somebody removed sees nothing.
     const { results } = await env.DB.prepare(
-      "SELECT * FROM org_webhooks WHERE org_id = ?1 AND events LIKE ?2"
+      `SELECT h.* FROM org_webhooks h
+         JOIN users u ON u.login = h.created_by
+         JOIN memberships m ON m.org_id = h.org_id AND m.user_github_id = u.github_id AND m.role != 'guest'
+        WHERE h.org_id = ?1 AND h.events LIKE ?2`
     ).bind(orgId, `%"${type}"%`).all();
     const hooks = (results || []).filter((h) => reaches(h, scope));
     if (!hooks.length) return 0;
@@ -386,13 +391,16 @@ export async function handleWebhooks(request, env, url) {
     return json({ ok: true });
   }
 
-  // What was sent, and what came back: its maker's, or an admin's to read.
+  // What was sent, and what came back: its maker's, or an admin's to read —
+  // an admin sees that it went and how it was answered, not what it said,
+  // which may be its maker's direct messages.
+  const mine = hook.created_by === who.user.login;
   if (action === "deliveries" && !deliveryId && request.method === "GET") {
     if (!mayManage) return json({ message: "Only whoever made this webhook, or an admin, can read its deliveries." }, 403);
     const { results } = await env.DB.prepare(
       "SELECT * FROM webhook_deliveries WHERE webhook_id = ?1 ORDER BY attempted_at DESC LIMIT ?2"
     ).bind(id, KEEP_DELIVERIES).all();
-    return json({ deliveries: (results || []).map((r) => shownDelivery(r, true)) });
+    return json({ deliveries: (results || []).map((r) => shownDelivery(r, mine)) });
   }
 
   // Send one again, as it was — same event id, so a receiver can tell.
@@ -405,7 +413,7 @@ export async function handleWebhooks(request, env, url) {
     const out = await deliver(env, hook, event, { redelivery: true });
     await audit(env, request, { orgId, action: "webhook.redelivered", actor: person(who.user), entity, details: { event: event.type, eventId: event.id, status: out.status } });
     const fresh = await env.DB.prepare("SELECT * FROM webhook_deliveries WHERE id = ?1").bind(out.deliveryId).first();
-    return json({ ok: !out.error, status: out.status, error: out.error, delivery: fresh ? shownDelivery(fresh, true) : null });
+    return json({ ok: !out.error, status: out.status, error: out.error, delivery: fresh ? shownDelivery(fresh, mine) : null });
   }
 
   // A new secret, shown this once; the old one stops working now.

@@ -4,6 +4,7 @@ import { sha256Hex, channelsOf } from "./auth.js";
 import { createApiToken } from "./mcp.js";
 import { teamName } from "./orgs.js";
 import { introduce } from "./welcome.js";
+import { isGuest } from "./access.js";
 
 // Bringing an agent into a workspace with a link, the way a person is
 // brought in with one: a member makes it, hands it to the agent, and the
@@ -41,6 +42,9 @@ export async function handleAgentInvites(request, env, url) {
     if (!body.orgId) return json({ message: "orgId is required" }, 400);
     if (!(await isMember(env.DB, body.orgId, session.github_id))) return json({ message: "not a member of this org" }, 403);
     { const { policyDenial } = await import("./policy.js"); const held = await policyDenial(env, session, body.orgId); if (held) return json(held.body, held.status); }
+    // An agent acts as the person who let it in; a guest's reach is only the
+    // channels they were given, which a token cannot keep to.
+    if (await isGuest(env.DB, body.orgId, session.github_id)) return json({ message: "A guest cannot connect an agent." }, 403);
     const code = newCode();
     const now = new Date();
     const expires = new Date(now.getTime() + AGENT_LINK_MINUTES * 60_000);
@@ -66,6 +70,10 @@ export async function handleAgentInvites(request, env, url) {
       return json({ message: "This link has been used or has expired. Ask for a new one." }, 410);
     }
     const row = await env.DB.prepare("SELECT org_id, created_by, channels FROM agent_invites WHERE code_hash = ?1").bind(hash).first();
+    // Whoever made the link must still be in, and not as a guest, when it is used.
+    if (!(await isMember(env.DB, row.org_id, row.created_by)) || await isGuest(env.DB, row.org_id, row.created_by)) {
+      return json({ message: "This link has been used or has expired. Ask for a new one." }, 410);
+    }
     const asked = request.method === "POST" ? await request.json().catch(() => ({})) : {};
     const name = String(asked.name || url.searchParams.get("name") || "Agent").replace(/\s+/g, " ").trim().slice(0, 60) || "Agent";
     const minted = await createApiToken(env.DB, { orgId: row.org_id, githubId: row.created_by, name });

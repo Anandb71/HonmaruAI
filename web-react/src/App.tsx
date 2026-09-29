@@ -9,7 +9,7 @@ import { Onboarding } from './screens/Onboarding'
 import { PickRepository } from './screens/PickRepository'
 import { githubWebConfig, beginGitHubSignIn, readCallback, finishGitHubSignIn } from './utils/githubAuth'
 import type { GitHubWebConfig } from './utils/githubAuth'
-import { clearCardCache } from './utils/cardCache'
+import { clearCardCache, clearAccountData } from './utils/cardCache'
 import { parseRoute } from './utils/route'
 import { onboardingKey, needsOnboarding, completeOnboarding } from './utils/onboardingProgress'
 import { t, adoptAccountLocale } from './utils/i18n'
@@ -357,8 +357,8 @@ function App() {
     setStage('welcome')
     localStorage.removeItem('sessionToken')
     localStorage.removeItem('userId')
-    // The workspace's cards stay readable on this machine otherwise.
-    clearCardCache()
+    // The workspace's cards, drafts and notes stay readable on this machine otherwise.
+    clearAccountData()
   }
 
   // A workspace's login rules ended this sign-in (utils/authGuard): out,

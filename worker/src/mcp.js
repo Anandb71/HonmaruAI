@@ -10,6 +10,7 @@ import { notifyCard, anyChannelConfigured } from "./notify.js";
 import { enforceSubject } from "./ratelimit.js";
 import { listMemories } from "./memory.js";
 import { safe } from "./log.js";
+import { isGuest } from "./access.js";
 
 // Any agent can ask a person for a decision.
 //
@@ -119,6 +120,9 @@ export async function resolveApiToken(db, header) {
     .first();
   if (!row) return null;
   if (!(await isMember(db, row.org_id, row.github_id))) return null;
+  // A token outlives a change of role: made by a member later made a guest,
+  // it stops.
+  if (await isGuest(db, row.org_id, row.github_id)) return null;
   const user = await getUserByGithubId(db, row.github_id);
   if (!user?.login) return null;
   // Written at most every five minutes: "last used" is for a person

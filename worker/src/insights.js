@@ -245,6 +245,7 @@ export async function searchDecisions(db, orgId, query, { limit = 8 } = {}) {
       id: card.id || null,
       title: String(card.title || "").slice(0, 120),
       recipient: row.recipient_user_id,
+      sender: card.senderUserID || null,
       status: card.decision?.action || card.status || "pending",
       decidedAt: row.decided_at || null,
       note: card.decision?.replyText || card.decision?.note || null,

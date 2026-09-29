@@ -181,3 +181,19 @@ test("the request limit is a person's, not a token's", async () => {
 // Thirty-one whole requests, each making a card: half a second on a laptop,
 // and more than the default five on a CI runner shared with other work.
 }, 30000);
+
+test("a token stops working once its owner is made a guest, and a guest cannot invite an agent", async () => {
+  const { createApiToken, resolveApiToken } = await import("../src/mcp.js");
+  const { createSession, upsertUser, upsertMembership } = await import("../src/db.js");
+  await upsertUser(env.DB, { githubId: "7701", login: "demoted", name: "D", avatarUrl: null, locale: "en" });
+  await upsertMembership(env.DB, "team:mcp-guest", "7701", "member");
+  const { token } = await createApiToken(env.DB, { orgId: "team:mcp-guest", githubId: "7701", name: "Bot" });
+  expect(await resolveApiToken(env.DB, `Bearer ${token}`)).toMatchObject({ login: "demoted" });
+  await upsertMembership(env.DB, "team:mcp-guest", "7701", "guest");
+  expect(await resolveApiToken(env.DB, `Bearer ${token}`)).toBeNull();
+  const session = await createSession(env.DB, "7701", "x");
+  const res = await worker.fetch(new Request("https://example.com/agents/invite", {
+    method: "POST", headers: { "content-type": "application/json", "x-session-token": session }, body: JSON.stringify({ orgId: "team:mcp-guest" }),
+  }), env, { waitUntil() {} });
+  expect(res.status).toBe(403);
+});
