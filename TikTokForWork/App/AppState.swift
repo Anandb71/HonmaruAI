@@ -433,6 +433,7 @@ final class AppState: ObservableObject {
             await PushService.shared.unregister(sessionToken: sessionToken)
         }
         PushService.shared.setBadge(0)
+        AppReads.shared.reset()
         // Two things that used to survive a sign-out and reach the next
         // account on this phone: the outbox, whose queued decisions the relay
         // would have stamped with the new session's sender, and "how I work",

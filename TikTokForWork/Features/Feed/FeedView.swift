@@ -13,6 +13,7 @@ private struct CardHomeContent: View {
     let onComposeToMember: (String) -> Void
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var push: PushService
+    @Environment(\.scenePhase) private var scenePhase
     @State private var classic = false
     @State private var selectedID: String?
     @State private var search = ""
@@ -33,6 +34,12 @@ private struct CardHomeContent: View {
     @State private var deleteCard: DecisionCard?
     @State private var suggestRule: (cardID: String, sender: String, business: String?)?
     private var cards: [DecisionCard] { service.cards(for: appState.currentUser?.id ?? "").filter(\.isPending) }
+    /// The feed on screen: every app's card in it has been seen, so the icon
+    /// stops counting them, here and on the web.
+    private func markAppsSeen() {
+        guard scenePhase == .active, !appState.isGuest else { return }
+        AppReads.shared.seen(cards, orgId: appState.currentUser?.teamID, base: appState.backendBaseURL)
+    }
     private var selectedCard: DecisionCard? { cards.first { $0.id == selectedID } ?? cards.first }
     private var filtered: [DecisionCard] {
         cards.filter { card in (!highPriorityOnly || card.priority == .high || card.priority == .urgent) && (search.isEmpty || [card.title, card.summary, card.displayTitle, card.displaySummary, memberName(card.senderUserID)].joined(separator: " ").localizedCaseInsensitiveContains(search)) }
@@ -76,8 +83,12 @@ private struct CardHomeContent: View {
             }
         }
         .background(Theme.Colors.surface)
-        .onAppear { selectedID = selectedCard?.id }
-        .onChange(of: service.revision) { _, _ in if !cards.contains(where: { $0.id == selectedID }) { selectedID = cards.first?.id } }
+        .onAppear { selectedID = selectedCard?.id; markAppsSeen() }
+        .onChange(of: service.revision) { _, _ in
+            if !cards.contains(where: { $0.id == selectedID }) { selectedID = cards.first?.id }
+            markAppsSeen()
+        }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { markAppsSeen() } }
         .onChange(of: push.pendingCardID) { _, id in
             guard let id, let card = service.card(id: id) else { return }
             detailCard = card; push.pendingCardID = nil
