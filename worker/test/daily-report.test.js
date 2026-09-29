@@ -79,6 +79,15 @@ beforeEach(async () => {
 });
 afterEach(() => fetchMock.deactivate?.());
 
+/// Channels in the order the team made them (#general first, as a team's is).
+async function channels(...names) {
+  const { upsertBusiness } = await import("../src/db.js");
+  for (const [i, name] of names.entries()) {
+    await upsertBusiness(env.DB, ORG, { name, createdBy: "8601" });
+    await env.DB.prepare("UPDATE businesses SET created_at = ?3 WHERE org_id = ?1 AND name = ?2").bind(ORG, name, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()).run();
+  }
+}
+
 async function makeDaily(over = {}) {
   const res = await post("/routines", toru, {
     orgId: ORG, kind: "daily_report", channel: "b:general", cadence: "weekdays", hour: 18, minute: 30, timezone: "Asia/Tokyo", ...over,
@@ -380,12 +389,10 @@ test("with a daily-report channel, a report set up for #general goes there — n
   const { data } = await makeDaily();
   const routine = await getRoutine(env.DB, ORG, data.routine.id);
   // A draft made before the team had its daily channel: aimed at #general.
+  await channels("general");
   const { card: waiting } = await runRoutine(ENV({ OPENAI_API_KEY: undefined }), routine, { now: NOW, manual: true });
   expect(waiting.dailyReport.channel).toBe("b:general");
-  const { upsertBusiness } = await import("../src/db.js");
-  await upsertBusiness(env.DB, ORG, { name: "daily-reports", createdBy: "8601" });
-  const slug = (await env.DB.prepare("SELECT slug FROM businesses WHERE org_id = ?1 AND name = 'daily-reports'").bind(ORG).first()).slug;
-  expect(slug).toBe("daily-reports");
+  await channels("general", "daily-reports");
 
   // The sweep moves the routine and the waiting draft, words included.
   const { moveDailyToDailyChannel } = await import("../src/dailyReport.js");
@@ -407,9 +414,9 @@ test("with a daily-report channel, a report set up for #general goes there — n
 test("a draft still naming #general is posted to the daily-report channel even before the sweep", async () => {
   const { data } = await makeDaily();
   const routine = await getRoutine(env.DB, ORG, data.routine.id);
+  await channels("general");
   const { card } = await runRoutine(ENV({ OPENAI_API_KEY: undefined }), routine, { now: NOW, manual: true });
-  const { upsertBusiness } = await import("../src/db.js");
-  await upsertBusiness(env.DB, ORG, { name: "daily-reports", createdBy: "8601" });
+  await channels("general", "daily-reports");
   const res = await post("/channels/daily-report/post", toru, { orgId: ORG, cardId: card.id, text: "今日の日報" });
   const row = await env.DB.prepare("SELECT channel FROM channel_messages WHERE id = ?1").bind((await res.json()).card.dailyReport.messageId).first();
   expect(row.channel).toBe("b:daily-reports");
@@ -417,4 +424,14 @@ test("a draft still naming #general is posted to the daily-report channel even b
   const { card: next } = await runRoutine(ENV({ OPENAI_API_KEY: undefined }), await getRoutine(env.DB, ORG, routine.id), { now: new Date(NOW.getTime() + 86400000), manual: true });
   expect(next.dailyReport.channel).toBe("b:daily-reports");
   expect(next.summary).toContain("#daily-reports");
+});
+
+test("a channel somebody chose for their daily report is theirs: only the old default moves", async () => {
+  await channels("general", "kitchen", "daily-reports");
+  const { data } = await makeDaily({ channel: "b:kitchen" });
+  const { moveDailyToDailyChannel } = await import("../src/dailyReport.js");
+  expect(await moveDailyToDailyChannel(env)).toBe(0);
+  expect((await getRoutine(env.DB, ORG, data.routine.id)).channel).toBe("b:kitchen");
+  const { card } = await runRoutine(ENV({ OPENAI_API_KEY: undefined }), await getRoutine(env.DB, ORG, data.routine.id), { now: NOW, manual: true });
+  expect(card.dailyReport.channel).toBe("b:kitchen");
 });

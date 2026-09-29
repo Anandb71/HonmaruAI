@@ -39,46 +39,58 @@ export async function dailyChannelOf(db, orgId) {
   return row ? `b:${row.slug}` : null;
 }
 
-/// Where a daily report goes: the team's daily-report channel whenever it
-/// has one. Routines set up before it existed defaulted to the first
-/// channel (#general), and their reports kept landing there.
-export async function dailyChannelFor(db, orgId, current) {
-  if (isDailyKey(current)) return current;
-  return (await dailyChannelOf(db, orgId)) || current;
+/// The channel a daily report used to default to: the team's first.
+async function firstChannelOf(db, orgId) {
+  const row = await db.prepare("SELECT slug FROM businesses WHERE org_id = ?1 AND archived_at IS NULL ORDER BY created_at LIMIT 1")
+    .bind(orgId).first().catch(() => null);
+  return row ? `b:${row.slug}` : null;
 }
 
-/// Daily reports still aimed elsewhere, moved to the daily-report channel:
+/// Where a daily report goes. Set up before the team had a daily-report
+/// channel, a report defaulted to the team's first channel (#general) and
+/// kept landing there: that default moves to the daily-report channel. A
+/// channel somebody chose (#kitchen) is theirs and stays.
+export async function dailyChannelFor(db, orgId, current) {
+  if (isDailyKey(current)) return current;
+  const daily = await dailyChannelOf(db, orgId);
+  if (!daily) return current;
+  if (!current) return daily;
+  return current === (await firstChannelOf(db, orgId)) ? daily : current;
+}
+
+/// Daily reports still on the old default, moved to the daily-report channel:
 /// the routines, and the drafts already waiting (their words name the
 /// channel, so those move too). A few at a time, every run.
 export async function moveDailyToDailyChannel(env, { limit = 50 } = {}) {
   const db = env.DB;
   const marks = DAILY_CHANNEL_SLUGS.map((_, i) => `?${i + 1}`).join(", ");
   const daily = DAILY_CHANNEL_SLUGS.map((s) => `b:${s}`);
+  // Only what can move: on its team's first channel (or none), in a team
+  // that has a daily-report channel. A channel somebody chose never matches,
+  // so it is not read again every run.
+  const onDefault = (orgCol, channelCol) => `(${channelCol} IS NULL OR ${channelCol} = (SELECT 'b:' || f.slug FROM businesses f WHERE f.org_id = ${orgCol} AND f.archived_at IS NULL ORDER BY f.created_at LIMIT 1))
+      AND EXISTS (SELECT 1 FROM businesses d WHERE d.org_id = ${orgCol} AND d.archived_at IS NULL AND COALESCE(d.private, 0) = 0 AND 'b:' || d.slug IN (${marks}))`;
   const { results: routines } = await db.prepare(
-    `SELECT id, org_id, channel FROM routines WHERE kind IN ('daily_plan', 'daily_report') AND (channel IS NULL OR channel NOT IN (${marks})) LIMIT ${limit}`
+    `SELECT id, org_id, channel FROM routines r WHERE r.kind IN ('daily_plan', 'daily_report') AND ${onDefault("r.org_id", "r.channel")} LIMIT ${limit}`
   ).bind(...daily).all().catch(() => ({ results: [] }));
-  const channelOf = new Map();
-  const target = async (orgId) => {
-    if (!channelOf.has(orgId)) channelOf.set(orgId, await dailyChannelOf(db, orgId));
-    return channelOf.get(orgId);
-  };
   let moved = 0;
   for (const r of routines || []) {
-    const to = await target(r.org_id);
-    if (!to) continue;
+    const to = await dailyChannelFor(db, r.org_id, r.channel);
+    if (!to || to === r.channel) continue;
     await db.prepare("UPDATE routines SET channel = ?3, updated_at = ?4 WHERE org_id = ?1 AND id = ?2").bind(r.org_id, r.id, to, new Date().toISOString()).run();
     moved += 1;
   }
   const { results: drafts } = await db.prepare(
-    `SELECT org_id, data FROM cards WHERE json_extract(data, '$.dailyReport.status') = 'draft'
-      AND COALESCE(json_extract(data, '$.dailyReport.channel'), '') NOT IN (${marks}) LIMIT ${limit}`
+    `SELECT c.org_id, c.data FROM cards c WHERE json_extract(c.data, '$.dailyReport.status') = 'draft'
+      AND ${onDefault("c.org_id", "json_extract(c.data, '$.dailyReport.channel')")} LIMIT ${limit}`
   ).bind(...daily).all().catch(() => ({ results: [] }));
   const changed = new Map();
   for (const row of drafts || []) {
     let card;
     try { card = JSON.parse(row.data); } catch { continue; }
-    const to = await target(row.org_id);
-    if (!to || !card?.dailyReport) continue;
+    if (!card?.dailyReport) continue;
+    const to = await dailyChannelFor(db, row.org_id, card.dailyReport.channel);
+    if (!to || to === card.dailyReport.channel) continue;
     const from = `#${String(card.dailyReport.channel || "").replace(/^b:/, "")}`;
     const name = `#${to.slice(2)}`;
     const rename = (text) => (typeof text === "string" && from !== "#" ? text.split(from).join(name) : text);
