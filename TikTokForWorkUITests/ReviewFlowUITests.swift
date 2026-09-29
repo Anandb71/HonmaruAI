@@ -11,7 +11,9 @@ final class ReviewFlowUITests: XCTestCase {
         let demo = app.buttons["デモを試す"]
         XCTAssertTrue(demo.waitForExistence(timeout: 20))
         demo.tap()
-        app.buttons["チャット"].firstMatch.tap()
+        let chat = app.buttons["チャット"].firstMatch
+        XCTAssertTrue(chat.waitForExistence(timeout: 15))
+        chat.tap()
         for title in ["アクティビティ", "スレッド", "後で"] {
             let button = app.buttons[title].firstMatch
             XCTAssertTrue(button.waitForExistence(timeout: 5))
