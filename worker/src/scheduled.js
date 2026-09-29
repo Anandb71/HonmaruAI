@@ -11,7 +11,7 @@ import { providerFor } from "./orgAI.js";
 import { alert } from "./alert.js";
 import { safe } from "./log.js";
 import { runDueRoutines } from "./routines.js";
-import { remindDailyDrafts } from "./dailyReport.js";
+import { remindDailyDrafts, moveDailyToDailyChannel } from "./dailyReport.js";
 import { runProposals, isProposalTick } from "./proposals.js";
 
 // "Your AI triaged three decisions overnight" cannot be true if the AI only
@@ -154,6 +154,13 @@ export async function runAutomations(env, ctx, now = new Date()) {
   } catch (err) {
     console.error("routines failed", err?.message || err);
     alert(ctx, env, "routines", safe(err?.message));
+  }
+  // Daily reports still aimed at another channel, moved to the team's
+  // daily-report channel.
+  try {
+    await moveDailyToDailyChannel(env);
+  } catch (err) {
+    console.error("daily channel move failed", err?.message || err);
   }
   // A daily report's draft still unposted after two hours: asked once more.
   try {

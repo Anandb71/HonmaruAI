@@ -4,7 +4,7 @@ import { linksIn, readLinks, linksBlock } from "./links.js";
 import { agentTools } from "./agentTools.js";
 import { translateMessages } from "./translate.js";
 import { getSession, isMember, getUserByGithubId, saveCard, getCard, listBusinesses } from "./db.js";
-import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText, discardDraft } from "./dailyReport.js";
+import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText, discardDraft, dailyChannelFor } from "./dailyReport.js";
 import { providerFor, readerEnvFor } from "./orgAI.js";
 import { groupsIn, toClientGroup, saveGroup, deleteGroup, getSidebar, saveSidebar } from "./people-groups.js";
 import { allowanceFor } from "./gate.js";
@@ -919,7 +919,9 @@ export async function handleChannels(request, env, url, { route, after }) {
     const stopped = await checkOutgoing(env, request, { orgId: body.orgId, login: who.user.login, text, ack: body.dlpAck === true, where: "daily_report" });
     if (stopped) return stopped;
     const members = await listMembers(env.DB, body.orgId, who.session.github_id);
-    const resolved = await resolveChannel(env.DB, body.orgId, who.user, card.dailyReport.channel, members);
+    // The team's daily-report channel, even for a draft made while its
+    // routine still pointed elsewhere.
+    const resolved = await resolveChannel(env.DB, body.orgId, who.user, await dailyChannelFor(env.DB, body.orgId, card.dailyReport.channel), members);
     if (!resolved) return json({ message: "No such channel." }, 404);
     if (!(await claimDraft(env.DB, body.orgId, card.id))) return json({ message: "This report has already been posted." }, 409);
     const out = await postMessage(env.DB, { orgId: body.orgId, key: resolved.key, authorLogin: who.user.login, body: text });
