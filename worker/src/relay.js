@@ -379,7 +379,7 @@ export class OrgRelay {
       if (!att.activityAt || now - att.activityAt >= 30_000) {
         ws.serializeAttachment({ ...att, activityAt: now });
         const client = payload.client === "ios" ? "ios" : "web";
-        await noteActivity(this.db, att.userId, client, now).catch(() => {});
+        await noteActivity(this.db, orgId, att.userId, client, now).catch(() => {});
       }
       return;
     }

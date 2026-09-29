@@ -79,7 +79,7 @@ export async function notifyCard(env, { card, kind = "created", excludeLogin, ba
   if (!anyChannelConfigured(env)) return { sent: 0, skipped: "no channel configured", channels };
   // At the app right now, on some device: they see it land there, and hear
   // it. The phone (and the inbox) stay quiet, as in Slack.
-  if (kind !== "digest" && await isActive(env.DB, recipient)) return { sent: 0, skipped: "active", channels };
+  if (kind !== "digest" && await isActive(env.DB, orgId || null, recipient)) return { sent: 0, skipped: "active", channels };
   // Paused, or outside the hours they set: it waits in the feed and Activity.
   if (kind !== "digest") {
     const quiet = await quietFor(env.DB, recipient);
@@ -107,6 +107,7 @@ export async function notifyCard(env, { card, kind = "created", excludeLogin, ba
       },
       cardId: card.id,
       kind,
+      ...(orgId ? { orgId } : {}),
     };
     for (const device of devices) {
       const result = await sendPush(env, { deviceToken: device.device_token, payload, collapseId });
@@ -129,6 +130,7 @@ export async function notifyCard(env, { card, kind = "created", excludeLogin, ba
       cardId: card.id,
       kind,
       tag: card.id,
+      ...(orgId ? { orgId } : {}),
       ...(typeof badge === "number" ? { badge } : {}),
       ...(link ? { url: link } : {}),
     };

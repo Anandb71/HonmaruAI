@@ -141,13 +141,13 @@ final class ChatStore: ObservableObject {
             if unread { Task { await loadThreads() }; return }
             if let i = threads.firstIndex(where: { $0.parent.id == parentId }) { threads[i].unread = false }
             inbox = inbox.map { var i = $0; if i.unread && ((i.message.parentId == parentId && i.message.createdAt <= at) || (i.message.id == parentId && i.type != "reaction")) { i.unread = false }; return i }
-            PushService.clearDelivered(channel: view, parentId: parentId)
+            PushService.clearDelivered(channel: view, parentId: parentId, orgId: orgId)
             return
         }
         if unread { reads[view] = at; return }
         if at > (reads[view] ?? "") { reads[view] = at }
         inbox = inbox.map { var i = $0; if i.unread && i.message.channel == view && i.message.parentId == nil && i.message.createdAt <= at { i.unread = false }; return i }
-        PushService.clearDelivered(channel: view, parentId: nil)
+        PushService.clearDelivered(channel: view, parentId: nil, orgId: orgId)
     }
 
     func bind(_ appState: AppState) { self.appState = appState }
@@ -405,7 +405,7 @@ final class ChatStore: ObservableObject {
         reads[view] = ChatDates.string(.now)
         // Read here, so no longer new in Activity (a reply waits for its thread).
         inbox = inbox.map { var i = $0; if i.unread && i.message.channel == view && i.message.parentId == nil { i.unread = false }; return i }
-        PushService.clearDelivered(channel: view, parentId: nil)
+        PushService.clearDelivered(channel: view, parentId: nil, orgId: orgId)
         await ChatService.markRead(orgId: orgId, channel: view, base: base)
     }
 
@@ -443,7 +443,7 @@ final class ChatStore: ObservableObject {
         let open = threads.filter(\.unread)
         guard !open.isEmpty else { return }
         threadsRead(open.map { ChatService.ThreadRead(thread: $0.parent.id, lastReadAt: $0.lastReplyAt) })
-        for t in open { PushService.clearDelivered(channel: t.parent.channel, parentId: t.parent.id) }
+        for t in open { PushService.clearDelivered(channel: t.parent.channel, parentId: t.parent.id, orgId: orgId) }
         if await ChatService.markAllThreadsRead(orgId: orgId, base: base) == nil { await loadThreads() }
     }
 
@@ -592,7 +592,7 @@ final class ChatStore: ObservableObject {
         // calling its replies new.
         inbox = inbox.map { var i = $0; if i.unread && i.message.parentId == m.id { i.unread = false }; return i }
         if let i = threads.firstIndex(where: { $0.parent.id == m.id }) { threads[i].unread = false }
-        PushService.clearDelivered(channel: m.channel, parentId: m.id)
+        PushService.clearDelivered(channel: m.channel, parentId: m.id, orgId: orgId)
         await ChatService.markThreadRead(orgId: orgId, channel: m.channel, parentId: m.id, base: base)
     }
     func pins(_ view: String) async -> [ChatMessage] {
