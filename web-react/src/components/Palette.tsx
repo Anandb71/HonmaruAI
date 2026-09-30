@@ -42,6 +42,18 @@ interface Item { key: string; group: 'places' | 'actions' | 'cards' | 'past' | '
 
 const NONE: never[] = []
 
+/// Whether the pointer really moved, rather than the list scrolling under a
+/// pointer left resting on it — which a browser also reports as a move, at
+/// the same place on the screen. The first move seen is judged by how far
+/// it says it went.
+export function pointerMoved(
+  last: { x: number; y: number } | null,
+  e: { screenX: number; screenY: number; movementX?: number; movementY?: number },
+): boolean {
+  if (last) return last.x !== e.screenX || last.y !== e.screenY
+  return Boolean(e.movementX || e.movementY)
+}
+
 const ACTION_WORD: Record<string, string> = {
   approve: 'Approved', decline: 'Declined', revise: 'Revision asked',
   choose: 'Chose', reply: 'Replied', acknowledge: 'Acknowledged',
@@ -198,6 +210,15 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
     if (cursor === 0) { ul.scrollTop = 0; return }
     ul.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' })
   }, [cursor, items])
+  // The pointer takes the highlight only by moving. On entering a row it
+  // would take it back each time the arrows scroll the list under a pointer
+  // left over it, and ↓ past the fold would never get past.
+  const pointer = useRef<{ x: number; y: number } | null>(null)
+  const onPointer = (i: number) => (e: React.MouseEvent) => {
+    const moved = pointerMoved(pointer.current, e)
+    pointer.current = { x: e.screenX, y: e.screenY }
+    if (moved && i !== cursor) setCursor(i)
+  }
 
   // The arrows are the palette's while it is open: the list's own ⌥↑/⌥↓,
   // on the window, would otherwise change the conversation underneath.
@@ -268,7 +289,7 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
                   aria-selected={i === cursor}
                   className={`palette-item${it.place ? ' palette-place' : ''}${i === cursor ? ' on' : ''}`}
                   data-view={it.place?.view}
-                  onMouseEnter={() => setCursor(i)}
+                  onMouseMove={onPointer(i)}
                   onClick={() => onPick(it.action)}
                 >
                   {it.place && placeLead(it.place)}

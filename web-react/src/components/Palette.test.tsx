@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Palette } from './Palette'
+import { Palette, pointerMoved } from './Palette'
 import type { Place } from '../utils/places'
 
 const api = { httpBase: 'http://relay.test', orgId: 'org-1', sessionToken: 'session' }
@@ -51,5 +51,19 @@ describe('Palette, with nothing typed', () => {
 
   it('tells how to jump to a conversation in the box itself', () => {
     expect(html({})).toContain('placeholder="Jump to a conversation, or search messages and decisions')
+  })
+})
+
+// A pointer resting on the list while ↓ scrolls it does not take the
+// highlight back.
+describe('pointerMoved', () => {
+  it('is a move only where the pointer is somewhere else on the screen', () => {
+    expect(pointerMoved({ x: 400, y: 300 }, { screenX: 400, screenY: 300, movementX: 0, movementY: 0 })).toBe(false)
+    expect(pointerMoved({ x: 400, y: 300 }, { screenX: 400, screenY: 302 })).toBe(true)
+  })
+
+  it('judges the first move by how far it went', () => {
+    expect(pointerMoved(null, { screenX: 400, screenY: 300, movementX: 0, movementY: 0 })).toBe(false)
+    expect(pointerMoved(null, { screenX: 400, screenY: 300, movementX: 3, movementY: 0 })).toBe(true)
   })
 })
