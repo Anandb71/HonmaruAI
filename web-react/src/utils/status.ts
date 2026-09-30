@@ -121,6 +121,22 @@ export function applyPreset(draft: StatusDraft, preset: StatusPreset, t: (key: s
   return { ...draft, emoji: preset.emoji, text: t(preset.text), clear: preset.clear, keepUntil: null }
 }
 
+/// "Clear status": your settings as the server has them with the emoji
+/// and words taken out. Being away, and who decides meanwhile, stay as
+/// they are — not as the fields below may have been edited meanwhile.
+export function clearedDraft(mine: MyStatus | null | undefined): StatusDraft {
+  return { ...draftFromMine(mine), emoji: '', text: '' }
+}
+
+/// Why a save did not take, as the words to translate — the Worker's own
+/// when it gave some — or null when it did, and the popover closes.
+export function saveProblem(res: { ok: boolean } | null, said: unknown): string | null {
+  if (!res) return 'Could not reach the server.'
+  if (res.ok) return null
+  const message = said && typeof said === 'object' ? (said as { message?: unknown }).message : null
+  return typeof message === 'string' && message ? message : 'That did not save.'
+}
+
 /// The draft as it can be saved now. The time a status already carried
 /// can pass while the popover is open (or be behind this clock), and the
 /// Worker refuses a time gone: kept, it would have every save refused. It

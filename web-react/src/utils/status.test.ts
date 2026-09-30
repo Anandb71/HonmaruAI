@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   CLEAR_AFTER, STATUS_PRESETS, EMOJI_MAX, TEXT_MAX,
-  applyPreset, awayUntilTime, clearAfterTime, dayOf, draftFromMine, liveDraft, popoverKey, statusPayload, statusProblem, whenLabel,
+  applyPreset, awayUntilTime, clearAfterTime, clearedDraft, dayOf, draftFromMine, liveDraft, popoverKey, saveProblem, statusPayload, statusProblem, whenLabel,
 } from './status'
-import type { StatusDraft } from './status'
+import type { MyStatus, StatusDraft } from './status'
 
 // Built from the calendar in this machine's time, so the tests hold in any zone.
 const wednesday = new Date(2026, 8, 30, 10, 15) // Wednesday 30 September, 10:15
@@ -112,6 +112,73 @@ describe('what is sent', () => {
   it('names nobody to decide when you are not away', () => {
     expect(statusPayload('org', draft({ away: false, awayDate: '2026-10-03', delegateRef: 'r2' }), wednesday)).toMatchObject({ awayUntil: null, delegateRef: null })
     expect(statusPayload('org', draft({ away: true, awayDate: '2026-10-03', delegateRef: '' }), wednesday).delegateRef).toBeNull()
+  })
+})
+
+describe('read back and saved as it was', () => {
+  const until = iso(2026, 8, 30, 15, 0)
+  const awayUntil = iso(2026, 9, 3, 23, 59)
+  it('sends what the server has when nothing is changed', () => {
+    const mine: MyStatus = { status: { emoji: '📅', text: 'Standup', until }, awayUntil, delegateRef: 'r2' }
+    const sent = statusPayload('org', draftFromMine(mine), wednesday)
+    expect(sent).toEqual({ orgId: 'org', emoji: '📅', text: 'Standup', until, awayUntil, delegateRef: 'r2' })
+    expect(statusProblem(draftFromMine(mine), wednesday, 'me')).toBeNull()
+  })
+
+  it('keeps a status that never clears, never clearing', () => {
+    const mine: MyStatus = { status: { emoji: '🌴', text: null, until: null }, awayUntil: null, delegateRef: null }
+    expect(statusPayload('org', draftFromMine(mine), wednesday)).toEqual({
+      orgId: 'org', emoji: '🌴', text: null, until: null, awayUntil: null, delegateRef: null,
+    })
+  })
+
+  it('sends nothing set when nothing was', () => {
+    expect(statusPayload('org', draftFromMine(null), wednesday)).toEqual({
+      orgId: 'org', emoji: null, text: null, until: null, awayUntil: null, delegateRef: null,
+    })
+  })
+})
+
+describe('clearing the status', () => {
+  const awayUntil = iso(2026, 9, 3, 23, 59)
+  it('takes out the status and keeps being away as the server has it', () => {
+    const mine: MyStatus = { status: { emoji: '🤒', text: 'Out sick', until: iso(2026, 9, 1) }, awayUntil, delegateRef: 'r2' }
+    expect(statusPayload('org', clearedDraft(mine), wednesday)).toEqual({
+      orgId: 'org', emoji: null, text: null, until: null, awayUntil, delegateRef: 'r2',
+    })
+  })
+
+  it('clears everything when you are not away', () => {
+    const mine: MyStatus = { status: { emoji: '📅', text: 'Standup', until: null }, awayUntil: null, delegateRef: null }
+    expect(statusPayload('org', clearedDraft(mine), wednesday)).toEqual({
+      orgId: 'org', emoji: null, text: null, until: null, awayUntil: null, delegateRef: null,
+    })
+  })
+
+  it('is never refused for the time the status had', () => {
+    const mine: MyStatus = { status: { emoji: '📅', text: 'Standup', until: iso(2026, 8, 30, 9, 0) }, awayUntil: null, delegateRef: null }
+    expect(statusProblem(clearedDraft(mine), wednesday)).toBeNull()
+  })
+})
+
+describe('what a save’s answer says', () => {
+  it('closes the popover when it took', () => {
+    expect(saveProblem({ ok: true }, null)).toBeNull()
+  })
+
+  it('says so when the server could not be reached', () => {
+    expect(saveProblem(null, null)).toBe('Could not reach the server.')
+  })
+
+  it('gives the Worker’s own reason, to translate, when it gave one', () => {
+    expect(saveProblem({ ok: false }, { message: 'Pick somebody else in this workspace.' })).toBe('Pick somebody else in this workspace.')
+  })
+
+  it('falls back when the answer says nothing useful', () => {
+    expect(saveProblem({ ok: false }, null)).toBe('That did not save.')
+    expect(saveProblem({ ok: false }, { message: '' })).toBe('That did not save.')
+    expect(saveProblem({ ok: false }, { message: 42 })).toBe('That did not save.')
+    expect(saveProblem({ ok: false }, 'Bad Gateway')).toBe('That did not save.')
   })
 })
 

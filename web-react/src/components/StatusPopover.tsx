@@ -3,7 +3,7 @@ import { useT } from '../utils/i18n'
 import { getLocale } from '../utils/locale'
 import {
   CLEAR_AFTER, EMOJI_MAX, STATUS_PRESETS, TEXT_MAX,
-  applyPreset, dayOf, draftFromMine, liveDraft, popoverKey, statusPayload, statusProblem, whenLabel,
+  applyPreset, clearedDraft, dayOf, draftFromMine, liveDraft, popoverKey, saveProblem, statusPayload, statusProblem, whenLabel,
   type ClearAfter, type MyStatus, type StatusDraft,
 } from '../utils/status'
 import { Avatar } from './Avatar'
@@ -141,8 +141,8 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
     if (res?.ok) window.dispatchEvent(new Event('honmaru:members-changed'))
     if (!open.current) return
     setBusy(false)
-    if (!res) { setProblem(t('Could not reach the server.')); return }
-    if (!res.ok) { setProblem(said?.message ? t(said.message) : t('That did not save.')); return }
+    const refused = saveProblem(res, said)
+    if (refused) { setProblem(t(refused)); return }
     close()
   }
 
@@ -303,7 +303,7 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
                 className="dlg-btn"
                 disabled={busy}
                 // Only the status goes: being away stays as the server has it.
-                onClick={() => void send({ ...draftFromMine(mine), emoji: '', text: '' })}
+                onClick={() => void send(clearedDraft(mine))}
                 data-status-clear="1"
               >{t('Clear status')}</button>
             )}
