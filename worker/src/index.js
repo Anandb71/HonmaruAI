@@ -1660,6 +1660,19 @@ async function handle(request, env, url, ctx) {
       if (platform === "android" && !isFcmToken(body.deviceToken)) {
         return json({ message: "That is not an FCM registration token." }, 400);
       }
+      // Which app the token is for, and from which APNs environment: the
+      // Expo build is a different bundle id from the App Store app, and a
+      // development build's token only works against the sandbox. Only apps
+      // this deployment sends for; an iPhone that says nothing keeps the
+      // deployment's topic (apns.js targetFor).
+      const { allowedAppIds } = await import("./apns.js");
+      const appId = typeof body.appId === "string" && body.appId ? body.appId : null;
+      if (appId && platform === "ios" && !allowedAppIds(env).includes(appId)) {
+        return json({ message: "That app is not one this server sends to." }, 400);
+      }
+      if (body.environment !== undefined && body.environment !== null && !["production", "sandbox"].includes(body.environment)) {
+        return json({ message: "environment is production or sandbox." }, 400);
+      }
       const user = await getUserByGithubId(env.DB, session.github_id);
       if (!user?.login) return json({ message: "unknown user" }, 409);
       await registerDevice(env.DB, {
@@ -1668,6 +1681,7 @@ async function handle(request, env, url, ctx) {
         login: user.login,
         environment: body.environment,
         platform,
+        appId: platform === "ios" ? appId : null,
       });
       return json({ ok: true });
     }

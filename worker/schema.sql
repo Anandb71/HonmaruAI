@@ -288,7 +288,11 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   login          TEXT NOT NULL,
   environment    TEXT NOT NULL DEFAULT 'production',
   updated_at     TEXT NOT NULL,
-  platform       TEXT NOT NULL DEFAULT 'ios'
+  platform       TEXT NOT NULL DEFAULT 'ios',
+  /* The iPhone app the token is for (its bundle id), so the Expo build and the
+     App Store app are each sent under their own APNs topic. NULL: registered
+     before devices said, which is the App Store app. */
+  app_id         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_device_tokens_login ON device_tokens (login);
 

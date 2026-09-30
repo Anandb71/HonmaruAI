@@ -97,10 +97,13 @@ push, and a simulator has no token):
   either up). The Worker needs the project's service account in the
   `FCM_SERVICE_ACCOUNT` secret (`docs/setup-secrets.md` §2b). Without the file
   the app builds and simply registers nothing.
-- **iPhone**: the Worker sends as `APNS_TOPIC` (`com.honmaru.ai`), so the PoC
-  bundle id receives nothing until it takes over that id, or until the Worker
-  is given the PoC's topic. A development build's token is a sandbox token and
-  only works while `APNS_ENVIRONMENT` is `sandbox`.
+- **iPhone**: the app registers its bundle id (`com.honmaru.ai.poc`) and the
+  APNs environment its build was signed for (a development build's token is a
+  sandbox token), and the Worker sends each phone under its own app's topic
+  and gateway (`worker/src/apns.js` `targetFor`; allowed apps in
+  `APNS_APP_IDS`, default both bundle ids). The App Store app, which sends
+  neither, keeps `APNS_TOPIC` and `APNS_ENVIRONMENT`. The APNs key must be a
+  team key (it is, for token-based auth) — no per-app certificate.
 
 Not yet: clearing a notification when it is read elsewhere (the Worker's
 silent push goes to iPhones only, and the app does not handle it yet), and

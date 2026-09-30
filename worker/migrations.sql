@@ -104,5 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_workspace_activity_seen ON workspace_activity(org
 /* Android phones (FCM) beside iPhones (APNs). Every token registered before
    this column existed came from the iPhone app. */
 ALTER TABLE device_tokens ADD COLUMN platform TEXT NOT NULL DEFAULT 'ios';
+/* Which iPhone app a token is for (apns.js targetFor). */
+ALTER TABLE device_tokens ADD COLUMN app_id TEXT;
 CREATE TABLE IF NOT EXISTS apple_identities (subject TEXT PRIMARY KEY, user_github_id TEXT NOT NULL, email TEXT, created_at TEXT NOT NULL, last_login_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_apple_identities_user ON apple_identities(user_github_id);

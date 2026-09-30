@@ -15,6 +15,7 @@ import * as Notifications from 'expo-notifications'
 import * as SecureStore from 'expo-secure-store'
 import { Platform } from 'react-native'
 import { pushTarget, type Api, type PushTarget } from '@honmaru/core'
+import * as Application from 'expo-application'
 
 const PUSH_TOKEN_KEY = 'honmaru.pushToken'
 
@@ -67,10 +68,19 @@ async function sendToken(api: Api, deviceToken: string) {
   await api.registerDevice({
     deviceToken,
     platform: Platform.OS === 'android' ? 'android' : 'ios',
-    // A development build's APNs token comes from the sandbox gateway.
-    ...(Platform.OS === 'ios' ? { environment: __DEV__ ? 'sandbox' : 'production' } : {}),
+    ...(Platform.OS === 'ios' ? await iosTarget() : {}),
   })
   await SecureStore.setItemAsync(PUSH_TOKEN_KEY, deviceToken)
+}
+
+/// Which app this is and which APNs gateway issued its token, as the phone
+/// knows them: the bundle id (the Worker sends under it as the APNs topic),
+/// and the entitlement the build was signed with — a development build's
+/// token is a sandbox token even when its JavaScript runs in release mode.
+async function iosTarget(): Promise<{ appId?: string; environment: 'sandbox' | 'production' }> {
+  const signed = await Application.getIosPushNotificationServiceEnvironmentAsync().catch(() => null)
+  const environment = signed === 'development' ? 'sandbox' : signed === 'production' ? 'production' : (__DEV__ ? 'sandbox' : 'production')
+  return { ...(Application.applicationId ? { appId: Application.applicationId } : {}), environment }
 }
 
 /// A token reissued while the app is open goes to the Worker at once.
