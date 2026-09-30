@@ -28,7 +28,6 @@ export interface Upload {
   file?: FileRef
 }
 
-const isPicture = (type: string) => /^image\/(png|jpeg|gif|webp|avif)$/.test(type)
 /// Each kind's mark, on a file's card and beside a player's name.
 const KIND_ICON: Record<MediaKind, IconName> = { image: 'image', video: 'video', audio: 'headphones', file: 'file' }
 
@@ -37,8 +36,9 @@ type Size = { width: number; height: number }
 /// A picture's or a video's size, so the message keeps its shape before it
 /// loads.
 async function dimensions(file: File): Promise<Size | null> {
-  if (mediaKind(file.type, file.name) === 'video') return videoDimensions(file)
-  if (!isPicture(file.type)) return null
+  const kind = mediaKind(file.type, file.name)
+  if (kind === 'video') return videoDimensions(file)
+  if (kind !== 'image') return null
   try {
     if (typeof createImageBitmap === 'function') {
       const bmp = await createImageBitmap(file)
@@ -97,7 +97,7 @@ export function useUploads(api: { httpBase: string; orgId: string; sessionToken:
       if (!f.size) continue
       const key = `${Date.now()}-${Math.random().toString(36).slice(2)}`
       const type = f.type || 'application/octet-stream'
-      const up: Upload = { key, name: f.name || 'file', type, size: f.size, preview: isPicture(type) ? URL.createObjectURL(f) : null, state: 'up' }
+      const up: Upload = { key, name: f.name || 'file', type, size: f.size, preview: mediaKind(type, f.name) === 'image' ? URL.createObjectURL(f) : null, state: 'up' }
       setItems((prev) => [...prev, up])
       void (async () => {
         const dim = await dimensions(f)
