@@ -45,11 +45,20 @@ export interface DlpWarning {
   resolve: (send: boolean) => void
 }
 
+/// Questions about data asked and not yet answered.
+let asking = 0
+/// A data rule's question is on screen: a send waiting on it is waiting on
+/// the person, not the network, and is not given up on meanwhile.
+export const askingAboutData = () => asking > 0
+
 /// Ask whoever is listening (DlpDialog); false — do not send — when nobody is.
 export function askAboutData(rules: string[], files: string[] = []): Promise<boolean> {
   return new Promise((resolve) => {
-    const event = new CustomEvent<DlpWarning>('honmaru:dlp-warning', { detail: { rules, files, resolve }, cancelable: true })
-    if (window.dispatchEvent(event)) resolve(false)
+    let answered = false
+    const answer = (send: boolean) => { if (answered) return; answered = true; asking--; resolve(send) }
+    asking++
+    const event = new CustomEvent<DlpWarning>('honmaru:dlp-warning', { detail: { rules, files, resolve: answer }, cancelable: true })
+    if (window.dispatchEvent(event)) answer(false)
   })
 }
 

@@ -197,4 +197,14 @@ export interface ChannelMessage {
   files?: FileRef[]
   /// Who wrote it, when an agent did: its name and face.
   agent?: { id: string; handle: string; name: string; emoji: string | null; avatarUrl?: string | null } | null
+  /// Only on this device, under a temporary id (utils/pendingSend.ts): on
+  /// its way to the server, shown before the server has it.
+  pending?: boolean
+  /// Only on this device: it did not go, and why. Its words stay where they
+  /// were, to send again or throw away.
+  failed?: string
+  /// Only on this device: the server said no to the words themselves (a
+  /// data rule, a thread that has gone). Sent again as they are they would
+  /// only be refused again, so they are edited or thrown away, not retried.
+  refused?: boolean
 }

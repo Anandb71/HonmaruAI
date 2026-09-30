@@ -1429,6 +1429,7 @@ const table: Record<string, string> = {
   'Replace the secret': 'Secret ersetzen',
   'Saved': 'Gespeichert',
   'Send again': 'Erneut senden',
+  'Retry': 'Wiederholen',
   'Sign out everywhere else': 'Überall sonst abmelden',
   'Sign out of every device': 'Von allen Geräten abmelden',
   'Someone': 'Jemand',

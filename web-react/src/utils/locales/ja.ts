@@ -1493,6 +1493,7 @@ const table: Record<string, string> = {
   'Replace the secret': 'シークレットを置き換える',
   'Saved': '保存済み',
   'Send again': '再送する',
+  'Retry': '再送信',
   'Sign out everywhere else': 'ほかのすべての端末からログアウト',
   'Sign out of every device': 'すべての端末からログアウトさせる',
   'Someone': '誰か',
