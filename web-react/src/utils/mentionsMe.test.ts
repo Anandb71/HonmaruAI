@@ -1,0 +1,81 @@
+import { describe, it, expect } from 'vitest'
+import { mentionsMe, namesMe, type Reader } from './mentionsMe'
+
+// A message that calls you is marked; one that only looks like it is not.
+describe('mentionsMe', () => {
+  const people = [
+    { ref: 'u1', name: 'Anand Babu', handle: 'anand', mine: true },
+    { ref: 'u2', name: 'Kenji Sato', handle: 'kenji' },
+    { ref: 'u3', name: 'Mika Sato', aliases: ['みか'] },
+  ]
+  const reader: Reader = {
+    people,
+    groups: [{ handle: 'design', refs: ['u1', 'u2'] }, { handle: 'sales', refs: ['u2', 'u3'] }],
+  }
+  const from = (body: string, author = 'u2') => ({ body, authorRef: author, mine: false })
+
+  it('is you, named directly', () => {
+    expect(mentionsMe(from('@anand can you look?'), reader)).toBe(true)
+    expect(mentionsMe(from('thanks @Anand'), reader)).toBe(true)
+    expect(mentionsMe(from('@AnandBabu the draft is up'), reader)).toBe(true)
+    expect(mentionsMe(from('＠anand 確認お願いします'), reader)).toBe(true)
+    expect(mentionsMe(from('確認@anand'), reader)).toBe(true)
+    expect(mentionsMe(from('(cc @anand)'), reader)).toBe(true)
+  })
+
+  it('is not somebody else named', () => {
+    expect(mentionsMe(from('@kenji can you look?'), reader)).toBe(false)
+    expect(mentionsMe(from('@みか ありがとう'), reader)).toBe(false)
+    expect(mentionsMe(from('@nobody hello'), reader)).toBe(false)
+    expect(mentionsMe(from('no mention at all'), reader)).toBe(false)
+  })
+
+  it('is you through a group you are in, not one you are not', () => {
+    expect(mentionsMe(from('@design review please'), reader)).toBe(true)
+    expect(mentionsMe(from('@Design review please'), reader)).toBe(true)
+    expect(mentionsMe(from('@sales numbers are in'), reader)).toBe(false)
+    expect(mentionsMe(from('@design review please'), { people })).toBe(false)
+  })
+
+  it('is you when everyone is called', () => {
+    for (const body of ['@here standup in 5', '@channel heads up', '@all please read', '@everyone ship it', '＠channelへ共有', '確認@channel']) {
+      expect(mentionsMe(from(body), reader)).toBe(true)
+    }
+    expect(mentionsMe(from('@alliance meeting'), reader)).toBe(false)
+    expect(mentionsMe(from('@herein lies the rub'), reader)).toBe(false)
+  })
+
+  it('is never your own message', () => {
+    expect(mentionsMe({ body: '@anand note to self', mine: true }, reader)).toBe(false)
+    expect(mentionsMe(from('@channel heads up', 'u1'), reader)).toBe(false)
+    expect(mentionsMe(from('@design review please', 'u1'), reader)).toBe(false)
+  })
+
+  it('is not an address or a link that has an @ in it', () => {
+    expect(mentionsMe(from('mail anand@example.com'), reader)).toBe(false)
+    expect(mentionsMe(from('write to kenji@anand'), reader)).toBe(false)
+    expect(mentionsMe(from('see https://youtube.com/@anand'), reader)).toBe(false)
+    expect(mentionsMe(from('ops@here.jp is the list'), reader)).toBe(false)
+    expect(mentionsMe(from('team@design.io'), reader)).toBe(false)
+  })
+
+  it('is nothing until the team has loaded', () => {
+    expect(mentionsMe(from('@anand @channel'), { people: [] })).toBe(false)
+    expect(mentionsMe(from('@channel'), { people: people.map((p) => ({ ...p, mine: false })) })).toBe(false)
+    expect(mentionsMe({ body: '' }, reader)).toBe(false)
+  })
+})
+
+describe('namesMe', () => {
+  const people = [
+    { ref: 'u1', name: 'Anand Babu', handle: 'anand', mine: true },
+    { ref: 'u2', name: 'Kenji Sato', handle: 'kenji' },
+  ]
+  it('marks your own @name and nobody else’s', () => {
+    expect(namesMe('@anand', people)).toBe(true)
+    expect(namesMe('＠Anand', people)).toBe(true)
+    expect(namesMe('@kenji', people)).toBe(false)
+    expect(namesMe('@channel', people)).toBe(false)
+    expect(namesMe('@anand', people.map((p) => ({ ...p, mine: false })))).toBe(false)
+  })
+})
