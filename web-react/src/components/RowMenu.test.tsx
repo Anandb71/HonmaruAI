@@ -28,6 +28,9 @@ describe('RowMenu', () => {
     expect(html).toContain('aria-haspopup="menu"')
     expect(html).not.toContain('Copy link')
   })
+  it('names the menu itself, where a screen reader reads it', () => {
+    expect(html).toMatch(/^<div class="row-menu"[^>]*><ul role="menu" aria-label="#kitchen"/)
+  })
 })
 
 // A message's right-click menu: its quick reactions in a row along the top.

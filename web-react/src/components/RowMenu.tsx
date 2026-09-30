@@ -40,7 +40,7 @@ const walkStrip = (e: React.KeyboardEvent<HTMLElement>) => {
   all[(at + (e.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length]?.focus()
 }
 
-function List({ entries, onClose, onBack, level }: { entries: MenuEntry[]; onClose: () => void; onBack?: () => void; level: number }) {
+function List({ entries, onClose, onBack, level, label }: { entries: MenuEntry[]; onClose: () => void; onBack?: () => void; level: number; label?: string }) {
   const ref = useRef<HTMLUListElement>(null)
   const [open, setOpen] = useState<number | null>(null)
   const [flip, setFlip] = useState(false)
@@ -63,7 +63,7 @@ function List({ entries, onClose, onBack, level }: { entries: MenuEntry[]; onClo
     else if (e.key === 'ArrowLeft' && onBack) { e.preventDefault(); e.stopPropagation(); onBack() }
   }
   return (
-    <ul ref={ref} role="menu" className={`row-menu-list${level ? ' sub' : ''}${flip ? ' flip' : ''}`} onKeyDown={onKeyDown}>
+    <ul ref={ref} role="menu" aria-label={label} className={`row-menu-list${level ? ' sub' : ''}${flip ? ' flip' : ''}`} onKeyDown={onKeyDown}>
       {entries.map((entry, i) => {
         if (entry.kind === 'sep') return <li key={i} role="separator" className="row-menu-sep" />
         if (entry.kind === 'head') return <li key={i} role="presentation" className="row-menu-head">{entry.label}</li>
@@ -161,8 +161,9 @@ export const RowMenu: React.FC<Props> = ({ at, entries, label, onClose }) => {
     }
   }, [onClose])
   return (
-    <div ref={ref} className="row-menu" style={place} aria-label={label} onContextMenu={(e) => e.preventDefault()}>
-      <List entries={entries} onClose={onClose} level={0} />
+    <div ref={ref} className="row-menu" style={place} onContextMenu={(e) => e.preventDefault()}>
+      {/* The name goes on the menu itself: on a plain box a screen reader says nothing of it. */}
+      <List entries={entries} onClose={onClose} level={0} label={label} />
     </div>
   )
 }
