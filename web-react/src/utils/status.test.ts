@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   CLEAR_AFTER, STATUS_PRESETS, EMOJI_MAX, TEXT_MAX,
-  applyPreset, awayUntilTime, clearAfterTime, dayOf, draftFromMine, statusPayload, statusProblem, whenLabel,
+  applyPreset, awayUntilTime, clearAfterTime, dayOf, draftFromMine, popoverKey, statusPayload, statusProblem, whenLabel,
 } from './status'
 import type { StatusDraft } from './status'
 
@@ -122,6 +122,35 @@ describe('what the server would refuse', () => {
 
   it('refuses you deciding in your own place', () => {
     expect(statusProblem(draft({ away: true, awayDate: '2026-10-03', delegateRef: 'me' }), wednesday, 'me')).toBe('Pick somebody else in this workspace.')
+  })
+})
+
+describe('the keys the popover answers', () => {
+  const inside = { inside: true, modal: false }
+  it('closes on Escape from inside it or its avatar', () => {
+    expect(popoverKey({ key: 'Escape' }, inside)).toBe('close')
+  })
+
+  it('leaves Escape to the page when focus is elsewhere', () => {
+    expect(popoverKey({ key: 'Escape' }, { inside: false, modal: false })).toBeNull()
+  })
+
+  it('leaves Escape to ⌘K or the shortcuts when they are open over it', () => {
+    expect(popoverKey({ key: 'Escape' }, { inside: true, modal: true })).toBeNull()
+    expect(popoverKey({ key: 'Escape' }, { inside: false, modal: true })).toBeNull()
+  })
+
+  it('makes way for ⌘K and ⌘/ pressed from inside it', () => {
+    expect(popoverKey({ key: 'k', metaKey: true }, inside)).toBe('make-way')
+    expect(popoverKey({ key: 'K', ctrlKey: true }, inside)).toBe('make-way')
+    expect(popoverKey({ key: '/', metaKey: true }, inside)).toBe('make-way')
+    expect(popoverKey({ key: 'k', metaKey: true }, { inside: false, modal: false })).toBeNull()
+  })
+
+  it('ignores the letters typed into it', () => {
+    expect(popoverKey({ key: 'k' }, inside)).toBeNull()
+    expect(popoverKey({ key: '/' }, inside)).toBeNull()
+    expect(popoverKey({ key: 'Enter' }, inside)).toBeNull()
   })
 })
 

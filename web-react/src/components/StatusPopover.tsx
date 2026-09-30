@@ -3,7 +3,7 @@ import { useT } from '../utils/i18n'
 import { getLocale } from '../utils/locale'
 import {
   CLEAR_AFTER, EMOJI_MAX, STATUS_PRESETS, TEXT_MAX,
-  applyPreset, dayOf, draftFromMine, statusPayload, statusProblem, whenLabel,
+  applyPreset, dayOf, draftFromMine, popoverKey, statusPayload, statusProblem, whenLabel,
   type ClearAfter, type MyStatus, type StatusDraft,
 } from '../utils/status'
 import { Avatar } from './Avatar'
@@ -99,10 +99,19 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      // Before the list's own Escape, which would close its pane as well.
-      e.stopPropagation()
-      closeRef.current()
+      const at = e.target instanceof Node ? e.target : null
+      const does = popoverKey(e, {
+        inside: Boolean(at && (box.current?.contains(at) || anchor.current?.contains(at))),
+        modal: Boolean(document.querySelector('[aria-modal="true"]')),
+      })
+      if (does === 'close') {
+        // Before the list's own Escape, which would close its pane as well.
+        e.stopPropagation()
+        closeRef.current()
+      } else if (does === 'make-way') {
+        // The palette or the shortcuts open on top, from the same key.
+        closeRef.current()
+      }
     }
     const onDown = (e: MouseEvent) => {
       const at = e.target as Node

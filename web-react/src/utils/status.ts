@@ -154,6 +154,23 @@ export function statusProblem(draft: StatusDraft, now: Date, myRef: string | nul
   return null
 }
 
+/// What a key pressed anywhere on the page does to the status popover. It
+/// listens on the whole document, ahead of the list's own Escape (which
+/// would close a pane as well), but it is not modal: Escape closes it only
+/// from inside it or from the avatar that opened it, and never while a
+/// modal layer is up — ⌘K, the shortcuts, Tell your AI — whose Escape is
+/// its own. ⌘K and ⌘/ from inside it close it too, as the palette or the
+/// shortcuts open where it was.
+export function popoverKey(
+  e: { key: string; metaKey?: boolean; ctrlKey?: boolean },
+  at: { inside: boolean; modal: boolean },
+): 'close' | 'make-way' | null {
+  if (!at.inside || at.modal) return null
+  if (e.key === 'Escape') return 'close'
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K' || e.key === '/')) return 'make-way'
+  return null
+}
+
 /// When a status clears, short: the weekday and time within the week
 /// ahead, the date and time after that.
 export function whenLabel(iso: string, now: Date, locale: string): string {
