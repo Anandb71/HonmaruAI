@@ -52,9 +52,9 @@ describe('rankPlaces', () => {
     expect(views(rankPlaces(team, '＃ｇｅｎ', []))).toEqual(['b:general'])
   })
 
-  it('lists every channel for a lone #, what calls for you first', () => {
+  it('lists every channel for a lone #, the one you were in last and then what calls for you first', () => {
     const out = rankPlaces([...team, ch('zeta', { unread: 3 })], '#', ['b:sales'])
-    expect(views(out).slice(0, 2)).toEqual(['b:zeta', 'b:sales'])
+    expect(views(out).slice(0, 2)).toEqual(['b:sales', 'b:zeta'])
     expect(out.every((p) => p.kind === 'channel')).toBe(true)
     expect(out).toHaveLength(6)
   })
@@ -74,9 +74,30 @@ describe('rankPlaces', () => {
 })
 
 describe('emptyQueryPlaces', () => {
-  it('lists what calls for you, then where you were lately, and nothing else', () => {
+  it('lists the one before first, then what asks for you, then where you were, then what is new, and nothing else', () => {
     const places = [ch('a'), ch('b', { fresh: true }), ch('c'), ch('d', { mentions: 1 }), ch('e', { unread: 2 }), ch('f')]
-    expect(views(emptyQueryPlaces(places, ['b:f', 'b:d', 'b:a']))).toEqual(['b:d', 'b:e', 'b:b', 'b:f', 'b:a'])
+    expect(views(emptyQueryPlaces(places, ['b:f', 'b:d', 'b:a']))).toEqual(['b:f', 'b:d', 'b:e', 'b:a', 'b:b'])
+  })
+
+  it('keeps the way back first when every channel has something new', () => {
+    const busy = Array.from({ length: 10 }, (_, i) => ch(`busy-${i}`, { fresh: true }))
+    const out = views(emptyQueryPlaces([...busy, ch('a'), ch('b')], ['b:a', 'b:b']))
+    // ⌘K then Enter: the conversation before this one, not the loudest.
+    expect(out.slice(0, 2)).toEqual(['b:a', 'b:b'])
+    expect(out).toHaveLength(8)
+    expect(out.slice(2)).toEqual(busy.slice(0, 6).map((p) => p.view))
+  })
+
+  it('puts no more than four that ask for you before where you were', () => {
+    const asking = Array.from({ length: 6 }, (_, i) => ch(`ask-${i}`, { mentions: 6 - i }))
+    const out = views(emptyQueryPlaces([...asking, ch('a'), ch('b')], ['b:a', 'b:b']))
+    expect(out).toEqual(['b:a', 'b:ask-0', 'b:ask-1', 'b:ask-2', 'b:ask-3', 'b:b', 'b:ask-4', 'b:ask-5'])
+  })
+
+  it('does not count the one before among the four when it asks for you too', () => {
+    const asking = Array.from({ length: 6 }, (_, i) => ch(`ask-${i}`, { unread: 1 }))
+    const out = views(emptyQueryPlaces(asking, ['b:ask-5']))
+    expect(out.slice(0, 5)).toEqual(['b:ask-5', 'b:ask-0', 'b:ask-1', 'b:ask-2', 'b:ask-3'])
   })
 
   it('skips a recent view that is no longer a place, and keeps to the limit', () => {

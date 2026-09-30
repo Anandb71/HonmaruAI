@@ -96,8 +96,11 @@ function matchScore(text: string, q: string): number {
   return 0
 }
 
+/// Someone is asking for you in it: a mention, or a decision waiting.
+const asking = (p: Place) => (p.mentions || 0) > 0 || (p.unread || 0) > 0
+
 /// Something in it calls for you: a mention, a decision, or something said.
-const calling = (p: Place) => (p.mentions || 0) > 0 || (p.unread || 0) > 0 || Boolean(p.fresh)
+const calling = (p: Place) => asking(p) || Boolean(p.fresh)
 
 /// Mentions first, then decisions waiting, then anything new — the order the
 /// sidebar's badges shout in.
@@ -112,24 +115,35 @@ const recencyOf = (recent: string[]) => {
   return (p: Place) => at.get(p.view) ?? Number.MAX_SAFE_INTEGER
 }
 
-/// With nothing typed: what calls for you, then where you were lately, most
-/// recent first. Nothing else — the whole sidebar is not a suggestion.
+/// How many of the conversations asking for you come before where you were:
+/// enough to see who wants you, never so many that the way back falls off
+/// the list.
+const ASKING_MAX = 4
+
+/// With nothing typed: the conversation you were in before this one, first,
+/// so ⌘K then Enter goes back to it; then a few that ask for you (mentions,
+/// decisions); then where you were lately, most recent first; then the rest
+/// of what calls for you, anything merely new last. Nothing else — the whole
+/// sidebar is not a suggestion. A busy workspace has something new in every
+/// channel, and that alone must not push the way back off the list.
 export function emptyQueryPlaces(places: Place[], recent: string[], limit = 8): Place[] {
   const recency = recencyOf(recent)
+  const byView = new Map(places.map((p) => [p.view, p] as const))
+  const lately = recent.map((v) => byView.get(v)).filter((p): p is Place => Boolean(p))
   const loud = places
     .map((p, i) => ({ p, i }))
     .filter((x) => calling(x.p))
     .sort((a, b) => byAttention(a.p, b.p) || recency(a.p) - recency(b.p) || a.i - b.i)
     .map((x) => x.p)
   // Each once, however the stored list came to name one twice.
-  const shown = new Set(loud.map((p) => p.view))
-  const byView = new Map(places.map((p) => [p.view, p] as const))
-  const lately: Place[] = []
-  for (const v of recent) {
-    const p = byView.get(v)
-    if (p && !shown.has(v)) { shown.add(v); lately.push(p) }
-  }
-  return [...loud, ...lately].slice(0, limit)
+  const out: Place[] = []
+  const shown = new Set<string>()
+  const add = (p: Place) => { if (!shown.has(p.view)) { shown.add(p.view); out.push(p) } }
+  if (lately.length) add(lately[0])
+  loud.filter((p) => asking(p) && !shown.has(p.view)).slice(0, ASKING_MAX).forEach(add)
+  lately.forEach(add)
+  loud.forEach(add)
+  return out.slice(0, limit)
 }
 
 /// The conversations that match what was typed, best first: its name or

@@ -21,13 +21,13 @@ const places: Place[] = [
 
 // ⌘K opened with nothing typed: where to go before anything else.
 describe('Palette, with nothing typed', () => {
-  it('lists conversations first: what calls for you, then where you were — not the one you are in', () => {
+  it('lists conversations first: the one before, then what calls for you — not the one you are in', () => {
     const out = html({ places, recent: ['b:general', 'ag:7'], current: 'b:general' })
-    expect(rows(out)).toEqual(['dm:r1', 'b:board', 'g:abc', 'ag:7'])
+    expect(rows(out)).toEqual(['ag:7', 'dm:r1', 'b:board', 'g:abc'])
     expect(out.indexOf('Conversations')).toBeGreaterThan(-1)
     expect(out.indexOf('Conversations')).toBeLessThan(out.indexOf('Go to'))
-    // The first row is the one Enter takes.
-    expect(out).toMatch(/aria-selected="true"[^>]*data-view="dm:r1"/)
+    // The first row is the one Enter takes: back to where you were.
+    expect(out).toMatch(/aria-selected="true"[^>]*data-view="ag:7"/)
   })
 
   it('says what each one is and what waits there, in words as well as marks', () => {

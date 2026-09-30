@@ -211,8 +211,9 @@ than into a chat app — [docs/viktor-gap-plan.md](docs/viktor-gap-plan.md).
       channel, a DM, a group DM or an agent by a few letters of its name or
       handle (`utils/places.ts` — start, then a word, then anywhere, then
       letters in order; `#` narrows to channels, `@` to people), and with
-      nothing typed what calls for you and then where you were, kept per
-      workspace in this browser
+      nothing typed the conversation before this one first (⌘K then ⏎ goes
+      back), then up to four with mentions or decisions waiting, then where
+      you were, kept per workspace in this browser, then anything new
 - [x] **Say it, and "How I work", on the web.** A mic on "Tell your AI"
       where the browser can listen (Web Speech; Chrome and Safari — Firefox
       is not offered a button it cannot honour): the box fills as you speak,
