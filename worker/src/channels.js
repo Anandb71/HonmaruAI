@@ -439,7 +439,7 @@ export async function getMessage(db, orgId, id) {
     .first();
 }
 
-export async function postMessage(db, { orgId, key, authorLogin, body, kind = "message", cardId = null, parentId = null, withFiles = false }) {
+export async function postMessage(db, { orgId, key, authorLogin, body, kind = "message", cardId = null, parentId = null, replyTo = null, withFiles = false }) {
   const text = String(body || "").replace(/\r\n/g, "\n").trim();
   // A picture on its own is something said.
   if (!text && !withFiles) return { error: "Write something first." };
@@ -449,16 +449,26 @@ export async function postMessage(db, { orgId, key, authorLogin, body, kind = "m
     const parent = await getMessage(db, orgId, parentId);
     if (!parent || parent.channel !== key || parent.parent_id) return { error: "That thread is not here any more." };
   }
+  if (replyTo) {
+    // An inline reply answers a message where it is read: the conversation
+    // for a message, the same thread for a reply in one. Gone, unsent or
+    // somewhere else are refused alike, so the refusal says nothing of
+    // what another conversation holds.
+    const original = await getMessage(db, orgId, replyTo);
+    const here = original && original.channel === key && !original.deleted_at
+      && (parentId ? original.id === parentId || original.parent_id === parentId : !original.parent_id);
+    if (!here) return { error: "The message you are replying to is not here any more.", code: "reply_gone" };
+  }
   const id = crypto.randomUUID();
   // Strictly after the channel's last message, so two sent in the same
   // millisecond still read in the order they were sent.
   const now = new Date().toISOString();
   await db
     .prepare(
-      `INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, card_id, created_at, parent_id)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
+      `INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, card_id, created_at, parent_id, reply_to_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
     )
-    .bind(id, orgId, key, authorLogin, kind, text, cardId, now, parentId)
+    .bind(id, orgId, key, authorLogin, kind, text, cardId, now, parentId, replyTo || null)
     .run();
   await mirrorIds(db, orgId, [id]);
   return { row: await getMessage(db, orgId, id) };
