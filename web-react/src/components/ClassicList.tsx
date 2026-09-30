@@ -1821,7 +1821,7 @@ export const ClassicList: React.FC<Props> = ({
   }
   // Leaving a conversation closes what was open on it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); uploads.clear() }, [current?.key])
+  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); setMsgMenu(null); uploads.clear() }, [current?.key])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { threadUploads.clear() }, [thread?.parent.id])
   useEffect(() => {
