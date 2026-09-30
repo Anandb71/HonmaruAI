@@ -51,6 +51,12 @@ export function sectionBadge(threads: SectionRow[], mentions: Record<string, num
   return { cards, mentions: named, fresh }
 }
 
+/// Every row the sidebar shows, top to bottom — what ⌥↑/⌥↓ walks, so it
+/// never lands on a row a folded section hides.
+export function visibleRows<T extends SectionRow>(sections: Array<{ id: string; threads: T[] }>, folded: Record<string, boolean>, context: FoldContext): T[] {
+  return sections.flatMap((s) => (folded[s.id] ? foldedRows(s.threads, context) : s.threads))
+}
+
 const foldsKey = (orgId: string) => `sidebar.folded:${orgId}`
 
 /// The sections folded in this workspace, as this browser remembers them:

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { foldedRows, sectionBadge, readFolds, writeFolds, withSectionFolds } from './sidebarSections'
+import { foldedRows, sectionBadge, visibleRows, readFolds, writeFolds, withSectionFolds } from './sidebarSections'
 
 const row = (key: string, extra: { view?: string; unread?: number; fresh?: boolean } = {}) => ({ key, view: extra.view, unread: extra.unread || 0, fresh: extra.fresh })
 
@@ -48,6 +48,27 @@ describe('a folded section’s header', () => {
   it('is quiet over quiet rows', () => {
     expect(sectionBadge([row('a', { view: 'b:a' })], {})).toEqual({ cards: 0, mentions: 0, fresh: false })
     expect(sectionBadge([], {})).toEqual({ cards: 0, mentions: 0, fresh: false })
+  })
+})
+
+// ⌥↑/⌥↓ go through the rows on screen, never one a fold hides.
+describe('the rows the sidebar shows', () => {
+  const starred = [row('channel:s', { view: 'b:s' })]
+  const channels = [row('channel:a', { view: 'b:a' }), row('channel:b', { view: 'b:b', fresh: true }), row('channel:c', { view: 'b:c' })]
+  const people = [row('person:p', { view: 'dm:p' })]
+  const sections = [{ id: 'starred', threads: starred }, { id: 'channels', threads: channels }, { id: 'people', threads: people }]
+
+  it('are every row, in order, when nothing is folded', () => {
+    expect(visibleRows(sections, {}, { mentions: {}, prefs: {} }).map((th) => th.key))
+      .toEqual(['channel:s', 'channel:a', 'channel:b', 'channel:c', 'person:p'])
+  })
+
+  it('skip what a folded section hides, keeping the open one', () => {
+    const context = { mentions: {}, prefs: {}, currentKey: 'channel:c' }
+    expect(visibleRows(sections, { channels: true }, context).map((th) => th.key))
+      .toEqual(['channel:s', 'channel:b', 'channel:c', 'person:p'])
+    expect(visibleRows(sections, { starred: true, people: true, channels: false }, context).map((th) => th.key))
+      .toEqual(['channel:a', 'channel:b', 'channel:c'])
   })
 })
 
