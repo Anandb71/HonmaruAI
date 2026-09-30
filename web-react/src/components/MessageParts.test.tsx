@@ -99,3 +99,19 @@ describe('who reacted', () => {
     expect(reactorNames(many, 'en', more)).toBe('P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, and 3 others')
   })
 })
+
+describe('the typing line', () => {
+  it('shows who is typing with the dots, kept out of a screen reader’s way', async () => {
+    const { TypingLine } = await import('./MessageParts')
+    const out = renderToStaticMarkup(<TypingLine names={['Aki', 'Ben']} />)
+    expect(out).toContain('<div class="slk-typing-people" data-typing="1">')
+    expect(out).toContain('<span class="slk-typing-now" aria-hidden="true"><span class="slk-dots"><i></i><i></i><i></i></span><span class="slk-typing-text">Aki and Ben are typing…</span></span>')
+    // Its own polite region, told once the line is on screen.
+    expect(out).toContain('<span class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>')
+  })
+
+  it('keeps its region with nobody typing, so the next one is heard', async () => {
+    const { TypingLine } = await import('./MessageParts')
+    expect(renderToStaticMarkup(<TypingLine names={[]} />)).toBe('<div class="slk-typing-people"><span class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span></div>')
+  })
+})
