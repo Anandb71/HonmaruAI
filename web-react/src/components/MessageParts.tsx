@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getLocale } from '../utils/locale'
 import { useT } from '../utils/i18n'
@@ -6,6 +6,7 @@ import type { ChannelMessage } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
 import { messageMenuEntries, type MessageMenuActions } from '../utils/messageMenu'
+import { keepOnScreen, focusGoesBack } from './RowMenu'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
@@ -61,6 +62,33 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+/// The whole picker by itself at a point: where a message's right-click
+/// menu was, opened from the smile along its top. It is fixed to the window
+/// there and kept on screen, and drawn once, not under the message, which
+/// may be far down the page or drawn twice (a thread's first message is in
+/// the channel and in the thread, and two pickers shut each other). The
+/// focus goes to its first emoji, so a keyboard that opened the menu
+/// carries on into it, and back to the message when it shuts.
+export const EmojiPickerAt: React.FC<{ at: { x: number; y: number }; onPick: (emoji: string) => void; onClose: () => void }> = ({ at, onPick, onClose }) => {
+  const ref = useRef<HTMLDivElement>(null)
+  const [place, setPlace] = useState<{ left: number; top: number }>({ left: at.x, top: at.y })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el) setPlace(keepOnScreen(at, el.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight }))
+  }, [at.x, at.y])
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null
+    const box = ref.current
+    box?.querySelector<HTMLButtonElement>('.slk-picker-emoji')?.focus({ preventScroll: true })
+    return () => { if (focusGoesBack(before, document.activeElement, document.body, box)) before!.focus({ preventScroll: true }) }
+  }, [])
+  return (
+    <div ref={ref} className="slk-picker-at" style={place}>
+      <EmojiPicker onPick={onPick} onClose={onClose} />
     </div>
   )
 }

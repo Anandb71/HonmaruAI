@@ -21,7 +21,7 @@ import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { messageContextEntries, messageMenuTriggers, type MessageMenuActions } from '../utils/messageMenu'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, QUICK_REACTIONS } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, QUICK_REACTIONS } from './MessageParts'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
 import type { DetailsTab, JournalCite } from './ChannelPanes'
 import { JamCall } from '../utils/jam'
@@ -1627,6 +1627,11 @@ export const ClassicList: React.FC<Props> = ({
   // reactions along the top. `anchor` is the message's element, kept lit.
   const [msgMenu, setMsgMenu] = useState<{ channel: string; m: ChannelMessage; inThread: boolean; x: number; y: number; anchor: string } | null>(null)
   const closeMsgMenu = useCallback(() => setMsgMenu(null), [])
+  // The whole emoji picker, from the smile along the top of that menu:
+  // where the menu was, rather than under the message, which may be far
+  // down the page or drawn twice (a thread's first message).
+  const [reactAt, setReactAt] = useState<{ channel: string; m: ChannelMessage; x: number; y: number; anchor: string } | null>(null)
+  const closeReactAt = useCallback(() => setReactAt(null), [])
   const [forwarding, setForwarding] = useState<{ channel: string; m: ChannelMessage } | null>(null)
   /// "Mark unread from here": the conversation (or the thread) is read only
   /// up to just before this message, on every device.
@@ -1821,7 +1826,7 @@ export const ClassicList: React.FC<Props> = ({
   }
   // Leaving a conversation closes what was open on it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); setMsgMenu(null); uploads.clear() }, [current?.key])
+  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); setMsgMenu(null); setReactAt(null); uploads.clear() }, [current?.key])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { threadUploads.clear() }, [thread?.parent.id])
   useEffect(() => {
@@ -2355,7 +2360,7 @@ export const ClassicList: React.FC<Props> = ({
   const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; onMenu?: (at: { x: number; y: number }, anchor: string) => void }, body: React.ReactNode) => (
     <article key={key} id={opts.msgId ? `msg-${opts.msgId}` : undefined} tabIndex={opts.msgId ? -1 : undefined}
       {...(!wide ? longPress(opts.onHold) : messageMenuTriggers(opts.onMenu))}
-      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && msgMenu?.anchor === `msg-${opts.msgId}` ? ' menu-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
+      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && [msgMenu?.anchor, reactAt?.anchor].includes(`msg-${opts.msgId}`) ? ' menu-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
       <div className="slk-gutter" aria-hidden="true">
         {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span> : avatarFor(opts.app, opts.face || { name: opts.name })}
       </div>
@@ -3815,14 +3820,17 @@ export const ClassicList: React.FC<Props> = ({
         <RowMenu at={{ x: rowMenu.x, y: rowMenu.y }} label={rowMenu.thread.name} entries={rowMenuEntries(rowMenu.thread)} onClose={closeRowMenu} />
       )}
       {msgMenu && (() => {
-        const { channel, m, inThread } = msgMenu
+        const { channel, m, inThread, x, y, anchor } = msgMenu
         return (
-          <RowMenu at={{ x: msgMenu.x, y: msgMenu.y }} label={t('Message actions')} onClose={closeMsgMenu} entries={messageContextEntries(m, {
+          <RowMenu at={{ x, y }} label={t('Message actions')} onClose={closeMsgMenu} entries={messageContextEntries(m, {
             ...actionsFor(channel, m, inThread), t,
-            reactions: QUICK_REACTIONS, onReact: (e) => react(channel, m, e), onMoreReactions: () => setPickerFor(m.id),
+            reactions: QUICK_REACTIONS, onReact: (e) => react(channel, m, e), onMoreReactions: () => setReactAt({ channel, m, x, y, anchor }),
           })} />
         )
       })()}
+      {reactAt && (
+        <EmojiPickerAt at={{ x: reactAt.x, y: reactAt.y }} onPick={(e) => react(reactAt.channel, reactAt.m, e)} onClose={closeReactAt} />
+      )}
       {renameDialog && (
         <Dialog
           title={t('Rename channel')}

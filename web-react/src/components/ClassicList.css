@@ -555,6 +555,10 @@
 }
 .classic.slk.slk .slk-picker-anchor { position: relative; height: 0; }
 .classic.slk.slk .slk-picker-anchor .slk-picker { left: 0; right: auto; top: 4px; }
+/* Opened from a message's right-click menu: on its own where the menu was,
+   fixed to the window and over everything, as the menu is. */
+.classic.slk.slk .slk-picker-at { position: fixed; z-index: 1000; }
+.classic.slk.slk .slk-picker-at .slk-picker { position: static; }
 .classic.slk.slk .slk-picker-label { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--slk-dim); margin: 6px 2px 4px; }
 .classic.slk.slk .slk-picker-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
 .classic.slk.slk .slk-picker-emoji { border: none; background: none; font-size: 20px; line-height: 1; padding: 5px 0; border-radius: 6px; cursor: pointer; }
