@@ -14,7 +14,7 @@ import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
-import { leavesGap, mergeById, reachesPast } from '../utils/chatScroll'
+import { isAtBottom, leavesGap, mergeById, reachesPast, shouldFollow } from '../utils/chatScroll'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
@@ -2201,24 +2201,42 @@ export const ClassicList: React.FC<Props> = ({
   // again once it has loaded, pictures arriving, a translation taking the
   // place of the words, a link growing a preview. Scrolled to once, it was
   // pushed out of sight by all of that. Scrolling up yourself lets go; back
-  // at the bottom, it holds again.
+  // at the bottom, it holds again. Something new arriving follows the same
+  // rule: up in the history, a teammate's message waits below; your own
+  // takes you to it.
   const logRef = useRef<HTMLDivElement | null>(null)
   const [logEl, setLogEl] = useState<HTMLDivElement | null>(null)
   const logAt = useCallback((el: HTMLDivElement | null) => { logRef.current = el; setLogEl(el) }, [])
   const pinned = useRef(true)
   useEffect(() => { pinned.current = true }, [current?.key])
+  // What the log was last drawn for: another log or another conversation is
+  // one just opened, and a newest message not seen before just arrived.
+  const followed = useRef<{ el: HTMLDivElement | null; key?: string; newest?: string }>({ el: null })
   useEffect(() => {
     const el = logRef.current
     if (!el) return
-    if (keepScroll.current !== null) { el.scrollTop = el.scrollHeight - keepScroll.current; keepScroll.current = null; return }
-    el.scrollTop = el.scrollHeight
-    pinned.current = true
+    const list = messages[current?.view || ''] || []
+    const newest = list[list.length - 1]
+    const last = followed.current
+    const opened = last.el !== el || last.key !== current?.key
+    const newestIsMine = Boolean(newest?.mine && newest.id !== last.newest)
+    followed.current = { el, key: current?.key, newest: newest?.id }
+    const restoring = keepScroll.current !== null
+    if (shouldFollow({ opened, atBottom: pinned.current, restoring, newestIsMine })) {
+      keepScroll.current = null
+      el.scrollTop = el.scrollHeight
+      pinned.current = true
+    } else if (restoring) {
+      el.scrollTop = el.scrollHeight - keepScroll.current!
+      keepScroll.current = null
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logEl, current?.key, current?.cards.length, messages[current?.view || '']?.length, thinking[current?.view || '']])
   useEffect(() => {
     const el = logEl
     if (!el) return
     const settle = () => { if (pinned.current && keepScroll.current === null) el.scrollTop = el.scrollHeight }
-    const onScroll = () => { pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48 }
+    const onScroll = () => { pinned.current = isAtBottom(el) }
     const changed = new MutationObserver(settle)
     changed.observe(el, { childList: true, subtree: true, characterData: true })
     const sized = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(settle) : null
