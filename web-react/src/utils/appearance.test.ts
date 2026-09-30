@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   readAppearance, writeAppearance, normalizeTheme, normalizeDensity, applyTheme, themeColorFor,
-  colorSchemeFor, applyColorScheme, setAppearance, getAppearance, THEME_KEY, DENSITY_KEY, THEME_COLOR,
+  colorSchemeFor, applyColorScheme, setAppearance, getAppearance, installAppearance,
+  THEME_KEY, DENSITY_KEY, THEME_COLOR,
 } from './appearance'
 import indexHtml from '../../index.html?raw'
 
@@ -103,6 +104,45 @@ describe('appearance', () => {
     setAppearance({ theme: 'system', density: 'cozy' })
     expect(getAppearance()).toEqual({ theme: 'system', density: 'cozy' })
     expect(localStorage.length).toBe(0)
+  })
+})
+
+// Two windows side by side: a choice made in one arrives in the other through
+// the storage event, and a change to anything else kept there does not repaint.
+describe('another tab', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('follows a theme or display chosen in another tab, and the whole storage cleared', () => {
+    const storage = fakeStorage()
+    const root = { dataset: {} as DOMStringMap }
+    let onStorage: (e: { key: string | null }) => void = () => {}
+    vi.stubGlobal('localStorage', storage)
+    vi.stubGlobal('document', { documentElement: root, querySelector: () => null, querySelectorAll: () => [] })
+    vi.stubGlobal('window', {
+      addEventListener: (type: string, fn: typeof onStorage) => { if (type === 'storage') onStorage = fn },
+    })
+    setAppearance({ theme: 'system', density: 'cozy' })
+    installAppearance()
+    expect('theme' in root.dataset).toBe(false)
+
+    // The other tab kept a value: this one reads it and draws it.
+    storage.setItem(THEME_KEY, 'dark')
+    onStorage({ key: THEME_KEY })
+    expect(getAppearance().theme).toBe('dark')
+    expect(root.dataset.theme).toBe('dark')
+
+    // Another key changing is not a reason to read again.
+    storage.setItem(DENSITY_KEY, 'compact')
+    onStorage({ key: 'locale' })
+    expect(getAppearance().density).toBe('cozy')
+    onStorage({ key: DENSITY_KEY })
+    expect(getAppearance()).toEqual({ theme: 'dark', density: 'compact' })
+
+    // A null key is the whole storage cleared: back to the defaults.
+    storage.clear()
+    onStorage({ key: null })
+    expect(getAppearance()).toEqual({ theme: 'system', density: 'cozy' })
+    expect('theme' in root.dataset).toBe(false)
   })
 })
 
