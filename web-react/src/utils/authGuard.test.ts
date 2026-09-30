@@ -68,3 +68,27 @@ describe('authGuard', () => {
     expect(warned).toEqual([['Card number'], ['Card number']])
   })
 })
+
+// A send gives up on a request that hangs, but not on one waiting for the
+// person to answer a data rule's question.
+describe('askingAboutData', () => {
+  it('is true from the question to its answer, once however often it is answered', async () => {
+    const w = new EventTarget()
+    ;(globalThis as unknown as { window: unknown }).window = w
+    const { askAboutData, askingAboutData } = await import('./authGuard')
+    let answer: ((send: boolean) => void) | null = null
+    const hold = (e: Event) => { e.preventDefault(); answer = (e as CustomEvent<{ resolve: (send: boolean) => void }>).detail.resolve }
+    w.addEventListener('honmaru:dlp-warning', hold)
+    expect(askingAboutData()).toBe(false)
+    const asked = askAboutData(['Card number'])
+    expect(askingAboutData()).toBe(true)
+    answer!(true)
+    answer!(false)
+    expect(await asked).toBe(true)
+    expect(askingAboutData()).toBe(false)
+    // Nobody there to ask: answered at once, and nothing left open.
+    w.removeEventListener('honmaru:dlp-warning', hold)
+    expect(await askAboutData(['Card number'])).toBe(false)
+    expect(askingAboutData()).toBe(false)
+  })
+})
