@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   readAppearance, writeAppearance, normalizeTheme, normalizeDensity, applyTheme, themeColorFor,
-  setAppearance, getAppearance, THEME_KEY, DENSITY_KEY, THEME_COLOR,
+  colorSchemeFor, applyColorScheme, setAppearance, getAppearance, THEME_KEY, DENSITY_KEY, THEME_COLOR,
 } from './appearance'
 
 function fakeStorage(): Storage {
@@ -76,6 +76,21 @@ describe('appearance', () => {
     expect(themeColorFor('dark', light)).toBe(THEME_COLOR.dark)
     expect(themeColorFor('light', dark)).toBe(THEME_COLOR.light)
     expect(themeColorFor('system', null)).toBe(THEME_COLOR.light)
+  })
+
+  it('names the chosen theme alone as the color-scheme, both for the system', () => {
+    expect(colorSchemeFor('light')).toBe('light')
+    expect(colorSchemeFor('dark')).toBe('dark')
+    expect(colorSchemeFor('system')).toBe('light dark')
+    let content = 'light dark'
+    const meta = { setAttribute: (_: string, v: string) => { content = v } }
+    const doc = { querySelector: () => meta } as unknown as Pick<Document, 'querySelector'>
+    applyColorScheme(doc, 'dark')
+    expect(content).toBe('dark')
+    applyColorScheme(doc, 'system')
+    expect(content).toBe('light dark')
+    // A page without the tag has nothing to say it on.
+    expect(() => applyColorScheme({ querySelector: () => null }, 'light')).not.toThrow()
   })
 
   it('changes one choice at a time, and keeps it', () => {

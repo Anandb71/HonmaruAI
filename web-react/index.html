@@ -25,13 +25,17 @@
     <meta name="theme-color" content="#0f0f0f" media="(prefers-color-scheme: dark)" />
     <!-- The theme chosen on You, on the page before its first paint: waiting
          for the app's own script opened a dark choice on a white flash.
-         utils/appearance.ts keeps the key and the two colours; say them the
-         same here. Storage that refuses leaves the system to decide. -->
+         color-scheme is said here too, because the browser paints its canvas
+         by that tag before any stylesheet has loaded. utils/appearance.ts
+         keeps the key and the two colours; say them the same here. Storage
+         that refuses leaves the system to decide. -->
     <script>
       try {
         const theme = localStorage.getItem('theme')
         if (theme === 'light' || theme === 'dark') {
           document.documentElement.dataset.theme = theme
+          const scheme = document.querySelector('meta[name="color-scheme"]')
+          if (scheme) scheme.setAttribute('content', theme)
           document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute('content', theme === 'dark' ? '#0f0f0f' : '#ffffff'))
         }
       } catch {}

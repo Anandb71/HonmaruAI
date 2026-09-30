@@ -82,6 +82,17 @@ export function applyThemeColor(doc: Pick<Document, 'querySelectorAll'>, theme: 
   })
 }
 
+/// What <meta name="color-scheme"> says. The browser paints its canvas and
+/// its own controls by that tag before any stylesheet has loaded, so it
+/// names the chosen theme alone, and both for the system's.
+export function colorSchemeFor(theme: Theme): string {
+  return theme === 'system' ? 'light dark' : theme
+}
+
+export function applyColorScheme(doc: Pick<Document, 'querySelector'>, theme: Theme): void {
+  doc.querySelector('meta[name="color-scheme"]')?.setAttribute('content', colorSchemeFor(theme))
+}
+
 let current: Appearance = readAppearance()
 const listeners = new Set<() => void>()
 const emit = () => { for (const l of listeners) l() }
@@ -91,6 +102,7 @@ const snapshot = () => current
 function paint(): void {
   if (typeof document === 'undefined') return
   applyTheme(document.documentElement, current.theme)
+  applyColorScheme(document, current.theme)
   applyThemeColor(document, current.theme)
 }
 
