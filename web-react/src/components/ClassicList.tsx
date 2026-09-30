@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { isTemp, markFailed, reconcile, tempMessage } from '../utils/pendingSend'
+import { arrive, isTemp, keepTemps, markFailed, reconcile, tempMessage } from '../utils/pendingSend'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -1118,7 +1118,8 @@ export const ClassicList: React.FC<Props> = ({
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return
-        setMessages((prev) => ({ ...prev, [channel]: data.messages || [] }))
+        // What is still on its way, or did not go, is only here: kept.
+        setMessages((prev) => ({ ...prev, [channel]: keepTemps(data.messages || [], prev[channel]) }))
         setMore((prev) => ({ ...prev, [channel]: (data.messages || []).length >= PAGE }))
         maybeNewEmoji((data.messages || []).map((m: ChannelMessage) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
       })
@@ -1235,13 +1236,12 @@ export const ClassicList: React.FC<Props> = ({
       const msg = { ...m, mine, reactions }
       maybeNewEmoji(`${m.body || ''} ${reactions.map((r) => r.emoji).join(' ')}`)
       if (m.parentId) {
-        // A reply: into the thread if it is open; its parent's count comes
-        // as an event of its own.
+        // A reply: into the thread if it is open — our own, back before the
+        // answer to the send, in place of the copy on its way. Its parent's
+        // count comes as an event of its own.
         setThread((prev) => {
           if (!prev || prev.parent.id !== m.parentId) return prev
-          const has = prev.replies.some((x) => x.id === m.id)
-          const replies = m.deleted ? prev.replies.filter((x) => x.id !== m.id)
-            : has ? prev.replies.map((x) => (x.id === m.id ? msg : x)) : [...prev.replies, msg]
+          const replies = m.deleted ? prev.replies.filter((x) => x.id !== m.id) : arrive(prev.replies, msg)
           return { ...prev, replies }
         })
         if (m.kind === 'ai') setThinking((prev) => ({ ...prev, [m.channel]: false }))
@@ -1257,7 +1257,9 @@ export const ClassicList: React.FC<Props> = ({
         isNew = !has
         // Deleted is gone — its thread with it — never a "was deleted" line.
         if (m.deleted) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
-        return { ...prev, [m.channel]: has ? list.map((x) => (x.id === m.id ? msg : x)) : [...list, msg] }
+        // Our own, back before the answer to the send, takes the place of
+        // the copy on its way rather than showing twice.
+        return { ...prev, [m.channel]: arrive(list, msg) }
       })
       setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
       if (!m.deleted && !m.editedAt && (isNew || !messagesRef.current[m.channel])) {
@@ -1783,11 +1785,11 @@ export const ClassicList: React.FC<Props> = ({
   const openThread = async (channel: string, m: ChannelMessage) => {
     setDetailId(null)
     setProfile(null)
-    setThread({ channel, parent: m, replies: [] })
+    setThread((prev) => ({ channel, parent: m, replies: prev && prev.parent.id === m.id ? prev.replies.filter(isTemp) : [] }))
     setThreadDraft('')
     const res = await fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(m.id)}`, { headers: authHeaders }).catch(() => null)
     const data = res?.ok ? await res.json().catch(() => null) : null
-    if (data) setThread((prev) => (prev && prev.parent.id === m.id ? { channel, parent: data.parent, replies: data.replies || [] } : prev))
+    if (data) setThread((prev) => (prev && prev.parent.id === m.id ? { channel, parent: data.parent, replies: keepTemps(data.replies || [], prev.replies) } : prev))
     requestAnimationFrame(() => threadComposer.current?.focus())
     markThreadRead(channel, m.id)
   }
@@ -1805,7 +1807,7 @@ export const ClassicList: React.FC<Props> = ({
     if (!data?.parent) { setThread(null); return }
     threadInActivity.current = true
     setThreadDraft('')
-    setThread({ channel, parent: data.parent, replies: data.replies || [] })
+    setThread((prev) => ({ channel, parent: data.parent, replies: keepTemps(data.replies || [], prev && prev.parent.id === parentId ? prev.replies : undefined) }))
     markThreadRead(channel, parentId)
     requestAnimationFrame(() => {
       const id = focusId === parentId ? `thread-${focusId}` : focusId
@@ -2063,8 +2065,9 @@ export const ClassicList: React.FC<Props> = ({
       list = [...got.filter((m) => !known.has(m.id)), ...list]
       older = got.length >= PAGE
     }
-    const merged = list
-    setMessages((prev) => ({ ...prev, [channel]: merged }))
+    // Pages loaded around what was held; what is only here is as it is now.
+    const merged = list.filter((m) => !isTemp(m))
+    setMessages((prev) => ({ ...prev, [channel]: keepTemps(merged, prev[channel]) }))
     setMore((prev) => ({ ...prev, [channel]: Boolean(older) }))
     setTimeout(() => jumpTo(cite.id), 80)
   }
