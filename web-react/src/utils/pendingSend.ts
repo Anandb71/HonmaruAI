@@ -70,6 +70,26 @@ export const markFailed = (list: ChannelMessage[], tempId: string, why: string, 
 export const markPending = (list: ChannelMessage[], tempId: string): ChannelMessage[] =>
   list.map((x) => (x.id === tempId ? { ...x, pending: true, failed: undefined, refused: undefined } : x))
 
+/// How long a send is given before it is taken for lost: room for a slow
+/// network and for a data rule reading an attached file, and short enough
+/// that what was sent after it in the same conversation is not held up.
+export const SEND_TIMEOUT = 25_000
+
+/// Give up on a send — abort it — once `ms` have gone by without an answer.
+/// While `paused` (a question put to the person that the request waits on,
+/// such as a data rule's "send it anyway?") the clock stands still, and it
+/// starts again from the top once the question is answered. Returns what
+/// stops the clock when the answer comes.
+export function sendDeadline(ctrl: AbortController, ms = SEND_TIMEOUT, paused: () => boolean = () => false, every = 500): () => void {
+  let left = ms
+  const id = setInterval(() => {
+    if (paused()) { left = ms; return }
+    left -= every
+    if (left <= 0) { clearInterval(id); ctrl.abort() }
+  }, every)
+  return () => clearInterval(id)
+}
+
 /// An answer that sending the same words again would only meet again: the
 /// server read them and said no — a data rule (422, or 409 once "send it
 /// anyway" was declined), a thread that has gone (400, 404), no right to

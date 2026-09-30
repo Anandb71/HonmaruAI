@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendTime, tempMessage, tempState } from './pendingSend'
+import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendDeadline, sendTime, tempMessage, tempState } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -98,6 +98,48 @@ describe('a message that did not go', () => {
     expect(tempState(refused[0])).toBe('failed')
     expect(markFailed([temp], temp.id, 'Timed out')[0].refused).toBeUndefined()
     expect(markPending(refused, temp.id)[0].refused).toBeUndefined()
+  })
+
+  it('is given up on when no answer comes in time, so what was sent after it can go', () => {
+    vi.useFakeTimers()
+    try {
+      const ctrl = new AbortController()
+      sendDeadline(ctrl, 25_000)
+      vi.advanceTimersByTime(24_500)
+      expect(ctrl.signal.aborted).toBe(false)
+      vi.advanceTimersByTime(500)
+      expect(ctrl.signal.aborted).toBe(true)
+
+      // Answered in time: the clock stops, and nothing is aborted later.
+      const answered = new AbortController()
+      const stop = sendDeadline(answered, 25_000)
+      vi.advanceTimersByTime(10_000)
+      stop()
+      vi.advanceTimersByTime(60_000)
+      expect(answered.signal.aborted).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('is not given up on while the person is being asked, and has its full time after they answer', () => {
+    vi.useFakeTimers()
+    try {
+      const ctrl = new AbortController()
+      let asking = false
+      sendDeadline(ctrl, 25_000, () => asking)
+      vi.advanceTimersByTime(20_000)
+      asking = true
+      vi.advanceTimersByTime(120_000)
+      expect(ctrl.signal.aborted).toBe(false)
+      asking = false
+      vi.advanceTimersByTime(24_500)
+      expect(ctrl.signal.aborted).toBe(false)
+      vi.advanceTimersByTime(500)
+      expect(ctrl.signal.aborted).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('is refused outright when the server read it and said no, not when it could not answer', () => {
