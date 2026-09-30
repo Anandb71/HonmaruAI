@@ -71,8 +71,9 @@ interface Props {
   onTellAI: (text: string) => void
   /// Take a card back: the sender before it is decided, the recipient any time.
   onDeleteCard?: (cardId: string) => void
-  /// The conversation open now, for what shows beside it (the record).
-  onViewChange?: (view: string | null, name: string | null) => void
+  /// The conversation open now, for what shows beside it (the record), and
+  /// whether you opened it — rather than the list putting one up by itself.
+  onViewChange?: (view: string | null, name: string | null, opened: boolean) => void
   /// Open the record of the channel open now: its context and decisions.
   onOpenRecord?: () => void
   /// A conversation (or a decision) fills a phone's screen: the shell hides
@@ -541,8 +542,13 @@ export const ClassicList: React.FC<Props> = ({
   // forgets it, so it does not take the screen from what you went to.
   const wantedView = useRef<{ view: string; until: number } | null>(null)
   const forgetWanted = () => { wantedView.current = null }
+  // A conversation opened by hand, until the shell has been told. The one
+  // the list puts up by itself — on a laptop, the first with something
+  // waiting — is not somewhere you went, and ⌘K does not remember it.
+  const chosenKey = useRef<string | null>(null)
   const choose = (key: string | null) => {
     forgetWanted()
+    chosenKey.current = key
     setActivityOpen(false)
     setLaterOpen(false)
     setThreadsOpen(false)
@@ -1134,7 +1140,13 @@ export const ClassicList: React.FC<Props> = ({
   }, [])
   const composer = useRef<HTMLTextAreaElement>(null)
   const view = current?.view
-  useEffect(() => { onViewChange?.(current?.view || null, current?.name || null) }, [current?.view, current?.name, onViewChange])
+  useEffect(() => {
+    const opened = Boolean(current && current.key === chosenKey.current)
+    chosenKey.current = null
+    onViewChange?.(current?.view || null, current?.name || null, opened)
+  // openKey too: choosing the conversation already on screen is opening it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.view, current?.name, openKey, onViewChange])
   // Whether there is more above what is loaded, per conversation.
   const [more, setMore] = useState<Record<string, boolean>>({})
   const PAGE = 150

@@ -614,10 +614,12 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   }, [suggestRule, relayHttpUrl, sessionToken, orgId, t])
   // The conversation open in the list: the record shows that channel.
   const [listView, setListView] = useState<{ view: string; name: string } | null>(null)
-  const onListView = useCallback((view: string | null, name: string | null) => {
+  const onListView = useCallback((view: string | null, name: string | null, opened: boolean) => {
     setListView(view ? { view, name: name || view } : null)
-    // Opened: the most recent place you were, for ⌘K with nothing typed.
-    if (view) rememberRecent(orgId, view)
+    // Opened by you: the most recent place you were, for ⌘K with nothing
+    // typed. Not the one the list put up as it loaded — that is not where
+    // you were, and ⌘K then Enter would go back to it.
+    if (view && opened) rememberRecent(orgId, view)
   }, [orgId])
   const handleDelete = useCallback((cardId: string) => {
     wsClientRef.current?.sendDeleteCard(cardId)
