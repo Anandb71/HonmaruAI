@@ -126,7 +126,8 @@ const emitRecent = () => { for (const l of recentListeners) l() }
 
 /// Put an emoji at the front of the recent ones: picked, or reacted with.
 export function rememberEmoji(e: string): void {
-  if (!canReact(e)) return
+  // Already first — the picker and the reaction it makes both tell us.
+  if (!canReact(e) || recentSnapshot()[0] === e.trim()) return
   const next = pushRecent(recentSnapshot(), e.trim())
   recent = next
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch { /* kept for this tab only */ }

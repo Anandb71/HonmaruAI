@@ -5,14 +5,11 @@ import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
-import { gridStep, pickerSections, rememberEmoji, useEmojiData, useRecentEmoji } from '../utils/emojiSearch'
+import { gridStep, pickerSections, rememberEmoji, useEmojiData, useQuickReactions, useRecentEmoji } from '../utils/emojiSearch'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
 // to a message on hover. ClassicList puts them together.
-
-/// The reactions most people reach for, first in the bar as in Slack.
-export const QUICK_REACTIONS = ['✅', '👀', '🙌']
 
 /// Cells to a row in the picker's grids, as ClassicList.css lays them out.
 const PICKER_COLS = 8
@@ -222,6 +219,22 @@ export const Reactions: React.FC<{
   )
 }
 
+/// First in the hover bar, as in Slack: the three emoji you reacted with
+/// last, or the usual three until you have.
+export const QuickReactions: React.FC<{ onReact: (emoji: string) => void }> = ({ onReact }) => {
+  const t = useT()
+  const quick = useQuickReactions()
+  return (
+    <>
+      {quick.map((e) => (
+        <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>
+          <EmojiGlyph emoji={e} size={18} />
+        </button>
+      ))}
+    </>
+  )
+}
+
 /// Everything you can do to one message, on hover — reactions, a thread,
 /// a pin, and behind ⋯ the rest: edit, delete, copy, make it a decision.
 export const MessageActions: React.FC<{
@@ -259,9 +272,7 @@ export const MessageActions: React.FC<{
   const copy = () => { void navigator.clipboard?.writeText(message.body); setMenu(false) }
   return (
     <>
-      {QUICK_REACTIONS.map((e) => (
-        <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
-      ))}
+      <QuickReactions onReact={onReact} />
       <button type="button" className="slk-tool" onClick={() => setPicker((p) => !p)} title={t('Add reaction')} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={16} /></button>
       {onReply && !inThread && (
         <button type="button" className="slk-tool" onClick={onReply} title={t('Reply in thread')} aria-label={t('Reply in thread')}><Icon name="message" size={16} /></button>
@@ -324,9 +335,7 @@ export const CardActions: React.FC<{
   }, [menu])
   return (
     <>
-      {QUICK_REACTIONS.map((e) => (
-        <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
-      ))}
+      <QuickReactions onReact={onReact} />
       <button type="button" className="slk-tool" onClick={() => setPicker((p) => !p)} title={t('Add reaction')} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={16} /></button>
       <div className="slk-tool-menu-wrap" ref={menuBox}>
         <button type="button" className="slk-tool" onClick={() => setMenu((m) => !m)} aria-label={t('More actions')} aria-expanded={menu} aria-haspopup="menu" data-card-more="1"><Icon name="more" size={16} /></button>

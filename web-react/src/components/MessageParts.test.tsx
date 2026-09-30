@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { renderRich, prefixLines, continueBlock } from './MessageParts'
@@ -104,6 +104,19 @@ describe('the emoji picker', () => {
     // One stop for Tab; the arrows do the rest.
     expect(after.match(/tabindex="0"/g)).toHaveLength(1)
     expect(after.match(/data-cell="/g)!.length).toBeGreaterThan(380)
+  })
+})
+
+describe('the hover bar’s reactions', () => {
+  it('are the usual three, then the ones you reacted with last', async () => {
+    const { QuickReactions } = await import('./MessageParts')
+    const { rememberEmoji } = await import('../utils/emojiSearch')
+    const bar = () => [...renderToStaticMarkup(<QuickReactions onReact={() => {}} />).matchAll(/aria-label="React with ([^"]+)"/g)].map((m) => m[1])
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} })
+    expect(bar()).toEqual(['✅', '👀', '🙌'])
+    rememberEmoji('🔥')
+    expect(bar()).toEqual(['🔥', '✅', '👀'])
+    vi.unstubAllGlobals()
   })
 })
 

@@ -19,6 +19,7 @@ import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/m
 import type { AgentFace } from '../utils/mentions'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
+import { rememberEmoji } from '../utils/emojiSearch'
 import { DailyReportDraft } from './DailyReport'
 import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
@@ -1698,7 +1699,11 @@ export const ClassicList: React.FC<Props> = ({
       return null
     }
   }
-  const react = (channel: string, m: ChannelMessage, emoji: string) => void act('POST', '/channels/reactions', channel, { messageId: m.id, emoji })
+  const react = (channel: string, m: ChannelMessage, emoji: string) => {
+    // Adding one (not taking yours back) makes it a recent one.
+    if (!m.reactions?.some((r) => r.emoji === emoji && r.mine)) rememberEmoji(emoji)
+    void act('POST', '/channels/reactions', channel, { messageId: m.id, emoji })
+  }
   const saveEdit = async (channel: string) => {
     if (!editing) return
     const text = editing.text.trim()
@@ -2904,6 +2909,7 @@ export const ClassicList: React.FC<Props> = ({
   /// A card in a conversation: react to it, open it, take it back.
   const [cardReacted, setCardReacted] = useState<Record<string, Array<{ emoji: string; count: number; mine?: boolean }>>>({})
   const reactCard = async (c: DecisionCard, emoji: string) => {
+    if (!cardReacted[c.id]?.some((r) => r.emoji === emoji && r.mine)) rememberEmoji(emoji)
     const res = await fetch(`${api.httpBase}/cards/${encodeURIComponent(c.id)}/reactions`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, emoji }),
