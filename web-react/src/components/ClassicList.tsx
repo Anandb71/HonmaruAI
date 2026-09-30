@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, tempMessage, tempState } from '../utils/pendingSend'
+import { arrive, echoOf, isDoubleSend, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, tempMessage, tempState } from '../utils/pendingSend'
 import { askingAboutData } from '../utils/authGuard'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
@@ -1319,11 +1319,17 @@ export const ClassicList: React.FC<Props> = ({
   /// what Retry sends again, and (`landing`) the server's copy an edit begun
   /// on it waits for. Its words are in the log with it. `abort` gives up on
   /// it while it goes — Delete, offered once it is still going at `lateAt`.
-  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; landing?: Promise<ChannelMessage | null>; abort?: () => void; lateAt?: number }
+  /// `going`: in line or sent, with no answer yet, so a Retry pressed twice
+  /// sends it once.
+  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; landing?: Promise<ChannelMessage | null>; abort?: () => void; lateAt?: number; going?: boolean }
   const outbox = useRef(new Map<string, Outgoing>())
-  /// The same words to the same place, already going: a second Enter or a
-  /// double tap before the box has cleared does not send them twice.
-  const going = useRef(new Set<string>())
+  /// The same words to the same place a moment ago: a second Enter or a
+  /// double tap before the box has cleared does not send them twice. Said
+  /// again on purpose, they go again (isDoubleSend).
+  const justSent = useRef(new Map<string, number>())
+  /// A message for later, waiting for the server's answer: the box still
+  /// holds it until then, so Enter again meanwhile does not schedule it twice.
+  const scheduling = useRef(new Set<string>())
   const goingKey = (o: Pick<Outgoing, 'channel' | 'parentId' | 'body' | 'files'>) => [o.channel, o.parentId || '', o.body, o.files.map((f) => f.id).join(',')].join('\n')
   /// A conversation's messages go one after another, in the order they were
   /// sent — as they did from the box that locked — or two sent in a blink
@@ -1348,19 +1354,19 @@ export const ClassicList: React.FC<Props> = ({
     }
     const files = up.items.flatMap((i) => (i.state === 'done' && i.file ? [i.file] : []))
     const key = goingKey({ channel, parentId, body, files })
-    if (going.current.has(key)) return
+    if (sendAt ? scheduling.current.has(key) : isDoubleSend(justSent.current, key)) return
     setProblem(null)
     // Written now, sent later: nothing shows in the conversation until it
     // goes, so this one still waits for the server's answer.
     if (sendAt) {
-      going.current.add(key)
+      scheduling.current.add(key)
       const res = await fetch(`${api.httpBase}/channels/messages`, {
         method: 'POST',
         headers: { ...authHeaders, 'content-type': 'application/json' },
         body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), sendAt }),
       }).catch(() => null)
       const data = res ? await res.json().catch(() => ({})) : {}
-      going.current.delete(key)
+      scheduling.current.delete(key)
       if (!res?.ok || !data.scheduled) { setProblem(res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return }
       if (parentId) setThreadDraft(''); else clearDraftOf(channel)
       setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
@@ -1388,19 +1394,18 @@ export const ClassicList: React.FC<Props> = ({
   /// Send what shows as on its way, once whatever went before it in that
   /// conversation has had its answer.
   const deliver = (out: Outgoing): Promise<ChannelMessage | null> => {
-    const key = goingKey(out)
-    going.current.add(key)
-    const turn = (inLine.current.get(out.channel) || Promise.resolve()).then(() => post(out, key))
+    out.going = true
+    const turn = (inLine.current.get(out.channel) || Promise.resolve()).then(() => post(out)).finally(() => { out.going = false })
     inLine.current.set(out.channel, turn.catch(() => null))
     return turn
   }
   /// The server's copy takes the place of ours. No answer in SEND_TIMEOUT
   /// and it is given up on as a dropped connection would be — with Retry —
   /// and the next in line goes; a request that hangs holds nothing up.
-  const post = async (out: Outgoing, key: string): Promise<ChannelMessage | null> => {
+  const post = async (out: Outgoing): Promise<ChannelMessage | null> => {
     const { tempId, channel, body, decide, parentId, files } = out
     // Deleted while it waited its turn: it never goes.
-    if (outbox.current.get(tempId) !== out) { going.current.delete(key); return null }
+    if (outbox.current.get(tempId) !== out) return null
     const ctrl = new AbortController()
     out.abort = () => ctrl.abort()
     const stopClock = sendDeadline(ctrl, SEND_TIMEOUT, askingAboutData)
@@ -1413,7 +1418,6 @@ export const ClassicList: React.FC<Props> = ({
     const data = res ? await res.json().catch(() => ({})) : {}
     stopClock()
     out.abort = undefined
-    going.current.delete(key)
     const msg = res?.ok ? (data.message as ChannelMessage | undefined) : undefined
     // Deleted while it went, and it did not land: nothing more to say.
     if (!msg?.id && outbox.current.get(tempId) !== out) return null
@@ -1484,8 +1488,8 @@ export const ClassicList: React.FC<Props> = ({
   /// Retry: the same words, files and thread, on their way again from
   /// where they are.
   const retry = (m: ChannelMessage) => {
-    const out = outbox.current.get(m.id) || { tempId: m.id, channel: m.channel, body: m.body, decide: false, parentId: m.parentId || undefined, files: m.files || [] }
-    if (going.current.has(goingKey(out))) return
+    const out: Outgoing = outbox.current.get(m.id) || { tempId: m.id, channel: m.channel, body: m.body, decide: false, parentId: m.parentId || undefined, files: m.files || [] }
+    if (out.going) return
     out.lateAt = Date.now() + SEND_TIMEOUT
     outbox.current.set(m.id, out)
     if (out.parentId) setThread((prev) => (prev && prev.parent.id === out.parentId ? { ...prev, replies: markPending(prev.replies, m.id) } : prev))
