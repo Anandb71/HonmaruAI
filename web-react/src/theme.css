@@ -1011,6 +1011,7 @@
 }
 :root[data-theme="dark"] .shortcuts-sheet { background: #1a1a1a; }
 :root[data-theme="dark"] .shortcuts-group dd { color: #f2f2f2; }
+:root[data-theme="dark"] .shortcuts-group kbd { background: #2a2a2a; border-color: #3a3a3a; }
 
 /* The workspace's mark in a phone's top bar (the rail has it on a laptop). */
 .topbar-ws { display: none; }
