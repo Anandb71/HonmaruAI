@@ -2,11 +2,13 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { insertMention, matchMembers, mentionQuery, mentionSegments } from '../utils/mentions'
 import type { Mentionable } from '../utils/mentions'
 import { useCustomEmoji, type CustomEmoji } from '../utils/customEmoji'
+import { bestName, rememberEmoji, searchEmoji, useEmojiData } from '../utils/emojiSearch'
+import type { EmojiEntry } from '../utils/emojiData'
 import { t } from '../utils/i18n'
 
-/// ":sho" before the caret, after a space or at the start: the workspace's
-/// emoji whose names hold "sho". Two letters first, as Slack waits for, so
-/// a colon in a sentence opens nothing.
+/// ":sho" before the caret, after a space or at the start: the emoji whose
+/// names hold "sho". Two letters first, as Slack waits for, so a colon in a
+/// sentence opens nothing.
 export function emojiQuery(text: string, caret: number): { start: number; query: string } | null {
   const m = /(^|[\s(（「])(:([a-z0-9_+-]{2,30}))$/.exec(text.slice(0, caret))
   return m ? { start: caret - m[2].length, query: m[3] } : null
@@ -19,10 +21,28 @@ export function matchEmoji(list: CustomEmoji[], query: string): CustomEmoji[] {
     .slice(0, 8)
 }
 
+/// One line of the ':' menu: a workspace's own emoji, or a Unicode one
+/// under the name of it that matched.
+export type EmojiChoice = { kind: 'custom'; name: string; url: string } | { kind: 'unicode'; name: string; e: string }
+
+/// What the ':' menu offers: the workspace's own that match, first as they
+/// always were, then — once the list has loaded — the Unicode ones.
+export function emojiChoices(custom: CustomEmoji[], data: EmojiEntry[] | null, query: string, max = 10): EmojiChoice[] {
+  const own = matchEmoji(custom, query).map((c): EmojiChoice => ({ kind: 'custom', name: c.name, url: c.url }))
+  const plain = searchEmoji(data || [], query, max).map((x): EmojiChoice => ({ kind: 'unicode', name: bestName(x, query), e: x.e }))
+  return [...own, ...plain].slice(0, max)
+}
+
+/// What a choice puts in the box: a workspace's `:name:`, which only this
+/// workspace draws, or the character itself.
+export function emojiInsert(choice: EmojiChoice): string {
+  return choice.kind === 'custom' ? `:${choice.name}:` : choice.e
+}
+
 /// Type "@" in a box and the team's names appear under it; ":" and two
-/// letters, and the workspace's own emoji. Arrows pick, Enter or Tab takes
-/// one, Escape closes. One hook, so the composer and the thread offer them
-/// the same way.
+/// letters, and the emoji by those names — the workspace's own first. Arrows
+/// pick, Enter or Tab takes one, Escape closes. One hook, so the composer
+/// and the thread offer them the same way.
 export function useMentionMenu(
   box: React.RefObject<HTMLTextAreaElement | HTMLInputElement | null>,
   text: string,
@@ -37,7 +57,9 @@ export function useMentionMenu(
   const people = useMemo(() => mentionQuery(text, caret), [text, caret])
   const peopleOptions = useMemo(() => (people ? matchMembers(members, people.query) : []), [members, people])
   const emoji = useMemo(() => (people ? null : emojiQuery(text, caret)), [people, text, caret])
-  const emojiOptions = useMemo(() => (emoji ? matchEmoji(custom, emoji.query) : []), [custom, emoji])
+  // The list is fetched the first time a ':' query is typed, not before.
+  const unicode = useEmojiData(Boolean(emoji))
+  const emojiOptions = useMemo(() => (emoji ? emojiChoices(custom, unicode, emoji.query) : []), [custom, unicode, emoji])
   const query = people || emoji
   const count = people ? peopleOptions.length : emojiOptions.length
   const open = Boolean(query) && count > 0 && dismissed !== `${query?.start}:${query?.query}`
@@ -70,14 +92,15 @@ export function useMentionMenu(
     setText(next.text)
     setDismissed(null)
   }
-  const pickEmoji = (e: CustomEmoji) => {
+  const pickEmoji = (choice: EmojiChoice) => {
     if (!emoji) return
     const el = box.current
     const at = el ? (el.selectionStart ?? text.length) : caret
-    const insert = `:${e.name}: `
+    const insert = `${emojiInsert(choice)} `
     pendingCaret.current = emoji.start + insert.length
     setText(text.slice(0, emoji.start) + insert + text.slice(at))
     setDismissed(null)
+    rememberEmoji(emojiInsert(choice))
   }
   const take = (i: number) => { if (people) pick(peopleOptions[i]); else pickEmoji(emojiOptions[i]) }
 
@@ -94,15 +117,18 @@ export function useMentionMenu(
   const menu = open && !people ? (
     <ul className="mention-menu emoji" role="listbox" aria-label={t('Emoji')}>
       {emojiOptions.map((e, i) => (
-        <li key={e.name} role="option" aria-selected={i === index}>
+        <li key={e.kind === 'custom' ? `:${e.name}:` : e.e} role="option" aria-selected={i === index}>
           <button
             type="button"
             className={`mention-option${i === index ? ' on' : ''}`}
             onMouseDown={(ev) => { ev.preventDefault(); pickEmoji(e) }}
             onMouseEnter={() => setIndex(i)}
-            data-emoji-option={e.name}
+            data-emoji-option={e.kind === 'custom' ? e.name : undefined}
+            data-emoji-char={e.kind === 'unicode' ? e.e : undefined}
           >
-            <img className="mention-emoji" src={e.url} alt="" />
+            {e.kind === 'custom'
+              ? <img className="mention-emoji" src={e.url} alt="" />
+              : <span className="mention-emoji uni" aria-hidden="true">{e.e}</span>}
             <span className="mention-name">:{e.name}:</span>
           </button>
         </li>
