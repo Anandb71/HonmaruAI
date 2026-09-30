@@ -1,9 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import type { DecisionCard } from '../types/card'
+import type { Business, DecisionCard } from '../types/card'
 import { getLocale } from '../utils/locale'
 import { displayName } from '../utils/names'
 import { useT } from '../utils/i18n'
+import { useMembers } from '../utils/mentions'
+import { emptyQueryPlaces, placesFallback, rankPlaces } from '../utils/places'
+import type { Place } from '../utils/places'
 import type { Screen } from '../utils/route'
+import { Icon } from './Icon'
 
 export type PaletteAction =
   | { kind: 'card'; cardId: string }
@@ -12,17 +16,43 @@ export type PaletteAction =
   | { kind: 'list' }
   | { kind: 'compose' }
   | { kind: 'message'; view: string; id: string; parentId?: string | null }
+  /// A conversation, opened in the list.
+  | { kind: 'view'; view: string }
 
 interface Props {
   httpBase: string
   orgId: string
   sessionToken: string
   cards: DecisionCard[]
+  /// Every conversation the list can open, as it last said. Empty until the
+  /// list has been drawn once; the channels and the team stand in till then.
+  places?: Place[]
+  /// Views opened lately, most recent first.
+  recent?: string[]
+  /// The conversation open now: with nothing typed it is not offered, so
+  /// ⌘K then Enter goes back to the one before.
+  current?: string | null
+  /// The workspace's channels, for before the list has been drawn.
+  businesses?: Business[]
   onPick: (action: PaletteAction) => void
   onClose: () => void
 }
 
-interface Item { key: string; group: 'actions' | 'cards' | 'past' | 'messages'; label: string; meta?: string; action: PaletteAction }
+interface Item { key: string; group: 'places' | 'actions' | 'cards' | 'past' | 'messages'; label: string; meta?: string; place?: Place; action: PaletteAction }
+
+const NONE: never[] = []
+
+/// Whether the pointer really moved, rather than the list scrolling under a
+/// pointer left resting on it — which a browser also reports as a move, at
+/// the same place on the screen. The first move seen is judged by how far
+/// it says it went.
+export function pointerMoved(
+  last: { x: number; y: number } | null,
+  e: { screenX: number; screenY: number; movementX?: number; movementY?: number },
+): boolean {
+  if (last) return last.x !== e.screenX || last.y !== e.screenY
+  return Boolean(e.movementX || e.movementY)
+}
 
 const ACTION_WORD: Record<string, string> = {
   approve: 'Approved', decline: 'Declined', revise: 'Revision asked',
@@ -30,11 +60,11 @@ const ACTION_WORD: Record<string, string> = {
   delegate: 'Delegated', later: 'Deferred', pending: 'Waiting',
 }
 
-/// ⌘K. One box that goes anywhere and finds anything: a screen, an action,
-/// a card the browser already has, and — a moment later — what the team
-/// decided before, from the Worker's search. Enter takes the highlighted
-/// row; Escape closes.
-export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards, onPick, onClose }) => {
+/// ⌘K. One box that goes anywhere and finds anything: a conversation by a
+/// few letters of its name, a screen, an action, a card the browser already
+/// has, and — a moment later — what the team decided before, from the
+/// Worker's search. Enter takes the highlighted row; Escape closes.
+export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards, places = NONE, recent = NONE, current = null, businesses = NONE, onPick, onClose }) => {
   const t = useT()
   const locale = getLocale()
   const [query, setQuery] = useState('')
@@ -83,6 +113,25 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
     ]
     return q ? all.filter((a) => a.label.toLowerCase().includes(q)) : all
   }, [q, t])
+
+  // Conversations, first, as a chat client's switcher has them: the list's
+  // own, or — before the list has ever been drawn — the channels and the team.
+  const team = useMembers(httpBase, orgId, sessionToken)
+  const known = useMemo(() => (places.length ? places : placesFallback(businesses, team)), [places, businesses, team])
+  const jumps: Item[] = useMemo(() => {
+    if (filtered) return []
+    // Where you were before the one you are in: the one you are in is where
+    // you are, not where you were, so a lone # does not lead with it either.
+    const before = recent.filter((v) => v !== current)
+    const found = query.trim()
+      ? rankPlaces(known, query, before)
+      : emptyQueryPlaces(known.filter((p) => p.view !== current), before)
+    return found.map((p) => ({
+      key: `v:${p.view}`, group: 'places' as const, label: p.name, place: p,
+      meta: p.kind === 'agent' ? t('Agent') : p.kind === 'person' && p.handle ? `@${p.handle}` : undefined,
+      action: { kind: 'view' as const, view: p.view },
+    }))
+  }, [filtered, query, known, recent, current, t])
 
   const here: Item[] = useMemo(() => {
     if (!q) return []
@@ -149,17 +198,58 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
     return () => { ignore = true; clearTimeout(id) }
   }, [query, httpBase, orgId, sessionToken, t])
 
-  const items = useMemo(() => filtered ? said : [...here, ...said, ...past, ...actions], [here, said, past, actions, filtered])
+  const items = useMemo(() => filtered ? said : [...jumps, ...here, ...said, ...past, ...actions], [jumps, here, said, past, actions, filtered])
   useEffect(() => { setCursor(0) }, [q, items.length])
+  // The highlighted row stays in sight: with conversations above the
+  // screens, the arrows walk further than the box is tall. The first row
+  // shows its group's heading with it.
+  const list = useRef<HTMLUListElement>(null)
+  useEffect(() => {
+    const ul = list.current
+    if (!ul) return
+    if (cursor === 0) { ul.scrollTop = 0; return }
+    ul.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' })
+  }, [cursor, items])
+  // The pointer takes the highlight only by moving. On entering a row it
+  // would take it back each time the arrows scroll the list under a pointer
+  // left over it, and ↓ past the fold would never get past.
+  const pointer = useRef<{ x: number; y: number } | null>(null)
+  const onPointer = (i: number) => (e: React.MouseEvent) => {
+    const moved = pointerMoved(pointer.current, e)
+    pointer.current = { x: e.screenX, y: e.screenY }
+    if (moved && i !== cursor) setCursor(i)
+  }
 
+  // The arrows are the palette's while it is open: the list's own ⌥↑/⌥↓,
+  // on the window, would otherwise change the conversation underneath.
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(c + 1, Math.max(items.length - 1, 0))) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)) }
+    // Mid-word in a Japanese or Chinese input method, Enter picks the word
+    // and the arrows pick among candidates: those keys are the IME's.
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setCursor((c) => Math.min(c + 1, Math.max(items.length - 1, 0))) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setCursor((c) => Math.max(c - 1, 0)) }
     else if (e.key === 'Enter') { e.preventDefault(); const it = items[cursor]; if (it) onPick(it.action) }
     else if (e.key === 'Escape') { e.preventDefault(); onClose() }
   }
 
-  const GROUP_WORD: Record<Item['group'], string> = { actions: t('Go to'), cards: t('Cards'), past: t('Decided before'), messages: t('Messages') }
+  const GROUP_WORD: Record<Item['group'], string> = { places: t('Conversations'), actions: t('Go to'), cards: t('Cards'), past: t('Decided before'), messages: t('Messages') }
+  /// Before a conversation's name, what kind it is, as the sidebar draws it:
+  /// # a channel, a lock a private one, @ a person or an agent, faces a group.
+  const placeLead = (p: Place) => (
+    <span className="palette-lead" aria-hidden="true">
+      {p.kind === 'channel' ? (p.private ? <Icon name="lock" size={13} /> : '#') : p.kind === 'group' ? <Icon name="users" size={14} /> : '@'}
+    </span>
+  )
+  /// After it, what waits there — mentions of you, decisions, or a dot for
+  /// something new — each said in words to a screen reader.
+  const placeMark = (p: Place) => {
+    const mentions = p.mentions || 0
+    const unread = p.unread || 0
+    if (mentions > 0) return <span className="palette-badge mention"><span aria-hidden="true">@{mentions}</span><span className="sr-only">{mentions === 1 ? t('1 mention of you') : t('{n} mentions of you', { n: mentions })}</span></span>
+    if (unread > 0) return <span className="palette-badge"><span aria-hidden="true">{unread}</span><span className="sr-only">{t('{n} waiting on you', { n: unread })}</span></span>
+    if (p.fresh) return <span className="palette-fresh"><span className="sr-only">{t('New messages')}</span></span>
+    return null
+  }
   let lastGroup: Item['group'] | null = null
 
   return (
@@ -172,7 +262,7 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKey}
-          placeholder={t('Search messages and decisions — from:@name in:#channel — or type where to go…')}
+          placeholder={t('Jump to a conversation, or search messages and decisions — from:@name in:#channel…')}
           aria-label={t('Search or jump to')}
           role="combobox"
           aria-expanded="true"
@@ -188,7 +278,7 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
           ))}
           <span className="palette-filter-hint" title={t('search.syntax')}>{t('"exact words" · -without · on:2026-09-01 · in:@name')}</span>
         </div>
-        <ul className="palette-list" id="palette-list" role="listbox">
+        <ul ref={list} className="palette-list" id="palette-list" role="listbox">
           {items.length === 0 && <li className="palette-empty">{t('Nothing matches that.')}</li>}
           {items.map((it, i) => {
             const head = it.group !== lastGroup
@@ -200,12 +290,16 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
                   id={`palette-${it.key}`}
                   role="option"
                   aria-selected={i === cursor}
-                  className={`palette-item${i === cursor ? ' on' : ''}`}
-                  onMouseEnter={() => setCursor(i)}
+                  className={`palette-item${it.place ? ' palette-place' : ''}${i === cursor ? ' on' : ''}`}
+                  data-view={it.place?.view}
+                  onMouseMove={onPointer(i)}
                   onClick={() => onPick(it.action)}
                 >
+                  {it.place && placeLead(it.place)}
                   <span className="palette-label">{it.label}</span>
+                  {it.place?.private && <span className="sr-only">{t('Private')}</span>}
                   {it.meta && <span className="palette-meta">{it.meta}</span>}
+                  {it.place && placeMark(it.place)}
                 </li>
               </React.Fragment>
             )
