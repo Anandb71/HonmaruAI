@@ -1825,6 +1825,37 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:reads-changed', on)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.orgId])
+  // Back from a dropped connection or a sleep (Dashboard says so): what was
+  // said meanwhile never came over the socket. The sidebar, the open
+  // conversation's newest page — merged, so older pages stay — the open
+  // thread, Activity and Threads are read again. Waking can bring both
+  // signals at once; a moment's wait makes them one.
+  const resyncNow = useRef<() => void>(() => {})
+  resyncNow.current = () => {
+    setChannelsTick((n) => n + 1)
+    if (view) void loadMessages(view)
+    if (thread) {
+      const { channel, parent } = thread
+      fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(parent.id)}`, { headers: authHeaders })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (data?.parent) setThread((prev) => (prev && prev.parent.id === parent.id ? { ...prev, parent: data.parent, replies: data.replies || [] } : prev)) })
+        .catch(() => { /* the thread stays as it was */ })
+    }
+    if (activityItems) void loadActivity()
+    if (threadItems) void loadThreads()
+  }
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const on = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => resyncNow.current(), 300)
+    }
+    window.addEventListener('honmaru:resync', on)
+    return () => {
+      window.removeEventListener('honmaru:resync', on)
+      if (timer) clearTimeout(timer)
+    }
+  }, [])
   const loadPins = async (channel: string) => {
     if (pins) { setPins(null); return }
     const res = await fetch(`${api.httpBase}/channels/pins?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}`, { headers: authHeaders }).catch(() => null)
