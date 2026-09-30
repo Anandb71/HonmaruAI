@@ -1,3 +1,4 @@
+import type { HTMLAttributes } from 'react'
 import type { MenuEntry } from '../components/RowMenu'
 import type { ChannelMessage } from '../types/card'
 import { tomorrowAt } from './quiet'
@@ -81,4 +82,55 @@ export function messageContextEntries(
   ] }
   const rest = messageMenuEntries(message, c)
   return rest.length ? [strip, { kind: 'sep' }, ...rest] : [strip]
+}
+
+/// Where the browser's own menu is the better one: a link (open it in a new
+/// tab, copy its address), a box being typed in, a picture or a player.
+export const NATIVE_MENU_SPOT = 'a[href], input, textarea, select, img, video, audio, iframe, canvas, [contenteditable]:not([contenteditable="false"])'
+
+/// Whether a right-click on a message opens the message's own menu rather
+/// than the browser's: not with Shift held, which is the way to the
+/// browser's menu anywhere; not over a link, a box or a picture; and not
+/// while some of its words are selected, which the browser's menu copies.
+export function opensMessageMenu(e: { shiftKey: boolean; overNative: boolean; selected: string }): boolean {
+  return !e.shiftKey && !e.overNative && !e.selected.trim()
+}
+
+/// The keyboard's way to a context menu: the menu key, or Shift+F10. With
+/// Shift, the menu key keeps the browser's own, as a right-click does.
+export function isMenuKey(e: { key: string; shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }): boolean {
+  if (e.ctrlKey || e.altKey || e.metaKey) return false
+  return e.key === 'ContextMenu' ? !e.shiftKey : e.key === 'F10' && e.shiftKey
+}
+
+/// A laptop's ways into a message's menu, for its element — what longPress
+/// is on a phone. A right-click opens it where the pointer is; the menu key
+/// or Shift+F10, on the message or anything in it with the focus, under
+/// its first line. `open` is handed the place and the element's id.
+export function messageMenuTriggers(open: ((at: { x: number; y: number }, anchor: string) => void) | undefined): HTMLAttributes<HTMLElement> {
+  if (!open) return {}
+  const ours = (el: HTMLElement, target: EventTarget | null, shiftKey: boolean) => {
+    // Only what is inside this message counts, not whatever holds it.
+    const spot = (target as Element | null)?.closest?.(NATIVE_MENU_SPOT)
+    const sel = window.getSelection()
+    return opensMessageMenu({
+      shiftKey,
+      overNative: Boolean(spot && el.contains(spot)),
+      selected: sel && !sel.isCollapsed && sel.containsNode(el, true) ? sel.toString() : '',
+    })
+  }
+  return {
+    onContextMenu: (e) => {
+      if (!ours(e.currentTarget, e.target, e.shiftKey)) return
+      e.preventDefault()
+      open({ x: e.clientX, y: e.clientY }, e.currentTarget.id)
+    },
+    onKeyDown: (e) => {
+      if (!isMenuKey(e) || !ours(e.currentTarget, e.target, false)) return
+      // Taken here, so the browser's own menu does not follow the key.
+      e.preventDefault()
+      const box = (e.currentTarget.querySelector('.slk-body') || e.currentTarget).getBoundingClientRect()
+      open({ x: box.left, y: Math.min(box.bottom, box.top + 24) }, e.currentTarget.id)
+    },
+  }
 }

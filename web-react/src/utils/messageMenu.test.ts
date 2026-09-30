@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { MenuEntry } from '../components/RowMenu'
-import { messageMenuEntries, messageContextEntries, type MessageMenuActions } from './messageMenu'
+import { messageMenuEntries, messageContextEntries, opensMessageMenu, isMenuKey, messageMenuTriggers, NATIVE_MENU_SPOT, type MessageMenuActions } from './messageMenu'
 
 // English, as the keys are; the words filled in as `t` would.
 const t = (english: string, vars?: Record<string, string | number>) => english.replace(/\{(\w+)\}/g, (_, k: string) => String(vars?.[k] ?? ''))
@@ -108,5 +108,106 @@ describe('a right-click on a message', () => {
   it('is just the reactions when there is nothing else to offer', () => {
     const list = messageContextEntries({ body: '', pinned: false }, { t, reactions: ['✅'], onReact: noop })
     expect(shape(list)).toEqual(['strip'])
+  })
+
+  it('opens the message’s menu, but leaves the browser’s to Shift, a link or a picture, and selected words', () => {
+    expect(opensMessageMenu({ shiftKey: false, overNative: false, selected: '' })).toBe(true)
+    expect(opensMessageMenu({ shiftKey: true, overNative: false, selected: '' })).toBe(false)
+    expect(opensMessageMenu({ shiftKey: false, overNative: true, selected: '' })).toBe(false)
+    expect(opensMessageMenu({ shiftKey: false, overNative: false, selected: 'some words' })).toBe(false)
+    // A click that only put the caret somewhere selected nothing.
+    expect(opensMessageMenu({ shiftKey: false, overNative: false, selected: ' \n' })).toBe(true)
+  })
+})
+
+describe('the keyboard’s way to the menu', () => {
+  const key = (k: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {}) =>
+    ({ key: k, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods })
+  it('is the menu key or Shift+F10', () => {
+    expect(isMenuKey(key('ContextMenu'))).toBe(true)
+    expect(isMenuKey(key('F10', { shiftKey: true }))).toBe(true)
+  })
+  it('is not F10 alone, nor either with another modifier, nor Shift with the menu key', () => {
+    expect(isMenuKey(key('F10'))).toBe(false)
+    expect(isMenuKey(key('F10', { shiftKey: true, ctrlKey: true }))).toBe(false)
+    expect(isMenuKey(key('ContextMenu', { altKey: true }))).toBe(false)
+    expect(isMenuKey(key('ContextMenu', { shiftKey: true }))).toBe(false)
+    expect(isMenuKey(key('e'))).toBe(false)
+  })
+})
+
+// A message on the page, as far as its triggers touch it: its own element,
+// the words in it, a link in it, and whatever is selected.
+function page({ selected = '', inMessage = true } = {}) {
+  const link = { closest: (s: string) => (s === NATIVE_MENU_SPOT ? link : null) }
+  const words = { closest: () => null }
+  const article = {
+    id: 'msg-m1',
+    contains: (n: unknown) => n === link || n === words,
+    querySelector: (s: string) => (s === '.slk-body' ? { getBoundingClientRect: () => ({ left: 120, top: 300, bottom: 360 }) } : null),
+    getBoundingClientRect: () => ({ left: 60, top: 300, bottom: 360 }),
+  }
+  vi.stubGlobal('window', {
+    getSelection: () => ({ isCollapsed: !selected, toString: () => selected, containsNode: (n: unknown) => inMessage && n === article }),
+  })
+  return { article, link, words }
+}
+/// An event on the message, the way React hands one over.
+function event(article: unknown, target: unknown, more: Record<string, unknown> = {}) {
+  let prevented = false
+  const e = { currentTarget: article, target, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, clientX: 400, clientY: 320, key: '', preventDefault: () => { prevented = true }, ...more }
+  return { e: e as never, prevented: () => prevented }
+}
+
+describe('a laptop’s ways into a message’s menu', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('opens where the pointer is on a right-click, and keeps the browser’s menu away', () => {
+    const { article, words } = page()
+    const open = vi.fn()
+    const { e, prevented } = event(article, words)
+    messageMenuTriggers(open).onContextMenu!(e)
+    expect(open).toHaveBeenCalledWith({ x: 400, y: 320 }, 'msg-m1')
+    expect(prevented()).toBe(true)
+  })
+
+  it('leaves the browser’s menu to a link, to Shift, and to words of it selected', () => {
+    const open = vi.fn()
+    const onLink = page()
+    const a = event(onLink.article, onLink.link)
+    messageMenuTriggers(open).onContextMenu!(a.e)
+    const shifted = event(onLink.article, onLink.words, { shiftKey: true })
+    messageMenuTriggers(open).onContextMenu!(shifted.e)
+    const chosen = page({ selected: 'to copy' })
+    const s = event(chosen.article, chosen.words)
+    messageMenuTriggers(open).onContextMenu!(s.e)
+    expect(open).not.toHaveBeenCalled()
+    expect([a.prevented(), shifted.prevented(), s.prevented()]).toEqual([false, false, false])
+  })
+
+  it('still opens when what is selected is somewhere else', () => {
+    const { article, words } = page({ selected: 'elsewhere', inMessage: false })
+    const open = vi.fn()
+    messageMenuTriggers(open).onContextMenu!(event(article, words).e)
+    expect(open).toHaveBeenCalledOnce()
+  })
+
+  it('opens from Shift+F10 or the menu key under the message’s first line, and from no other key', () => {
+    const { article } = page()
+    const open = vi.fn()
+    const f10 = event(article, article, { key: 'F10', shiftKey: true })
+    messageMenuTriggers(open).onKeyDown!(f10.e)
+    expect(open).toHaveBeenLastCalledWith({ x: 120, y: 324 }, 'msg-m1')
+    expect(f10.prevented()).toBe(true)
+    messageMenuTriggers(open).onKeyDown!(event(article, article, { key: 'ContextMenu' }).e)
+    expect(open).toHaveBeenCalledTimes(2)
+    const plain = event(article, article, { key: 'Enter' })
+    messageMenuTriggers(open).onKeyDown!(plain.e)
+    expect(open).toHaveBeenCalledTimes(2)
+    expect(plain.prevented()).toBe(false)
+  })
+
+  it('adds nothing to a message that has no menu (one deleted, or being edited)', () => {
+    expect(messageMenuTriggers(undefined)).toEqual({})
   })
 })
