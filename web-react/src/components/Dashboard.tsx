@@ -519,8 +519,16 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     else if (action.kind === 'list') { try { localStorage.setItem('mode', 'classic') } catch {}; navigate(hashForMode('classic')) }
     else if (action.kind === 'compose') { navigate(hashForMode('cards')); setPanel('compose') }
     // A conversation opens the way a link to one does (and "Message" on an
-    // agent): the list picks it up whether or not it is on screen yet.
-    else if (action.kind === 'view') navigate(hashForView(action.view))
+    // agent): the list picks it up whether or not it is on screen yet. With
+    // the list already here it is told directly: a link's #/c/… would be a
+    // step in the history that the address at once turns back into #/list,
+    // and Back would go nowhere.
+    else if (action.kind === 'view') {
+      if (mode !== 'classic') { navigate(hashForView(action.view)); return }
+      try { sessionStorage.setItem('list.openView', action.view) } catch {}
+      window.dispatchEvent(new CustomEvent('honmaru:open-view', { detail: action.view }))
+      if (screen) navigate(hashForMode('classic'))
+    }
     else if (action.kind === 'message') {
       // The list opens the conversation and goes to the message; if it is
       // not mounted yet it picks the target up when it is.
@@ -529,7 +537,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       navigate(hashForMode('classic'))
       setTimeout(() => window.dispatchEvent(new CustomEvent('honmaru:open-message', { detail: target })), 150)
     }
-  }, [navigate])
+  }, [navigate, mode, screen])
 
   // A toast that stays until clicked is a banner. Errors clear themselves.
   useEffect(() => {
