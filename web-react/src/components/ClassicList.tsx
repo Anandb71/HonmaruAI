@@ -30,7 +30,7 @@ import { InviteDialog } from './InviteDialog'
 import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
-import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
+import { playSound, setOpenView, rememberLevels, rememberLevel, startRing, stopRing } from '../utils/sound'
 import { closeMessageNotifications } from '../utils/notifications'
 import './ClassicList.css'
 
@@ -773,6 +773,9 @@ export const ClassicList: React.FC<Props> = ({
   const setPref = async (v: string, level: 'all' | 'mentions' | 'mute') => {
     const res = await fetch(`${api.httpBase}/channels/prefs`, { method: 'PUT', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, channel: v, level }) }).catch(() => null)
     if (!res?.ok) { setProblem(t('That did not save.')); return }
+    // For the sound and the notification decided at the socket, at once —
+    // also when the list's own load has not come back (or failed).
+    rememberLevel(api.orgId, v, level)
     setPrefs((prev) => { const next = { ...prev }; if (level === 'all') delete next[v]; else next[v] = level; return next })
   }
   /// A routine that writes this channel up for you every evening.
