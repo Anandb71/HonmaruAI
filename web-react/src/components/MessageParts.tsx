@@ -78,8 +78,11 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
       return
     }
     const at = Number((e.target as HTMLElement).dataset.cell)
-    if (!Number.isInteger(at) || !PICKER_KEYS.has(e.key)) return
+    // ⌥↑ and the like are still the chat's (between conversations).
+    if (!Number.isInteger(at) || !PICKER_KEYS.has(e.key) || e.altKey || e.metaKey || e.ctrlKey) return
+    // An arrow that moved in the grid does not also move the list behind it.
     e.preventDefault()
+    e.stopPropagation()
     const next = gridStep(sizes, at, e.key, PICKER_COLS)
     if (next < 0) search.current?.focus()
     else focusCell(next)
