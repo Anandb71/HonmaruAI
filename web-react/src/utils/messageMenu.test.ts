@@ -137,7 +137,8 @@ describe('the keyboard’s way to the menu', () => {
 })
 
 // A message on the page, as far as its triggers touch it: its own element,
-// the words in it, a link in it, and whatever is selected.
+// the words in it, a link in it, and whatever is selected — which a test
+// changes as a browser would, a range being what was selected when taken.
 function page({ selected = '', inMessage = true } = {}) {
   const link = { closest: (s: string) => (s === NATIVE_MENU_SPOT ? link : null) }
   const words = { closest: () => null }
@@ -147,15 +148,23 @@ function page({ selected = '', inMessage = true } = {}) {
     querySelector: (s: string) => (s === '.slk-body' ? { getBoundingClientRect: () => ({ left: 120, top: 300, bottom: 360 }) } : null),
     getBoundingClientRect: () => ({ left: 60, top: 300, bottom: 360 }),
   }
-  vi.stubGlobal('window', {
-    getSelection: () => ({ isCollapsed: !selected, toString: () => selected, containsNode: (n: unknown) => inMessage && n === article }),
-  })
-  return { article, link, words }
+  const sel = {
+    text: selected,
+    get isCollapsed(): boolean { return !sel.text },
+    rangeCount: 1,
+    toString: (): string => sel.text,
+    containsNode: (n: unknown) => inMessage && n === article,
+    getRangeAt: () => ({ cloneRange: (): { text: string } => ({ text: sel.text }) }),
+    removeAllRanges: (): void => { sel.text = '' },
+    addRange: (r: { text: string }): void => { sel.text = r.text },
+  }
+  vi.stubGlobal('window', { getSelection: () => sel })
+  return { article, link, words, sel }
 }
 /// An event on the message, the way React hands one over.
 function event(article: unknown, target: unknown, more: Record<string, unknown> = {}) {
   let prevented = false
-  const e = { currentTarget: article, target, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, clientX: 400, clientY: 320, key: '', preventDefault: () => { prevented = true }, ...more }
+  const e = { currentTarget: article, target, button: 0, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, clientX: 400, clientY: 320, key: '', preventDefault: () => { prevented = true }, ...more }
   return { e: e as never, prevented: () => prevented }
 }
 
@@ -197,6 +206,36 @@ describe('a laptop’s ways into a message’s menu', () => {
     messageMenuTriggers(open).onKeyDown!(key.e)
     expect(open).not.toHaveBeenCalled()
     expect([click.prevented(), key.prevented()]).toEqual([false, false])
+  })
+
+  it('goes by what was selected when the button went down, not the word a Mac selects on the way', () => {
+    // Nothing selected; a right-click (or a Ctrl+click) goes down on the
+    // words, the browser selects the word under it, then asks for a menu.
+    for (const press of [{ button: 2 }, { button: 0, ctrlKey: true }]) {
+      const { article, words, sel } = page()
+      const open = vi.fn()
+      const triggers = messageMenuTriggers(open)
+      triggers.onMouseDownCapture!(event(article, words, press).e)
+      sel.text = 'Check-in'
+      const click = event(article, words, press)
+      triggers.onContextMenu!(click.e)
+      expect(open, JSON.stringify(press)).toHaveBeenCalledOnce()
+      expect(click.prevented()).toBe(true)
+      // The word the browser lit is put back as it was: nothing selected.
+      expect(sel.text).toBe('')
+    }
+  })
+
+  it('leaves the browser’s menu to words that were selected when the button went down', () => {
+    const { article, words, sel } = page({ selected: 'to copy' })
+    const open = vi.fn()
+    const triggers = messageMenuTriggers(open)
+    triggers.onMouseDownCapture!(event(article, words, { button: 2 }).e)
+    const click = event(article, words)
+    triggers.onContextMenu!(click.e)
+    expect(open).not.toHaveBeenCalled()
+    expect(click.prevented()).toBe(false)
+    expect(sel.text).toBe('to copy')
   })
 
   it('still opens when what is selected is somewhere else', () => {

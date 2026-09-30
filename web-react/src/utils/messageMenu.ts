@@ -103,13 +103,37 @@ export function isMenuKey(e: { key: string; shiftKey: boolean; ctrlKey: boolean;
   return e.key === 'ContextMenu' ? !e.shiftKey : e.key === 'F10' && e.shiftKey
 }
 
+/// The words of this message that are selected, if any; a selection
+/// somewhere else on the page is not this message's.
+function selectedIn(el: Element): string {
+  const sel = window.getSelection()
+  return sel && !sel.isCollapsed && sel.containsNode(el, true) ? sel.toString() : ''
+}
+
+/// What was selected as a button went down for a right-click, before the
+/// browser had its say. On a Mac, Chrome, Edge and Safari select the word
+/// under the pointer on a right-click (or a Ctrl+click) before the menu's
+/// event, so by then there always seems to be something selected over
+/// words; what was selected a moment before is what the reader chose.
+let pressed: { el: Element; selected: string; range: Range | null } | null = null
+
+/// Puts back what was selected before the right-click (mostly nothing but
+/// a caret) in place of the word the browser selected on the way to its
+/// menu, which is not ours to leave lit.
+function putBack(range: Range | null) {
+  const sel = window.getSelection()
+  if (!sel) return
+  sel.removeAllRanges()
+  if (range) sel.addRange(range)
+}
+
 /// A laptop's ways into a message's menu, for its element — what longPress
 /// is on a phone. A right-click opens it where the pointer is; the menu key
 /// or Shift+F10, on the message or anything in it with the focus, under
 /// its first line. `open` is handed the place and the element's id.
 export function messageMenuTriggers(open: ((at: { x: number; y: number }, anchor: string) => void) | undefined): HTMLAttributes<HTMLElement> {
   if (!open) return {}
-  const ours = (el: HTMLElement, target: EventTarget | null, shiftKey: boolean) => {
+  const ours = (el: HTMLElement, target: EventTarget | null, shiftKey: boolean, selected: string) => {
     // React hands a message the events of what it draws elsewhere through a
     // portal as well (a picture opened over the whole page), which are not
     // the message's: the browser's menu stays theirs, and a key there is
@@ -117,21 +141,28 @@ export function messageMenuTriggers(open: ((at: { x: number; y: number }, anchor
     if (!el.contains(target as Node | null)) return false
     // Only what is inside this message counts, not whatever holds it.
     const spot = (target as Element | null)?.closest?.(NATIVE_MENU_SPOT)
-    const sel = window.getSelection()
-    return opensMessageMenu({
-      shiftKey,
-      overNative: Boolean(spot && el.contains(spot)),
-      selected: sel && !sel.isCollapsed && sel.containsNode(el, true) ? sel.toString() : '',
-    })
+    return opensMessageMenu({ shiftKey, overNative: Boolean(spot && el.contains(spot)), selected })
   }
   return {
+    // Before the browser selects anything for a right-click: the right
+    // button, or Ctrl with the main one, which is a Mac's right-click.
+    onMouseDownCapture: (e) => {
+      if (e.button !== 2 && !(e.button === 0 && e.ctrlKey)) { pressed = null; return }
+      const sel = window.getSelection()
+      pressed = { el: e.currentTarget, selected: selectedIn(e.currentTarget), range: sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null }
+    },
     onContextMenu: (e) => {
-      if (!ours(e.currentTarget, e.target, e.shiftKey)) return
+      // Decided on what was selected when the button went down on this
+      // message, where it did, not on what the browser has chosen since.
+      const press = pressed?.el === e.currentTarget ? pressed : null
+      pressed = null
+      if (!ours(e.currentTarget, e.target, e.shiftKey, press ? press.selected : selectedIn(e.currentTarget))) return
       e.preventDefault()
+      if (press) putBack(press.range)
       open({ x: e.clientX, y: e.clientY }, e.currentTarget.id)
     },
     onKeyDown: (e) => {
-      if (!isMenuKey(e) || !ours(e.currentTarget, e.target, false)) return
+      if (!isMenuKey(e) || !ours(e.currentTarget, e.target, false, selectedIn(e.currentTarget))) return
       // Taken here, so the browser's own menu does not follow the key.
       e.preventDefault()
       const box = (e.currentTarget.querySelector('.slk-body') || e.currentTarget).getBoundingClientRect()
