@@ -1163,6 +1163,18 @@ export const ClassicList: React.FC<Props> = ({
     setNewSince({ view, at: readAt(view) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
+  // Where the reader is: at the bottom, reading along, or up in the history
+  // since the newest thing they had was said. Up there, what arrives waits
+  // below them — not read, and counted — until they come back down.
+  const [readingUp, setReadingUp] = useState<{ view: string; since: string } | null>(null)
+  const atBottom = !readingUp || readingUp.view !== view
+  /// The log scrolled: whether that left the bottom, or came back to it.
+  const noteWhere = (v: string, el: HTMLElement) => {
+    if (isAtBottom(el)) { if (readingUp) setReadingUp(null); return }
+    if (readingUp?.view === v) return
+    const list = messages[v] || []
+    setReadingUp({ view: v, since: list[list.length - 1]?.createdAt || '' })
+  }
   // An app looked at is read: its count goes, here and on every device —
   // and again when something new arrives while it is open.
   // Only when there is something new to clear: every write counts against
@@ -1214,13 +1226,16 @@ export const ClassicList: React.FC<Props> = ({
     if (activityNew) markAllActivityRead()
     setToast(views.length ? t('Marked {n} conversations as read', { n: views.length }) : t('Activity marked as read'))
   }
+  // Read as Discord reads it: on opening, and then as things arrive only
+  // while you are at the bottom to see them. Scrolled up in the history, it
+  // stays unread until you come back down.
   useEffect(() => {
-    if (!view || heldUnread.current === view) return
+    if (!view || heldUnread.current === view || !atBottom) return
     const now = readHere(view)
     const id = setTimeout(() => readOnServer(view, now), 600)
     return () => clearTimeout(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, api.orgId, messages[view || '']?.length])
+  }, [view, api.orgId, messages[view || '']?.length, atBottom])
   // The composer grows with what is written, up to a point.
   useEffect(() => {
     const el = composer.current
@@ -2208,7 +2223,7 @@ export const ClassicList: React.FC<Props> = ({
   const [logEl, setLogEl] = useState<HTMLDivElement | null>(null)
   const logAt = useCallback((el: HTMLDivElement | null) => { logRef.current = el; setLogEl(el) }, [])
   const pinned = useRef(true)
-  useEffect(() => { pinned.current = true }, [current?.key])
+  useEffect(() => { pinned.current = true; setReadingUp(null) }, [current?.key])
   // What the log was last drawn for: another log or another conversation is
   // one just opened, and a newest message not seen before just arrived.
   const followed = useRef<{ el: HTMLDivElement | null; key?: string; newest?: string }>({ el: null })
@@ -3313,7 +3328,11 @@ export const ClassicList: React.FC<Props> = ({
             })}
           </div>
         ) : (
-        <div className="slk-log" ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
+        <div className="slk-log" ref={logAt} onScroll={(e) => {
+          if (!thread.view) return
+          noteWhere(thread.view, e.currentTarget)
+          if (e.currentTarget.scrollTop < 120) void loadOlder(thread.view)
+        }}>
           {thread.view && more[thread.view] && <div className="slk-older" role="status">{t('Loading earlier messages…')}</div>}
           {!(thread.view && more[thread.view]) && <div className="slk-start">
             {lead(thread, 'head')}
