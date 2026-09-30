@@ -841,6 +841,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           )}
           onWorkspace={() => setScreen('team')}
           onOpenScreen={(sc) => setScreen(sc)}
+          active={!panel && !screen && !palette && !shortcuts}
           workspaceMenu={workspaceSwitcher('header')}
           onCreateChannel={(name, opts) => channelCall('POST', { name, ...(opts?.private ? { private: true } : {}) })}
           onRenameChannel={(slug, name) => channelCall('PUT', { slug, name })}

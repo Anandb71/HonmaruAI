@@ -91,6 +91,10 @@ interface Props {
   onDeleteChannel: (slug: string) => Promise<string | null>
   /// Another screen: the team to invite, tools to connect, you.
   onOpenScreen?: (screen: 'team' | 'tools' | 'profile' | 'agents') => void
+  /// False while something of the shell's is over the list — the palette,
+  /// a screen, a panel, the shortcuts sheet: the list's keys wait, so ⇧Esc
+  /// typed there does not mark everything read underneath.
+  active?: boolean
 }
 
 /// One conversation in the sidebar: a channel (a business), a person, or an app.
@@ -251,7 +255,7 @@ function when(iso?: string): string {
 export const ClassicList: React.FC<Props> = ({
   userId, orgName, pending, sent, decided, businesses, presence,
   onOpen, onNudge, onDecide, api, onSearch, onCompose, onTellAI, onDeleteCard, onViewChange, onOpenRecord, onImmersive, renderCard, onWorkspace, workspaceMenu,
-  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen,
+  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, active = true,
 }) => {
   const t = useT()
   const locale = getLocale()
@@ -920,9 +924,10 @@ export const ClassicList: React.FC<Props> = ({
   // Keys a chat client has: ⌥↑/⌥↓ between conversations in the order the
   // sidebar shows them (a folded group's are out of sight, and skipped),
   // ⌥⇧↑/⌥⇧↓ between the ones with something new, ⌘⇧A Activity, ⌘⇧D the
-  // sidebar.
+  // sidebar. None of them while the shell has something over the list.
   const [sideHidden, setSideHidden] = useState(false)
   useEffect(() => {
+    if (!active) return
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         const list = visibleOrder(sidebarGroups, folded)
