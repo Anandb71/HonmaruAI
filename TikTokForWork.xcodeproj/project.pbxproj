@@ -1093,7 +1093,6 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Honmaru AI";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Sync decision cards with your team in real time.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1122,7 +1121,6 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Honmaru AI";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Sync decision cards with your team in real time.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
