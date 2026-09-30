@@ -40,7 +40,7 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
   const searching = Boolean(query.trim())
   useEffect(() => {
     const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing) onClose() }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
@@ -60,6 +60,8 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
   }
   const focusCell = (i: number) => box.current?.querySelector<HTMLElement>(`[data-cell="${i}"]`)?.focus()
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // Keys that are choosing a word in an input method are its own.
+    if (e.nativeEvent.isComposing) return
     if (e.key === 'Escape') {
       // The picker's, not the pane's behind it: a search clears first.
       e.stopPropagation()
@@ -68,7 +70,7 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
     }
     if (e.target === search.current) {
       if (e.key === 'ArrowDown' && total) { e.preventDefault(); focusCell(current) }
-      if (e.key === 'Enter' && !e.nativeEvent.isComposing && searching) {
+      if (e.key === 'Enter' && searching) {
         e.preventDefault()
         const first = sections[0]?.cells[0]
         if (first) pick(first.emoji)
