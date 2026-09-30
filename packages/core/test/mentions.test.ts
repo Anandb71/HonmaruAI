@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mentionQuery, matchMembers, insertMention, mentionedRefs, splitMentions, mentionKind, mentionSegments, mentionsEveryone, broadcastOf } from '../src/mentions'
+import { mentionQuery, matchMembers, insertMention, mentionedRefs, splitMentions, mentionKind, mentionTarget, mentionSegments, mentionsEveryone, broadcastOf } from '../src/mentions'
 
 const team = [
   { ref: 'r1', name: 'Toru Bando' },
@@ -119,6 +119,13 @@ describe('mentionKind', () => {
     expect(parts.map((p) => p.text).join('')).toBe(text)
     expect(parts.filter((p) => p.mention).map((p) => [p.text, p.kind])).toEqual([['@mika', 'person'], ['@nobody', null], ['@hayaoに', 'agent']])
     expect(mentionSegments('mail a@b.com', list).some((p) => p.mention)).toBe(false)
+  })
+  it('finds the entry a mention names, so its profile can be opened', () => {
+    expect(mentionTarget('@MikaSato', list)?.ref).toBe('m1')
+    expect(mentionTarget('＠mikaに', list)?.ref).toBe('m1')
+    expect(mentionTarget('@sales', list)?.ref).toBe('group:sales')
+    expect(mentionTarget('@nobody', list)).toBeNull()
+    expect(mentionTarget('@channel', [...list, { ref: 'c', name: 'channel' }])).toBeNull()
   })
 })
 
