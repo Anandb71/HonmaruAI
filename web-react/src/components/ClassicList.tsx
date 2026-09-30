@@ -17,7 +17,7 @@ import { useBackStack } from '../utils/backStack'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
-import { mentionsMe, namesMe } from '../utils/mentionsMe'
+import { meReader } from '../utils/mentionsMe'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { DailyReportDraft } from './DailyReport'
@@ -2188,6 +2188,11 @@ export const ClassicList: React.FC<Props> = ({
   // @names that reach somebody light up as they are typed.
   const draftHl = useMentionHighlight(composer, draft, withAI)
   const threadHl = useMentionHighlight(threadComposer, threadDraft, withAI)
+  // Whether a message calls you and whether an @name is yours, asked of
+  // every message each time the conversation is drawn — every keystroke in
+  // the composer — so each answer is kept until the team or its groups
+  // change.
+  const readsMe = useMemo(() => meReader({ people: mentionable, groups: userGroups }), [mentionable, userGroups])
 
   // The newest message in view when a conversation opens, as in any chat —
   // and kept in view while what is above it settles: the conversation drawn
@@ -2384,12 +2389,12 @@ export const ClassicList: React.FC<Props> = ({
     if (kind === 'ai') return 'slk-mention ai'
     if (kind === 'agent' || agentHandles.has(part.replace(/^[@＠]/, '').replace(/[にへ]$/, '').normalize('NFKC').toLowerCase())) return 'slk-mention agent'
     // Your own name, stronger than anyone else's.
-    if (kind === 'person' && namesMe(part, mentionable)) return 'slk-mention me'
+    if (kind === 'person' && readsMe.namesMe(part)) return 'slk-mention me'
     return `slk-mention${kind === 'group' ? ' group' : ''}`
   })
   /// Whether a message calls you (utils/mentionsMe.ts): read from what was
   /// written, not a translation of it; an unsent one calls nobody.
-  const callsMe = (m: ChannelMessage) => !m.deleted && mentionsMe(m, { people: mentionable, groups: userGroups })
+  const callsMe = (m: ChannelMessage) => !m.deleted && readsMe.mentionsMe(m)
 
   /// One face beside "3 replies": the AI's mark, an agent's emoji, your own
   /// photo, or a teammate's.
