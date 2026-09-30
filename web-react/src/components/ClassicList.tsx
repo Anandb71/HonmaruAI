@@ -14,7 +14,7 @@ import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
-import { isAtBottom, leavesGap, mergeById, reachesPast, shouldFollow } from '../utils/chatScroll'
+import { isAtBottom, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from '../utils/chatScroll'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
@@ -3007,7 +3007,7 @@ export const ClassicList: React.FC<Props> = ({
         out.push(<div key={`day-${d}`} className="slk-day" role="separator"><span>{dayLabel(item.at)}</span></div>)
       }
       const at = Date.parse(item.at)
-      if (!lined && item.kind === 'msg' && !item.msg.mine && item.at > since) {
+      if (!lined && item.kind === 'msg' && isNewSince(item.msg, since)) {
         lined = true
         out.push(<div key="new-line" className="slk-new-line" role="separator"><span>{t('New')}</span></div>)
       }
