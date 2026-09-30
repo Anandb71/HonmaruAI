@@ -84,6 +84,10 @@ describe('telling the relay', () => {
     expect(typedIn(null, here, '   ', 10)).toEqual({ next: null, send: [] })
   })
 
+  it('says nothing in a conversation with an agent, where nobody else is', () => {
+    expect(typedIn(null, { channel: 'ag:hayao', parentId: null }, 'draw me a cat', 0)).toEqual({ next: null, send: [] })
+  })
+
   it('moves from one box to another with a stop where it was', () => {
     const typing = typedIn(null, here, 'hi', 0).next
     const thread = { channel: 'b:general', parentId: 'm-1' }
