@@ -1418,6 +1418,10 @@
   content: ''; position: absolute; top: 0; bottom: 0; left: 0;
   border-left: 2px solid var(--slk-me-bar); pointer-events: none;
 }
+/* What a screen reader hears in place of all that. It is text in the
+   message, so selecting the message and copying it would bring "Mentions
+   you" along with the words: it cannot be selected. */
+.classic.slk.slk .slk-calls-me { -webkit-user-select: none; user-select: none; }
 /* Your own @name among the others: the same warmth, stronger. */
 .classic.slk.slk .slk-mention.me { color: var(--slk-me-ink); background: var(--slk-me-chip); font-weight: 700; }
 

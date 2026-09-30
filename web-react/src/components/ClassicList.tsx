@@ -2366,7 +2366,7 @@ export const ClassicList: React.FC<Props> = ({
             <time className="slk-time" dateTime={opts.at}>{clock(opts.at)}</time>
           </div>
         )}
-        {opts.mentionsMe && <span className="sr-only">{t('Mentions you')}</span>}
+        {opts.mentionsMe && <span className="sr-only slk-calls-me">{t('Mentions you')}</span>}
         {body}
       </div>
       {opts.tools && <div className="slk-tools">{opts.tools}</div>}
