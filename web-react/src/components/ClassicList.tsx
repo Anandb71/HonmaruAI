@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, sendTime, tempMessage, tempState } from '../utils/pendingSend'
+import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendTime, tempMessage, tempState } from '../utils/pendingSend'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -1403,7 +1403,11 @@ export const ClassicList: React.FC<Props> = ({
     const data = res ? await res.json().catch(() => ({})) : {}
     going.current.delete(key)
     const msg = res?.ok ? (data.message as ChannelMessage | undefined) : undefined
-    if (!msg?.id) { fail(out, res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return null }
+    if (!msg?.id) {
+      if (res && !res.ok && refusedOutright(res.status)) refuse(out, refusal(data))
+      else fail(out, res && !res.ok ? refusal(data) : t('That did not send. Try again.'))
+      return null
+    }
     outbox.current.delete(tempId)
     drawnAs.current.set(msg.id, tempId)
     // An edit begun on it while it went carries on, on the server's copy.
@@ -1428,16 +1432,40 @@ export const ClassicList: React.FC<Props> = ({
 
   /// It did not go: it stays where it was, marked, with why. Moved on from
   /// there since, you are told where you are now as well. A reply whose
-  /// thread has closed has nowhere to stay, so only that is said.
-  const fail = (out: Outgoing, why: string) => {
+  /// thread has closed has nowhere to stay, so only that is said. `refused`:
+  /// the server said no to the words, so it waits to be edited, not retried.
+  const fail = (out: Outgoing, why: string, refused = false) => {
     const { tempId, channel, parentId } = out
     if (parentId) {
       if (shownNow.current.thread !== parentId) { outbox.current.delete(tempId); setProblem(why); return }
-      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: markFailed(prev.replies, tempId, why) } : prev))
+      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: markFailed(prev.replies, tempId, why, refused) } : prev))
       return
     }
-    setMessages((prev) => (prev[channel] ? { ...prev, [channel]: markFailed(prev[channel], tempId, why) } : prev))
+    setMessages((prev) => (prev[channel] ? { ...prev, [channel]: markFailed(prev[channel], tempId, why, refused) } : prev))
     if (shownNow.current.view !== channel) setProblem(why)
+  }
+  /// Refused for what it says — a data rule, a thread that has gone: back
+  /// into the box it was written in, files and all, with why above it, when
+  /// that box is on screen and empty. With something else written there by
+  /// now, it stays where it was with Edit, so neither is lost.
+  const refuse = (out: Outgoing, why: string) => {
+    const { tempId, channel, parentId, body, files } = out
+    const box = parentId
+      ? shownNow.current.thread === parentId && !boxes.current.thread.trim() && !boxes.current.threadFiles
+      : shownNow.current.view === channel && draftView.current === channel && !boxes.current.draft.trim() && !boxes.current.files
+    if (!box) { fail(out, why, true); return }
+    drop(tempId, channel, parentId)
+    if (parentId) { setThreadDraft(body); threadUploads.restore(files) } else { setDraft(body); uploads.restore(files) }
+    setProblem(why)
+  }
+  /// Edit, under one that was refused: its words and files back in the box
+  /// it was written in, after whatever is there already, and it goes from
+  /// the conversation — it was only ever here.
+  const writeAgain = (m: ChannelMessage) => {
+    const after = (was: string) => (was.trim() ? `${was.replace(/\s+$/, '')}\n${m.body}` : m.body)
+    if (m.parentId) { setThreadDraft(after); threadUploads.restore(m.files || []) } else { setDraft(after); uploads.restore(m.files || []) }
+    discard(m)
+    ;(m.parentId ? threadComposer : composer).current?.focus()
   }
   /// Retry: the same words, files and thread, on their way again from
   /// where they are.
@@ -1457,12 +1485,14 @@ export const ClassicList: React.FC<Props> = ({
     for (const [id, drawn] of drawnAs.current) if (drawn === tempId) return id
     return null
   }
-  /// Delete: it was only ever here, so it just goes.
-  const discard = (m: ChannelMessage) => {
-    outbox.current.delete(m.id)
-    if (m.parentId) setThread((prev) => (prev && prev.parent.id === m.parentId ? { ...prev, replies: prev.replies.filter((x) => x.id !== m.id) } : prev))
-    else setMessages((prev) => (prev[m.channel] ? { ...prev, [m.channel]: prev[m.channel].filter((x) => x.id !== m.id) } : prev))
+  /// One only ever held here, gone from where it was drawn.
+  const drop = (tempId: string, channel: string, parentId?: string | null) => {
+    outbox.current.delete(tempId)
+    if (parentId) setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: prev.replies.filter((x) => x.id !== tempId) } : prev))
+    else setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== tempId) } : prev))
   }
+  /// Delete: it was only ever here, so it just goes.
+  const discard = (m: ChannelMessage) => drop(m.id, m.channel, m.parentId)
 
   // ---- Time and gathering: drafts, scheduled sends, Later, clips, notes ----
   // A draft per conversation, kept in this browser, as in any chat client.
@@ -1774,6 +1804,10 @@ export const ClassicList: React.FC<Props> = ({
   /// Where you are now, for a send that answers after you may have moved on.
   const shownNow = useRef({ view: openView, thread: threadOpenParent })
   shownNow.current = { view: openView, thread: threadOpenParent }
+  /// What is in the boxes now — words, and files going with them — for an
+  /// answer that comes after more may have been written.
+  const boxes = useRef({ draft, thread: threadDraft, files: uploads.items.length, threadFiles: threadUploads.items.length })
+  boxes.current = { draft, thread: threadDraft, files: uploads.items.length, threadFiles: threadUploads.items.length }
   const myRef = members.find((m) => m.mine)?.ref
   const nameOfRef = (ref: string) => (ref === myRef ? t('You') : members.find((m) => m.ref === ref)?.name || t('a teammate'))
 
@@ -2520,7 +2554,7 @@ export const ClassicList: React.FC<Props> = ({
   /// why it did not go (from the keyboard, back to the box it came from).
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
-      <UnsentNote message={m} onRetry={() => retry(m)} onDelete={() => discard(m)}
+      <UnsentNote message={m} onRetry={() => retry(m)} onDelete={() => discard(m)} onEdit={() => writeAgain(m)}
         refocus={() => (m.parentId ? threadComposer : composer).current?.focus()} />
       {!m.deleted && m.kind === 'message' && !m.previewsHidden && !isTemp(m) && (
         <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken}
