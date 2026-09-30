@@ -38,15 +38,17 @@ export function foldedRows<T extends SectionRow>(threads: T[], { mentions, curre
 }
 
 /// What a folded section's header says about its rows: the cards waiting
-/// (red), the mentions (blue @N), and whether anything new was said.
-export function sectionBadge(threads: SectionRow[], mentions: Record<string, number>): { cards: number; mentions: number; fresh: boolean } {
+/// (red), the mentions (blue @N), and whether anything new was said — not
+/// in the one open now, whose row shows no dot either (you are reading it,
+/// or just marked it unread while still looking).
+export function sectionBadge(threads: SectionRow[], mentions: Record<string, number>, currentKey?: string | null): { cards: number; mentions: number; fresh: boolean } {
   let cards = 0
   let named = 0
   let fresh = false
   for (const th of threads) {
     cards += th.unread
     if (th.view) named += mentions[th.view] || 0
-    if (th.fresh) fresh = true
+    if (th.fresh && th.key !== currentKey) fresh = true
   }
   return { cards, mentions: named, fresh }
 }

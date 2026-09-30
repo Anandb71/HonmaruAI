@@ -45,6 +45,12 @@ describe('a folded section’s header', () => {
     expect(sectionBadge(rows, { 'b:b': 2, 'dm:c': 1, 'b:gone': 9 })).toEqual({ cards: 7, mentions: 3, fresh: true })
   })
 
+  it('has no new-message dot for the one open now, as its row has none', () => {
+    const open = row('b', { view: 'b:b', fresh: true, unread: 1 })
+    expect(sectionBadge([open], { 'b:b': 1 }, 'b')).toEqual({ cards: 1, mentions: 1, fresh: false })
+    expect(sectionBadge([open, row('c', { view: 'b:c', fresh: true })], {}, 'b').fresh).toBe(true)
+  })
+
   it('is quiet over quiet rows', () => {
     expect(sectionBadge([row('a', { view: 'b:a' })], {})).toEqual({ cards: 0, mentions: 0, fresh: false })
     expect(sectionBadge([], {})).toEqual({ cards: 0, mentions: 0, fresh: false })

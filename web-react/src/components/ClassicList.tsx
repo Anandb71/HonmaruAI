@@ -1056,8 +1056,9 @@ export const ClassicList: React.FC<Props> = ({
     const shut = Boolean(folded[id])
     // Folded, it still shows the one open and what calls for you, as a chat
     // client's collapsed category does; the header counts what that is.
-    const shown = shut ? foldedRows(threads, foldContext()) : threads
-    const badge = sectionBadge(shown, mentionsIn)
+    const context = foldContext()
+    const shown = shut ? foldedRows(threads, context) : threads
+    const badge = sectionBadge(shown, mentionsIn, context.currentKey)
     return (
       <section key={id} className={`cl-section${shut ? ' folded' : ''}`} data-section={id}>
         <h2>
