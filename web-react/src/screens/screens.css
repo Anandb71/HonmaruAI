@@ -726,6 +726,12 @@
 :where(:root[data-theme="dark"]) .look-seg { background: #0f0f0f; }
 :where(:root[data-theme="dark"]) .look-seg > label { color: #a3a3a3; }
 :where(:root[data-theme="dark"]) .look-seg > label.on { background: #2a2a2a; color: #f2f2f2; box-shadow: none; }
+/* High-contrast modes throw away the background and shadow that mark the
+   chosen option, leaving three words that look alike: an outline in the
+   system's own text colour marks it instead. */
+@media (forced-colors: active) {
+  .look-seg > label.on { outline: 2px solid CanvasText; outline-offset: -2px; }
+}
 
 /* Sounds: a volume, and a ▶ beside each kind to hear it. */
 .sound-volume { display: block; margin-top: 8px; }
