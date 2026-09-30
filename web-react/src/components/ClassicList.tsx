@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptUnsent, markFailed, markPending, outboxKey, readUnsent, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from '../utils/pendingSend'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptAsYours, keptUnsent, markFailed, markPending, outboxKey, provenYours, readUnsent, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from '../utils/pendingSend'
 import type { Unsent } from '../utils/pendingSend'
 import { askingAboutData } from '../utils/authGuard'
 import { draftToClear, withoutDraft } from '../utils/drafts'
@@ -1322,6 +1322,9 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:channel-progress', on)
   }, [agentDone])
 
+  /// Who you are in this workspace, once the team has loaded: whose name
+  /// what you send goes under, and whose what is kept here must be.
+  const myRef = members.find((m) => m.mine)?.ref
   /// A message on its way, or one that did not go, by its temporary id:
   /// what Retry sends again, and (`landing`) the server's copy an edit begun
   /// on it waits for. Its words are in the log with it. `abort` gives up on
@@ -1354,6 +1357,16 @@ export const ClassicList: React.FC<Props> = ({
       if (kept.length) localStorage.setItem(key, JSON.stringify(kept)); else localStorage.removeItem(key)
     } catch { /* not kept: this tab still has them */ }
   }
+  /// One kept in this browser from before this page loaded, back in the
+  /// outbox: failed, and not drawn yet.
+  const restore = (u: Unsent) => {
+    if (outbox.current.has(u.said.id)) return
+    heldHere.current.add(u.said.id)
+    outbox.current.set(u.said.id, {
+      tempId: u.said.id, channel: u.said.channel, body: u.said.body, decide: u.decide, parentId: u.said.parentId || undefined, files: u.said.files || [], said: u.said,
+      failed: u.failed || t('That did not send. Try again.'), refused: u.refused, restored: true,
+    })
+  }
   // What did not go before this page loaded: back in the outbox, failed,
   // drawn where it was sent once that conversation or thread is loaded.
   // Only yours — kept under your own key, not the workspace's, so what
@@ -1361,16 +1374,31 @@ export const ClassicList: React.FC<Props> = ({
   useEffect(() => {
     let kept: Unsent[] = []
     try { kept = readUnsent(localStorage.getItem(outboxKey(api.orgId, userId))) } catch { /* nothing kept */ }
-    for (const u of kept) {
-      if (outbox.current.has(u.said.id)) continue
-      heldHere.current.add(u.said.id)
-      outbox.current.set(u.said.id, {
-        tempId: u.said.id, channel: u.said.channel, body: u.said.body, decide: u.decide, parentId: u.said.parentId || undefined, files: u.said.files || [], said: u.said,
-        failed: u.failed || t('That did not send. Try again.'), refused: u.refused, restored: true,
-      })
-    }
+    for (const u of kept) if (keptAsYours(u.said, myRef)) restore(u)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.orgId, userId])
+  // Once the team has loaded, who you are is known. One kept for you that
+  // names someone else as its author is let go — never drawn as yours, nor
+  // sent under your name. What was kept for the whole workspace, before it
+  // was kept per person, comes back only where it names you; the rest, and
+  // the old key with it, is dropped.
+  useEffect(() => {
+    if (!myRef) return
+    for (const o of [...outbox.current.values()]) {
+      if (keptAsYours(o.said, myRef)) continue
+      o.abort?.()
+      drop(o.tempId, o.channel, o.parentId)
+    }
+    let shared: Unsent[] = []
+    try {
+      shared = readUnsent(localStorage.getItem(sharedOutboxKey(api.orgId)))
+      localStorage.removeItem(sharedOutboxKey(api.orgId))
+    } catch { /* nothing kept there */ }
+    const yours = shared.filter((u) => provenYours(u.said, myRef))
+    for (const u of yours) restore(u)
+    if (yours.length) keepOutbox()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRef])
   // Leaving while something is still on its way: asked first, as it may not
   // get there. What did not go is kept for next time, so is not asked about.
   useEffect(() => {
@@ -1937,7 +1965,6 @@ export const ClassicList: React.FC<Props> = ({
   /// answer that comes after more may have been written.
   const boxes = useRef({ draft, thread: threadDraft, files: uploads.items.length, threadFiles: threadUploads.items.length })
   boxes.current = { draft, thread: threadDraft, files: uploads.items.length, threadFiles: threadUploads.items.length }
-  const myRef = members.find((m) => m.mine)?.ref
   const nameOfRef = (ref: string) => (ref === myRef ? t('You') : members.find((m) => m.ref === ref)?.name || t('a teammate'))
 
   /// Put a changed message wherever it shows: the log, the thread, the pins.

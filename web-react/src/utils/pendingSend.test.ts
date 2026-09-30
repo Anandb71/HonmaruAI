@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptUnsent, markFailed, markPending, outboxKey, readUnsent, reconcile, refusedOutright, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from './pendingSend'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptAsYours, keptUnsent, markFailed, markPending, outboxKey, provenYours, readUnsent, reconcile, refusedOutright, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -290,6 +290,27 @@ describe('what did not go, kept in this browser', () => {
     for (const org of ['team:x', 'personal:ab12', 'acme/hotel']) expect(outboxKey(org, 'aiko')).not.toBe(sharedOutboxKey(org))
     // Every one of them is what signing out clears.
     expect(outboxKey('team:x', 'aiko').startsWith('outbox:')).toBe(true)
+  })
+
+  it('is never taken for yours when it names someone else as its author', () => {
+    const aikos = temp('mine', 'a')
+    const torus = { ...aikos, authorRef: 'm-toru', authorName: 'Toru' }
+    const nobodys = { ...aikos, authorRef: null }
+    expect(keptAsYours(aikos, 'm-aiko')).toBe(true)
+    expect(keptAsYours(torus, 'm-aiko')).toBe(false)
+    // Sent before the team had loaded, or read before it has: the key decides.
+    expect(keptAsYours(nobodys, 'm-aiko')).toBe(true)
+    expect(keptAsYours(torus, undefined)).toBe(true)
+    expect(keptAsYours(torus, null)).toBe(true)
+  })
+
+  it('kept for the whole workspace, is yours only when it names you', () => {
+    const aikos = temp('mine', 'a')
+    expect(provenYours(aikos, 'm-aiko')).toBe(true)
+    expect(provenYours({ ...aikos, authorRef: 'm-toru' }, 'm-aiko')).toBe(false)
+    expect(provenYours({ ...aikos, authorRef: null }, 'm-aiko')).toBe(false)
+    expect(provenYours(aikos, undefined)).toBe(false)
+    expect(provenYours({ ...aikos, authorRef: null }, null)).toBe(false)
   })
 
   it('keeps another tab’s as it left them, and this tab’s as they are now', () => {

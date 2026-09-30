@@ -187,6 +187,18 @@ export const outboxKey = (orgId: string, userId: string) => `outbox:${encodeURIC
 /// the workspace in this browser may have written it.
 export const sharedOutboxKey = (orgId: string) => `outbox:${orgId}`
 
+/// Whether one kept under your key can be taken for yours: not when it
+/// names someone else as its author. One sent before the team had loaded
+/// names nobody, and so does `you` until it has: then the key decides.
+export const keptAsYours = (said: Pick<ChannelMessage, 'authorRef'>, you: string | null | undefined) =>
+  !you || !said.authorRef || said.authorRef === you
+
+/// Whether one kept for the whole workspace (sharedOutboxKey) is yours:
+/// only when it names you as its author. Anything else may be somebody
+/// else's, and nothing tells it apart.
+export const provenYours = (said: Pick<ChannelMessage, 'authorRef'>, you: string | null | undefined) =>
+  !!you && said.authorRef === you
+
 const isUnsent = (u: unknown): u is Unsent => {
   const said = (u as Unsent | null)?.said
   return !!said && typeof said.id === 'string' && isTemp(said) && typeof said.channel === 'string'
