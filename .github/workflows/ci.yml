@@ -74,6 +74,28 @@ jobs:
       - run: npm run build
       - run: npx vitest run
 
+  # What every client shares (packages/core, packages/protocol) and the Expo
+  # app built on it (apps/mobile): the shared tests, both typechecks, and the
+  # app bundled for iOS and Android — so a change to the shared code that
+  # breaks the phone is caught here, not on a device.
+  clients:
+    name: Shared core and mobile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm test --workspace @honmaru/core
+      - run: npm run typecheck --workspace @honmaru/core
+      - run: npm run typecheck --workspace @honmaru/mobile
+      - name: Bundle the app for iOS and Android
+        working-directory: apps/mobile
+        run: CI=1 npx expo export --platform ios --platform android --output-dir dist
+
   # The one suite that runs the product rather than its parts: a real Worker on
   # real workerd, a real D1, the built web client, and a browser signing up with
   # a code it reads out of the message the Worker actually sent. It existed and

@@ -529,6 +529,18 @@ channel.
 | Push | Delivered and grouped per `orgId|channel` on both platforms; cleared on read elsewhere |
 | Build | EAS / CI builds for iOS and Android from a clean checkout |
 
+**Status (built):** `packages/protocol` (the `/v2` and sign-in shapes),
+`packages/core` (`Api`, `ChannelSync` with open / older pages / catch-up after
+the last seq / optimistic send, and the @mention rules — moved out of the web,
+which now imports them), and `apps/mobile` (Expo SDK 57, Expo Router, sign-in by
+emailed code, channel list with unread counts, a channel on FlashList v2). The
+repository root is an npm workspace for `apps/*` and `packages/*`. `web-react/`
+and `worker/` keep their own installs until they move under `apps/` (pnpm and
+Turborepo come with that move). CI job "Shared core and mobile" runs the core
+tests, both typechecks, and bundles the app for iOS and Android. Still to
+measure on devices: cold start and scroll frame rate. Still to build: push, links,
+Sign in with Apple.
+
 ### Go / no-go
 
 A short ADR records the measured numbers and the decision. On "go", the roadmap

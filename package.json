@@ -1,0 +1,10 @@
+{
+  "name": "honmaru",
+  "private": true,
+  "description": "Shared client code and the apps built on it (docs/architecture/discord-model-platform-plan.md §11). worker/ and web-react/ keep their own installs until they move under apps/.",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "test:core": "npm test --workspace @honmaru/core",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

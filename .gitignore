@@ -29,3 +29,6 @@ worker/test-join.mjs
 # node_modules as a directory or as a link to one (a git worktree shares the
 # main checkout's): never committed either way.
 node_modules
+
+# The workspace root (apps/*, packages/*)
+/node_modules/

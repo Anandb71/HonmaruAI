@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mentionQuery, matchMembers, insertMention, mentionedRefs, splitMentions, mentionKind, mentionSegments, mentionsEveryone, broadcastOf } from './mentions'
+import { mentionQuery, matchMembers, insertMention, mentionedRefs, splitMentions, mentionKind, mentionSegments, mentionsEveryone, broadcastOf } from '../src/mentions'
 
 const team = [
   { ref: 'r1', name: 'Toru Bando' },
