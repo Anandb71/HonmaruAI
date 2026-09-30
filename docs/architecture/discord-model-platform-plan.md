@@ -456,8 +456,8 @@ natively (SDK ≥ 52); pnpm isolated installs are default since SDK 54 — use
 | SDK / architecture | Current Expo SDK (57, RN 0.86; 58 when stable), New Architecture, dev client, Continuous Native Generation — no hand edits under `ios/` or `android/`; everything via config plugins |
 | Push | APNs (existing Worker code) for iOS, FCM HTTP v1 for Android. Notification Service Extension via a config plugin (expo-apple-targets) for communication notifications (sender avatar) and payload decryption. Keep `thread-id = orgId|channel` grouping |
 | Read clearing | Silent push (`content-available`) removes delivered notifications when read elsewhere — best-effort (iOS throttles), plus clearing on foreground |
-| Deep links | Universal Links (`associatedDomains`) + Android App Links; `apple-app-site-association` and `assetlinks.json` served by the Worker; route table shared in core |
-| Sign in | Email code (existing), SSO (existing), **Sign in with Apple** (App Review 4.8 when third-party login is offered), Google on Android |
+| Deep links | Universal Links (`associatedDomains`) + Android App Links; `apple-app-site-association` and `assetlinks.json` served by the Worker; route table shared in core. **Built:** links are real paths on the web app — `https://app.honmaruai.com/c/<channel>?org=<orgId>`, `/join/<code>` (`packages/core/src/links.ts`); the Worker makes both files from `APPLE_TEAM_ID` / `ANDROID_CERT_SHA256` (`worker/src/wellKnown.js`) and a Pages Function serves them on the web app's domain; the web turns the path into its hash route; the app's `+native-intent` and `c/[channel]` screen open it, switching to the link's workspace |
+| Sign in | Email code (existing), SSO (existing), **Sign in with Apple** (App Review 4.8 when third-party login is offered), Google on Android. **Built:** Sign in with Apple — `expo-apple-authentication` button on iOS, `POST /auth/apple` verifies Apple's RS256 token (keys cached, issuer, `APPLE_CLIENT_IDS` audience, expiry, SHA-256 nonce) and links Apple's `sub` in `apple_identities` (`worker/src/apple.js`). Google on Android not yet |
 | Payments | RevenueCat `react-native-purchases`; server webhook → `entitlements` unchanged |
 | Tokens | expo-secure-store; migrate the SwiftUI app's Keychain item (same service / access group) so users stay signed in across the update |
 | Lists | FlashList v2 for chat; benchmark on a low-end Android (Discord found blanking on low-end devices and built their own list) — fallback Legend List |
@@ -538,8 +538,12 @@ repository root is an npm workspace for `apps/*` and `packages/*`. `web-react/`
 and `worker/` keep their own installs until they move under `apps/` (pnpm and
 Turborepo come with that move). CI job "Shared core and mobile" runs the core
 tests, both typechecks, and bundles the app for iOS and Android. Still to
-measure on devices: cold start and scroll frame rate. Still to build: push, links,
-Sign in with Apple.
+measure on devices: cold start and scroll frame rate. Links and Sign in with
+Apple are built (§11.3): a link into a channel (`https://app.honmaruai.com/c/…`)
+opens the app, or the web where the app is not installed, in the link's
+workspace; invitation links (`/join/<code>`) redeem in the app. They go live once
+the Worker has `APPLE_TEAM_ID` and `ANDROID_CERT_SHA256` (docs/setup-secrets.md
+§4.7). Still to build: push.
 
 ### Go / no-go
 
