@@ -1,0 +1,274 @@
+// Honmaru AI for the desktop: the web app in its own window, with what a
+// browser tab cannot do — it stays running in the tray when closed (so
+// notifications keep coming, as Discord's does), shows the unread count on
+// the taskbar or dock, opens honmaru:// links, and remembers where it was.
+//
+// Security baseline (docs/architecture/discord-model-platform-plan.md §11.4):
+// context isolation, a sandboxed renderer without Node, a two-call preload,
+// permissions only for the app's own origin, navigation kept to the app, the
+// API and sign-in, and every other link sent to the browser.
+
+import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, session, shell } from 'electron'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { allowedOrigins, apiOriginsFrom, appUrlFrom } from './config.js'
+import { PROTOCOL, deepLinkToUrl, isSafeExternal, linkFromArgv, navigationDecision } from './links.js'
+import { countFromTitle, shouldAttract, trayTooltip } from './badge.js'
+import { fitBounds, loadWindowState, saveWindowState, MIN_SIZE } from './windowState.js'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const asset = (name) => path.join(here, '..', 'assets', name)
+
+const APP_ID = 'com.honmaru.ai'
+const APP_NAME = 'Honmaru AI'
+const APP_URL = appUrlFrom(process.env, process.argv)
+const APP_ORIGIN = new URL(APP_URL).origin
+const ORIGINS = allowedOrigins(APP_URL, process.env)
+const API_ORIGINS = apiOriginsFrom(process.env)
+/// What the app's own pages may ask for: notifications, a microphone and
+/// camera for Jam calls, full screen, and writing to the clipboard.
+const PERMISSIONS = new Set(['notifications', 'media', 'fullscreen', 'clipboard-sanitized-write'])
+
+let win = null
+let tray = null
+let quitting = false
+let count = 0
+let pendingLink = linkFromArgv(process.argv)
+
+// Windows shows a notification only for an app with an identity, and groups
+// the taskbar under it.
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
+app.setName(APP_NAME)
+
+// honmaru:// opens this app. While developing (`electron .`) the command
+// has to carry the script path for Windows to start it the same way.
+if (process.defaultApp && process.argv.length >= 2) {
+  app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])])
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL)
+}
+
+function showWindow() {
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  if (!win.isVisible()) win.show()
+  win.focus()
+}
+
+function openLink(link) {
+  const url = deepLinkToUrl(link, APP_URL)
+  if (!url) return
+  if (!win) { pendingLink = link; return }
+  showWindow()
+  void win.loadURL(url)
+}
+
+// ---- The count: taskbar, dock, tray ----
+
+let overlay = null
+function setCount(next) {
+  const previous = count
+  count = next
+  if (process.platform === 'darwin' || process.platform === 'linux') app.setBadgeCount(next)
+  if (process.platform === 'win32' && win) {
+    overlay ||= nativeImage.createFromPath(asset('overlay.png'))
+    win.setOverlayIcon(next > 0 ? overlay : null, next > 0 ? trayTooltip(next, APP_NAME) : '')
+  }
+  tray?.setToolTip(trayTooltip(next, APP_NAME))
+  if (win && shouldAttract(previous, next, win.isFocused())) {
+    if (process.platform === 'darwin') app.dock?.bounce('informational')
+    else win.flashFrame(true)
+  }
+}
+
+// ---- Where a window may go ----
+
+/// Guards every page this app ever shows: the main window, and any window a
+/// page opens (connecting a tool opens a blank one, then points it at the
+/// tool's sign-in — that goes to the browser, and the blank one closes).
+function guard(contents, { child = false } = {}) {
+  let signInUntil = 0
+  let startedAt = ''
+  const decide = (event, target, redirect) => {
+    const d = navigationDecision({ target, from: startedAt || contents.getURL(), origins: ORIGINS, apiOrigins: API_ORIGINS, signInUntil, redirect })
+    signInUntil = d.signInUntil
+    if (d.allow && !(child && new URL(target).origin !== APP_ORIGIN)) return
+    event.preventDefault()
+    if ((d.external || child) && isSafeExternal(target)) void shell.openExternal(target)
+    if (child) BrowserWindow.fromWebContents(contents)?.close()
+  }
+  contents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) startedAt = details.url
+  })
+  contents.on('will-navigate', (event) => decide(event, event.url, false))
+  contents.on('will-redirect', (event) => decide(event, event.url, true))
+  contents.on('will-attach-webview', (event) => event.preventDefault())
+  contents.setWindowOpenHandler(({ url }) => {
+    // A blank window, to be pointed somewhere once the page knows where:
+    // allowed, hidden, and guarded like a child.
+    if (url === 'about:blank' || url === '') {
+      return { action: 'allow', overrideBrowserWindowOptions: { show: false, webPreferences: webPreferences() } }
+    }
+    let origin = ''
+    try { origin = new URL(url).origin } catch { return { action: 'deny' } }
+    if (origin === APP_ORIGIN) { void win?.loadURL(url); return { action: 'deny' } }
+    if (isSafeExternal(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  contents.on('did-create-window', (childWindow) => guard(childWindow.webContents, { child: true }))
+}
+
+function webPreferences() {
+  return {
+    preload: path.join(here, 'preload.cjs'),
+    contextIsolation: true,
+    sandbox: true,
+    nodeIntegration: false,
+    webSecurity: true,
+    spellcheck: true,
+    // Hidden in the tray, the socket and its timers keep running: that is
+    // what lets a message arrive as a notification.
+    backgroundThrottling: false,
+  }
+}
+
+function lockPermissions() {
+  const ours = (url) => {
+    try { return new URL(url).origin === APP_ORIGIN } catch { return false }
+  }
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(PERMISSIONS.has(permission) && ours(details.requestingUrl || contents.getURL()))
+  })
+  session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin) => {
+    return PERMISSIONS.has(permission) && ours(requestingOrigin || contents?.getURL() || '')
+  })
+}
+
+// ---- The window ----
+
+function createWindow() {
+  const stateFile = path.join(app.getPath('userData'), 'window-state.json')
+  const saved = loadWindowState(stateFile)
+  const bounds = fitBounds(saved.bounds, screen.getAllDisplays().map((d) => d.workArea))
+  win = new BrowserWindow({
+    ...bounds,
+    minWidth: MIN_SIZE.width,
+    minHeight: MIN_SIZE.height,
+    title: APP_NAME,
+    icon: asset('icon.png'),
+    backgroundColor: '#1a1d21',
+    show: false,
+    autoHideMenuBar: process.platform !== 'darwin',
+    webPreferences: webPreferences(),
+  })
+  if (saved.maximized) win.maximize()
+  win.once('ready-to-show', () => win?.show())
+
+  guard(win.webContents)
+  win.webContents.on('page-title-updated', (_event, title) => setCount(countFromTitle(title)))
+  win.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason !== 'clean-exit') win?.webContents.reload()
+  })
+  win.on('focus', () => win?.flashFrame(false))
+
+  let saveTimer = null
+  const remember = () => {
+    if (!win || win.isMinimized() || win.isFullScreen()) return
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      if (win) saveWindowState(stateFile, { bounds: win.isMaximized() ? win.getNormalBounds() : win.getBounds(), maximized: win.isMaximized() })
+    }, 400)
+  }
+  win.on('resize', remember)
+  win.on('move', remember)
+  win.on('maximize', remember)
+  win.on('unmaximize', remember)
+
+  // Closing hides it: it keeps running in the tray, and notifications keep
+  // arriving. Quit from the tray or the menu ends it.
+  win.on('close', (event) => {
+    if (win) saveWindowState(stateFile, { bounds: win.isMaximized() ? win.getNormalBounds() : win.getBounds(), maximized: win.isMaximized() })
+    if (quitting) return
+    event.preventDefault()
+    win?.hide()
+  })
+  win.on('closed', () => { win = null })
+
+  const first = pendingLink ? deepLinkToUrl(pendingLink, APP_URL) : null
+  pendingLink = null
+  void win.loadURL(first || APP_URL)
+}
+
+function createTray() {
+  // The menu bar on a Mac has the dock instead; a tray icon there is noise.
+  if (process.platform === 'darwin') return
+  tray = new Tray(nativeImage.createFromPath(asset('tray.png')))
+  tray.setToolTip(trayTooltip(count, APP_NAME))
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: `Open ${APP_NAME}`, click: showWindow },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { quitting = true; app.quit() } },
+  ]))
+  tray.on('click', showWindow)
+}
+
+function createMenu() {
+  const isMac = process.platform === 'darwin'
+  const view = [
+    { role: 'reload' },
+    { role: 'forceReload' },
+    ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' }]),
+    { type: 'separator' },
+    { role: 'resetZoom' },
+    { role: 'zoomIn' },
+    { role: 'zoomOut' },
+    { type: 'separator' },
+    { role: 'togglefullscreen' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(isMac ? [{ role: 'appMenu' }] : [{ label: 'File', submenu: [{ label: 'Quit', accelerator: 'Ctrl+Q', click: () => { quitting = true; app.quit() } }] }]),
+    { role: 'editMenu' },
+    { label: 'View', submenu: view },
+    { role: 'windowMenu' },
+  ]))
+}
+
+// ---- The page's two calls ----
+
+ipcMain.on('honmaru:show', (event) => {
+  // Only the app's own page may bring the window forward.
+  if (win && event.sender === win.webContents && new URL(event.senderFrame?.url || win.webContents.getURL()).origin === APP_ORIGIN) showWindow()
+})
+
+// ---- One app, however many times it is started ----
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const link = linkFromArgv(argv)
+    if (link) openLink(link)
+    else showWindow()
+  })
+  // macOS hands links over as an event, possibly before the app is ready.
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    if (win) openLink(url)
+    else pendingLink = url
+  })
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('will-attach-webview', (e) => e.preventDefault())
+  })
+  app.on('before-quit', () => { quitting = true })
+  app.on('activate', () => { if (win) showWindow(); else createWindow() })
+  app.on('window-all-closed', () => {
+    // Only when quitting: closing the window hides it.
+    if (quitting) app.quit()
+  })
+  app.whenReady().then(() => {
+    lockPermissions()
+    createMenu()
+    createWindow()
+    createTray()
+  })
+}
