@@ -628,6 +628,7 @@ const table: Record<string, string> = {
   'Swipe the card': 'Karte wischen',
   'List': 'Liste',
   'Previous / next conversation': 'Vorheriges / nächstes Gespräch',
+  'Previous / next unread conversation': 'Vorheriges / nächstes ungelesenes Gespräch',
   'Show or hide the sidebar': 'Seitenleiste ein-/ausblenden',
   'Close the pane': 'Bereich schließen',
   'Writing': 'Schreiben',

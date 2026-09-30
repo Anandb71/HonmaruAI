@@ -958,15 +958,17 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           <div className="scrim" onClick={() => setShortcuts(false)} />
           <div className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape') setShortcuts(false) }}>
             <div className="sheet-title">{t('Keyboard shortcuts')}<button className="close" onClick={() => setShortcuts(false)} aria-label={t('Close')}>×</button></div>
+            {/* Each key written once, as code names it, and printed the way
+                this keyboard does: ⌘⇧A on a Mac, Ctrl+Shift+A elsewhere. */}
             {([
-              [t('Everywhere'), [['⌘K', t('Search, or jump anywhere')], ['N', t('Tell your AI')], ['⌘/', t('This list')]]],
+              [t('Everywhere'), [['Mod+K', t('Search, or jump anywhere')], ['N', t('Tell your AI')], ['Mod+/', t('This list')], ['Mod+1–9', t('Switch workspace')]]],
               [t('Cards'), [['A', t('Approve')], ['D', t('Decline')], ['J / K', t('Next / previous decision')], ['← →', t('Swipe the card')]]],
-              [t('List'), [['⌥↑ / ⌥↓', t('Previous / next conversation')], ['⌘⇧A', t('Activity')], ['⌘⇧D', t('Show or hide the sidebar')], ['⇧Esc', t('Mark all as read')], ['Esc', t('Close the pane')]]],
-              [t('Writing'), [['Enter', t('Send')], ['⇧Enter', t('New line')], ['↑', t('Edit your last message')], ['⌘B / ⌘I', t('Bold / italic')], ['/', t('Commands')], ['@', t('Mention someone, or @AI')]]],
+              [t('List'), [['Alt+Up / Alt+Down', t('Previous / next conversation')], ['Alt+Shift+Up / Alt+Shift+Down', t('Previous / next unread conversation')], ['Mod+Shift+A', t('Activity')], ['Mod+Shift+D', t('Show or hide the sidebar')], ['Shift+Esc', t('Mark all as read')], ['Esc', t('Close the pane')]]],
+              [t('Writing'), [['Enter', t('Send')], ['Shift+Enter', t('New line')], ['Up', t('Edit your last message')], ['Mod+B / Mod+I', t('Bold / italic')], ['/', t('Commands')], ['@', t('Mention someone, or @AI')]]],
             ] as Array<[string, string[][]]>).map(([group, rows]) => (
               <section key={group} className="shortcuts-group">
                 <h3>{group}</h3>
-                <dl>{rows.map(([k, what]) => <div key={k}><dt><kbd>{k}</kbd></dt><dd>{what}</dd></div>)}</dl>
+                <dl>{rows.map(([k, what]) => <div key={k}><dt><kbd>{formatCombo(k, isMac)}</kbd></dt><dd>{what}</dd></div>)}</dl>
               </section>
             ))}
           </div>

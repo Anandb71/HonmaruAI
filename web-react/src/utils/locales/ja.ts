@@ -416,6 +416,7 @@ const table: Record<string, string> = {
   'Swipe the card': 'カードをスワイプ',
   'List': 'リスト',
   'Previous / next conversation': '前 / 次の会話',
+  'Previous / next unread conversation': '前 / 次の未読の会話',
   'Show or hide the sidebar': 'サイドバーの表示切替',
   'Close the pane': 'ペインを閉じる',
   'Writing': '入力',
