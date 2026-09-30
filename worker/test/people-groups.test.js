@@ -91,3 +91,21 @@ test("the order you dragged your channels into is kept, and an app that does not
   // Saying the order outright replaces it.
   expect((await put({ starred: [], sections: [], order: [] })).order).toEqual([]);
 });
+
+test("a folded section stays folded when an app that does not know about folding saves", async () => {
+  const put = async (sidebar) => (await (await call("/channels/sidebar", toru, { method: "PUT", body: { orgId: ORG, sidebar } })).json()).sidebar;
+  const folded = (sidebar) => sidebar.sections.map((s) => [s.id, s.collapsed]);
+  expect(folded(await put({ starred: [], sections: [{ id: "s1", name: "Clients", views: [], collapsed: true }, { id: "s2", name: "Later", views: [] }], order: [] })))
+    .toEqual([["s1", true], ["s2", false]]);
+  // The iOS app saves its sections without the flag: the fold is kept, and
+  // a section it adds starts open.
+  expect(folded(await put({ starred: ["b:cafe"], sections: [{ id: "s1", name: "Clients", views: ["b:cafe"] }, { id: "s2", name: "Later", views: [] }, { id: "s3", name: "New", views: [] }], order: [] })))
+    .toEqual([["s1", true], ["s2", false], ["s3", false]]);
+  // Saying it outright opens it.
+  expect(folded(await put({ starred: [], sections: [{ id: "s1", name: "Clients", views: [], collapsed: false }], order: [] }))).toEqual([["s1", false]]);
+  // The order is still kept for a client that does not send one.
+  await put({ starred: [], sections: [{ id: "s1", name: "Clients", views: [], collapsed: true }], order: ["b:cafe"] });
+  const older = await put({ starred: [], sections: [{ id: "s1", name: "Clients", views: [] }] });
+  expect(older.order).toEqual(["b:cafe"]);
+  expect(folded(older)).toEqual([["s1", true]]);
+});

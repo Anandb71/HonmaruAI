@@ -137,9 +137,19 @@ export async function getSidebar(db, orgId, login) {
 
 export async function saveSidebar(db, orgId, login, input) {
   // A client that does not know about the order (an older app) keeps the
-  // one another device set.
-  const kept = input && typeof input === "object" && !("order" in input) ? (await getSidebar(db, orgId, login)).order : null;
-  const clean = cleanSidebar(kept ? { ...input, order: kept } : input);
+  // one another device set; one that does not know about folding (the iOS
+  // app) keeps each of your sections folded as another device left it.
+  const given = input && typeof input === "object" ? input : null;
+  const noFlag = (s) => s && typeof s === "object" && !("collapsed" in s);
+  const before = given && (!("order" in given) || (Array.isArray(given.sections) && given.sections.some(noFlag)))
+    ? await getSidebar(db, orgId, login) : null;
+  const wasFolded = new Set((before?.sections || []).filter((s) => s.collapsed).map((s) => s.id));
+  const merged = given && before ? {
+    ...given,
+    ...(!("order" in given) ? { order: before.order } : {}),
+    ...(Array.isArray(given.sections) ? { sections: given.sections.map((s) => (noFlag(s) && wasFolded.has(s.id) ? { ...s, collapsed: true } : s)) } : {}),
+  } : input;
+  const clean = cleanSidebar(merged);
   await db.prepare(
     `INSERT INTO sidebar_prefs (org_id, login, data, updated_at) VALUES (?1, ?2, ?3, ?4)
      ON CONFLICT (org_id, login) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
