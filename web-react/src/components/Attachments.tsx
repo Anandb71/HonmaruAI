@@ -37,7 +37,9 @@ type Size = { width: number; height: number }
 /// loads.
 async function dimensions(file: File): Promise<Size | null> {
   const kind = mediaKind(file.type, file.name)
-  if (kind === 'video') return videoDimensions(file)
+  // The upload waits on this, so a video that cannot be measured goes up
+  // without a size rather than never going up at all.
+  if (kind === 'video') return videoDimensions(file).catch(() => null)
   if (kind !== 'image') return null
   try {
     if (typeof createImageBitmap === 'function') {
