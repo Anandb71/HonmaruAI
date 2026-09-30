@@ -107,7 +107,9 @@
 /* A finger: rows and buttons a thumb can hit, and fields at 16px, below
    which Safari on iPhone zooms the page in when one is tapped. */
 @media (pointer: coarse) {
-  .status-pop-preset, .status-pop-profile { min-height: 44px; }
+  .status-pop-preset, .status-pop-profile, .status-pop .dlg-check { min-height: 44px; }
+  /* The ✕ grows into the corner's padding, where it was drawn. */
+  .status-pop .dialog-close { width: 44px; height: 44px; margin: -11px -9px 0 0; }
   .status-pop .dlg-btn { height: 40px; }
   .status-pop .dlg-input { height: 40px; font-size: 16px; }
 }
