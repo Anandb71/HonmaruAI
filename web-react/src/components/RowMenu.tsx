@@ -6,11 +6,20 @@ import type { IconName } from './Icon'
 /// does: items, a line between groups, a small heading, a tick beside the
 /// choice that is on, and a submenu that opens to the side. Escape, a click
 /// elsewhere or a scroll closes it; the arrow keys walk it.
+///
+/// A strip is a row of small buttons side by side — a message's quick
+/// reactions, along the top as Discord has them. ← and → walk along it;
+/// ↑ and ↓ take the whole row as one item.
 
 export type MenuEntry =
   | { kind: 'item'; label: string; onSelect?: () => void; icon?: IconName; checked?: boolean; danger?: boolean; hint?: string; submenu?: MenuEntry[]; data?: string; disabled?: boolean }
   | { kind: 'sep' }
   | { kind: 'head'; label: string }
+  | { kind: 'strip'; label: string; items: StripItem[] }
+
+/// One button in a strip: a character (an emoji) or an icon, and what it
+/// is called for a screen reader and on hover.
+export interface StripItem { label: string; text?: string; icon?: IconName; onSelect: () => void; data?: string }
 
 interface Props {
   at: { x: number; y: number }
@@ -19,7 +28,17 @@ interface Props {
   onClose: () => void
 }
 
-const items = (el: HTMLElement | null) => (el ? [...el.querySelectorAll<HTMLButtonElement>(':scope > li > button:not([disabled])')] : [])
+// A strip counts once, by its first button, so ↑ and ↓ step over it whole.
+const items = (el: HTMLElement | null) => (el ? [...el.querySelectorAll<HTMLButtonElement>(':scope > li > button:not([disabled]), :scope > li > [role="group"] > button:first-child')] : [])
+
+/// ← and → along a strip, round from one end to the other.
+const walkStrip = (e: React.KeyboardEvent<HTMLElement>) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  const all = [...e.currentTarget.querySelectorAll<HTMLButtonElement>(':scope > button')]
+  const at = Math.max(0, all.indexOf(document.activeElement as HTMLButtonElement))
+  e.preventDefault(); e.stopPropagation()
+  all[(at + (e.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length]?.focus()
+}
 
 function List({ entries, onClose, onBack, level }: { entries: MenuEntry[]; onClose: () => void; onBack?: () => void; level: number }) {
   const ref = useRef<HTMLUListElement>(null)
@@ -35,7 +54,10 @@ function List({ entries, onClose, onBack, level }: { entries: MenuEntry[]; onClo
   useEffect(() => { if (level > 0) items(ref.current)[0]?.focus() }, [level])
   const onKeyDown = (e: React.KeyboardEvent) => {
     const list = items(ref.current)
-    const at = list.indexOf(document.activeElement as HTMLButtonElement)
+    // Anywhere along a strip is the strip's place in the list.
+    const active = document.activeElement as HTMLElement | null
+    const strip = active?.parentElement?.getAttribute('role') === 'group' ? active.parentElement : null
+    const at = list.indexOf((strip?.firstElementChild ?? active) as HTMLButtonElement)
     if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); list[(at + 1) % list.length]?.focus() }
     else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); list[(at - 1 + list.length) % list.length]?.focus() }
     else if (e.key === 'ArrowLeft' && onBack) { e.preventDefault(); e.stopPropagation(); onBack() }
@@ -45,6 +67,20 @@ function List({ entries, onClose, onBack, level }: { entries: MenuEntry[]; onClo
       {entries.map((entry, i) => {
         if (entry.kind === 'sep') return <li key={i} role="separator" className="row-menu-sep" />
         if (entry.kind === 'head') return <li key={i} role="presentation" className="row-menu-head">{entry.label}</li>
+        if (entry.kind === 'strip') {
+          return (
+            <li key={i} role="none" className="row-menu-strip">
+              <div role="group" aria-label={entry.label} onKeyDown={walkStrip}>
+                {entry.items.map((it, j) => (
+                  <button key={j} type="button" role="menuitem" aria-label={it.label} title={it.label} data-row-menu={it.data}
+                    onClick={() => { onClose(); it.onSelect() }}>
+                    {it.icon ? <Icon name={it.icon} size={17} /> : it.text}
+                  </button>
+                ))}
+              </div>
+            </li>
+          )
+        }
         const sub = entry.submenu && entry.submenu.length > 0
         return (
           <li key={i} role="none" onMouseEnter={() => setOpen(sub ? i : null)} onMouseLeave={() => { if (sub) setOpen(null) }}>

@@ -29,3 +29,24 @@ describe('RowMenu', () => {
     expect(html).not.toContain('Copy link')
   })
 })
+
+// A message's right-click menu: its quick reactions in a row along the top.
+describe('a strip in a RowMenu', () => {
+  const html = renderToStaticMarkup(
+    <RowMenu at={{ x: 10, y: 20 }} label="Message actions" onClose={() => {}} entries={[
+      { kind: 'strip', label: 'Add reaction', items: [
+        { label: 'React with ✅', text: '✅', onSelect: () => {}, data: 'react:✅' },
+        { label: 'React with 👀', text: '👀', onSelect: () => {}, data: 'react:👀' },
+        { label: 'Add reaction', icon: 'smile', onSelect: () => {}, data: 'react-more' },
+      ] },
+      { kind: 'sep' },
+      { kind: 'item', label: 'Reply in thread', data: 'reply' },
+    ]} />,
+  )
+  it('is one named group of menu items, each named for a screen reader, above the rest', () => {
+    expect(html).toMatch(/<li role="none" class="row-menu-strip"><div role="group" aria-label="Add reaction">/)
+    expect(html).toMatch(/<button[^>]*role="menuitem" aria-label="React with ✅"[^>]*data-row-menu="react:✅"[^>]*>✅<\/button>/)
+    expect(html).toMatch(/aria-label="Add reaction"[^>]*data-row-menu="react-more"[^>]*><svg/)
+    expect(html.indexOf('row-menu-strip')).toBeLessThan(html.indexOf('Reply in thread'))
+  })
+})
