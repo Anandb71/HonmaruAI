@@ -143,18 +143,25 @@ export function useRoute(): { route: Route; navigate: (hash: string, replace?: b
   return { route: parseRoute(hash), navigate }
 }
 
-/// A laptop, by the same line the stylesheet draws: the workbench — the
-/// inbox beside the card — begins at 1024px. (The rail and the queue begin
-/// at 720px; they need no JavaScript.)
-export function useDesktop(): boolean {
-  const query = '(min-width: 1024px)'
+/// At least this wide, by the same line the stylesheet draws, and kept
+/// current as the window changes.
+export function useMinWidth(px: number): boolean {
+  const query = `(min-width: ${px}px)`
   const [wide, setWide] = useState(() => typeof matchMedia !== 'undefined' && matchMedia(query).matches)
   useEffect(() => {
     if (typeof matchMedia === 'undefined') return
     const mq = matchMedia(query)
     const onChange = () => setWide(mq.matches)
+    onChange()
     mq.addEventListener('change', onChange)
     return () => mq.removeEventListener('change', onChange)
-  }, [])
+  }, [query])
   return wide
+}
+
+/// A laptop: the workbench — the inbox beside the card — begins at 1024px.
+/// (The rail and the queue begin at 720px, and need JavaScript only where
+/// the rail's avatar opens your status instead of the You screen.)
+export function useDesktop(): boolean {
+  return useMinWidth(1024)
 }
