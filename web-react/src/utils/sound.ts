@@ -82,6 +82,10 @@ if (!leader && typeof navigator !== 'undefined') {
   } catch { leader = true }
 }
 
+/// This tab is the one that speaks for the app: it plays the sounds, and
+/// it shows the tab's own notifications — one, not one per open tab.
+export function isLeaderTab(): boolean { return leader }
+
 // ---- The audio context, woken by the first touch ----
 //
 // A page may not make a sound before the person has touched it; the context
