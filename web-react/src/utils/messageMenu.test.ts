@@ -62,6 +62,11 @@ describe('what can be done to a message', () => {
     for (const e of list) if (e.kind === 'item') expect(e.icon, e.data).toBeTruthy()
   })
 
+  it('names no key beside an item, as none of them has one yet', () => {
+    const list = messageMenuEntries({ body: 'x', pinned: false }, { ...teammates, onEdit: noop, onDelete: noop, t })
+    for (const e of list) if (e.kind === 'item') expect(e.hint, e.data).toBeUndefined()
+  })
+
   it('does what it says when picked, taking the time for a reminder when it is picked', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 8, 30, 14, 0, 0))

@@ -37,15 +37,17 @@ export interface MessageMenuContext extends MessageMenuActions {
 
 /// The list, in groups with a line between them: what to do with it, when
 /// to come back to it, copying its words, and, apart at the bottom, taking
-/// it back. A group with nothing in it leaves no line behind.
+/// it back. A group with nothing in it leaves no line behind. No item names
+/// a key beside it: a message has no keys of its own for these yet, and a
+/// key shown that does nothing teaches the wrong thing.
 export function messageMenuEntries(message: Pick<ChannelMessage, 'body' | 'pinned'>, c: MessageMenuContext): MenuEntry[] {
   const { t } = c
   const item = (label: string, icon: Item['icon'], data: string, onSelect: () => void, more: Partial<Item> = {}): Item => ({ kind: 'item', label, icon, data, onSelect, ...more })
   const doing: Item[] = []
-  if (c.onEdit) doing.push(item(t('Edit message'), 'edit', 'edit', c.onEdit, { hint: 'E' }))
-  if (c.onReply && !c.inThread) doing.push(item(t('Reply in thread'), 'message', 'reply', c.onReply, { hint: 'T' }))
+  if (c.onEdit) doing.push(item(t('Edit message'), 'edit', 'edit', c.onEdit))
+  if (c.onReply && !c.inThread) doing.push(item(t('Reply in thread'), 'message', 'reply', c.onReply))
   if (c.onDecide) doing.push(item(t('Make it a decision'), 'sparkle', 'decide', c.onDecide))
-  if (c.onPin && !c.inThread) doing.push(item(message.pinned ? t('Unpin') : t('Pin to channel'), 'pin', 'pin', c.onPin, { hint: 'P' }))
+  if (c.onPin && !c.inThread) doing.push(item(message.pinned ? t('Unpin') : t('Pin to channel'), 'pin', 'pin', c.onPin))
   if (c.onClip) doing.push(item(c.clipped ? t('Remove from clip') : t('Add to clip'), 'paperclip', 'clip', c.onClip))
   if (c.onUnread) doing.push(item(t('Mark unread'), 'bell', 'unread', c.onUnread))
   if (c.onForward) doing.push(item(t('Forward'), 'send', 'forward', c.onForward))
@@ -58,7 +60,7 @@ export function messageMenuEntries(message: Pick<ChannelMessage, 'body' | 'pinne
     item(t('Remind me tomorrow at 9:00'), 'calendar', 'remind-tomorrow', () => later(tomorrowAt(9))),
   ] : []
   const copying: Item[] = message.body ? [item(t('Copy text'), 'copy', 'copy', () => { void navigator.clipboard?.writeText(message.body) })] : []
-  const undoing: Item[] = c.onDelete ? [item(t('Delete message'), 'trash', 'delete', c.onDelete, { danger: true, hint: '⌫' })] : []
+  const undoing: Item[] = c.onDelete ? [item(t('Delete message'), 'trash', 'delete', c.onDelete, { danger: true })] : []
   const out: MenuEntry[] = []
   for (const group of [doing, coming, copying, undoing]) {
     if (!group.length) continue
