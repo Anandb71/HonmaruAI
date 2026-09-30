@@ -433,3 +433,64 @@ struct ChatNewMessageSheet: View {
         }
     }
 }
+
+/// Channels that were archived, newest first. Restoring one puts it back in
+/// everyone's sidebar with everything it held.
+struct ChatArchivedChannelsView: View {
+    @ObservedObject var store: ChatStore
+    @State private var channels: [ChatService.ArchivedChannel] = []
+    @State private var loaded = false
+    @State private var busy: String?
+    @State private var problem: String?
+
+    var body: some View {
+        List {
+            if loaded && channels.isEmpty {
+                ContentUnavailableView("No archived channels", systemImage: "archivebox", description: Text("A channel you archive is kept here, ready to come back."))
+                    .listRowBackground(Color.clear)
+            }
+            ForEach(channels) { c in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: c.isPrivate ? "🔒 \(c.name)" : "#\(c.name)")
+                        if let when = Self.day(c.archivedAt) {
+                            Text(when).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Button {
+                        busy = c.slug
+                        Task {
+                            let failed = await store.unarchiveChannel(c.slug)
+                            busy = nil
+                            if let failed { problem = failed } else { channels.removeAll { $0.slug == c.slug } }
+                        }
+                    } label: {
+                        if busy == c.slug { ProgressView() } else { Text("Restore") }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(busy != nil)
+                }
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle("Archived channels")
+        .refreshable { await load() }
+        .task { await load() }
+        .alert("That did not work", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(verbatim: problem ?? "") }
+    }
+
+    private func load() async {
+        channels = await store.archivedChannels()
+        loaded = true
+    }
+
+    private static func day(_ iso: String) -> String? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let d = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return nil }
+        return d.formatted(date: .abbreviated, time: .omitted)
+    }
+}

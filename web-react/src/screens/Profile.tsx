@@ -11,6 +11,7 @@ import { getSenderContext, setSenderContext, loadSenderContext, saveSenderContex
 import { canInstall, promptInstall, onInstallChange } from '../utils/install'
 import { getAIKey, setAIKey } from '../utils/aiKey'
 import { TidyChannels } from '../components/TidyChannels'
+import { ArchivedChannels } from '../components/ArchivedChannels'
 
 interface Props {
   httpBase: string
@@ -633,6 +634,7 @@ export const Profile: React.FC<Props> = ({
 
           </section>
           <TidyChannels httpBase={httpBase} orgId={orgId} sessionToken={sessionToken} />
+          <ArchivedChannels httpBase={httpBase} orgId={orgId} sessionToken={sessionToken} />
           <section className="pf-sec pf-acct">
           <SignedInSessions httpBase={httpBase} sessionToken={sessionToken} />
           <div className="rows">

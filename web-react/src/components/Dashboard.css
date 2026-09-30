@@ -697,5 +697,6 @@
 /* Channels nobody talks in, offered for archiving on the profile. */
 .tidy-list { list-style: none; margin: 0 0 12px; padding: 0; }
 .tidy-list li label { display: flex; align-items: center; gap: 10px; padding: 7px 4px; font-size: 14px; cursor: pointer; }
+.tidy-list li .tidy-row { display: flex; align-items: center; gap: 10px; padding: 7px 4px; font-size: 14px; }
 .tidy-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tidy-meta { font-size: 12px; color: var(--ash, #838383); }

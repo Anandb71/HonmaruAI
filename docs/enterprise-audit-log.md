@@ -182,7 +182,7 @@ Phase 列は実装の優先度（§11）。
 
 | action | severity | Phase |
 |---|---|---|
-| `channel.created` / `channel.archived` / `channel.deleted` / `channel.renamed` | notice | 1 |
+| `channel.created` / `channel.archived` / `channel.unarchived` / `channel.deleted` / `channel.renamed` | notice | 1 |
 | `channel.member_added` / `channel.member_removed` （非公開チャネル導入後） | notice | 2 |
 | `channel.visibility_changed` （公開 ↔ 非公開） | warning | 2 |
 | `channel.automation_created` / `channel.automation_deleted` | notice | 2 |

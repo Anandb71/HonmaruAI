@@ -9,6 +9,8 @@ enum ChatRoute: Hashable {
     case threads
     /// The team's agents: "@hayao" and the rest.
     case agents
+    /// Channels that were archived, each with a way back.
+    case archived
 }
 
 /// One conversation, the way a chat app on a phone draws it: messages you
