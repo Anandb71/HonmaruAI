@@ -1144,7 +1144,12 @@ export const ClassicList: React.FC<Props> = ({
       const data = res.ok ? await res.json() : null
       if (!data) return
       const older = (data.messages || []) as ChannelMessage[]
-      keepScroll.current = logRef.current ? logRef.current.scrollHeight - logRef.current.scrollTop : null
+      // A place is kept only for a page that puts something above. One that
+      // adds nothing (the conversation had exactly a page) changes no length,
+      // and the place kept would be used by whatever arrived next — a jump
+      // back up to where the older page was asked for.
+      const had = new Set(list.map((m) => m.id))
+      if (older.some((m) => !had.has(m.id))) keepScroll.current = logRef.current ? logRef.current.scrollHeight - logRef.current.scrollTop : null
       setMessages((prev) => {
         const cur = prev[channel] || []
         const known = new Set(cur.map((m) => m.id))
