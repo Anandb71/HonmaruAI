@@ -272,21 +272,27 @@ export const CardActions: React.FC<{
 
 /// Under one of yours the server does not have yet: that it is on its way
 /// (said, not shown — it is drawn dimmed), or why it did not go, with Retry
-/// and Delete. Either button goes once pressed; pressed from the keyboard,
-/// `refocus` says where focus goes instead of nowhere.
+/// and Delete — or, refused for what it says, Edit in place of Retry, since
+/// the same words would only be refused again. Any button goes once
+/// pressed; pressed from the keyboard, `refocus` says where focus goes
+/// instead of nowhere.
 export const UnsentNote: React.FC<{
   message: ChannelMessage
   onRetry: () => void
   onDelete: () => void
+  /// Back into the box it was written in, to be changed and sent again.
+  onEdit?: () => void
   refocus?: () => void
-}> = ({ message, onRetry, onDelete, refocus }) => {
+}> = ({ message, onRetry, onDelete, onEdit, refocus }) => {
   const t = useT()
   const pressed = (act: () => void) => (e: React.MouseEvent) => { act(); if (e.detail === 0) refocus?.() }
   if (message.failed) {
     return (
       <div className="slk-unsent" role="alert" data-unsent={message.id}>
         <span className="slk-unsent-why">{message.failed}</span>
-        <button type="button" className="slk-unsent-act" onClick={pressed(onRetry)} data-unsent-retry="1"><Icon name="refresh" size={12} />{t('Retry')}</button>
+        {message.refused
+          ? onEdit && <button type="button" className="slk-unsent-act" onClick={pressed(onEdit)} data-unsent-edit="1"><Icon name="edit" size={12} />{t('Edit')}</button>
+          : <button type="button" className="slk-unsent-act" onClick={pressed(onRetry)} data-unsent-retry="1"><Icon name="refresh" size={12} />{t('Retry')}</button>}
         <button type="button" className="slk-unsent-act" onClick={pressed(onDelete)} data-unsent-delete="1"><Icon name="trash" size={12} />{t('Delete')}</button>
       </div>
     )

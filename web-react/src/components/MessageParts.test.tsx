@@ -105,7 +105,7 @@ describe('the note under a message on its way', () => {
   const said = { id: 'tmp-1', channel: 'b:hotel', kind: 'message' as const, body: 'Rooms are ready', authorName: 'Aiko', authorRef: 'm-aiko', mine: true, cardId: null, createdAt: '2026-09-30T09:00:00.000Z' }
   const note = async (extra: object) => {
     const { UnsentNote } = await import('./MessageParts')
-    return renderToStaticMarkup(<UnsentNote message={{ ...said, ...extra }} onRetry={() => {}} onDelete={() => {}} />)
+    return renderToStaticMarkup(<UnsentNote message={{ ...said, ...extra }} onRetry={() => {}} onDelete={() => {}} onEdit={() => {}} />)
   }
 
   it('says why it did not go, as an alert, with Retry and Delete', async () => {
@@ -114,6 +114,15 @@ describe('the note under a message on its way', () => {
     expect(html).toContain('That did not send. Try again.')
     expect(html).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-retry="1">.*Retry<\/button>/)
     expect(html).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-delete="1">.*Delete<\/button>/)
+    expect(html).not.toContain('data-unsent-edit')
+  })
+
+  it('refused for what it says, offers Edit in place of Retry — the same words would be refused again', async () => {
+    const html = await note({ failed: 'This can’t be sent here.', refused: true })
+    expect(html).toContain('This can’t be sent here.')
+    expect(html).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-edit="1">.*Edit<\/button>/)
+    expect(html).toContain('data-unsent-delete="1"')
+    expect(html).not.toContain('data-unsent-retry')
   })
 
   it('only tells a screen reader it is on its way — it is drawn dimmed', async () => {
