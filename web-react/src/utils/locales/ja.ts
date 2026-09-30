@@ -1904,6 +1904,9 @@ const table: Record<string, string> = {
   'Everyone in the workspace sees the new name. Links to it keep working.': 'ワークスペースの全員に新しい名前が表示されます。これまでのリンクはそのまま使えます。',
   'Renamed to #{name}': '#{name} に名前を変更しました',
   'Mark as read': '既読にする',
+  'Nothing new to mark as read': '既読にする新着はありません',
+  'Marked {n} conversations as read': '{n}件の会話を既読にしました',
+  'Activity marked as read': 'アクティビティを既読にしました',
 }
 
 export default table

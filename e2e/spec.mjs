@@ -1944,6 +1944,10 @@ await step('right-clicking a channel in the sidebar offers what a desktop chat a
       await d.waitForSelector(`${rowOf(name)} .cl-fresh`, { state: 'detached', timeout: 5000 })
         .catch(() => { throw new Error(`"Mark as read" left #${name} marked new`) })
     }
+    // ⇧Esc, as in Slack: everything new is read at once.
+    await d.keyboard.press('Shift+Escape')
+    await d.waitForFunction(() => !document.querySelector('.slk-side .cl-fresh'), null, { timeout: 5000 })
+      .catch(() => { throw new Error('⇧Esc left a conversation marked new') })
     // Escape closes the menu.
     await menu('Front desk')
     await d.keyboard.press('Escape')

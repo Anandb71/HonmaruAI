@@ -93,6 +93,12 @@ struct ChatHomeView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { WorkspaceSwitcherButton(size: 30) }
+                if !store.freshViews.isEmpty || store.unreadInbox > 0 {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { Task { await store.markEverythingRead() } } label: { Image(systemName: "checkmark.circle") }
+                            .accessibilityLabel("Mark all as read")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { path.append(.agents) } label: { Image(systemName: "wand.and.stars") }
                         .accessibilityLabel("Custom agents")
