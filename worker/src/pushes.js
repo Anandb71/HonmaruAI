@@ -70,9 +70,10 @@ export async function isActive(db, orgId, login, now = Date.now()) {
 }
 
 /// Who a message is for, and why: everyone in a DM or group, whoever it
-/// names, and whoever wrote in the thread it replies to. Never its author;
-/// never somebody who muted the conversation, and in one set to mentions
-/// only, only for a mention or a DM.
+/// names, whoever wrote the message it answers inline, and whoever wrote in
+/// the thread it replies to. Never its author; never somebody who muted the
+/// conversation, and in one set to mentions only, only for a mention, an
+/// inline reply to them, or a DM.
 export async function recipientsOf(db, orgId, row, members) {
   // An agent's answer reaches whoever called it the way a teammate's reply
   // would: through the thread it answers in.
@@ -89,6 +90,14 @@ export async function recipientsOf(db, orgId, row, members) {
   for (const m of resolveMentions(row.body || "", members, { online })) add(m.login, "mention");
   // Words they asked to hear about, said anywhere they can read.
   for (const k of await keywordsIn(db, orgId)) if (keywordHit(row.body, k.keywords)) add(k.login, "keyword");
+  // Answered inline: Discord pings whoever is replied to, and so does this —
+  // as a mention would, before "thread" can claim them.
+  if (row.reply_to_id) {
+    const original = await db.prepare(
+      "SELECT author_login FROM channel_messages WHERE org_id = ?1 AND id = ?2 AND channel = ?3 AND deleted_at IS NULL"
+    ).bind(orgId, row.reply_to_id, key).first();
+    if (original) add(original.author_login, "reply");
+  }
   if (row.parent_id) {
     const { results } = await db.prepare(
       `SELECT DISTINCT author_login FROM channel_messages
