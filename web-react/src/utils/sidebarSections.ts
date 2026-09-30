@@ -50,3 +50,34 @@ export function sectionBadge(threads: SectionRow[], mentions: Record<string, num
   }
   return { cards, mentions: named, fresh }
 }
+
+const foldsKey = (orgId: string) => `sidebar.folded:${orgId}`
+
+/// The sections folded in this workspace, as this browser remembers them:
+/// `channels`, `people`, `sec:<id>` and the rest, by the id section() gets.
+export function readFolds(orgId: string): Record<string, boolean> {
+  try {
+    const ids: unknown = JSON.parse(localStorage.getItem(foldsKey(orgId)) || '[]')
+    if (!Array.isArray(ids)) return {}
+    return Object.fromEntries(ids.filter((id): id is string => typeof id === 'string').map((id) => [id, true]))
+  } catch { return {} }
+}
+
+/// Remembered for the next visit; only the folded ones are kept.
+export function writeFolds(orgId: string, folded: Record<string, boolean>) {
+  try {
+    const ids = Object.keys(folded).filter((id) => folded[id])
+    if (ids.length) localStorage.setItem(foldsKey(orgId), JSON.stringify(ids))
+    else localStorage.removeItem(foldsKey(orgId))
+  } catch { /* folded until the page is reloaded */ }
+}
+
+/// Your own sections fold as the server keeps them — alike on the laptop
+/// and the phone — and one that is gone is forgotten. The built-in ones
+/// stay as this browser has them.
+export function withSectionFolds(folded: Record<string, boolean>, sections: Array<{ id: string; collapsed?: boolean }>): Record<string, boolean> {
+  const next: Record<string, boolean> = {}
+  for (const id of Object.keys(folded)) if (folded[id] && !id.startsWith('sec:')) next[id] = true
+  for (const s of sections) if (s.collapsed) next[`sec:${s.id}`] = true
+  return next
+}
