@@ -536,10 +536,13 @@ export const ClassicList: React.FC<Props> = ({
     || (wide ? (everything.find((th) => th.unread > 0) || everything[0]) : undefined)
   // A conversation asked for before the list knew of it — a DM picked in ⌘K
   // or opened from a link while the team is still loading: opened once it
-  // appears, if that is soon. Choosing anything else first forgets it.
+  // appears, if that is soon. Opening anything else first — another
+  // conversation, Activity, Later, Threads, Sent, a channel's settings —
+  // forgets it, so it does not take the screen from what you went to.
   const wantedView = useRef<{ view: string; until: number } | null>(null)
+  const forgetWanted = () => { wantedView.current = null }
   const choose = (key: string | null) => {
-    wantedView.current = null
+    forgetWanted()
     setActivityOpen(false)
     setLaterOpen(false)
     setThreadsOpen(false)
@@ -705,6 +708,7 @@ export const ClassicList: React.FC<Props> = ({
     })), mentionsIn))
   }, [everything, mentionsIn, members, onPlaces])
   const openActivity = () => {
+    forgetWanted()
     setOpenKey(null)
     setLaterOpen(false)
     setThreadsOpen(false)
@@ -3185,7 +3189,7 @@ export const ClassicList: React.FC<Props> = ({
           {thread.kind === 'channel' && thread.slug && (
             <button
               className="slk-more"
-              onClick={() => { setSettings((v) => !v); setRenaming(null) }}
+              onClick={() => { forgetWanted(); setSettings((v) => !v); setRenaming(null) }}
               aria-label={t('Channel settings')}
               aria-expanded={settings}
             >
@@ -3585,9 +3589,9 @@ export const ClassicList: React.FC<Props> = ({
   const dmUnread = [...people, ...agentConvos].filter((th) => th.unread > 0 || th.fresh).length
   const phoneRoot = !wide && !current && !detail && !thread && !profile
   const tabOn = (which: 'home' | 'dms' | 'activity' | 'later') => (activityOpen ? 'activity' : laterOpen ? 'later' : phoneTab) === which
-  const openLater = () => { setOpenKey(null); setActivityOpen(false); setThreadsOpen(false); setSentOpen(false); setLaterOpen(true); void loadLater() }
-  const openThreads = () => { setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setSentOpen(false); setThreadsOpen(true); void loadThreads() }
-  const openSent = () => { setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false); setSentOpen(true); void loadSent() }
+  const openLater = () => { forgetWanted(); setOpenKey(null); setActivityOpen(false); setThreadsOpen(false); setSentOpen(false); setLaterOpen(true); void loadLater() }
+  const openThreads = () => { forgetWanted(); setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setSentOpen(false); setThreadsOpen(true); void loadThreads() }
+  const openSent = () => { forgetWanted(); setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false); setSentOpen(true); void loadSent() }
   /// Somebody to write to, from "New message": one person is a DM.
   const startWith = async (refs: string[]) => {
     setStarting(null)
@@ -3826,7 +3830,7 @@ export const ClassicList: React.FC<Props> = ({
               {th.kind === 'channel' && th.slug && onOpenRecord && <SheetRow icon="record" label={t('Record (Markdown)')} onClick={close(() => onOpenRecord())} data="record" />}
               <SheetRow icon="pin" label={t('Pinned messages')} onClick={close(() => void loadPins(th.view!))} data="pins" />
               {th.kind === 'channel' && <SheetRow icon="repeat" label={t('Automations')} hint={String(automationCount[th.view!] ?? 0)} onClick={close(() => openSide({ kind: 'details', tab: 'automations' }))} data="automations" />}
-              {th.kind === 'channel' && th.slug && <SheetRow icon="settings" label={t('Channel settings')} onClick={close(() => { setSettings(true); setRenaming(null) })} data="settings" />}
+              {th.kind === 'channel' && th.slug && <SheetRow icon="settings" label={t('Channel settings')} onClick={close(() => { forgetWanted(); setSettings(true); setRenaming(null) })} data="settings" />}
               {th.private && <SheetRow icon="invite" label={t('Add people')} onClick={close(() => setAddingTo(th.view!))} data="add-people" />}
               {th.private && <SheetRow icon="x" label={t('Leave channel')} onClick={close(() => void leaveChannel(th))} danger data="leave" />}
             </div>
@@ -3994,7 +3998,7 @@ export const ClassicList: React.FC<Props> = ({
               onTab={(tab) => setSide({ kind: 'details', tab })}
               level={prefs[current.view] || 'all'}
               onLevel={(lv) => void setPref(current.view!, lv)}
-              onSettings={current.kind === 'channel' && current.slug ? () => { setSettings(true); setRenaming(null) } : null}
+              onSettings={current.kind === 'channel' && current.slug ? () => { forgetWanted(); setSettings(true); setRenaming(null) } : null}
               onInvite={() => (current.private ? setAddingTo(current.view!) : setInviting('people'))}
               onProfile={(ref) => void openProfile(ref)}
               onJump={(id) => void goToCite(current.view!, { id, parentId: null, at: '' })}
