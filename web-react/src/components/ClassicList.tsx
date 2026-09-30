@@ -534,7 +534,12 @@ export const ClassicList: React.FC<Props> = ({
   }, [])
   const current = everything.find((th) => th.key === openKey)
     || (wide ? (everything.find((th) => th.unread > 0) || everything[0]) : undefined)
+  // A conversation asked for before the list knew of it — a DM picked in ⌘K
+  // or opened from a link while the team is still loading: opened once it
+  // appears, if that is soon. Choosing anything else first forgets it.
+  const wantedView = useRef<{ view: string; until: number } | null>(null)
   const choose = (key: string | null) => {
+    wantedView.current = null
     setActivityOpen(false)
     setLaterOpen(false)
     setThreadsOpen(false)
@@ -1919,6 +1924,7 @@ export const ClassicList: React.FC<Props> = ({
       if (view.startsWith('ag:')) { setPhoneTab('home'); openAgent(view.slice(3)); return }
       const th = everything.find((x) => x.view === view)
       if (th) choose(th.key)
+      else wantedView.current = { view, until: Date.now() + 10_000 }
     }
     const on = (e: Event) => { try { sessionStorage.removeItem('list.openView') } catch {}; go(String((e as CustomEvent).detail || '')) }
     window.addEventListener('honmaru:open-view', on)
@@ -1929,6 +1935,14 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:open-view', on)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [everything.length])
+  useEffect(() => {
+    const want = wantedView.current
+    if (!want) return
+    if (Date.now() > want.until) { wantedView.current = null; return }
+    const th = everything.find((x) => x.view === want.view)
+    if (th) choose(th.key)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [everything])
   const decideMessage = async (channel: string, m: ChannelMessage) => {
     setProblem(null)
     const res = await fetch(`${api.httpBase}/channels/decide`, {
