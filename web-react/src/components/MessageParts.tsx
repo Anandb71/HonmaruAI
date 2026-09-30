@@ -30,7 +30,8 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
   const custom = useCustomEmoji()
   useEffect(() => {
     const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    // Marked as taken, so an open thread under the picker stays open.
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
