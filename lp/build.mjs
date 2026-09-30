@@ -185,8 +185,9 @@ if (!workerSource.includes("const CANONICAL = '';")) fail('worker.js no longer d
 fs.writeFileSync(path.join(out, '_worker.js'), workerSource.replace("const CANONICAL = '';", `const CANONICAL = ${JSON.stringify(canonical)};`))
 // The worker sees pages (to pick a language, and to move other hosts to the
 // domain); scripts, fonts and images are served without it.
-const statics = ['/fonts/*', '/badges/*', '/main.js', '/i18n.js', '/og.png', '/icon.svg', '/robots.txt', '/sitemap.xml']
+const statics = ['/art/*', '/fonts/*', '/badges/*', '/main.js', '/i18n.js', '/og.png', '/icon.svg', '/robots.txt', '/sitemap.xml']
 fs.writeFileSync(path.join(out, '_routes.json'), JSON.stringify({ version: 1, include: ['/*'], exclude: statics }) + '\n')
+fs.cpSync(path.join(here, 'art'), path.join(out, 'art'), { recursive: true })
 for (const f of ['icon.svg', 'og.png']) fs.copyFileSync(path.join(here, f), path.join(out, f))
 for (const f of fs.readdirSync(path.join(here, 'fonts')).filter((f) => f.endsWith('.woff2'))) {
   fs.copyFileSync(path.join(here, 'fonts', f), path.join(out, 'fonts', f))
@@ -209,6 +210,8 @@ fs.writeFileSync(path.join(out, '_headers'), `/*
 /*.js
   Cache-Control: public, max-age=3600, must-revalidate
 /og.png
+  Cache-Control: public, max-age=86400
+/art/*
   Cache-Control: public, max-age=86400
 /badges/*
   Cache-Control: public, max-age=86400
