@@ -25,7 +25,15 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#1f6feb",
+          "defaultChannel": "messages"
+        }
+      ]
     ],
     "scheme": "honmaru",
     "experiments": {

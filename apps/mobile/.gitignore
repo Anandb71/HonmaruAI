@@ -39,3 +39,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Firebase (FCM) config for Android push: from the Firebase console, or an
+# EAS file variable (app.config.js). Not secret, but per project.
+google-services.json
