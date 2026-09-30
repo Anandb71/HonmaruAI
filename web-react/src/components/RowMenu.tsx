@@ -131,6 +131,17 @@ export const RowMenu: React.FC<Props> = ({ at, entries, label, onClose }) => {
       top: Math.max(4, Math.min(at.y, window.innerHeight - box.height - 4)),
     })
   }, [at.x, at.y])
+  // Shut, it hands the focus back to what had it — the message or the row
+  // it was opened on — so a keyboard carries on from there. Not when what
+  // was picked has taken the focus for itself (the box to edit in, a dialog).
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null
+    const box = ref.current
+    return () => {
+      const now = document.activeElement
+      if (before?.isConnected && (!now || now === document.body || box?.contains(now))) before.focus({ preventScroll: true })
+    }
+  }, [])
   useEffect(() => {
     items(ref.current?.querySelector('ul') as HTMLElement | null)[0]?.focus()
     const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose() }
