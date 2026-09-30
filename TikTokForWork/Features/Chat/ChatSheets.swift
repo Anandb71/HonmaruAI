@@ -617,3 +617,208 @@ struct ChatSearchView: View {
     }
 }
 
+/// Catch up, as Slack's app does it: the conversations with something new,
+/// one card at a time. Swipe right and it is read; swipe left and it stays
+/// unread for later. The buttons underneath do the same, and Open goes in.
+struct ChatCatchUpView: View {
+    @ObservedObject var store: ChatStore
+    @ObservedObject private var translations = ChatTranslations.shared
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The conversations to get through, taken when the screen opened so a
+    /// card never changes under a finger.
+    @State private var queue: [String] = []
+    @State private var index = 0
+    @State private var loaded: [String: [ChatMessage]] = [:]
+    @State private var drag: CGSize = .zero
+    @State private var read = 0
+    @State private var kept = 0
+    @State private var started = false
+
+    private let threshold: CGFloat = 110
+
+    var body: some View {
+        VStack(spacing: 16) {
+            if started && index >= queue.count {
+                finished
+            } else if let view = current {
+                Text(verbatim: "\(index + 1) / \(queue.count)")
+                    .font(.footnote.weight(.semibold)).foregroundStyle(Theme.Colors.textSecondary)
+                ZStack {
+                    if index + 1 < queue.count {
+                        card(queue[index + 1])
+                            .scaleEffect(0.95).offset(y: 14).opacity(0.6)
+                            .allowsHitTesting(false)
+                    }
+                    card(view)
+                        .overlay(alignment: .topLeading) { stamp(String(localized: "Read"), color: Theme.Colors.approve, on: drag.width > 30) }
+                        .overlay(alignment: .topTrailing) { stamp(String(localized: "Keep unread"), color: Theme.Colors.textSecondary, on: drag.width < -30) }
+                        .offset(x: drag.width, y: drag.height * 0.2)
+                        .rotationEffect(.degrees(reduceMotion ? 0 : Double(drag.width / 22)))
+                        .gesture(
+                            DragGesture()
+                                .onChanged { drag = $0.translation }
+                                .onEnded { value in
+                                    if value.translation.width > threshold { decide(markRead: true) }
+                                    else if value.translation.width < -threshold { decide(markRead: false) }
+                                    else { withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { drag = .zero } }
+                                }
+                        )
+                        .accessibilityAction(named: Text("Mark as read")) { decide(markRead: true) }
+                        .accessibilityAction(named: Text("Keep unread")) { decide(markRead: false) }
+                }
+                .frame(maxHeight: .infinity)
+                HStack(spacing: 14) {
+                    Button { decide(markRead: false) } label: {
+                        Label("Keep unread", systemImage: "arrow.uturn.left").frame(maxWidth: .infinity, minHeight: 48)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Theme.Colors.textPrimary)
+                    .background(Theme.Colors.surfaceRaised, in: Capsule())
+                    .accessibilityIdentifier("catchup.keep")
+                    NavigationLink(value: ChatRoute.conversation(view: view, jump: nil)) {
+                        Image(systemName: "arrow.up.right").font(.system(size: 17, weight: .semibold))
+                            .frame(width: 48, height: 48)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Theme.Colors.textPrimary)
+                    .background(Theme.Colors.surfaceRaised, in: Circle())
+                    .accessibilityLabel("Open")
+                    Button { decide(markRead: true) } label: {
+                        Label("Mark as read", systemImage: "checkmark").frame(maxWidth: .infinity, minHeight: 48)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Theme.Colors.ctaText)
+                    .background(Theme.Colors.ctaFill, in: Capsule())
+                    .accessibilityIdentifier("catchup.read")
+                }
+                .font(.subheadline.weight(.semibold))
+                Text("Swipe right to mark read, left to keep it unread.")
+                    .font(.caption).foregroundStyle(Theme.Colors.textTertiary)
+            } else {
+                ProgressView().frame(maxHeight: .infinity)
+            }
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+        .background(Theme.Colors.surface)
+        .navigationTitle("Catch up")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            guard !started else { return }
+            // Where someone named you first, then the rest as the list has them.
+            let fresh = store.freshViews
+            queue = fresh.filter { store.mentions(in: $0) > 0 } + fresh.filter { store.mentions(in: $0) == 0 }
+            started = true
+            await prefetch()
+        }
+    }
+
+    private var current: String? { index < queue.count ? queue[index] : nil }
+
+    private var finished: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "checkmark.circle").font(.system(size: 48, weight: .light)).foregroundStyle(Theme.Colors.approve)
+            Text("Nothing left to catch up on").font(.title3.weight(.semibold))
+            if read + kept > 0 {
+                Text("\(read) read, \(kept) kept unread").font(.subheadline).foregroundStyle(Theme.Colors.textSecondary)
+            }
+            Button("Done") { dismiss() }.buttonStyle(.borderedProminent).padding(.top, 6)
+            Spacer()
+        }
+    }
+
+    private func stamp(_ text: String, color: Color, on: Bool) -> some View {
+        Text(verbatim: text)
+            .font(.headline.weight(.heavy)).textCase(.uppercase)
+            .foregroundStyle(color)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(color, lineWidth: 2))
+            .rotationEffect(.degrees(on ? -8 : 0))
+            .padding(20)
+            .opacity(on ? min(1, Double(abs(drag.width) - 30) / 80) : 0)
+    }
+
+    /// One conversation: where it is, how much is new, and what was said
+    /// since you last read it.
+    private func card(_ view: String) -> some View {
+        let c = store.conversation(for: view)
+        let since = store.readAt(view) ?? ""
+        let all = (loaded[view] ?? []).filter { $0.parentId == nil && !($0.deleted ?? false) }
+        let new = all.filter { !$0.mine && $0.createdAt > since }
+        let shown = Array((new.isEmpty ? all : new).suffix(6))
+        let mentions = store.mentions(in: view)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                if let c, c.kind == .channel {
+                    Image(systemName: c.isPrivate ? "lock" : "number").font(.system(size: 18, weight: .bold))
+                        .frame(width: 36, height: 36).background(Theme.Colors.textTertiary.opacity(0.15), in: RoundedRectangle(cornerRadius: 9))
+                } else if let c {
+                    ChatAvatar(name: c.name, size: 36, agentEmoji: c.kind == .agent ? (c.agent?.glyph ?? ChatAgent.glyph(nil)) : nil, url: c.kind == .agent ? c.agent?.avatarUrl : c.member?.avatarUrl)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: c?.name ?? "").font(.headline).lineLimit(1)
+                    HStack(spacing: 6) {
+                        if !new.isEmpty { Text("\(new.count) new").font(.caption).foregroundStyle(Theme.Colors.textSecondary) }
+                        if mentions > 0 {
+                            Text("@ \(mentions)").font(.caption.weight(.bold)).foregroundStyle(.white)
+                                .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.Colors.reject, in: Capsule())
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            Divider()
+            if loaded[view] == nil {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(shown) { m in
+                            HStack(alignment: .top, spacing: 10) {
+                                ChatAvatar(name: m.authorName ?? "?", size: 28, url: m.authorAvatar)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text(verbatim: m.isAI ? String(localized: "Your AI") : (m.authorName ?? "")).font(.subheadline.weight(.semibold))
+                                        Text(m.date, style: .time).font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
+                                    }
+                                    Text(verbatim: translations.shown(m).text).font(.subheadline).lineLimit(5)
+                                }
+                            }
+                        }
+                        if shown.isEmpty {
+                            Text("Nothing new to show here.").font(.subheadline).foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .scrollDisabled(shown.count < 4)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: 480, alignment: .top)
+        .background(Theme.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Theme.Colors.border, lineWidth: 1))
+        .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
+    }
+
+    private func decide(markRead: Bool) {
+        guard let view = current else { return }
+        Haptics.light()
+        if markRead { read += 1; Task { await store.markRead(view) } } else { kept += 1 }
+        let out: CGFloat = markRead ? 600 : -600
+        withAnimation(.easeIn(duration: reduceMotion ? 0.1 : 0.22)) { drag = CGSize(width: out, height: drag.height) }
+        Task {
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 110 : 230))
+            drag = .zero
+            index += 1
+            if index >= queue.count { Haptics.success() }
+            await prefetch()
+        }
+    }
+
+    /// The card on screen and the one behind it, loaded ahead.
+    private func prefetch() async {
+        for view in queue.dropFirst(index).prefix(2) where loaded[view] == nil {
+            loaded[view] = await store.peek(view)
+        }
+    }
+}
+

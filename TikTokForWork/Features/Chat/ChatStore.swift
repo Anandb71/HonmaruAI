@@ -411,6 +411,17 @@ final class ChatStore: ObservableObject {
         await ChatService.markRead(orgId: orgId, channel: view, base: base)
     }
 
+    /// A conversation's latest messages without reading it: Catch up shows
+    /// them, and only a swipe to the right marks the conversation read.
+    func peek(_ view: String) async -> [ChatMessage] {
+        guard let orgId, let base else { return [] }
+        let list = (try? await ChatService.messages(orgId: orgId, channel: view, base: base)) ?? []
+        await translate(view, list)
+        return list
+    }
+    /// When this person last read a conversation, as the server keeps it.
+    func readAt(_ view: String) -> String? { reads[view] }
+
     /// Every conversation with something new, or an @ waiting for you.
     var freshViews: [String] {
         (channels + groupConversations + people + agentConversations).map(\.view)

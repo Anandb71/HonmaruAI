@@ -43,6 +43,7 @@ struct ChatHomeView: View {
                 case .archived: ChatArchivedChannelsView(store: store)
                 case .sent: ChatSentView(store: store)
                 case .search: ChatSearchView(store: store)
+                case .catchUp: ChatCatchUpView(store: store)
                 }
             }
             .alert("New channel", isPresented: $creating) {
@@ -138,8 +139,10 @@ struct ChatHomeView: View {
                     .filter { store.isFresh($0.view) || store.mentions(in: $0.view) > 0 }
                 if !unread.isEmpty {
                     sectionHeader("unreads", title: "Unreads") {
-                        Button("Mark all as read") { Task { await store.markEverythingRead() } }
+                        Button("Catch up") { path.append(.catchUp) }
                             .font(.footnote.weight(.semibold)).foregroundStyle(Theme.Colors.accent)
+                        Button("Mark all as read") { Task { await store.markEverythingRead() } }
+                            .font(.footnote.weight(.semibold)).foregroundStyle(Theme.Colors.textSecondary)
                     }
                     if !collapsed("unreads") { ForEach(unread) { row($0) } }
                 }
@@ -236,7 +239,8 @@ struct ChatHomeView: View {
     /// Slack's row of cards over the sidebar: each says how much is waiting.
     private var shortcutCards: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                card("Catch up", icon: "rectangle.stack", detail: String(localized: "\(store.freshViews.count) new"), alert: !store.freshViews.isEmpty, route: .catchUp)
                 card("Threads", icon: "text.bubble", detail: String(localized: "\(store.unreadThreads) new"), alert: store.unreadThreads > 0, route: .threads)
                 card("Later", icon: "bookmark", detail: String(localized: "\(store.saved.count) items"), alert: false, route: .later)
                 card("Drafts & sent", icon: "paperplane", detail: String(localized: "\(store.drafts.count) drafts"), alert: false, route: .sent)
@@ -258,7 +262,7 @@ struct ChatHomeView: View {
             }
             .foregroundStyle(Theme.Colors.textPrimary)
             .padding(12)
-            .frame(width: 120, alignment: .leading)
+            .frame(width: 112, alignment: .leading)
             .background(Theme.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.Colors.border, lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: 12))
