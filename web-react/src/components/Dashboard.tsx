@@ -1,5 +1,5 @@
 import { setQuietState, getQuietState, onQuietChange, type QuietState } from '../utils/quiet'
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { WebSocketClient } from '../services/WebSocketClient'
 import { Feed } from './Feed'
 import { ClassicList, type Presence } from './ClassicList'
@@ -25,6 +25,8 @@ import { aiHeaders } from '../utils/aiKey'
 import type { Screen, Mode } from '../utils/route'
 import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
+import { loadRecent, rememberRecent } from '../utils/places'
+import type { Place } from '../utils/places'
 import type { ChannelMessage } from '../types/card'
 
 // The screens a person opens now and then load when they are opened: the
@@ -109,6 +111,12 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   const [panel, setPanel] = useState<Panel>(null)
   // ⌘K: one box that goes anywhere and finds anything.
   const [palette, setPalette] = useState(false)
+  // The conversations it jumps to, as the list last told them: kept, not
+  // drawn, so the list saying so on every change repaints nothing here.
+  const placesRef = useRef<Place[]>([])
+  const onPlaces = useCallback((next: Place[]) => { placesRef.current = next }, [])
+  // Where you were lately, read as the palette opens.
+  const recent = useMemo(() => (palette ? loadRecent(orgId) : []), [palette, orgId])
   const { route, navigate } = useRoute()
   const desktop = useDesktop()
   const screen: Screen | null = route.screen
@@ -510,6 +518,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     else if (action.kind === 'feed') { try { localStorage.setItem('mode', 'cards') } catch {}; navigate(hashForMode('cards')) }
     else if (action.kind === 'list') { try { localStorage.setItem('mode', 'classic') } catch {}; navigate(hashForMode('classic')) }
     else if (action.kind === 'compose') { navigate(hashForMode('cards')); setPanel('compose') }
+    // A conversation opens the way a link to one does (and "Message" on an
+    // agent): the list picks it up whether or not it is on screen yet.
+    else if (action.kind === 'view') navigate(hashForView(action.view))
     else if (action.kind === 'message') {
       // The list opens the conversation and goes to the message; if it is
       // not mounted yet it picks the target up when it is.
@@ -605,7 +616,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   const [listView, setListView] = useState<{ view: string; name: string } | null>(null)
   const onListView = useCallback((view: string | null, name: string | null) => {
     setListView(view ? { view, name: name || view } : null)
-  }, [])
+    // Opened: the most recent place you were, for ⌘K with nothing typed.
+    if (view) rememberRecent(orgId, view)
+  }, [orgId])
   const handleDelete = useCallback((cardId: string) => {
     wsClientRef.current?.sendDeleteCard(cardId)
     addDebugLog(`Deleted: ${cardId}`)
@@ -845,6 +858,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           onCreateChannel={(name, opts) => channelCall('POST', { name, ...(opts?.private ? { private: true } : {}) })}
           onRenameChannel={(slug, name) => channelCall('PUT', { slug, name })}
           onDeleteChannel={(slug) => channelCall('DELETE', { slug })}
+          onPlaces={onPlaces}
         />
       )}
 
@@ -974,6 +988,10 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           orgId={orgId}
           sessionToken={sessionToken}
           cards={[...pendingCards, ...decidedCards, ...sentCards]}
+          places={placesRef.current}
+          recent={recent}
+          current={mode === 'classic' && !screen ? listView?.view ?? null : null}
+          businesses={businesses}
           onPick={pickFromPalette}
           onClose={() => setPalette(false)}
         />
