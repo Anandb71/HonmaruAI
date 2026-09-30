@@ -849,3 +849,7 @@ html:not(.js) .keep-sticky { position:relative; height:auto; padding:90px 0; }
 @media(prefers-reduced-motion:reduce) { .stage-sticky { min-height:700px; }.device { display:none; }.stage-scenery { opacity:1!important; }.portal { transform:none!important; }.lab-card { transition:none; }.keep { height:auto; }.keep-sticky { padding:90px 0; } }
 /* Long translated action labels must fit the smallest supported viewport. */
 @media(max-width:360px) { .lab-actions button { min-width:0; gap:8px; padding-inline:10px; font-size:11px; }.lab-actions button>span[aria-hidden] { font-size:18px; }.lab-surface { padding:16px; }.lab-card { padding:18px; } }
+
+/* Give the Japanese proposition a deliberate two-line rhythm. */
+@media(max-width:700px) { :lang(ja) .hero-text .display { font-size:clamp(34px,9.6vw,62px); line-height:1.24; } }
+@media(min-width:1000px) { :lang(en) .hero-text .display { font-size:clamp(64px,6.1vw,90px); } }
