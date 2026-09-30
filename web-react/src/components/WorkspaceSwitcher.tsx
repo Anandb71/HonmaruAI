@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useT } from '../utils/i18n'
 import { Icon } from './Icon'
+import { isMacPlatform, formatCombo } from '../utils/keys'
 
 export interface Workspace {
   id: string
@@ -43,7 +44,7 @@ export const WorkspaceMark: React.FC<{ workspace?: Workspace; label: string; siz
     : <span className="ws-mark ws-mark-letter" aria-hidden="true" style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }}>{(label.trim()[0] || '?').toUpperCase()}</span>
 )
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+const isMac = isMacPlatform()
 
 export const WorkspaceSwitcher: React.FC<Props> = ({ workspaces, currentId, onSwitch, onSettings, onCreate, onJoin, onLogout, variant = 'rail', api }) => {
   const t = useT()
@@ -130,7 +131,7 @@ export const WorkspaceSwitcher: React.FC<Props> = ({ workspaces, currentId, onSw
                         {' · '}{t(w.role.charAt(0).toUpperCase() + w.role.slice(1))}
                       </span>
                     </span>
-                    {i < 9 && <kbd className="ws-key" aria-hidden="true">{isMac ? '⌘' : 'Ctrl+'}{i + 1}</kbd>}
+                    {i < 9 && <kbd className="ws-key" aria-hidden="true">{formatCombo(`Mod+${i + 1}`, isMac)}</kbd>}
                   </button>
                 </li>
               )
