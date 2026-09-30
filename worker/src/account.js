@@ -95,7 +95,7 @@ export async function exportAccount(db, githubId, login) {
       "SELECT connector, external_id, org_id, card_id, created_at FROM ingested_items WHERE user_github_id = ?1", id
     ),
     devices: await tryAll(
-      "SELECT environment, updated_at FROM device_tokens WHERE user_github_id = ?1", id
+      "SELECT platform, environment, updated_at FROM device_tokens WHERE user_github_id = ?1", id
     ),
     pushSubscriptions: await tryAll(
       "SELECT user_agent, updated_at FROM push_subscriptions WHERE user_github_id = ?1", id

@@ -25,6 +25,7 @@ import { deleteAccount, exportAccount } from "./account.js";
 import { listMembers, listMembersForClient, removeMember, listInvites, revokeInvite, membershipIsOurs, returnOrphanedCards, changeRole, memberRef } from "./team.js";
 import { authorizeOrgAccess } from "./membership.js";
 import { isConfigured, isDeviceToken } from "./apns.js";
+import { isFcmToken, isFcmConfigured } from "./fcm.js";
 import { isWebPushConfigured, parseSubscription } from "./webpush.js";
 import { isMailConfigured, sendMail } from "./mailer.js";
 import { SUPPORTED_LOCALES, composeInviteEmail, t } from "./notifyCopy.js";
@@ -818,6 +819,8 @@ async function handle(request, env, url, ctx) {
             ? env.OPENROUTER_MODEL || "inclusionai/ling-3.0-flash:free"
             : "fallback",
         push: isConfigured(env),
+        // Android phones (FCM), beside iPhones (`push`, APNs).
+        fcm: isFcmConfigured(env),
         webPush: isWebPushConfigured(env),
         email: isMailConfigured(env),
         // Invite links and notification links need the web's own address.
@@ -1562,16 +1565,26 @@ async function handle(request, env, url, ctx) {
       return json({ ok: true });
     }
     // Registered after the user grants permission, and re-registered on every
-    // launch — APNs reissues tokens, and a stale one is a silent no-op.
+    // launch — APNs and FCM both reissue tokens, and a stale one is a silent
+    // no-op. `platform` says which service the token is for: "ios" (APNs, and
+    // what an older iPhone app means by saying nothing) or "android" (FCM).
     if (url.pathname === "/devices" && request.method === "POST") {
       const session = await getSession(env.DB, request.headers.get("x-session-token"));
       if (!session) return json({ message: "invalid session" }, 401);
       const body = await request.json().catch(() => ({}));
       if (!body.deviceToken) return json({ message: "deviceToken is required" }, 400);
-      // Shape-checked here rather than trusted: this string ends up in the path
-      // of a request to Apple, signed with our provider token.
-      if (!isDeviceToken(body.deviceToken)) {
+      const platform = body.platform === undefined || body.platform === null ? "ios" : body.platform;
+      if (platform !== "ios" && platform !== "android") {
+        return json({ message: "platform is ios or android." }, 400);
+      }
+      // Shape-checked here rather than trusted: an iPhone's token ends up in
+      // the path of a request to Apple, signed with our provider token, and an
+      // Android one in a message sent as our Firebase project.
+      if (platform === "ios" && !isDeviceToken(body.deviceToken)) {
         return json({ message: "That is not an APNs device token." }, 400);
+      }
+      if (platform === "android" && !isFcmToken(body.deviceToken)) {
+        return json({ message: "That is not an FCM registration token." }, 400);
       }
       const user = await getUserByGithubId(env.DB, session.github_id);
       if (!user?.login) return json({ message: "unknown user" }, 409);
@@ -1580,6 +1593,7 @@ async function handle(request, env, url, ctx) {
         githubId: session.github_id,
         login: user.login,
         environment: body.environment,
+        platform,
       });
       return json({ ok: true });
     }

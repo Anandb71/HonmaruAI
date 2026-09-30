@@ -7,6 +7,7 @@
 // can reach them:
 //
 //   APNs      every iPhone they registered
+//   FCM       every Android phone they registered
 //   Web Push  every browser or installed PWA they subscribed
 //   Email     when nothing above delivered, and they have an address
 //
@@ -21,15 +22,16 @@ import {
   devicesForLogin, removeDevice, subscriptionsForLogin, removeSubscription, getUserByLogin,
 } from "./db.js";
 import { sendPush, isDeadToken, isConfigured as apnsConfigured } from "./apns.js";
+import { sendFcm, isDeadFcmToken, isFcmConfigured } from "./fcm.js";
 import { sendWebPush, isWebPushConfigured, isDeadSubscription } from "./webpush.js";
 import { sendMail, isMailConfigured } from "./mailer.js";
 import { composeAlert, composeEmail } from "./notifyCopy.js";
 import { localizeStored } from "./localize.js";
 import { loadCopy } from "./copy.js";
-import { isActive } from "./pushes.js";
+import { isActive, isIPhone, isAndroid } from "./pushes.js";
 
 export function anyChannelConfigured(env) {
-  return apnsConfigured(env) || isWebPushConfigured(env) || isMailConfigured(env);
+  return apnsConfigured(env) || isFcmConfigured(env) || isWebPushConfigured(env) || isMailConfigured(env);
 }
 
 /// Who a notification of this kind is for. A created or nudged card is for the
@@ -67,7 +69,7 @@ function deepLink(env, card) {
 /// whose allowance that spends; `announce: false` is for the relay, which
 /// broadcasts its own changes rather than calling itself.
 export async function notifyCard(env, { card, kind = "created", excludeLogin, badge, count, toLogin, comment, orgId, payerGithubId, announce = true }) {
-  const channels = { apns: 0, webpush: 0, email: 0 };
+  const channels = { apns: 0, fcm: 0, webpush: 0, email: 0 };
   // A comment or a mention names its reader; everything else is read off
   // the card.
   const recipient = toLogin || recipientFor(card, kind);
@@ -96,8 +98,11 @@ export async function notifyCard(env, { card, kind = "created", excludeLogin, ba
   let devices = [];
   let subscriptions = [];
 
-  if (apnsConfigured(env)) {
+  if (apnsConfigured(env) || isFcmConfigured(env)) {
     devices = await devicesForLogin(env.DB, recipient);
+  }
+
+  if (apnsConfigured(env)) {
     const payload = {
       aps: {
         alert,
@@ -109,7 +114,7 @@ export async function notifyCard(env, { card, kind = "created", excludeLogin, ba
       kind,
       ...(orgId ? { orgId } : {}),
     };
-    for (const device of devices) {
+    for (const device of devices.filter(isIPhone)) {
       const result = await sendPush(env, { deviceToken: device.device_token, payload, collapseId });
       if (result.ok) {
         channels.apns += 1;
@@ -118,6 +123,22 @@ export async function notifyCard(env, { card, kind = "created", excludeLogin, ba
         // forever is how a push table becomes mostly garbage.
         await removeDevice(env.DB, device.device_token);
       }
+    }
+  }
+
+  if (isFcmConfigured(env)) {
+    for (const device of devices.filter(isAndroid)) {
+      const result = await sendFcm(env, {
+        token: device.device_token,
+        title: alert.title,
+        text: alert.subtitle,
+        // One card, one notification: a nudge replaces the first telling.
+        tag: card.id,
+        priority: card.priority === "urgent" || card.priority === "high" ? "high" : "normal",
+        data: { kind, cardId: card.id, orgId: orgId || null },
+      });
+      if (result.ok) channels.fcm += 1;
+      else if (isDeadFcmToken(result)) await removeDevice(env.DB, device.device_token);
     }
   }
 
@@ -149,13 +170,13 @@ export async function notifyCard(env, { card, kind = "created", excludeLogin, ba
 
   // The floor. Nothing above reached them — no device, no browser, or every
   // one of them is gone — and they have an address and have not said no.
-  const reached = channels.apns + channels.webpush > 0;
+  const reached = channels.apns + channels.fcm + channels.webpush > 0;
   if (!reached && isMailConfigured(env) && user?.email && Number(user.notify_email ?? 1) !== 0) {
     const mail = composeEmail({ card, kind, locale, count, url: deepLink(env, card), comment });
     const result = await sendMail(env, { to: user.email, ...mail });
     if (result.ok) channels.email += 1;
   }
 
-  const sent = channels.apns + channels.webpush + channels.email;
+  const sent = channels.apns + channels.fcm + channels.webpush + channels.email;
   return { sent, channels, locale };
 }
