@@ -2256,8 +2256,9 @@ export const ClassicList: React.FC<Props> = ({
   const pinned = useRef(true)
   useEffect(() => { pinned.current = true; setReadingUp(null) }, [current?.key])
   // What the log was last drawn for: another log or another conversation is
-  // one just opened, and a newest message not seen before just arrived.
-  const followed = useRef<{ el: HTMLDivElement | null; key?: string; newest?: string }>({ el: null })
+  // one just opened, and a newest message later than the newest then just
+  // arrived (not one left newest by a deletion).
+  const followed = useRef<{ el: HTMLDivElement | null; key?: string; newestAt: string }>({ el: null, newestAt: '' })
   useEffect(() => {
     const el = logRef.current
     if (!el) return
@@ -2265,8 +2266,8 @@ export const ClassicList: React.FC<Props> = ({
     const newest = list[list.length - 1]
     const last = followed.current
     const opened = last.el !== el || last.key !== current?.key
-    const newestIsMine = Boolean(newest?.mine && newest.id !== last.newest)
-    followed.current = { el, key: current?.key, newest: newest?.id }
+    const newestIsMine = Boolean(newest?.mine && newest.createdAt > last.newestAt)
+    followed.current = { el, key: current?.key, newestAt: newest?.createdAt || '' }
     const restoring = keepScroll.current !== null
     if (shouldFollow({ opened, atBottom: pinned.current, restoring, newestIsMine })) {
       keepScroll.current = null
