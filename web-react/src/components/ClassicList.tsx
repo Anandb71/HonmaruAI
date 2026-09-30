@@ -14,7 +14,7 @@ import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
-import { countNewBelow, isAtBottom, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from '../utils/chatScroll'
+import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from '../utils/chatScroll'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
@@ -1180,6 +1180,23 @@ export const ClassicList: React.FC<Props> = ({
     const list = messages[v] || []
     setReadingUp({ view: v, since: list[list.length - 1]?.createdAt || '' })
   }
+  // Whether anybody is looking at the page. What is open is read only
+  // then, and read again the moment they come back to it.
+  const [looking, setLooking] = useState(() => typeof document === 'undefined' || isLooking(document))
+  useEffect(() => {
+    const look = () => setLooking(isLooking(document))
+    // Focus going into a frame on the page blurs the window before the
+    // frame has it; asked a moment later, the page still has focus.
+    const blurred = () => { setTimeout(look, 0) }
+    document.addEventListener('visibilitychange', look)
+    window.addEventListener('focus', look)
+    window.addEventListener('blur', blurred)
+    return () => {
+      document.removeEventListener('visibilitychange', look)
+      window.removeEventListener('focus', look)
+      window.removeEventListener('blur', blurred)
+    }
+  }, [])
   // An app looked at is read: its count goes, here and on every device —
   // and again when something new arrives while it is open.
   // Only when there is something new to clear: every write counts against
@@ -1187,7 +1204,7 @@ export const ClassicList: React.FC<Props> = ({
   const appOpen = current?.kind === 'app' ? current.key : null
   const appNew = current?.kind === 'app' ? current.unread : 0
   useEffect(() => {
-    if (!appOpen || appNew === 0) return
+    if (!appOpen || appNew === 0 || !looking) return
     const now = new Date().toISOString()
     try { localStorage.setItem(seenKey(api.orgId, appOpen), now) } catch { /* the server remembers */ }
     setSeenTick((n) => n + 1)
@@ -1196,7 +1213,7 @@ export const ClassicList: React.FC<Props> = ({
       body: JSON.stringify({ orgId: api.orgId, channel: appOpen }),
     }).then(() => setServerReads((prev) => ({ ...prev, [appOpen]: now }))).catch(() => { /* this device still remembers */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appOpen, appNew, api.orgId])
+  }, [appOpen, appNew, api.orgId, looking])
   // Opened is read — here, and on the server for your other devices —
   // unless you just marked it unread and are still looking at it.
   const heldUnread = useRef<string | null>(null)
@@ -1245,7 +1262,7 @@ export const ClassicList: React.FC<Props> = ({
   // while you are at the bottom to see them. Scrolled up in the history, it
   // stays unread until you come back down.
   useEffect(() => {
-    if (!view || heldUnread.current === view || !atBottom) return
+    if (!view || heldUnread.current === view || !atBottom || !looking) return
     const now = readHere(view)
     if (serverRead.current?.view === view) { serverRead.current.now = now; return }
     dropServerRead()
@@ -1256,7 +1273,7 @@ export const ClassicList: React.FC<Props> = ({
     }, 600)
     serverRead.current = { view, now, timer }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, api.orgId, messages[view || '']?.length, atBottom])
+  }, [view, api.orgId, messages[view || '']?.length, atBottom, looking])
   useEffect(() => dropServerRead, [view, api.orgId])
   // The composer grows with what is written, up to a point.
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countNewBelow, isAtBottom, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from './chatScroll'
+import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from './chatScroll'
 
 /// A message said `i` minutes into the day, by a teammate unless it is yours.
 const at = (i: number) => new Date(Date.UTC(2026, 8, 30, 0, i)).toISOString()
@@ -17,6 +17,20 @@ describe('at the bottom', () => {
 
   it('a log too short to scroll is always at the bottom', () => {
     expect(isAtBottom({ scrollHeight: 300, clientHeight: 500, scrollTop: 0 })).toBe(true)
+  })
+})
+
+describe('somebody looking', () => {
+  const doc = (visibilityState: string, focused: boolean) => ({ visibilityState, hasFocus: () => focused })
+
+  it('is a tab showing, in a window in front', () => {
+    expect(isLooking(doc('visible', true))).toBe(true)
+  })
+
+  it('is not a tab in the background, nor a window behind another', () => {
+    expect(isLooking(doc('hidden', true))).toBe(false)
+    expect(isLooking(doc('hidden', false))).toBe(false)
+    expect(isLooking(doc('visible', false))).toBe(false)
   })
 })
 

@@ -15,6 +15,13 @@ export function isAtBottom(el: ScrollBox, slack = 48): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < slack
 }
 
+/// Somebody is looking: the tab is showing and its window is in front. What
+/// arrives is read only then — a tab in the background catching up after a
+/// dropped connection would otherwise read a whole outage nobody saw.
+export function isLooking(doc: { visibilityState: string; hasFocus(): boolean }): boolean {
+  return doc.visibilityState === 'visible' && doc.hasFocus()
+}
+
 /// Whether the log goes to its newest line after a change. A conversation
 /// just opened always does; a page of older messages loading above keeps
 /// the reader where they were; otherwise it follows only a reader already at
