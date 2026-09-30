@@ -118,6 +118,13 @@ describe('a right-click on a message', () => {
     // A click that only put the caret somewhere selected nothing.
     expect(opensMessageMenu({ shiftKey: false, overNative: false, selected: ' \n' })).toBe(true)
   })
+
+  it('leaves the browser’s menu to an attached picture, not to a face or an emoji drawn as one', () => {
+    const spots = NATIVE_MENU_SPOT.split(', ')
+    expect(spots).toContain('.att-pic img')
+    expect(spots).toEqual(expect.arrayContaining(['a[href]', 'video', 'audio', 'iframe', 'canvas']))
+    expect(spots).not.toContain('img')
+  })
 })
 
 describe('the keyboard’s way to the menu', () => {

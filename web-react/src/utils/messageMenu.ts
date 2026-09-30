@@ -85,8 +85,11 @@ export function messageContextEntries(
 }
 
 /// Where the browser's own menu is the better one: a link (open it in a new
-/// tab, copy its address), a box being typed in, a picture or a player.
-export const NATIVE_MENU_SPOT = 'a[href], input, textarea, select, img, video, audio, iframe, canvas, [contenteditable]:not([contenteditable="false"])'
+/// tab, copy its address), a box being typed in, and what was sent to be
+/// looked at — a picture attached to the message, a player. Not a picture
+/// that only dresses the message (its author's face, the AI's, an emoji
+/// drawn as a picture): a right-click there is on the message.
+export const NATIVE_MENU_SPOT = 'a[href], input, textarea, select, .att-pic img, video, audio, iframe, canvas, [contenteditable]:not([contenteditable="false"])'
 
 /// Whether a right-click on a message opens the message's own menu rather
 /// than the browser's: not with Shift held, which is the way to the
