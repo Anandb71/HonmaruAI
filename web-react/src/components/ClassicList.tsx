@@ -2132,7 +2132,9 @@ export const ClassicList: React.FC<Props> = ({
   useEffect(() => {
     if (!detailId && !thread) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !(e.target as HTMLElement)?.closest('textarea, input')) { setDetailId(null); setThread(null) }
+      // An Escape a menu has already taken (a right-click menu over a
+      // reply) closes that menu, not the thread under it as well.
+      if (e.key === 'Escape' && !e.defaultPrevented && !(e.target as HTMLElement)?.closest('textarea, input')) { setDetailId(null); setThread(null) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
