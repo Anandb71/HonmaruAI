@@ -1513,7 +1513,11 @@ export const ClassicList: React.FC<Props> = ({
   // ---- What you can do to a message ----
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [toolsOpen, setToolsOpen] = useState<string | null>(null)
+  // Which copy of a message the picker under it is open on: a thread's
+  // first message is drawn in the channel and in the thread, and the one
+  // whose + was pressed is the one that opens it, not both at once.
   const [pickerFor, setPickerFor] = useState<string | null>(null)
+  const pickerKey = (m: ChannelMessage, inThread: boolean) => `${inThread ? 'thread:' : ''}${m.id}`
   const [thread, setThread] = useState<{ channel: string; parent: ChannelMessage; replies: ChannelMessage[] } | null>(null)
 
   // Messages in another language, in yours: translated once on the server
@@ -2415,9 +2419,9 @@ export const ClassicList: React.FC<Props> = ({
           onHide={m.mine ? () => void act('POST', '/channels/previews', channel, { messageId: m.id, hidden: true }) : undefined} />
       )}
       {!m.deleted && (
-        <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(m.id)} />
+        <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(pickerKey(m, inThread))} />
       )}
-      {pickerFor === m.id && <div className="slk-picker-anchor"><EmojiPicker onPick={(e) => react(channel, m, e)} onClose={() => setPickerFor(null)} /></div>}
+      {pickerFor === pickerKey(m, inThread) && <div className="slk-picker-anchor"><EmojiPicker onPick={(e) => react(channel, m, e)} onClose={() => setPickerFor(null)} /></div>}
       {!inThread && (m.replyCount || 0) > 0 && (
         <button type="button" className="slk-thread-link" onClick={() => void openThread(channel, m)}>
           <span className="slk-thread-faces" aria-hidden="true">
