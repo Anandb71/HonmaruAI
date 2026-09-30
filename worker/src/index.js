@@ -654,7 +654,8 @@ async function handle(request, env, url, ctx) {
           githubToken: body.githubToken === undefined ? undefined : (body.githubToken ? "set" : "removed"),
           repos: body.repos === undefined ? undefined : result.teammate?.repos,
           channels: body.channels === undefined ? undefined : (result.teammate?.channels === null ? "all" : result.teammate?.channels?.length),
-          monthlyLimitUsd: body.monthlyLimitUsd,
+          monthlyLimit: body.monthlyLimit !== undefined ? body.monthlyLimit : body.monthlyLimitUsd,
+          account: body.account === undefined ? undefined : (body.account ? "set" : "removed"),
           tools: body.tools === undefined ? undefined : (result.teammate?.tools || []).map((t) => t.name),
         } });
       }

@@ -61,7 +61,7 @@ test("an admin launches Claude: keys stay out of every answer, tools' keys go to
   const { res, credential, agentBody } = await launch();
   expect(res.status).toBe(200);
   const body = await res.json();
-  expect(body.teammate).toMatchObject({ enabled: true, ready: true, hasApiKey: true, hasGithubToken: true, repos: ["acme/app"], model: "claude-opus-5-5", monthlyLimitUsd: 500 });
+  expect(body.teammate).toMatchObject({ enabled: true, ready: true, hasApiKey: true, hasGithubToken: true, repos: ["acme/app"], model: "claude-opus-5-5", monthlyLimit: 500, unit: "usd" });
   expect(body.teammate.tools).toEqual([{ name: "Linear", secretName: "LINEAR_API_KEY", host: "api.linear.app" }]);
   expect(JSON.stringify(body)).not.toMatch(/sk-ant-test|ghp_claude|lin_secret/);
   expect(credential.auth).toMatchObject({ type: "environment_variable", secret_name: "LINEAR_API_KEY", secret_value: "lin_secret", networking: { type: "limited", allowed_hosts: ["api.linear.app"] } });
@@ -108,7 +108,7 @@ test("@claude in a thread starts a session with the repo, vault and budget, and 
   expect(replies.every((m) => m.kind === "agent" && m.authorName === "Claude")).toBe(true);
   const run = await env.DB.prepare("SELECT * FROM ai_teammate_runs WHERE org_id = ?1").bind(ORG).first();
   expect(run).toMatchObject({ status: "idle", cost_cents: 123, remote_id: "sesn_1", last_event_at: "2026-09-30T10:00:06Z" });
-  const spent = (await (await get(`/teammates?${q({ orgId: ORG, provider: "claude" })}`, toru)).json()).teammate.spentThisMonthUsd;
+  const spent = (await (await get(`/teammates?${q({ orgId: ORG, provider: "claude" })}`, toru)).json()).teammate.spentThisMonth;
   expect(spent).toBe(1.23);
 
   // A follow-up in the same thread goes to the same session, and only what
@@ -166,7 +166,7 @@ test("outside its channels, past its limit, or switched off, Claude says so and 
   expect(await say("@claude look at this")).toEqual(["I'm not set up to work in this channel. An admin can add it in Studio → AI teammates."]);
   // Everywhere, but the month is spent.
   anthropic().intercept({ path: "/v1/agents/agent_1?beta=true", method: "POST" }).reply(200, { id: "agent_1", version: 2 });
-  expect((await send("PUT", "/teammates", toru, { orgId: ORG, provider: "claude", channels: null, monthlyLimitUsd: 1 })).status).toBe(200);
+  expect((await send("PUT", "/teammates", toru, { orgId: ORG, provider: "claude", channels: null, monthlyLimit: 1 })).status).toBe(200);
   await env.DB.prepare("INSERT INTO ai_teammate_runs (id, org_id, provider, channel, thread_id, remote_id, status, cost_cents, created_at, updated_at) VALUES ('r0', ?1, 'claude', 'b:cafe', 'x', 'sesn_0', 'idle', 99, ?2, ?2)")
     .bind(ORG, new Date().toISOString()).run();
   expect(await say("@claude look at this")).toEqual(["I've reached this workspace's monthly spending limit for me. An admin can raise it in Studio → AI teammates."]);

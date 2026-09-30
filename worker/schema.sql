@@ -886,6 +886,7 @@ CREATE TABLE IF NOT EXISTS ai_teammate_runs (
   channel        TEXT NOT NULL,
   thread_id      TEXT NOT NULL,
   remote_id      TEXT NOT NULL,
+  remote_turn    TEXT,
   status         TEXT NOT NULL,
   cost_cents     INTEGER NOT NULL DEFAULT 0,
   last_event_at  TEXT,

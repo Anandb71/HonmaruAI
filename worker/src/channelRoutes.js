@@ -534,7 +534,7 @@ async function runTeammate(env, { orgId, user, resolved, row, members, locale, a
     console.error("teammate start failed", safe(err?.message));
     return say("teammate.failed");
   }
-  if (started.refused) return say(started.refused === "limit" ? "teammate.limit" : "teammate.notHere");
+  if (started.refused) return say(started.refused === "limit" ? "teammate.limit" : started.refused === "busy" ? "teammate.busy" : "teammate.notHere");
   await say(started.continued ? "teammate.continued" : "teammate.started");
   await watchTeammateRuns(env, { ids: [started.run.id], deadline });
 }

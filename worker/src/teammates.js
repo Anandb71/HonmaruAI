@@ -2,28 +2,51 @@ import Anthropic from "@anthropic-ai/sdk";
 import { handleTaken } from "./customAgents.js";
 import { aad, openField, sealField } from "./secrets.js";
 
-// AI teammates: Claude working in the workspace's channels the way Claude Tag
-// works in Slack. An admin sets it up once, with an API key from an account
-// made for it; anyone then writes "@claude" in a channel and it takes the
-// thread as its task, works in a sandbox of its own (the team's repositories
-// cloned in, the team's tools reached through keys it cannot read), and
-// answers in the thread. What it spends is capped by the month.
+// AI teammates: coding agents working in the workspace's channels the way
+// Claude Tag works in Slack. An admin sets one up once, with an API key from
+// an account made for it; anyone then writes "@claude" (or "@devin",
+// "@cursor") in a channel and it takes the thread as its task, works in a
+// sandbox of its own on the team's repositories, and answers in the thread.
+// Each is billed by its own company, to the workspace's own account; what it
+// uses is counted here and capped by the month.
 //
-// Claude runs on Anthropic's Managed Agents: one agent, one environment and
-// one vault per workspace, made at launch; one session per thread. Devin,
-// Cursor and Codex are to come on the same table.
+// Each service has an adapter below: how a key is checked (and, for Claude,
+// what is made on Anthropic's side), how work starts, how a follow-up is
+// handed on, and how a look at it reads. Everything else — setup, channels,
+// the monthly limit, the runs and their posting — is shared.
 
 export const PROVIDERS = {
   claude: {
-    name: "Claude", handle: "claude", emoji: "✳️",
-    models: ["claude-opus-5-5", "claude-sonnet-5-5"],
-    defaultModel: "claude-opus-5-5",
+    name: "Claude", handle: "claude", emoji: "✳️", company: "Anthropic",
+    keyHint: "sk-ant-…", keySource: "the Claude Console",
+    models: ["claude-opus-5-5", "claude-sonnet-5-5"], defaultModel: "claude-opus-5-5",
+    // Its use in dollars (cents here); a task is not started with less than 50¢ left.
+    unit: "usd", minLeft: 50, defaultLimit: 50000,
+    githubToken: true, tools: true,
+  },
+  devin: {
+    name: "Devin", handle: "devin", emoji: "🧑‍💻", company: "Devin",
+    keyHint: "cog_…", keySource: "Devin's settings (a service user)",
+    models: [], defaultModel: null,
+    // Devin bills in ACUs (hundredths here); a task needs at least one.
+    unit: "acu", minLeft: 100, defaultLimit: 10000,
+    account: true,
+  },
+  cursor: {
+    name: "Cursor", handle: "cursor", emoji: "🖱️", company: "Cursor",
+    keyHint: "", keySource: "the Cursor dashboard",
+    models: [], defaultModel: null, freeModel: true,
+    // Cursor reports tokens, not money: its limit is a number of tasks.
+    unit: "task", minLeft: 100, defaultLimit: 20000,
+    reposRequired: true,
   },
 };
 
 const ENV_NAME = /^[A-Z][A-Z0-9_]{1,63}$/;
 const HOST = /^(\*\.)?([a-z0-9-]+\.)+[a-z]{2,}$/;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const ACCOUNT = /^[A-Za-z0-9_-]{3,80}$/;
+const MODEL = /^[A-Za-z0-9._:-]{1,80}$/;
 const MAX_TOOLS = 20;
 const MAX_REPOS = 10;
 /// A run that has said nothing for this long is given up on.
@@ -46,7 +69,7 @@ export async function loadTeammate(db, orgId, provider) {
   };
 }
 
-/// What it has spent this month (UTC), in cents: every run's list cost.
+/// What it has used this month (UTC), in hundredths of its unit: every run's.
 export async function spentThisMonth(db, orgId, provider, now = new Date()) {
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
   const row = await db.prepare("SELECT COALESCE(SUM(cost_cents), 0) AS c FROM ai_teammate_runs WHERE org_id = ?1 AND provider = ?2 AND created_at >= ?3")
@@ -58,20 +81,19 @@ export async function spentThisMonth(db, orgId, provider, now = new Date()) {
 export function toClientTeammate(t, provider, spentCents = 0) {
   const p = PROVIDERS[provider];
   return {
-    provider, name: p.name, handle: p.handle, models: p.models,
+    provider, name: p.name, handle: p.handle, emoji: p.emoji, company: p.company, keyHint: p.keyHint, keySource: p.keySource,
+    models: p.models, freeModel: Boolean(p.freeModel), unit: p.unit,
+    needs: { githubToken: Boolean(p.githubToken), tools: Boolean(p.tools), account: Boolean(p.account), repos: Boolean(p.reposRequired) },
     enabled: Boolean(t?.enabled), hasApiKey: Boolean(t?.apiKey), hasGithubToken: Boolean(t?.githubToken),
-    repos: t?.repos || [], model: t?.model || p.defaultModel, instructions: t?.instructions || "",
+    account: t?.remote?.account || "",
+    repos: t?.repos || [], model: t?.model || p.defaultModel || "", instructions: t?.instructions || "",
     channels: t?.channels ?? null,
-    monthlyLimitUsd: t?.monthlyLimitCents == null ? null : t.monthlyLimitCents / 100,
-    spentThisMonthUsd: spentCents / 100,
+    monthlyLimit: t ? (t.monthlyLimitCents == null ? null : t.monthlyLimitCents / 100) : p.defaultLimit / 100,
+    spentThisMonth: spentCents / 100,
     tools: (t?.tools || []).map((x) => ({ name: x.name, secretName: x.secretName, host: x.host })),
-    ready: Boolean(t?.enabled && t?.agentId && t?.remote?.agentId),
+    ready: Boolean(t?.enabled && t?.agentId),
     updatedAt: t?.updatedAt || null,
   };
-}
-
-function client(apiKey) {
-  return new Anthropic({ apiKey, maxRetries: 1 });
 }
 
 /// What the admin sent, checked; secrets passed through untouched.
@@ -79,10 +101,21 @@ function cleanInput(input, current, provider) {
   const p = PROVIDERS[provider];
   const out = {};
   if (typeof input.apiKey === "string") out.apiKey = input.apiKey.trim() || null;
-  if (typeof input.githubToken === "string") out.githubToken = input.githubToken.trim() || null;
-  if (input.model !== undefined) {
-    if (!p.models.includes(input.model)) return { error: "Pick one of the models offered." };
-    out.model = input.model;
+  if (p.githubToken && typeof input.githubToken === "string") out.githubToken = input.githubToken.trim() || null;
+  if (p.account && typeof input.account === "string") {
+    const account = input.account.trim();
+    if (account && !ACCOUNT.test(account)) return { error: `That does not look like a ${p.company} organization ID.` };
+    out.account = account || null;
+  }
+  if (input.model !== undefined && input.model !== null) {
+    if (p.freeModel) {
+      const model = String(input.model).trim();
+      if (model && !MODEL.test(model)) return { error: "Write a model's ID, or leave it blank for the default." };
+      out.model = model || null;
+    } else if (p.models.length) {
+      if (!p.models.includes(input.model)) return { error: "Pick one of the models offered." };
+      out.model = input.model;
+    }
   }
   if (typeof input.instructions === "string") out.instructions = input.instructions.slice(0, 8000);
   if (input.repos !== undefined) {
@@ -96,15 +129,17 @@ function cleanInput(input, current, provider) {
     else if (Array.isArray(input.channels)) out.channels = [...new Set(input.channels.map(String).filter((c) => /^[bg]:/.test(c)))].slice(0, 200);
     else return { error: "Channels are a list, or everywhere." };
   }
-  if (input.monthlyLimitUsd !== undefined) {
-    if (input.monthlyLimitUsd === null) out.monthlyLimitCents = null;
+  // The limit, in the teammate's own unit (dollars, ACUs or tasks).
+  const limit = input.monthlyLimit !== undefined ? input.monthlyLimit : input.monthlyLimitUsd;
+  if (limit !== undefined) {
+    if (limit === null) out.monthlyLimitCents = null;
     else {
-      const usd = Number(input.monthlyLimitUsd);
-      if (!Number.isFinite(usd) || usd < 1 || usd > 1000000) return { error: "A monthly limit is between $1 and $1,000,000, or none." };
-      out.monthlyLimitCents = Math.round(usd * 100);
+      const n = Number(limit);
+      if (!Number.isFinite(n) || n < 1 || n > 1000000) return { error: "A monthly limit is between 1 and 1,000,000, or none." };
+      out.monthlyLimitCents = Math.round(n * 100);
     }
   }
-  if (input.tools !== undefined) {
+  if (p.tools && input.tools !== undefined) {
     if (!Array.isArray(input.tools) || input.tools.length > MAX_TOOLS) return { error: `Up to ${MAX_TOOLS} tools.` };
     const tools = [];
     for (const t of input.tools) {
@@ -124,6 +159,52 @@ function cleanInput(input, current, provider) {
   return { out };
 }
 
+/// What the thread says, for new work: where, who asked, what came before.
+function taskText({ where, askedBy, transcript, request }) {
+  return [
+    `Where: ${where}`,
+    `Asked by: ${askedBy}`,
+    transcript.length ? `The conversation so far:\n${transcript.join("\n")}` : "",
+    `The request:\n${request}`,
+  ].filter(Boolean).join("\n\n");
+}
+
+/// A service that is not Claude has no system prompt of ours: what it needs
+/// to know about HonmaruAI comes first in the task itself.
+function briefing(t) {
+  const repos = (t.repos || []).length ? `The team's repositories: ${t.repos.join(", ")}.` : "";
+  return [
+    `You were handed this in HonmaruAI, a team chat; your final reply is posted into the thread it came from. Do the work, then say briefly what you did or found, and link any pull request you opened. Write in the language the request was written in, in plain chat text. Never push to a default branch.`,
+    repos,
+    t.instructions ? `The workspace's own instructions:\n${t.instructions}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+/// A service answered with an error: its status, and what it said.
+class ServiceError extends Error {
+  constructor(status, message, code = null) { super(message); this.status = status; this.code = code; }
+}
+
+async function call(url, { key, method = "GET", body } = {}) {
+  const res = await fetch(url, {
+    method,
+    headers: { authorization: `Bearer ${key}`, accept: "application/json", ...(body ? { "content-type": "application/json" } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = data?.detail?.message || data?.message || data?.error?.message || (typeof data?.detail === "string" ? data.detail : null) || `HTTP ${res.status}`;
+    throw new ServiceError(res.status, String(message), data?.code || data?.error?.code || data?.error || null);
+  }
+  return data;
+}
+
+// ---- Claude: Anthropic's Managed Agents -----------------------------------
+// One agent, one environment and one vault per workspace, made at launch;
+// one session per thread. Tools' keys live in the vault.
+
+const anthropic = (apiKey) => new Anthropic({ apiKey, maxRetries: 1 });
+
 function systemPrompt(t, workspaceName) {
   const tools = (t.tools || []).map((x) => `- ${x.name}: $${x.secretName} (for ${x.host})`).join("\n");
   const repos = (t.repos || []).map((r) => `- ${r} at /workspace/${r.split("/")[1]}`).join("\n");
@@ -137,53 +218,215 @@ function systemPrompt(t, workspaceName) {
   ].filter(Boolean).join("\n\n");
 }
 
-/// The agent, environment and vault behind a teammate, made or brought up
-/// to date; the tools' keys moved into the vault. Keys never stay here.
-async function provision(t, workspaceName, toolChanges) {
-  const api = client(t.apiKey);
-  const remote = { ...(t.remote || {}) };
-  if (!remote.environmentId) {
-    const env = await api.beta.environments.create({ name: `honmaru-${t.orgId}`.slice(0, 60), config: { type: "cloud", networking: { type: "unrestricted" } } });
-    remote.environmentId = env.id;
-  }
-  if (!remote.vaultId) {
-    const vault = await api.beta.vaults.create({ display_name: `HonmaruAI ${workspaceName}`.slice(0, 255), metadata: { org: String(t.orgId).slice(0, 512) } });
-    remote.vaultId = vault.id;
-  }
-  const tools = [];
-  for (const tool of toolChanges.kept) tools.push(tool);
-  for (const tool of toolChanges.removed) {
-    if (tool.credentialId) await api.beta.vaults.credentials.delete(tool.credentialId, { vault_id: remote.vaultId }).catch(() => {});
-  }
-  for (const tool of toolChanges.written) {
-    if (tool.credentialId) await api.beta.vaults.credentials.delete(tool.credentialId, { vault_id: remote.vaultId }).catch(() => {});
-    const cred = await api.beta.vaults.credentials.create(remote.vaultId, {
-      display_name: tool.name,
-      auth: {
-        type: "environment_variable", secret_name: tool.secretName, secret_value: tool.secretValue,
-        networking: { type: "limited", allowed_hosts: [tool.host] }, injection_location: { header: true },
+const textOf = (event) => (event.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+
+const claude = {
+  /// The agent, environment and vault behind it, made or brought up to date;
+  /// the tools' keys moved into the vault. Keys never stay here.
+  async provision(t, { workspaceName, toolChanges }) {
+    const api = anthropic(t.apiKey);
+    const remote = { ...(t.remote || {}) };
+    if (!remote.environmentId) {
+      const env = await api.beta.environments.create({ name: `honmaru-${t.orgId}`.slice(0, 60), config: { type: "cloud", networking: { type: "unrestricted" } } });
+      remote.environmentId = env.id;
+    }
+    if (!remote.vaultId) {
+      const vault = await api.beta.vaults.create({ display_name: `HonmaruAI ${workspaceName}`.slice(0, 255), metadata: { org: String(t.orgId).slice(0, 512) } });
+      remote.vaultId = vault.id;
+    }
+    const tools = [];
+    for (const tool of toolChanges.kept) tools.push(tool);
+    for (const tool of toolChanges.removed) {
+      if (tool.credentialId) await api.beta.vaults.credentials.delete(tool.credentialId, { vault_id: remote.vaultId }).catch(() => {});
+    }
+    for (const tool of toolChanges.written) {
+      if (tool.credentialId) await api.beta.vaults.credentials.delete(tool.credentialId, { vault_id: remote.vaultId }).catch(() => {});
+      const cred = await api.beta.vaults.credentials.create(remote.vaultId, {
+        display_name: tool.name,
+        auth: {
+          type: "environment_variable", secret_name: tool.secretName, secret_value: tool.secretValue,
+          networking: { type: "limited", allowed_hosts: [tool.host] }, injection_location: { header: true },
+        },
+      });
+      tools.push({ name: tool.name, secretName: tool.secretName, host: tool.host, credentialId: cred.id });
+    }
+    const config = {
+      name: `Claude · ${workspaceName}`.slice(0, 100),
+      model: t.model,
+      system: systemPrompt({ ...t, tools }, workspaceName),
+      tools: [{ type: "agent_toolset_20260401", default_config: { enabled: true } }],
+    };
+    if (remote.agentId) {
+      const agent = await api.beta.agents.update(remote.agentId, config);
+      remote.agentVersion = agent.version;
+    } else {
+      const agent = await api.beta.agents.create(config);
+      remote.agentId = agent.id;
+      remote.agentVersion = agent.version;
+    }
+    return { remote, tools };
+  },
+  async start(t, { task, title, remaining, orgId, key, threadId }) {
+    const resources = (t.repos || []).map((r) => ({ type: "github_repository", url: `https://github.com/${r}`, authorization_token: t.githubToken || undefined }));
+    const session = await anthropic(t.apiKey).beta.sessions.create({
+      agent: t.remote.agentId,
+      environment_id: t.remote.environmentId,
+      ...(t.remote.vaultId ? { vault_ids: [t.remote.vaultId] } : {}),
+      ...(resources.length ? { resources } : {}),
+      ...(remaining != null ? { budget: { type: "limit", max_list_cost: { amount: String(Math.max(1, remaining)), currency: "USD" } } } : {}),
+      title,
+      metadata: { org: String(orgId).slice(0, 512), channel: key.slice(0, 512), thread: String(threadId) },
+      initial_events: [{ type: "user.message", content: [{ type: "text", text: task }] }],
+    });
+    return { remoteId: session.id };
+  },
+  async send(t, run, text) {
+    await anthropic(t.apiKey).beta.sessions.events.send(run.remote_id, { events: [{ type: "user.message", content: [{ type: "text", text }] }] });
+    return {};
+  },
+  /// The agent's words since the last hand-off, and whether it has stopped.
+  async read(t, run) {
+    const api = anthropic(t.apiKey);
+    const query = { order: "asc", limit: 200, ...(run.last_event_at ? { "created_at[gt]": run.last_event_at } : {}) };
+    const texts = [];
+    let stop = null;
+    let last = run.last_event_at;
+    let error = null;
+    for await (const event of api.beta.sessions.events.list(run.remote_id, query)) {
+      last = event.processed_at || last;
+      if (event.type === "agent.message") { const text = textOf(event); if (text) texts.push(text); }
+      else if (event.type === "user.message") texts.length = 0;
+      else if (event.type === "session.error") error = event.error?.message || event.error?.type || "error";
+      else if (event.type === "session.status_idle") stop = event.stop_reason?.type || "end_turn";
+      else if (event.type === "session.status_terminated") stop = "terminated";
+      else if (event.type === "session.status_running") stop = null;
+    }
+    let costCents = null;
+    if (stop) {
+      const session = await api.beta.sessions.retrieve(run.remote_id).catch(() => null);
+      const amount = Number(session?.usage?.list_cost?.amount);
+      if (Number.isFinite(amount)) costCents = amount;
+    }
+    return { texts, stop, last, error, costCents };
+  },
+};
+
+// ---- Devin: Cognition's v3 API ----------------------------------------------
+// A session per thread in the workspace's Devin organization, capped in ACUs;
+// its messages read by cursor.
+
+const DEVIN = "https://api.devin.ai/v3/organizations";
+/// Why Devin stopped when it ran out of what it may use.
+const DEVIN_BUDGET = new Set(["usage_limit_exceeded", "out_of_credits", "out_of_quota", "no_quota_allocation", "payment_declined", "org_usage_limit_exceeded", "user_usage_limit_exceeded", "total_session_limit_exceeded", "contract_expired"]);
+
+const devin = {
+  async provision(t) {
+    const account = t.remote?.account;
+    if (!account) throw new ServiceError(400, "Add your Devin organization ID (org-…).", "account");
+    await call(`${DEVIN}/${encodeURIComponent(account)}/sessions?first=1`, { key: t.apiKey });
+    return { remote: { account }, tools: [] };
+  },
+  async start(t, { task, title, remaining }) {
+    const session = await call(`${DEVIN}/${encodeURIComponent(t.remote.account)}/sessions`, {
+      key: t.apiKey, method: "POST",
+      body: {
+        prompt: `${briefing(t)}\n\n${task}`, title, tags: ["honmaruai"],
+        ...((t.repos || []).length ? { repos: t.repos } : {}),
+        ...(remaining != null ? { max_acu_limit: Math.max(1, Math.floor(remaining / 100)) } : {}),
       },
     });
-    tools.push({ name: tool.name, secretName: tool.secretName, host: tool.host, credentialId: cred.id });
-  }
-  const config = {
-    name: `Claude · ${workspaceName}`.slice(0, 100),
-    model: t.model,
-    system: systemPrompt({ ...t, tools }, workspaceName),
-    tools: [{ type: "agent_toolset_20260401", default_config: { enabled: true } }],
-  };
-  if (remote.agentId) {
-    const agent = await api.beta.agents.update(remote.agentId, config);
-    remote.agentVersion = agent.version;
-  } else {
-    const agent = await api.beta.agents.create(config);
-    remote.agentId = agent.id;
-    remote.agentVersion = agent.version;
-  }
-  return { remote, tools };
-}
+    return { remoteId: session.session_id };
+  },
+  async send(t, run, text) {
+    await call(`${DEVIN}/${encodeURIComponent(t.remote.account)}/sessions/${encodeURIComponent(run.remote_id)}/messages`, { key: t.apiKey, method: "POST", body: { message: text } });
+    return {};
+  },
+  async read(t, run) {
+    const base = `${DEVIN}/${encodeURIComponent(t.remote.account)}/sessions/${encodeURIComponent(run.remote_id)}`;
+    const texts = [];
+    let answered = false;
+    let cursor = run.last_event_at || null;
+    for (let page = 0; page < 20; page++) {
+      const q = new URLSearchParams({ first: "200", ...(cursor ? { after: cursor } : {}) });
+      const data = await call(`${base}/messages?${q}`, { key: t.apiKey });
+      for (const m of data?.items || []) {
+        if (m.source === "user") { texts.length = 0; answered = false; }
+        else if (m.source === "devin" && String(m.message || "").trim()) { texts.push(String(m.message).trim()); answered = true; }
+      }
+      if (data?.end_cursor) cursor = data.end_cursor;
+      if (!data?.has_next_page) break;
+    }
+    const session = await call(base, { key: t.apiKey });
+    const detail = session?.status_detail || null;
+    let stop = null;
+    if (session?.status === "error" || detail === "error") stop = "terminated";
+    else if (DEVIN_BUDGET.has(detail)) stop = "budget_reached";
+    else if (session?.status === "exit") stop = "end_turn";
+    // Waiting on someone, or done — once it has answered what it was last
+    // handed; just after a hand-off it may still read as waiting.
+    else if (answered && (detail === "waiting_for_user" || detail === "finished" || detail === "inactivity" || session?.status === "suspended")) stop = "end_turn";
+    if (stop) {
+      const said = texts.join("\n");
+      for (const pr of session?.pull_requests || []) if (pr?.pr_url && !said.includes(pr.pr_url)) texts.push(pr.pr_url);
+    }
+    const acus = Number(session?.acus_consumed);
+    return { texts, stop, last: cursor, error: null, costCents: stop && Number.isFinite(acus) ? Math.round(acus * 100) : null };
+  },
+};
 
-/// The one custom agent that answers to @claude here, made or hidden.
+// ---- Cursor: Cloud Agents v1 ------------------------------------------------
+// An agent per thread on the team's repositories, a run per hand-off; each
+// run is a task toward the month's limit.
+
+const CURSOR = "https://api.cursor.com/v1";
+
+const cursor = {
+  async provision(t) {
+    if (!(t.repos || []).length) throw new ServiceError(400, "Add at least one repository for Cursor to work in.", "repos");
+    await call(`${CURSOR}/me`, { key: t.apiKey });
+    return { remote: {}, tools: [] };
+  },
+  async start(t, { task, title }) {
+    const made = await call(`${CURSOR}/agents`, {
+      key: t.apiKey, method: "POST",
+      body: {
+        prompt: { text: `${briefing(t)}\n\n${task}` }, name: title.slice(0, 100),
+        repos: (t.repos || []).map((r) => ({ url: `https://github.com/${r}` })),
+        autoCreatePR: true,
+        ...(t.model ? { model: { id: t.model } } : {}),
+      },
+    });
+    return { remoteId: made.agent.id, turn: made.run?.id || made.agent.latestRunId || null, tasks: 1 };
+  },
+  async send(t, run, text) {
+    try {
+      const made = await call(`${CURSOR}/agents/${encodeURIComponent(run.remote_id)}/runs`, { key: t.apiKey, method: "POST", body: { prompt: { text } } });
+      return { turn: made.run?.id || null, tasks: 1 };
+    } catch (err) {
+      if (err?.status === 409) return { busy: true };
+      throw err;
+    }
+  },
+  async read(t, run) {
+    if (!run.remote_turn) return { texts: [], stop: "terminated", last: null, error: "no run", costCents: null };
+    const got = await call(`${CURSOR}/agents/${encodeURIComponent(run.remote_id)}/runs/${encodeURIComponent(run.remote_turn)}`, { key: t.apiKey });
+    let stop = null;
+    if (got?.status === "FINISHED") stop = "end_turn";
+    else if (got?.status === "ERROR" || got?.status === "CANCELLED" || got?.status === "EXPIRED") stop = "terminated";
+    const texts = [];
+    if (stop) {
+      if (got.result && String(got.result).trim()) texts.push(String(got.result).trim());
+      const said = texts.join("\n");
+      for (const b of got?.git?.branches || []) if (b?.prUrl && !said.includes(b.prUrl)) texts.push(b.prUrl);
+    }
+    return { texts, stop, last: null, error: got?.status === "ERROR" ? "error" : null, costCents: null };
+  },
+};
+
+const ADAPTERS = { claude, devin, cursor };
+
+/// The one custom agent that answers to @claude (or @devin, @cursor) here,
+/// made or hidden.
 async function ensureAgentRow(db, orgId, provider, login, on, existingId, members = []) {
   const p = PROVIDERS[provider];
   const now = new Date().toISOString();
@@ -206,21 +449,23 @@ async function ensureAgentRow(db, orgId, provider, login, on, existingId, member
   return id;
 }
 
-/// Setup, saved: checked, the Anthropic side made or updated when it is on,
-/// and the agent that answers to @claude made or hidden.
+/// Setup, saved: checked, the service's side checked (or made) when it is
+/// on, and the agent that answers to its name made or hidden.
 export async function saveTeammate(env, orgId, provider, input, { login, workspaceName, members = [] }) {
-  if (!PROVIDERS[provider]) return { error: "Unknown teammate." };
+  const p = PROVIDERS[provider];
+  if (!p) return { error: "Unknown teammate." };
   const current = await loadTeammate(env.DB, orgId, provider);
   const { out, error } = cleanInput(input || {}, current, provider);
   if (error) return { error };
   const next = {
     orgId, provider, enabled: current?.enabled || false, apiKey: current?.apiKey || null, githubToken: current?.githubToken || null,
-    repos: current?.repos || [], model: current?.model || PROVIDERS[provider].defaultModel, instructions: current?.instructions || "",
-    channels: current ? current.channels : null, monthlyLimitCents: current ? current.monthlyLimitCents : 50000,
+    repos: current?.repos || [], model: current?.model || p.defaultModel, instructions: current?.instructions || "",
+    channels: current ? current.channels : null, monthlyLimitCents: current ? current.monthlyLimitCents : p.defaultLimit,
     tools: current?.tools || [], remote: current?.remote || {}, agentId: current?.agentId || null,
-    ...Object.fromEntries(Object.entries(out).filter(([k]) => k !== "tools")),
+    ...Object.fromEntries(Object.entries(out).filter(([k]) => k !== "tools" && k !== "account")),
   };
-  if (next.repos.length && !next.githubToken) return { error: "Add a GitHub token so Claude can reach the repositories." };
+  if (out.account !== undefined) next.remote = { ...next.remote, account: out.account };
+  if (p.githubToken && next.repos.length && !next.githubToken) return { error: `Add a GitHub token so ${p.name} can reach the repositories.` };
   let toolChanges = { kept: next.tools, written: [], removed: [] };
   if (out.tools) {
     const keep = new Set(out.tools.map((t) => t.secretName));
@@ -231,19 +476,21 @@ export async function saveTeammate(env, orgId, provider, input, { login, workspa
     };
   }
   if (next.enabled) {
-    if (!next.apiKey) return { error: "Paste an API key from the Claude Console first." };
+    if (!next.apiKey) return { error: `Paste an API key from ${p.keySource} first.` };
     try {
-      const made = await provision(next, workspaceName, toolChanges);
-      next.remote = made.remote;
+      const made = await ADAPTERS[provider].provision(next, { workspaceName, toolChanges });
+      next.remote = { ...next.remote, ...made.remote };
       next.tools = made.tools;
     } catch (err) {
       const status = err?.status || 0;
-      if (status === 401 || status === 403) return { error: "Anthropic did not accept that API key." };
-      return { error: `Anthropic could not set Claude up: ${String(err?.message || "unknown error").slice(0, 200)}` };
+      if (status === 401 || status === 403) return { error: `${p.company} did not accept that API key.` };
+      if (err instanceof ServiceError && status === 400) return { error: err.message };
+      if (provider === "devin" && status === 404) return { error: "Devin did not find that organization ID." };
+      return { error: `${p.company} could not set ${p.name} up: ${String(err?.message || "unknown error").slice(0, 200)}` };
     }
   } else if (out.tools) {
     // Off: tool edits wait for the next launch; new keys are not kept.
-    if (toolChanges.written.length) return { error: "Turn Claude on to add tool keys; they go straight to Anthropic's vault." };
+    if (toolChanges.written.length) return { error: `Turn ${p.name} on to add tool keys; they go straight to ${p.company}'s vault.` };
     next.tools = toolChanges.kept;
   }
   next.agentId = await ensureAgentRow(env.DB, orgId, provider, login, next.enabled, next.agentId, members);
@@ -271,79 +518,42 @@ export async function teammateForAgent(db, orgId, agent) {
   return t && t.enabled && t.agentId === agent.id ? t : null;
 }
 
-/// What the thread says, for a new session: where, who asked, what came before.
-function taskText({ where, askedBy, transcript, request }) {
-  return [
-    `Where: ${where}`,
-    `Asked by: ${askedBy}`,
-    transcript.length ? `The conversation so far:\n${transcript.join("\n")}` : "",
-    `The request:\n${request}`,
-  ].filter(Boolean).join("\n\n");
-}
-
-/// @claude in a thread: a new session for a new thread, the same session for
-/// a follow-up. Returns what to post now, and the run to watch.
+/// @claude (or another) in a thread: new work for a new thread, the same
+/// work handed on for a follow-up. Returns the run to watch, or why not.
 export async function startTeammateRun(env, { orgId, t, key, threadId, where, askedBy, transcript, request, login, now = new Date() }) {
+  const p = PROVIDERS[t.provider];
+  const adapter = ADAPTERS[t.provider];
   if (t.channels && key.startsWith("b:") && !t.channels.includes(key)) return { refused: "notHere" };
   const spent = await spentThisMonth(env.DB, orgId, t.provider, now);
   const remaining = t.monthlyLimitCents == null ? null : t.monthlyLimitCents - spent;
-  if (remaining != null && remaining < 50) return { refused: "limit" };
-  const api = client(t.apiKey);
+  if (remaining != null && remaining < p.minLeft) return { refused: "limit" };
   const existing = await env.DB.prepare(
     "SELECT * FROM ai_teammate_runs WHERE org_id = ?1 AND provider = ?2 AND channel = ?3 AND thread_id = ?4 ORDER BY created_at DESC LIMIT 1"
   ).bind(orgId, t.provider, key, threadId).first().catch(() => null);
   const stamp = now.toISOString();
   if (existing && existing.status !== "failed" && existing.status !== "budget") {
-    await api.beta.sessions.events.send(existing.remote_id, { events: [{ type: "user.message", content: [{ type: "text", text: `${askedBy}: ${request}` }] }] });
-    await env.DB.prepare("UPDATE ai_teammate_runs SET status = 'running', updated_at = ?2 WHERE id = ?1").bind(existing.id, stamp).run();
-    return { run: { ...existing, status: "running" }, continued: true };
+    const sent = await adapter.send(t, existing, `${askedBy}: ${request}`);
+    if (sent.busy) return { refused: "busy" };
+    await env.DB.prepare("UPDATE ai_teammate_runs SET status = 'running', remote_turn = COALESCE(?3, remote_turn), cost_cents = cost_cents + ?4, updated_at = ?2 WHERE id = ?1")
+      .bind(existing.id, stamp, sent.turn || null, (sent.tasks || 0) * 100).run();
+    return { run: { ...existing, status: "running", remote_turn: sent.turn || existing.remote_turn }, continued: true };
   }
-  const resources = (t.repos || []).map((r) => ({ type: "github_repository", url: `https://github.com/${r}`, authorization_token: t.githubToken || undefined }));
-  const session = await api.beta.sessions.create({
-    agent: t.remote.agentId,
-    environment_id: t.remote.environmentId,
-    ...(t.remote.vaultId ? { vault_ids: [t.remote.vaultId] } : {}),
-    ...(resources.length ? { resources } : {}),
-    ...(remaining != null ? { budget: { type: "limit", max_list_cost: { amount: String(Math.max(1, remaining)), currency: "USD" } } } : {}),
-    title: `${where}: ${request}`.slice(0, 200),
-    metadata: { org: String(orgId).slice(0, 512), channel: key.slice(0, 512), thread: String(threadId) },
-    initial_events: [{ type: "user.message", content: [{ type: "text", text: taskText({ where, askedBy, transcript, request }) }] }],
+  const started = await adapter.start(t, {
+    task: taskText({ where, askedBy, transcript, request }), title: `${where}: ${request}`.slice(0, 200),
+    remaining, orgId, key, threadId,
   });
   const id = crypto.randomUUID();
   await env.DB.prepare(
-    `INSERT INTO ai_teammate_runs (id, org_id, provider, channel, thread_id, remote_id, status, cost_cents, last_event_at, started_by, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running', 0, NULL, ?7, ?8, ?8)`
-  ).bind(id, orgId, t.provider, key, threadId, session.id, login, stamp).run();
-  return { run: { id, org_id: orgId, provider: t.provider, channel: key, thread_id: threadId, remote_id: session.id, status: "running", last_event_at: null } };
+    `INSERT INTO ai_teammate_runs (id, org_id, provider, channel, thread_id, remote_id, remote_turn, status, cost_cents, last_event_at, started_by, created_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'running', ?8, NULL, ?9, ?10, ?10)`
+  ).bind(id, orgId, t.provider, key, threadId, started.remoteId, started.turn || null, (started.tasks || 0) * 100, login, stamp).run();
+  return { run: { id, org_id: orgId, provider: t.provider, channel: key, thread_id: threadId, remote_id: started.remoteId, remote_turn: started.turn || null, status: "running", last_event_at: null } };
 }
 
-const textOf = (event) => (event.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
-
-/// What a run has done since it was last looked at: the agent's words since
-/// the last hand-off, and whether it has stopped, and why.
+/// What a run has done since it was last looked at: its words since the last
+/// hand-off, and whether it has stopped, and why.
 export async function readRun(env, t, run) {
-  const api = client(t.apiKey);
-  const query = { order: "asc", limit: 200, ...(run.last_event_at ? { "created_at[gt]": run.last_event_at } : {}) };
-  const texts = [];
-  let stop = null;
-  let last = run.last_event_at;
-  let error = null;
-  for await (const event of api.beta.sessions.events.list(run.remote_id, query)) {
-    last = event.processed_at || last;
-    if (event.type === "agent.message") { const text = textOf(event); if (text) texts.push(text); }
-    else if (event.type === "user.message") texts.length = 0;
-    else if (event.type === "session.error") error = event.error?.message || event.error?.type || "error";
-    else if (event.type === "session.status_idle") stop = event.stop_reason?.type || "end_turn";
-    else if (event.type === "session.status_terminated") stop = "terminated";
-    else if (event.type === "session.status_running") stop = null;
-  }
-  let costCents = null;
-  if (stop) {
-    const session = await api.beta.sessions.retrieve(run.remote_id).catch(() => null);
-    const amount = Number(session?.usage?.list_cost?.amount);
-    if (Number.isFinite(amount)) costCents = amount;
-  }
-  return { texts, stop, last, error, costCents };
+  return ADAPTERS[t.provider].read(t, run);
 }
 
 /// Runs still working, oldest first: what the minute cron looks in on.
