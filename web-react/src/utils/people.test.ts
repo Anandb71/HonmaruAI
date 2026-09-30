@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { statusShown, awayShown, isOnline, byPresence, localTime, placeCard } from './people'
+import { statusShown, awayShown, nextExpiry, isOnline, byPresence, localTime, placeCard } from './people'
 
 const at = (iso: string) => Date.parse(iso)
 
@@ -29,6 +29,21 @@ describe('awayShown', () => {
     expect(awayShown('2026-10-03T00:00:00Z', now)).toBe('2026-10-03T00:00:00Z')
     expect(awayShown('2026-09-30T00:00:00Z', now)).toBeNull()
     expect(awayShown(null, now)).toBeNull()
+  })
+})
+
+describe('nextExpiry', () => {
+  const now = at('2026-10-01T12:00:00Z')
+  it('finds the soonest status or away still to run out', () => {
+    const team = [
+      { status: { emoji: '📅', text: 'Meeting', until: '2026-10-01T15:00:00Z' }, awayUntil: null },
+      { status: null, awayUntil: '2026-10-01T13:30:00Z' },
+      { status: { emoji: '🍜', text: 'Lunch', until: '2026-10-01T11:00:00Z' } },
+    ]
+    expect(nextExpiry(team, now)).toBe(at('2026-10-01T13:30:00Z'))
+  })
+  it('is null when nothing will run out', () => {
+    expect(nextExpiry([{ status: { emoji: '🌴', text: null, until: null } }, {}], now)).toBeNull()
   })
 })
 

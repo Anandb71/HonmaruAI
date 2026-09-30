@@ -22,6 +22,20 @@ export function awayShown(awayUntil: string | null | undefined, now: number): st
   return Number.isFinite(until) && until > now ? awayUntil! : null
 }
 
+/// When the next of these statuses or aways runs out — for a list to draw
+/// itself again then, not whenever something else happens to redraw it.
+/// Null when none will.
+export function nextExpiry(people: Array<{ status?: PersonStatus | null; awayUntil?: string | null }>, now: number): number | null {
+  let soonest: number | null = null
+  for (const p of people) {
+    for (const iso of [p.status?.until, p.awayUntil]) {
+      const at = iso ? Date.parse(iso) : NaN
+      if (Number.isFinite(at) && at > now && (soonest === null || at < soonest)) soonest = at
+    }
+  }
+  return soonest
+}
+
 /// Here right now. The relay names people by login and the member list never
 /// hands a browser one: both meet at the hash of the login the list carries.
 export function isOnline(member: { loginHash?: string | null } | null | undefined, onlineKeys: ReadonlySet<string>): boolean {

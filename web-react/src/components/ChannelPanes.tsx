@@ -6,7 +6,7 @@ import type { JamCall, JamMode, JamState } from '../utils/jam'
 import { Icon } from './Icon'
 import { Avatar } from './Avatar'
 import { renderRich } from './MessageParts'
-import { byPresence } from '../utils/people'
+import { byPresence, statusShown } from '../utils/people'
 
 // What a channel's header opens, left to right: its journal (the context
 // someone new or back from a week away reads first), its details (members,
@@ -25,7 +25,7 @@ export type NotifyLevel = 'all' | 'mentions' | 'mute'
 interface Details {
   channel: { key: string; view: string; kind: 'channel' | 'dm' | 'group'; private?: boolean; name: string; slug: string | null; description: string | null; createdAt: string | null; createdBy: string | null }
   members: {
-    people: Array<{ ref: string; name: string; handle: string | null; title: string | null; status: { emoji?: string; text?: string } | null; awayUntil: string | null; you: boolean; avatarUrl?: string | null }>
+    people: Array<{ ref: string; name: string; handle: string | null; title: string | null; status: { emoji?: string | null; text?: string | null; until?: string | null } | null; awayUntil: string | null; you: boolean; avatarUrl?: string | null }>
     agents: Array<{ name: string; kind: 'ai' | 'agent' | 'custom'; owner: string | null; lastSeenAt?: string | null; id?: string; handle?: string; emoji?: string | null; avatarUrl?: string | null; description?: string; canRemove?: boolean }>
   }
   /// The agents you could add here — yours and the team's — or null where
@@ -276,20 +276,23 @@ export function ChannelDetails({
 
   const people = (d?.members.people || []).filter((p) => !query.trim() || `${p.name} ${p.handle || ''} ${p.title || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
   const { online, offline } = byPresence(people, onlineRefs)
-  const person = (p: (typeof people)[number], here: boolean) => (
-    <li key={p.ref}>
-      <button type="button" className="slk-member-row" onClick={() => onProfile(p.ref)}>
-        <span className="cl-lead cl-avatar has-face sz-row" aria-hidden="true">
-          <Avatar name={p.name} url={p.avatarUrl} size={24} />
-          <span className={`cl-presence${here ? ' on' : ''}`} />
-        </span>
-        <span className="slk-member-main">
-          <span className="slk-member-name">{p.name}{p.you && <span className="slk-member-you"> {t('(you)')}</span>}{p.status?.emoji && <span> {p.status.emoji}</span>}</span>
-          {p.title && <span className="slk-member-title">{p.title}</span>}
-        </span>
-      </button>
-    </li>
-  )
+  const person = (p: (typeof people)[number], here: boolean) => {
+    const status = statusShown(p.status, Date.now())
+    return (
+      <li key={p.ref}>
+        <button type="button" className="slk-member-row" onClick={() => onProfile(p.ref)}>
+          <span className="cl-lead cl-avatar has-face sz-row" aria-hidden="true">
+            <Avatar name={p.name} url={p.avatarUrl} size={24} />
+            <span className={`cl-presence${here ? ' on' : ''}`} />
+          </span>
+          <span className="slk-member-main">
+            <span className="slk-member-name">{p.name}{p.you && <span className="slk-member-you"> {t('(you)')}</span>}{status?.emoji && <span title={status.text || undefined}> {status.emoji}</span>}</span>
+            {p.title && <span className="slk-member-title">{p.title}</span>}
+          </span>
+        </button>
+      </li>
+    )
+  }
   const agents = (d?.members.agents || []).filter((a) => !query.trim() || a.name.toLowerCase().includes(query.trim().toLowerCase()))
   const isChannel = d?.channel.kind === 'channel'
   const tabs: Array<[DetailsTab, string, number]> = [

@@ -29,7 +29,7 @@ import type { JamMode, JamState } from '../utils/jam'
 import { InviteDialog } from './InviteDialog'
 import { Avatar } from './Avatar'
 import { ProfileCard } from './ProfileCard'
-import { isOnline } from '../utils/people'
+import { isOnline, statusShown, awayShown, nextExpiry } from '../utils/people'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
@@ -404,6 +404,16 @@ export const ClassicList: React.FC<Props> = ({
     window.addEventListener('honmaru:channel-group', on)
     return () => window.removeEventListener('honmaru:channel-group', on)
   }, [])
+
+  // A status runs out on its own: the list is drawn again when the next one
+  // does, and statusShown leaves it out from then on.
+  const [statusTick, setStatusTick] = useState(0)
+  useEffect(() => {
+    const next = nextExpiry(members, Date.now())
+    if (next === null) return
+    const id = setTimeout(() => setStatusTick((n) => n + 1), Math.min(next - Date.now() + 250, 2_147_483_647))
+    return () => clearTimeout(id)
+  }, [members, statusTick])
 
   // Which login is which member, for the logins this browser already holds.
   const [hashes, setHashes] = useState<Map<string, string>>(new Map())
@@ -1023,7 +1033,9 @@ export const ClassicList: React.FC<Props> = ({
           {thread.kind === 'person' && (() => {
             const m = members.find((x) => thread.view === `dm:${x.ref}`)
             if (!m) return null
-            return <>{m.status?.emoji && <span className="cl-status" title={m.status.text || ''}>{m.status.emoji}</span>}{m.awayUntil && <span className="cl-away" title={t('Away until {when}', { when: new Date(m.awayUntil).toLocaleDateString(locale) })}>{t('away')}</span>}</>
+            const status = statusShown(m.status, Date.now())
+            const away = awayShown(m.awayUntil, Date.now())
+            return <>{status?.emoji && <span className="cl-status" title={status.text || ''}>{status.emoji}</span>}{away && <span className="cl-away" title={t('Away until {when}', { when: new Date(away).toLocaleDateString(locale) })}>{t('away')}</span>}</>
           })()}
           {thread.view && prefs[thread.view] === 'mute' && <span className="cl-muted" role="img" aria-label={t('Muted')}><Icon name="bell-off" size={13} /></span>}
           {thread.view && (mentionsIn[thread.view] || 0) > 0 && thread.unread === 0 && <span className="cl-badge mention">@{mentionsIn[thread.view]}</span>}
@@ -3091,8 +3103,8 @@ export const ClassicList: React.FC<Props> = ({
           <div className="slk-head-text" onClick={!wide && thread.kind === 'channel' && thread.view ? () => openSide({ kind: 'details', tab: 'members' }) : undefined}>
             {thread.kind === 'person' && thread.view
               ? <h1><button type="button" className="slk-author link" onClick={() => void openProfile(thread.view!.slice(3))}>{thread.name}</button>
-                  {(() => { const m = members.find((x) => thread.view === `dm:${x.ref}`); return m?.status ? <span className="slk-head-status"> {m.status.emoji} {m.status.text}</span> : null })()}
-                  {(() => { const m = members.find((x) => thread.view === `dm:${x.ref}`); return m?.awayUntil ? <span className="slk-head-away"> · {t('Away until {when}', { when: new Date(m.awayUntil).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</span> : null })()}
+                  {(() => { const s = statusShown(members.find((x) => thread.view === `dm:${x.ref}`)?.status, Date.now()); return s ? <span className="slk-head-status"> {s.emoji} {s.text}</span> : null })()}
+                  {(() => { const away = awayShown(members.find((x) => thread.view === `dm:${x.ref}`)?.awayUntil, Date.now()); return away ? <span className="slk-head-away"> · {t('Away until {when}', { when: new Date(away).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</span> : null })()}
                 </h1>
               : <h1>{thread.name}</h1>}
             {thread.view && (
@@ -3963,14 +3975,16 @@ export const ClassicList: React.FC<Props> = ({
             const p = profile.data
             let local = ''
             try { if (p.timezone) local = new Date().toLocaleTimeString(locale, { timeZone: p.timezone, hour: 'numeric', minute: '2-digit' }) } catch { /* unknown zone */ }
+            const status = statusShown(p.status, Date.now())
+            const away = awayShown(p.awayUntil, Date.now())
             return (
               <div className="slk-profile-body">
                 <div className="slk-profile-avatar" aria-hidden="true">{p.name.charAt(0).toUpperCase()}</div>
                 <h3>{p.name}</h3>
                 {p.handle && <p className="slk-profile-handle">@{p.handle}</p>}
                 <p className="slk-profile-title">{t(p.title.charAt(0).toUpperCase() + p.title.slice(1))}</p>
-                {p.status && <p className="slk-profile-status">{p.status.emoji} {p.status.text}</p>}
-                {p.awayUntil && <p className="slk-profile-away">{t('Away until {when}', { when: new Date(p.awayUntil).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</p>}
+                {status && <p className="slk-profile-status">{status.emoji} {status.text}</p>}
+                {away && <p className="slk-profile-away">{t('Away until {when}', { when: new Date(away).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</p>}
                 {local && <p className="slk-profile-local"><Icon name="clock" size={13} /> {t('{time} local time', { time: local })}</p>}
                 <dl className="slk-profile-stats">
                   <div><dt>{t('Waiting on them')}</dt><dd>{p.stats.waiting}</dd></div>
