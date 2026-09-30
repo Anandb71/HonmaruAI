@@ -638,18 +638,6 @@
 }
 :root[data-theme="dark"] .row-icon.brand-tile { background: #fff; border-color: #2a2a2a; }
 :root[data-theme="dark"] .cl-app:has(.brand) { background: #fff; }
-:root[data-theme="dark"] .role-input, :root[data-theme="dark"] .ai-key-input, :root[data-theme="dark"] .invite-email {
-  background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2;
-}
-
-/* The app's own dark toggle (data-theme) has to paint the same grounds the
-   system's dark mode does: the screens, the feed, the shell — not only the
-   rows, which left dark cards floating on a light page. */
-:root[data-theme="dark"] .feed, :root[data-theme="dark"] .screen,
-:root[data-theme="dark"] .screen:not(.shell .screen), :root[data-theme="dark"] .shell .screen { background: #0f0f0f; color: #f2f2f2; }
-:root[data-theme="dark"] .screen:not(.shell .screen) .screen-foot { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
-:root[data-theme="dark"] .shell .screen-foot { background: transparent; border-top: none; }
-:root[data-theme="dark"] body, :root[data-theme="dark"] .app { background: #0f0f0f; }
 
 /* The workspace switcher: the mark, the name and a menu of every workspace
    this person is in. On the rail it replaces the product's wordmark; in a
@@ -732,7 +720,8 @@
 }
 :root[data-theme="dark"] .ws-add-dialog { background: #1a1a1a; color: #f2f2f2; }
 :root[data-theme="dark"] .ws-add-choice, :root[data-theme="dark"] .ws-add-form input { border-color: #2e2e2e; }
-:root[data-theme="dark"] .ws-add-icon, :root[data-theme="dark"] .ws-add-plus { background: #2a2a2a; }
+:root[data-theme="dark"] .ws-add-choice:hover, :root[data-theme="dark"] .ws-add-form input:focus { border-color: #f2f2f2; }
+:root[data-theme="dark"] .ws-add-icon, :root[data-theme="dark"] .ws-add-plus, :root[data-theme="dark"] .ws-add-back:hover, :root[data-theme="dark"] .ws-add-close:hover { background: #2a2a2a; }
 :root[data-theme="dark"] .ws-item.on .ws-mark { box-shadow: 0 0 0 2px #1a1a1a, 0 0 0 4px #f2f2f2; }
 /* Phone: the rail is a bottom bar, so the switcher lives in the headers. */
 .ws-rail { display: none; }
@@ -1085,6 +1074,7 @@
 }
 :root[data-theme="dark"] .shortcuts-sheet { background: #1a1a1a; }
 :root[data-theme="dark"] .shortcuts-group dd { color: #f2f2f2; }
+:root[data-theme="dark"] .shortcuts-group kbd { background: #2a2a2a; border-color: #3a3a3a; }
 
 /* The workspace's mark in a phone's top bar (the rail has it on a laptop). */
 .topbar-ws { display: none; }
@@ -1117,3 +1107,4 @@
   :root:not([data-theme="light"]) .quiet-pill button { background: #1a1a1a; }
 }
 :root[data-theme="dark"] .quiet-day.on { background: #f2f2f2; border-color: #f2f2f2; color: #0f0f0f; }
+:root[data-theme="dark"] .quiet-pill button { background: #1a1a1a; }
