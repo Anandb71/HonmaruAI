@@ -31,6 +31,7 @@ const SHOWN = new Set([
   "text/plain",
 ]);
 export const isPicture = (type) => /^image\/(png|jpeg|gif|webp|avif)$/.test(type);
+const isVideo = (type) => /^video\/(mp4|webm|quicktime)$/.test(type);
 
 /// A file's name as it may be stored and shown: no path, no control
 /// characters, not endless.
@@ -225,12 +226,14 @@ export async function uploadFile(request, env, url, { orgId, resolved, login }) 
   const id = `f_${[...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
   const name = cleanName(url.searchParams.get("name"));
   const dim = (k) => { const n = Number(url.searchParams.get(k)); return Number.isInteger(n) && n > 0 && n < 100000 ? n : null; };
-  const picture = isPicture(type);
+  // A picture's or a video's shape, as the uploader measured it, so the
+  // message is drawn at that shape before the bytes arrive.
+  const shaped = isPicture(type) || isVideo(type);
   await env.MEDIA.put(fileKey(orgId, id), bytes, { httpMetadata: { contentType: type } });
   await env.DB
     .prepare(`INSERT INTO message_files (id, org_id, channel, message_id, uploader, name, type, size, width, height, created_at)
               VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`)
-    .bind(id, orgId, resolved.key, login, name, type, bytes.byteLength, picture ? dim("width") : null, picture ? dim("height") : null, new Date().toISOString())
+    .bind(id, orgId, resolved.key, login, name, type, bytes.byteLength, shaped ? dim("width") : null, shaped ? dim("height") : null, new Date().toISOString())
     .run();
   const row = await env.DB.prepare("SELECT * FROM message_files WHERE id = ?1").bind(id).first();
   return json({ file: await toFile(env.DB, row) }, 201);

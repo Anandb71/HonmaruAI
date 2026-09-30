@@ -212,6 +212,17 @@ test("a video is answered in parts, the way a player asks for it", async () => {
   }
 });
 
+test("a video keeps the shape it was measured at; a song and a document have none", async () => {
+  const { file: clip } = await (await upload(mika, "b:cafe", { name: "clip.mov", type: "video/quicktime", width: 1080, height: 1920 })).json();
+  expect(clip).toMatchObject({ type: "video/quicktime", width: 1080, height: 1920 });
+  const { file: song } = await (await upload(mika, "b:cafe", { name: "song.mp3", type: "audio/mpeg" })).json();
+  expect(song).toMatchObject({ type: "audio/mpeg", width: null, height: null });
+  const { file: doc } = await (await upload(mika, "b:cafe", { name: "notes.txt", type: "text/plain" })).json();
+  expect(doc).toMatchObject({ width: null, height: null });
+  const { file: odd } = await (await upload(mika, "b:cafe", { name: "clip.webm", type: "video/webm", width: -4, height: 1e6 })).json();
+  expect(odd).toMatchObject({ width: null, height: null });
+});
+
 test("a Range opens nothing a plain request does not, and a download stays one", async () => {
   const html = new TextEncoder().encode("<script>alert(1)</script>");
   const { file } = await (await upload(mika, "b:cafe", { name: "page.html", type: "text/html", bytes: html })).json();
