@@ -43,6 +43,17 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<!-- The first frame, drawn by iOS before the app runs: the mark on the
+	     brand's dark ground. SplashView picks up from exactly this frame. -->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+		<key>UIImageName</key>
+		<string>LaunchMark</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<false/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Record a short video so your teammate can see what you mean.</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -55,15 +55,23 @@ struct TikTokForWorkApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var push = PushService.shared
     @Environment(\.scenePhase) private var scenePhase
+    /// The logo on launch, until the first screen is ready.
+    @State private var splashing = true
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(appState)
-                .environmentObject(push)
-                .environmentObject(SubscriptionService.shared)
-                .environment(\.locale, appState.language.locale ?? Locale.autoupdatingCurrent)
-                .preferredColorScheme(appState.appearance.colorScheme)
+            ZStack {
+                RootView()
+                    .environmentObject(appState)
+                    .environmentObject(push)
+                    .environmentObject(SubscriptionService.shared)
+                    .environment(\.locale, appState.language.locale ?? Locale.autoupdatingCurrent)
+                    .preferredColorScheme(appState.appearance.colorScheme)
+                if splashing {
+                    SplashView(ready: !appState.isBootstrapping) { splashing = false }
+                        .zIndex(1)
+                }
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             // A socket dropped while the app was backgrounded produces no
