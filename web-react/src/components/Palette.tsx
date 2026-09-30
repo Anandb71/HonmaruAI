@@ -185,6 +185,16 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
 
   const items = useMemo(() => filtered ? said : [...jumps, ...here, ...said, ...past, ...actions], [jumps, here, said, past, actions, filtered])
   useEffect(() => { setCursor(0) }, [q, items.length])
+  // The highlighted row stays in sight: with conversations above the
+  // screens, the arrows walk further than the box is tall. The first row
+  // shows its group's heading with it.
+  const list = useRef<HTMLUListElement>(null)
+  useEffect(() => {
+    const ul = list.current
+    if (!ul) return
+    if (cursor === 0) { ul.scrollTop = 0; return }
+    ul.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' })
+  }, [cursor, items])
 
   // The arrows are the palette's while it is open: the list's own ⌥↑/⌥↓,
   // on the window, would otherwise change the conversation underneath.
@@ -241,7 +251,7 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
           ))}
           <span className="palette-filter-hint" title={t('search.syntax')}>{t('"exact words" · -without · on:2026-09-01 · in:@name')}</span>
         </div>
-        <ul className="palette-list" id="palette-list" role="listbox">
+        <ul ref={list} className="palette-list" id="palette-list" role="listbox">
           {items.length === 0 && <li className="palette-empty">{t('Nothing matches that.')}</li>}
           {items.map((it, i) => {
             const head = it.group !== lastGroup
