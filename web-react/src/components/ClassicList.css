@@ -548,6 +548,8 @@
   position: absolute; z-index: 31; top: calc(100% + 4px); right: 0; width: 300px; max-height: 320px; overflow-y: auto;
   background: var(--slk-bg); border: 1px solid var(--slk-line); border-radius: 12px; padding: 0 10px 8px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  /* An emoji the arrows reach scrolls out from under the search box. */
+  scroll-padding-top: 48px;
 }
 .classic.slk.slk .slk-picker-anchor { position: relative; height: 0; }
 .classic.slk.slk .slk-picker-anchor .slk-picker { left: 0; right: auto; top: 4px; }
