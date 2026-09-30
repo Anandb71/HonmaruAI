@@ -652,13 +652,15 @@ const VISIBLE = `(
   OR (m.channel LIKE 'g:%' AND EXISTS (SELECT 1 FROM conversation_members c WHERE c.org_id = ?1 AND c.channel = m.channel AND c.login = ?2)))`;
 
 /// The Activity inbox: messages that name you, replies in threads you
-/// started or answered in, and your keywords said anywhere you can read —
-/// the last 30 days, newest first.
+/// started or answered in or inline to what you wrote, and your keywords
+/// said anywhere you can read — the last 30 days, newest first.
 export async function activityFeed(db, orgId, login, members, { days = 30, limit = 60 } = {}) {
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const [recent, mine, read, kw] = await Promise.all([
     db.prepare(
-      `SELECT m.*, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name FROM channel_messages m LEFT JOIN users u ON u.login = m.author_login
+      `SELECT m.*, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name,
+              (SELECT o.author_login FROM channel_messages o WHERE o.org_id = m.org_id AND o.id = m.reply_to_id AND o.channel = m.channel AND o.deleted_at IS NULL) AS reply_to_login
+         FROM channel_messages m LEFT JOIN users u ON u.login = m.author_login
         WHERE m.org_id = ?1 AND ${VISIBLE} AND m.deleted_at IS NULL AND m.created_at >= ?3
           AND (m.author_login IS NULL OR m.author_login != ?2)
         ORDER BY m.created_at DESC LIMIT 500`
@@ -677,7 +679,8 @@ export async function activityFeed(db, orgId, login, members, { days = 30, limit
     // "@here" was for whoever was at the app then — a push, not a later
     // entry in Activity; "@channel" is for everyone.
     const mention = r.body && resolveMentions(r.body, members, { online: NOBODY }).some((m) => m.login === login);
-    const reply = r.parent_id && threads.has(r.parent_id);
+    // A reply: in a thread you are in, or inline to what you wrote.
+    const reply = (r.parent_id && threads.has(r.parent_id)) || r.reply_to_login === login;
     const keyword = !mention && !reply ? keywordHit(r.body, keywords) : null;
     if (!mention && !reply && !keyword) continue;
     picked.push({ row: r, type: mention ? "mention" : reply ? "reply" : "keyword", keyword });
