@@ -1968,6 +1968,8 @@ const table: Record<string, string> = {
   "{n} tasks": "{n}タスク",
   'View full profile': 'プロフィール全体を見る',
   'Profile of {name}': '{name}のプロフィール',
+  'Online — {n}': 'オンライン — {n}',
+  'Offline — {n}': 'オフライン — {n}',
 }
 
 export default table

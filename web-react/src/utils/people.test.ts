@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { statusShown, awayShown, isOnline, localTime, placeCard } from './people'
+import { statusShown, awayShown, isOnline, byPresence, localTime, placeCard } from './people'
 
 const at = (iso: string) => Date.parse(iso)
 
@@ -43,6 +43,19 @@ describe('isOnline', () => {
     expect(isOnline({ loginHash: '' }, here)).toBe(false)
     expect(isOnline(undefined, here)).toBe(false)
     expect(isOnline(null, new Set(['']))).toBe(false)
+  })
+})
+
+// A channel's members: who is here first, as a chat client lists them.
+describe('byPresence', () => {
+  const people = [{ ref: 'a' }, { ref: 'b', you: true }, { ref: 'c' }, { ref: 'd' }]
+  it('puts who is here first and keeps each group in the order given', () => {
+    const { online, offline } = byPresence(people, new Set(['d', 'a']))
+    expect(online.map((p) => p.ref)).toEqual(['a', 'b', 'd'])
+    expect(offline.map((p) => p.ref)).toEqual(['c'])
+  })
+  it('counts you as here when the relay has said nothing', () => {
+    expect(byPresence(people, new Set()).online.map((p) => p.ref)).toEqual(['b'])
   })
 })
 

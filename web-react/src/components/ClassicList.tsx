@@ -2185,6 +2185,8 @@ export const ClassicList: React.FC<Props> = ({
     for (const [login, state] of Object.entries(presence)) if (state === 'online' && hashes.get(login)) on.add(hashes.get(login)!)
     return on
   }, [presence, hashes])
+  // The same people by ref, for a channel's member list.
+  const onlineRefs = useMemo(() => new Set(members.filter((m) => isOnline(m, onlineKeys)).map((m) => m.ref)), [members, onlineKeys])
   const withAI = useMemo(() => {
     const view = current?.view || ''
     // Who is in the conversation being written in: everyone, in a public
@@ -4014,6 +4016,7 @@ export const ClassicList: React.FC<Props> = ({
               onSettings={current.kind === 'channel' && current.slug ? () => { setSettings(true); setRenaming(null) } : null}
               onInvite={() => (current.private ? setAddingTo(current.view!) : setInviting('people'))}
               onProfile={(ref) => void openProfile(ref)}
+              onlineRefs={onlineRefs}
               onJump={(id) => void goToCite(current.view!, { id, parentId: null, at: '' })}
               onCounts={(n) => setAutomationCount((prev) => ({ ...prev, [current.view!]: n.automations }))}
               onClose={() => setSide(null)}

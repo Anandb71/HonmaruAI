@@ -6,6 +6,7 @@ import type { JamCall, JamMode, JamState } from '../utils/jam'
 import { Icon } from './Icon'
 import { Avatar } from './Avatar'
 import { renderRich } from './MessageParts'
+import { byPresence } from '../utils/people'
 
 // What a channel's header opens, left to right: its journal (the context
 // someone new or back from a week away reads first), its details (members,
@@ -188,11 +189,14 @@ export function ChannelJournal({ api, headers, view, title, locale, onCite, onCl
   )
 }
 
-/// The channel's details: who is in it, what was shared, what runs into it.
+/// The channel's details: who is in it (who is here first, as a chat client
+/// lists them), what was shared, what runs into it.
 export function ChannelDetails({
-  api, headers, view, tab, onTab, level, onLevel, onSettings, onInvite, onProfile, onJump, onCounts, onClose, locale,
+  api, headers, view, tab, onTab, level, onLevel, onSettings, onInvite, onProfile, onJump, onCounts, onClose, locale, onlineRefs,
 }: {
   api: Api; headers: Headers; view: string; tab: DetailsTab; locale: string
+  /// The members the relay says are here, by ref. You are, whatever it says.
+  onlineRefs: ReadonlySet<string>
   onTab: (tab: DetailsTab) => void
   level: NotifyLevel
   onLevel: (level: NotifyLevel) => void
@@ -271,6 +275,21 @@ export function ChannelDetails({
   }
 
   const people = (d?.members.people || []).filter((p) => !query.trim() || `${p.name} ${p.handle || ''} ${p.title || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const { online, offline } = byPresence(people, onlineRefs)
+  const person = (p: (typeof people)[number], here: boolean) => (
+    <li key={p.ref}>
+      <button type="button" className="slk-member-row" onClick={() => onProfile(p.ref)}>
+        <span className="cl-lead cl-avatar has-face sz-row" aria-hidden="true">
+          <Avatar name={p.name} url={p.avatarUrl} size={24} />
+          <span className={`cl-presence${here ? ' on' : ''}`} />
+        </span>
+        <span className="slk-member-main">
+          <span className="slk-member-name">{p.name}{p.you && <span className="slk-member-you"> {t('(you)')}</span>}{p.status?.emoji && <span> {p.status.emoji}</span>}</span>
+          {p.title && <span className="slk-member-title">{p.title}</span>}
+        </span>
+      </button>
+    </li>
+  )
   const agents = (d?.members.agents || []).filter((a) => !query.trim() || a.name.toLowerCase().includes(query.trim().toLowerCase()))
   const isChannel = d?.channel.kind === 'channel'
   const tabs: Array<[DetailsTab, string, number]> = [
@@ -318,20 +337,15 @@ export function ChannelDetails({
         {d && tab === 'members' && (
           <>
             <input className="cl-input slk-details-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Search members')} aria-label={t('Search members')} />
-            <h3 className="slk-details-group">{t('People ({n})', { n: people.length })}</h3>
-            <ul className="slk-details-list">
-              {people.map((p) => (
-                <li key={p.ref}>
-                  <button type="button" className="slk-member-row" onClick={() => onProfile(p.ref)}>
-                    <span className="cl-lead cl-avatar has-face sz-row" aria-hidden="true"><Avatar name={p.name} url={p.avatarUrl} size={24} /></span>
-                    <span className="slk-member-main">
-                      <span className="slk-member-name">{p.name}{p.you && <span className="slk-member-you"> {t('(you)')}</span>}{p.status?.emoji && <span> {p.status.emoji}</span>}</span>
-                      {p.title && <span className="slk-member-title">{p.title}</span>}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {people.length === 0 && <h3 className="slk-details-group">{t('People ({n})', { n: 0 })}</h3>}
+            {online.length > 0 && <>
+              <h3 className="slk-details-group" data-members="online">{t('Online — {n}', { n: online.length })}</h3>
+              <ul className="slk-details-list">{online.map((p) => person(p, true))}</ul>
+            </>}
+            {offline.length > 0 && <>
+              <h3 className="slk-details-group" data-members="offline">{t('Offline — {n}', { n: offline.length })}</h3>
+              <ul className="slk-details-list">{offline.map((p) => person(p, false))}</ul>
+            </>}
             <h3 className="slk-details-group">{t('Agents ({n})', { n: agents.length })}</h3>
             <ul className="slk-details-list">
               {agents.map((a, i) => (

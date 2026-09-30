@@ -28,6 +28,14 @@ export function isOnline(member: { loginHash?: string | null } | null | undefine
   return Boolean(member?.loginHash && onlineKeys.has(member.loginHash))
 }
 
+/// A member list as a chat client lists it: who is here, then who is not,
+/// each in the order given. You are here, whatever the relay says — it never
+/// tells a socket about itself.
+export function byPresence<P extends { ref: string; you?: boolean }>(people: P[], onlineRefs: ReadonlySet<string>): { online: P[]; offline: P[] } {
+  const here = (p: P) => Boolean(p.you) || onlineRefs.has(p.ref)
+  return { online: people.filter(here), offline: people.filter((p) => !here(p)) }
+}
+
 /// The time where they are, as the reader writes times — or nothing, for a
 /// zone this browser does not know or a person who never said.
 export function localTime(zone: string | null | undefined, now: number, locale: string): string {

@@ -1904,6 +1904,8 @@ const table: Record<string, string> = {
   "{n} tasks": "{n} tâches",
   'View full profile': 'Voir le profil complet',
   'Profile of {name}': 'Profil de {name}',
+  'Online — {n}': 'En ligne — {n}',
+  'Offline — {n}': 'Hors ligne — {n}',
 }
 
 export default table
