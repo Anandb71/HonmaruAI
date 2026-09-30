@@ -615,13 +615,15 @@ export const Profile: React.FC<Props> = ({
           </section>
           <section className="pf-sec pf-look">
           <div className="rows-title">{t('Appearance')}</div>
+          {/* Each group is named and explained by the row's own words, so a
+              screen reader says the line under the name as well. */}
           <div className="rows">
             <div className="row static look-row">
               <span className="row-main">
-                {t('Theme')}
-                <span className="row-sub">{t('System follows the light or dark setting of this device.')}</span>
+                <span id="look-theme-label">{t('Theme')}</span>
+                <span className="row-sub" id="look-theme-sub">{t('System follows the light or dark setting of this device.')}</span>
               </span>
-              <div className="seg look-seg" role="radiogroup" aria-label={t('Theme')}>
+              <div className="seg look-seg" role="radiogroup" aria-labelledby="look-theme-label" aria-describedby="look-theme-sub">
                 {THEMES.map((theme) => (
                   <label key={theme} className={appearance.theme === theme ? 'on' : undefined}>
                     <input type="radio" name="look-theme" value={theme} checked={appearance.theme === theme}
@@ -633,10 +635,10 @@ export const Profile: React.FC<Props> = ({
             </div>
             <div className="row static look-row">
               <span className="row-main">
-                {t('Message display')}
-                <span className="row-sub">{t('Compact fits more of a conversation on screen: no profile pictures, the time and name on the line.')}</span>
+                <span id="look-density-label">{t('Message display')}</span>
+                <span className="row-sub" id="look-density-sub">{t('Compact fits more of a conversation on screen: no profile pictures, the time and name on the line.')}</span>
               </span>
-              <div className="seg look-seg" role="radiogroup" aria-label={t('Message display')}>
+              <div className="seg look-seg" role="radiogroup" aria-labelledby="look-density-label" aria-describedby="look-density-sub">
                 {DENSITIES.map((density) => (
                   <label key={density} className={appearance.density === density ? 'on' : undefined}>
                     <input type="radio" name="look-density" value={density} checked={appearance.density === density}
