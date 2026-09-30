@@ -12,7 +12,7 @@ import { CreateDecision } from './CreateDecision'
 import { RecordSheet } from './RecordSheet'
 import type { FlagReason, Answer } from './Feed'
 import { NotificationsButton } from './NotificationsBanner'
-import { notifyNewDecision, setNotificationCopy, setTabBadge } from '../utils/notifications'
+import { notifyNewDecision, notifyMessage, closeCardNotifications, closeMessageNotifications, watchWorkspace, setNotificationCopy, setTabBadge } from '../utils/notifications'
 import type { AppState, Business, DecisionCard } from '../types/card'
 import './Dashboard.css'
 import { useT } from '../utils/i18n'
@@ -81,7 +81,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   // written in the last minute is news.
   const heard = useRef<Set<string>>(new Set())
   const soundFor = async (message: ChannelMessage) => {
-    if (!message?.id || message.deleted || heard.current.has(message.id)) return
+    // Unsent: whatever this browser showed of it comes off the screen.
+    if (message?.id && message.deleted) { closeMessageNotifications([message.id]); return }
+    if (!message?.id || heard.current.has(message.id)) return
     heard.current.add(message.id)
     if (Date.now() - Date.parse(message.createdAt) > 60_000) return
     const people = await loadMembers(relayUrl.replace(/^ws/, 'http'), orgId, sessionToken).catch(() => [])
@@ -92,6 +94,19 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     const open = getOpenView() === message.channel && document.visibilityState === 'visible' && document.hasFocus()
     const kind = soundForMessage({ mine, channel: message.channel, mentionsMe, kind: message.kind, parentId: message.parentId }, { level: levelOf(orgId, message.channel), open })
     if (kind) playSound(kind)
+    // A direct message or an @mention while nobody is looking at this
+    // workspace: on the screen now, rather than a push's delay later. Only
+    // what the Worker would push too (a person's message or an agent's
+    // answer — not the AI's own notes), and one tab decides (notifications.ts).
+    if (kind === 'mention' && (message.kind === 'message' || message.kind === 'agent')) {
+      const business = message.channel.startsWith('b:') ? businessesRef.current.find((b) => `b:${b.slug}` === message.channel) : undefined
+      notifyMessage({
+        id: message.id, orgId, channel: message.channel,
+        author: message.authorName || message.agent?.name || t('a teammate'),
+        where: business ? `#${business.name}` : null,
+        body: message.body || '', hasFiles: Boolean(message.files?.length), createdAt: message.createdAt,
+      })
+    }
   }
   // The relay has sent its snapshot at least once. Before that the feed says
   // it is opening, not that it is empty — "All clear" on a cold start, half a
@@ -113,6 +128,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   const desktop = useDesktop()
   const screen: Screen | null = route.screen
   const [businesses, setBusinesses] = useState<Business[]>([])
+  // For a notification's "#channel", read from the socket's handler.
+  const businessesRef = useRef<Business[]>([])
+  businessesRef.current = businesses
   // Who is here right now, by login — the relay's word, shown as a dot.
   const [presence, setPresence] = useState<Presence>({})
   // The team's name, for the list's header. From /members, which is the one
@@ -219,12 +237,21 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
 
   const relayHttpUrl = relayUrl.replace(/^ws/, 'http')
 
+  // Cards waiting on you: counted on the tab, and a card that stops waiting
+  // (decided here, on a phone, or taken back) takes its notification with it.
+  const waitingIds = useRef<Set<string>>(new Set())
   useEffect(() => {
     const cards = Object.values(state.cardsById || {})
     const pending = cards.filter((c) => c.status === 'pending' && c.recipientUserID === userId)
+    const now = new Set(pending.map((c) => c.id))
+    closeCardNotifications([...waitingIds.current].filter((id) => !now.has(id)))
+    waitingIds.current = now
     setTabBadge(pending.length)
     return () => setTabBadge(0)
   }, [state, userId])
+  // This tab takes part in choosing which tab notifies for the workspace,
+  // and clears what came in while away once it is looked at again.
+  useEffect(() => watchWorkspace(orgId), [orgId])
   useEffect(() => {
     if (synced) saveCardCache(orgId, state.cardsById || {})
   }, [state, synced, orgId])
@@ -249,7 +276,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (card.recipientUserID === userId && card.status === 'pending') {
         // Your own note to yourself does not need announcing to you.
         if (card.senderUserID !== userId) playSound('decision')
-        notifyNewDecision(card.localized?.[getLocale()]?.title || card.title || t('A decision is waiting'), card.requestedBy?.name || displayName(card.senderUserID) || t('a teammate'))
+        if (card.senderUserID !== userId) notifyNewDecision(card.localized?.[getLocale()]?.title || card.title || t('A decision is waiting'), card.requestedBy?.name || displayName(card.senderUserID) || t('a teammate'), card.id, orgId)
       }
     }
     wsClient.onCardUpdated = (card) => { if (!ignore) addDebugLog(`Card updated: ${card.id}`) }
@@ -354,7 +381,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     if (!('serviceWorker' in navigator)) return
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type === 'open-card' && event.data.cardId) { setPanel(null); navigate(hashForCard(event.data.cardId)) }
-      if (event.data?.type === 'open-message' && event.data.messageId) { setPanel(null); window.location.hash = `#/m/${encodeURIComponent(event.data.messageId)}` }
+      // The worker sends the message's address with its workspace, so one
+      // from another workspace switches to it rather than finding nothing.
+      if (event.data?.type === 'open-message' && event.data.messageId) { setPanel(null); window.location.hash = typeof event.data.hash === 'string' && event.data.hash.startsWith('#/m/') ? event.data.hash : `#/m/${encodeURIComponent(event.data.messageId)}` }
     }
     navigator.serviceWorker.addEventListener('message', onMessage)
     return () => navigator.serviceWorker.removeEventListener('message', onMessage)

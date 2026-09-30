@@ -260,6 +260,16 @@ const prefsKey = (orgId: string) => `sounds.prefs:${orgId}`
 export function rememberLevels(orgId: string, prefs: Record<string, string>): void {
   try { localStorage.setItem(prefsKey(orgId), JSON.stringify(prefs)) } catch { /* next load */ }
 }
+/// One conversation's level, written down the moment the server took it —
+/// even before the whole list has loaded — without touching the others.
+export function rememberLevel(orgId: string, view: string, level: string): void {
+  try {
+    const levels = JSON.parse(localStorage.getItem(prefsKey(orgId)) || '{}') || {}
+    if (level === 'all') delete levels[view]
+    else levels[view] = level
+    localStorage.setItem(prefsKey(orgId), JSON.stringify(levels))
+  } catch { /* next load */ }
+}
 export function levelOf(orgId: string, view: string): string {
   try { return (JSON.parse(localStorage.getItem(prefsKey(orgId)) || '{}') || {})[view] || 'all' } catch { return 'all' }
 }
