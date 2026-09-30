@@ -737,7 +737,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     return () => { ignore = true }
   }, [focusCardId, cards, fetched, relayHttpUrl, orgId, sessionToken, t])
   useEffect(() => {
-    if (!workbench || panel || screen) return
+    if (!workbench || panel || screen || shortcuts) return
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target as HTMLElement | null
@@ -749,7 +749,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [workbench, panel, screen, inboxCards, selectedId, navigate])
+  }, [workbench, panel, screen, shortcuts, inboxCards, selectedId, navigate])
   const api = { httpBase: relayHttpUrl, orgId, sessionToken }
   const workspaceSwitcher = (variant: 'rail' | 'header') => (
     <WorkspaceSwitcher
@@ -788,7 +788,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
             businesses={businesses}
             focusCardId={null}
             ready={synced || cards.length > 0}
-            active={!panel && !screen}
+            active={!panel && !screen && !shortcuts}
             onDecide={handleDecision}
             onAsk={handleAsk}
             onFlag={handleFlag}
@@ -807,7 +807,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           businesses={businesses}
           focusCardId={focusCardId}
           ready={synced || cards.length > 0}
-          active={!panel && !screen}
+          active={!panel && !screen && !shortcuts}
           onDecide={handleDecision}
           onAsk={handleAsk}
           onFlag={handleFlag}
@@ -848,7 +848,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
               businesses={businesses}
               focusCardId={null}
               ready
-              active={!panel && !screen && !palette}
+              active={!panel && !screen && !palette && !shortcuts}
               onDecide={handleDecision}
               onAsk={handleAsk}
               onFlag={handleFlag}
