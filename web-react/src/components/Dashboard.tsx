@@ -398,7 +398,11 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   const railAvatar = useRef<HTMLButtonElement>(null)
   const listYou = useRef<HTMLElement | null>(null)
   const railed = useMinWidth(720)
-  useEffect(() => { setStatusFrom(null) }, [orgId])
+  // It belongs to where it was opened: going somewhere else — another
+  // workspace, a screen, the other view, a card from a link — closes it,
+  // as does the window crossing 720px, where the avatar it sits beside
+  // is hidden and another drawn.
+  useEffect(() => { setStatusFrom(null) }, [orgId, screen, mode, focusCardId, railed])
   // Notifications paused: said at the top, with a way out.
   const [quiet, setQuiet] = useState<QuietState>(getQuietState())
   useEffect(() => onQuietChange(() => setQuiet({ ...getQuietState() })), [])
