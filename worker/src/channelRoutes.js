@@ -42,7 +42,7 @@ import { audit, person } from "./audit.js";
 import { getCanvas, toClientCanvas, listRevisions, getRevision, saveCanvas, draftCanvas } from "./canvas.js";
 import { listBookmarks, toClientBookmark, addBookmark, editBookmark, removeBookmark } from "./bookmarks.js";
 import {
-  listAgents, saveAgent, deleteAgent, toClientAgent, agentsHere, channelAgents, agentChannels, agentTalkFilter, addChannelAgent, removeChannelAgent, presetsFor, agentsCalled, requestFor, askAgent, contextFor, playbookFor, setAgentAvatar,
+  listAgents, saveAgent, deleteAgent, toClientAgent, agentsHere, channelAgents, agentChannels, agentTalkFilter, addChannelAgent, removeChannelAgent, presetsFor, agentsCalled, requestFor, askAgent, contextFor, playbookFor, setAgentAvatar, MAX_CALLED,
 } from "./customAgents.js";
 import { readImage } from "./userAvatar.js";
 import { connectedSources, searchNotion, searchGithubIssues, formatSourcesForModel } from "./context.js";
@@ -366,7 +366,7 @@ export async function answerAsAgents(env, { orgId, session, user, resolved, row,
     // answers without being named, in the conversation, not a thread.
     if (resolved.kind === "agent" && !agents.some((a) => a.id === resolved.agent.id)) {
       const own = (await listAgents(env.DB, orgId, user.login)).find((a) => a.id === resolved.agent.id);
-      if (own) agents = [own, ...agents].slice(0, 3);
+      if (own) agents = [own, ...agents].slice(0, MAX_CALLED);
     }
   } catch (err) {
     console.error("agents lookup failed", safe(err?.message));
