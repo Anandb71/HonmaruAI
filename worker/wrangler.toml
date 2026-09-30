@@ -83,9 +83,11 @@ class_name = "AgentRunner"
 name = "WORKSPACE"
 class_name = "WorkspaceDO"
 
-# Staging tries conversations from each workspace's own Durable Object.
+# Staging tries conversations from each workspace's own Durable Object, and
+# writes every message there as well as to D1 (src/store/mirror.js).
 [env.staging.vars]
 WORKSPACE_V2 = "*"
+WORKSPACE_DUAL = "*"
 
 [[env.staging.d1_databases]]
 binding = "DB"

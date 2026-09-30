@@ -79,6 +79,7 @@ import { serverText } from "./serverCopy.js";
 import { listCardEvents, listOrgEvents, appendCardEvent, withActorNames } from "./events.js";
 import { listComments, addComment, listReactions, toggleReaction, REACTIONS, MAX_COMMENT_CHARS } from "./threads.js";
 import { useSecretKey } from "./secrets.js";
+import { useMirrorEnv } from "./store/mirror.js";
 import { fetchCollaborators } from "./github.js";
 import { buildOrgGraph, roleName } from "./org.js";
 import { uploadMedia, serveMedia } from "./media.js";
@@ -192,6 +193,7 @@ export default {
   // the sync loop checks the same allowance a manual sync does.
   async scheduled(event, env, ctx) {
     useSecretKey(env);
+    useMirrorEnv(env);
     // Every minute: scheduled messages and Later reminders, which a person
     // set to a minute and would notice fifteen late.
     if (event?.cron === "* * * * *") {
@@ -221,6 +223,9 @@ export default {
       // What sessions and presence leave behind, swept.
       ctx.waitUntil(import("./sessions.js").then(({ pruneSessionTraces }) => pruneSessionTraces(env.DB, { now: at.getTime() }))
         .catch((err) => console.error("session sweep failed", err?.message || err)));
+      // Dual-writing workspaces: their Durable Object made to match D1.
+      ctx.waitUntil(import("./store/mirror.js").then(({ reconcileAll }) => reconcileAll(env))
+        .catch((err) => console.error("reconcile failed", err?.message || err)));
       // Caches and meters past the longest anything reads them.
       ctx.waitUntil(import("./retention.js").then(({ pruneGrowth }) => pruneGrowth(env.DB, { now: at.getTime() }))
         .catch((err) => console.error("growth pruning failed", err?.message || err)));
@@ -251,6 +256,7 @@ export default {
 
   async fetch(request, env, ctx) {
     useSecretKey(env);
+    useMirrorEnv(env);
     // Every response carries the id its log line was written under, so a user
     // reporting "it failed" hands over something that finds the line.
     const requestId = crypto.randomUUID();

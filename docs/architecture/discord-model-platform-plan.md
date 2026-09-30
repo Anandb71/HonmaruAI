@@ -408,6 +408,17 @@ The migration is per workspace, reversible, and verified by checksums.
 | **M4 — Cutover** | Flip `orgs.store = do`: DO primary, D1 mirrored from DO (outbox) for 14 days | Rollback = flip back; D1 is current |
 | **M5 — Contract** | After all workspaces are `do` for 30 days: stop mirror, drop workspace tables from D1 | D1 holds only global tables |
 
+Status:
+- **M0:** every write to `channel_messages` goes through `worker/src/channels.js`
+  (post, edit, unsend, reactions, pins, reads) or retention (`governance.js`).
+  Reads still query D1 directly. They move behind the store at cutover (M4).
+- **M1 (built):** `worker/src/store/mirror.js` copies each written row, as D1
+  has it after the write, to the workspace's object. It covers
+  `WORKSPACE_DUAL` workspaces (`*` on staging, none in production yet).
+  `reconcile` runs daily and repairs drift range by range, including rows D1
+  removed behind the routes (e.g. account deletion). Reactions and read positions
+  are not mirrored yet.
+
 Order: our own workspace → small internal/test workspaces → small customers →
 large customers. Each step can pause indefinitely; mixed fleets are normal.
 

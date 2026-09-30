@@ -15,6 +15,7 @@ import { getSession, getUserByGithubId } from "./db.js";
 import { ipAllowed, parseCidr } from "./orgKeys.js";
 import { listMembers } from "./team.js";
 import { deleteFileObject } from "./files.js";
+import { mirrorDeletes } from "./store/mirror.js";
 
 const DAY = 86_400_000;
 export const RETENTION_CHOICES = [null, 1, 7, 30, 90, 180, 365, 730, 1825, 3650];
@@ -185,6 +186,7 @@ export async function pruneMessages(env, { now = Date.now(), orgLimit = 50 } = {
           env.DB.prepare(`DELETE FROM message_files WHERE org_id = ?1 AND message_id IN (${marks})`).bind(orgId, ...ids),
           env.DB.prepare(`DELETE FROM channel_messages WHERE org_id = ?1 AND id IN (${marks})`).bind(orgId, ...ids),
         ]);
+        await mirrorDeletes(orgId, ids, env);
       }
       messages = doomed.length;
     }
