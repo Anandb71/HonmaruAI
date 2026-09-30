@@ -306,9 +306,15 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (ignore) return
       setIsConnected(connected)
       if (connected) setError(null)
+      // Cut off, nobody is known to be here: presence only moves when
+      // someone comes or goes, and whoever went while the socket was down
+      // would stay green. The relay says who is here again on the next join.
+      else setPresence({})
       addDebugLog(connected ? `Connected to ${relayUrl}` : 'Disconnected — will retry')
     }
     setSynced(false)
+    // Another workspace's socket: its people, not the last one's.
+    setPresence({})
     wsClient.connect(relayUrl, userId, orgId, sessionToken).catch((err) => {
       if (ignore) return
       // A socket that fails hands back an Event, not an Error, and "[object
