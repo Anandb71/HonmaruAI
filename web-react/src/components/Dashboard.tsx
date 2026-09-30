@@ -12,7 +12,7 @@ import { CreateDecision } from './CreateDecision'
 import { RecordSheet } from './RecordSheet'
 import type { FlagReason, Answer } from './Feed'
 import { NotificationsButton } from './NotificationsBanner'
-import { notifyNewDecision, setNotificationCopy, setTabBadge } from '../utils/notifications'
+import { notifyNewDecision, notifyMessage, closeCardNotifications, lookingHere, markSeen, setNotificationCopy, setTabBadge } from '../utils/notifications'
 import type { AppState, Business, DecisionCard } from '../types/card'
 import './Dashboard.css'
 import { useT } from '../utils/i18n'
@@ -23,7 +23,7 @@ import { loadCardCache, saveCardCache } from '../utils/cardCache'
 import { needsLocalizing } from '../utils/language'
 import { aiHeaders } from '../utils/aiKey'
 import type { Screen, Mode } from '../utils/route'
-import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
+import { playSound, soundForMessage, getOpenView, levelOf, isLeaderTab } from '../utils/sound'
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
 import type { ChannelMessage } from '../types/card'
 
@@ -92,6 +92,17 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     const open = getOpenView() === message.channel && document.visibilityState === 'visible' && document.hasFocus()
     const kind = soundForMessage({ mine, channel: message.channel, mentionsMe, kind: message.kind, parentId: message.parentId }, { level: levelOf(orgId, message.channel), open })
     if (kind) playSound(kind)
+    // A direct message or an @mention while the tab is not in front: on the
+    // screen now, from one tab only, rather than a push's delay later.
+    if (kind === 'mention' && isLeaderTab()) {
+      const business = message.channel.startsWith('b:') ? businessesRef.current.find((b) => `b:${b.slug}` === message.channel) : undefined
+      notifyMessage({
+        id: message.id, orgId, channel: message.channel,
+        author: message.authorName || message.agent?.name || t('a teammate'),
+        where: business ? `#${business.name}` : null,
+        body: message.body || '', hasFiles: Boolean(message.files?.length),
+      })
+    }
   }
   // The relay has sent its snapshot at least once. Before that the feed says
   // it is opening, not that it is empty — "All clear" on a cold start, half a
@@ -113,6 +124,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   const desktop = useDesktop()
   const screen: Screen | null = route.screen
   const [businesses, setBusinesses] = useState<Business[]>([])
+  // For a notification's "#channel", read from the socket's handler.
+  const businessesRef = useRef<Business[]>([])
+  businessesRef.current = businesses
   // Who is here right now, by login — the relay's word, shown as a dot.
   const [presence, setPresence] = useState<Presence>({})
   // The team's name, for the list's header. From /members, which is the one
@@ -219,12 +233,25 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
 
   const relayHttpUrl = relayUrl.replace(/^ws/, 'http')
 
+  // Cards waiting on you: counted on the tab, and a card that stops waiting
+  // (decided here, on a phone, or taken back) takes its notification with it.
+  const waitingIds = useRef<Set<string>>(new Set())
   useEffect(() => {
     const cards = Object.values(state.cardsById || {})
     const pending = cards.filter((c) => c.status === 'pending' && c.recipientUserID === userId)
+    const now = new Set(pending.map((c) => c.id))
+    closeCardNotifications([...waitingIds.current].filter((id) => !now.has(id)))
+    waitingIds.current = now
     setTabBadge(pending.length)
     return () => setTabBadge(0)
   }, [state, userId])
+  // Looked at again: what came in while the tab was away has been seen.
+  useEffect(() => {
+    const seen = () => { if (lookingHere()) markSeen() }
+    window.addEventListener('focus', seen)
+    document.addEventListener('visibilitychange', seen)
+    return () => { window.removeEventListener('focus', seen); document.removeEventListener('visibilitychange', seen) }
+  }, [])
   useEffect(() => {
     if (synced) saveCardCache(orgId, state.cardsById || {})
   }, [state, synced, orgId])
@@ -249,7 +276,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (card.recipientUserID === userId && card.status === 'pending') {
         // Your own note to yourself does not need announcing to you.
         if (card.senderUserID !== userId) playSound('decision')
-        notifyNewDecision(card.localized?.[getLocale()]?.title || card.title || t('A decision is waiting'), card.requestedBy?.name || displayName(card.senderUserID) || t('a teammate'))
+        if (card.senderUserID !== userId && isLeaderTab()) notifyNewDecision(card.localized?.[getLocale()]?.title || card.title || t('A decision is waiting'), card.requestedBy?.name || displayName(card.senderUserID) || t('a teammate'), card.id)
       }
     }
     wsClient.onCardUpdated = (card) => { if (!ignore) addDebugLog(`Card updated: ${card.id}`) }
@@ -354,7 +381,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     if (!('serviceWorker' in navigator)) return
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type === 'open-card' && event.data.cardId) { setPanel(null); navigate(hashForCard(event.data.cardId)) }
-      if (event.data?.type === 'open-message' && event.data.messageId) { setPanel(null); window.location.hash = `#/m/${encodeURIComponent(event.data.messageId)}` }
+      // The worker sends the message's address with its workspace, so one
+      // from another workspace switches to it rather than finding nothing.
+      if (event.data?.type === 'open-message' && event.data.messageId) { setPanel(null); window.location.hash = typeof event.data.hash === 'string' && event.data.hash.startsWith('#/m/') ? event.data.hash : `#/m/${encodeURIComponent(event.data.messageId)}` }
     }
     navigator.serviceWorker.addEventListener('message', onMessage)
     return () => navigator.serviceWorker.removeEventListener('message', onMessage)
