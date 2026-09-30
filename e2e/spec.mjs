@@ -1704,6 +1704,24 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
       .catch(() => { throw new Error('the message does not count its reply') })
     if (await d.$('.slk-main .slk-msg:has-text("Housekeeping")')) throw new Error('a thread reply leaked into the channel')
     await d.screenshot({ path: `${SHOTS}/39-thread.png` })
+    // A right-click on the reply's words opens its own menu at the pointer:
+    // the quick reactions along the top, then what ⋯ offers. Escape shuts
+    // the menu and leaves the thread open under it.
+    const reply = '.slk-thread-pane .slk-msg:has-text("Housekeeping")'
+    await d.click(`${reply} .slk-text`, { button: 'right' })
+    await d.waitForSelector('.row-menu [data-row-menu="react:✅"]', { timeout: 5000 })
+      .catch(() => { throw new Error('right-clicking a message opened no menu with its quick reactions') })
+    if (!(await d.$('.row-menu [data-row-menu="copy"]'))) throw new Error('the right-click menu on a message has no "Copy text"')
+    if (await d.$('.row-menu [data-row-menu="reply"]')) throw new Error('the right-click menu on a reply offers a thread inside its thread')
+    await d.screenshot({ path: `${SHOTS}/39a-message-menu.png` })
+    await d.keyboard.press('Escape')
+    await d.waitForSelector('.row-menu', { state: 'detached', timeout: 3000 }).catch(() => { throw new Error('Escape did not shut the menu on a message') })
+    if (!(await d.$('.slk-thread-pane'))) throw new Error('Escape on the menu over a reply shut the thread under it as well')
+    // A quick reaction from it lands on the reply.
+    await d.click(`${reply} .slk-text`, { button: 'right' })
+    await d.click('.row-menu [data-row-menu="react:✅"]')
+    await d.waitForSelector(`${reply} .slk-reaction.mine`, { timeout: 10000 })
+      .catch(() => { throw new Error('a reaction from the right-click menu did not land') })
     await d.click('.slk-thread-pane .slk-pane-close')
     // Pinned, and listed under the pin.
     await d.hover(msg)
