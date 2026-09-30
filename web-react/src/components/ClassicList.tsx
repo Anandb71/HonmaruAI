@@ -1323,6 +1323,10 @@ export const ClassicList: React.FC<Props> = ({
   /// double tap before the box has cleared does not send them twice.
   const going = useRef(new Set<string>())
   const goingKey = (o: Pick<Outgoing, 'channel' | 'parentId' | 'body' | 'files'>) => [o.channel, o.parentId || '', o.body, o.files.map((f) => f.id).join(',')].join('\n')
+  /// A conversation's messages go one after another, in the order they were
+  /// sent — as they did from the box that locked — or two sent in a blink
+  /// could reach the server, and be kept, the other way round.
+  const inLine = useRef(new Map<string, Promise<unknown>>())
 
   const send = async (channel: string, decide: boolean, parentId?: string, sendAt?: string) => {
     let body = (parentId ? threadDraft : draft).trim()
@@ -1379,11 +1383,18 @@ export const ClassicList: React.FC<Props> = ({
     await out.landing
   }
 
-  /// Send what shows as on its way: the server's copy takes its place.
-  const deliver = async (out: Outgoing): Promise<ChannelMessage | null> => {
-    const { tempId, channel, body, decide, parentId, files } = out
+  /// Send what shows as on its way, once whatever went before it in that
+  /// conversation has had its answer.
+  const deliver = (out: Outgoing): Promise<ChannelMessage | null> => {
     const key = goingKey(out)
     going.current.add(key)
+    const turn = (inLine.current.get(out.channel) || Promise.resolve()).then(() => post(out, key))
+    inLine.current.set(out.channel, turn.catch(() => null))
+    return turn
+  }
+  /// The server's copy takes the place of ours.
+  const post = async (out: Outgoing, key: string): Promise<ChannelMessage | null> => {
+    const { tempId, channel, body, decide, parentId, files } = out
     const res = await fetch(`${api.httpBase}/channels/messages`, {
       method: 'POST',
       headers: { ...authHeaders, 'content-type': 'application/json' },
