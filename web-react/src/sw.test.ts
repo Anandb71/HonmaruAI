@@ -8,9 +8,27 @@ import source from '../public/sw.js?raw'
 type Handler = (event: Record<string, unknown>) => void
 interface Shown { title: string; options: Record<string, unknown> & { data: Record<string, unknown> } }
 
-function worker(opts: { windows?: Array<Record<string, unknown>>; existing?: Array<{ data: Record<string, unknown> }> } = {}) {
+type Existing = { title?: string; body?: string; timestamp?: number; data: Record<string, unknown> }
+
+function worker(opts: { windows?: Array<Record<string, unknown>>; existing?: Existing[]; cached?: Record<string, Record<string, string>>; subscribed?: boolean } = {}) {
   const handlers: Record<string, Handler> = {}
   const shown: Shown[] = []
+  const subscribed: unknown[] = []
+  const store = new Map(Object.entries(opts.cached || {}).map(([name, entries]) => [name, new Map(Object.entries(entries))]))
+  const deleted: string[] = []
+  const caches = {
+    open: async (name: string) => {
+      if (!store.has(name)) store.set(name, new Map())
+      const entries = store.get(name)!
+      return {
+        match: async (key: string) => (entries.has(key) ? { text: async () => entries.get(key) } : undefined),
+        put: async () => {},
+        addAll: async () => {},
+      }
+    },
+    keys: async () => [...store.keys()],
+    delete: async (name: string) => { deleted.push(name); return store.delete(name) },
+  }
   const opened: string[] = []
   const posted: Array<{ id: string; message: Record<string, unknown> }> = []
   const focused: string[] = []
@@ -27,7 +45,10 @@ function worker(opts: { windows?: Array<Record<string, unknown>>; existing?: Arr
       scope: 'https://app.example/',
       showNotification: async (title: string, options: Shown['options']) => { shown.push({ title, options }) },
       getNotifications: async () => opts.existing || [],
-      pushManager: { subscribe: async () => ({}) },
+      pushManager: {
+        getSubscription: async () => (opts.subscribed ? {} : null),
+        subscribe: async (o: unknown) => { subscribed.push(o); return {} },
+      },
     },
     clients: {
       matchAll: async () => windows,
@@ -35,7 +56,7 @@ function worker(opts: { windows?: Array<Record<string, unknown>>; existing?: Arr
       claim: async () => {},
     },
   }
-  new Function('self', 'caches', 'fetch', 'navigator', source)(self, {}, () => Promise.reject(new Error('offline')), {})
+  new Function('self', 'caches', 'fetch', 'navigator', source)(self, caches, () => Promise.reject(new Error('offline')), {})
   const fire = async (name: string, event: Record<string, unknown>) => {
     let work: Promise<unknown> = Promise.resolve()
     handlers[name]({ ...event, waitUntil: (p: Promise<unknown>) => { work = p } })
@@ -43,7 +64,7 @@ function worker(opts: { windows?: Array<Record<string, unknown>>; existing?: Arr
   }
   const push = (data: Record<string, unknown>) => fire('push', { data: { json: () => data, text: () => JSON.stringify(data) } })
   const click = (data: Record<string, unknown>) => fire('notificationclick', { notification: { data, close: () => {} } })
-  return { shown, opened, posted, focused, push, click, fire }
+  return { shown, opened, posted, focused, push, click, fire, subscribed, deleted }
 }
 
 describe('a push, shown', () => {
@@ -70,6 +91,22 @@ describe('a push, shown', () => {
     const w = worker({ existing: [{ data: { messageId: 'm1' } }] })
     await w.push({ title: 'Mika', body: 'Again', kind: 'message', tag: 'org1|dm:mika', orgId: 'org1', messageId: 'm2' })
     expect(w.shown[0].options.renotify).toBe(true)
+  })
+
+  it('never rolls a conversation back to an older message the tab already moved past', async () => {
+    const w = worker({ existing: [{ title: 'Bob', body: 'second', timestamp: 2000, data: { messageId: 'm2', kind: 'message', at: '2026-01-01T00:00:02.000Z' } }] })
+    await w.push({ title: 'Bob', body: 'first', kind: 'message', tag: 'org1|dm:bob', orgId: 'org1', messageId: 'm1', at: '2026-01-01T00:00:01.000Z' })
+    expect(w.shown).toHaveLength(1)
+    expect(w.shown[0].title).toBe('Bob')
+    expect(w.shown[0].options).toMatchObject({ body: 'second', renotify: false, tag: 'org1|dm:bob' })
+    expect(w.shown[0].options.data).toMatchObject({ messageId: 'm2' })
+  })
+
+  it('still rings for a message newer than the one on screen', async () => {
+    const w = worker({ existing: [{ title: 'Bob', body: 'first', data: { messageId: 'm1', kind: 'message', at: '2026-01-01T00:00:01.000Z' } }] })
+    await w.push({ title: 'Bob', body: 'second', kind: 'message', tag: 'org1|dm:bob', orgId: 'org1', messageId: 'm2', at: '2026-01-01T00:00:02.000Z' })
+    expect(w.shown[0].options).toMatchObject({ body: 'second', renotify: true })
+    expect(w.shown[0].options.data).toMatchObject({ at: '2026-01-01T00:00:02.000Z' })
   })
 
   it('does not ring again for a card being updated, and always has a tag', async () => {
@@ -125,6 +162,30 @@ describe('a subscription the browser replaced', () => {
   it('asks every open window to hand the new one to the Worker', async () => {
     const w = worker({ windows: [{ id: 'a', url: 'https://app.example/' }] })
     await w.fire('pushsubscriptionchange', { oldSubscription: { options: { applicationServerKey: new ArrayBuffer(65) } }, newSubscription: null })
+    expect(w.subscribed).toHaveLength(1)
     expect(w.posted).toEqual([{ id: 'a', message: { type: 'push-resync' } }])
+  })
+
+  it('subscribes again with the kept key when the browser does not say which one it dropped (Firefox for Android)', async () => {
+    const w = worker({ cached: { 'honmaru-push': { '/push-key': 'BKEY' } } })
+    await w.fire('pushsubscriptionchange', { oldSubscription: null, newSubscription: null })
+    expect(w.subscribed).toEqual([{ userVisibleOnly: true, applicationServerKey: 'BKEY' }])
+  })
+
+  it('stays off when push was turned off here (no key kept), or already has a subscription', async () => {
+    const off = worker()
+    await off.fire('pushsubscriptionchange', { oldSubscription: null, newSubscription: null })
+    expect(off.subscribed).toEqual([])
+    const has = worker({ cached: { 'honmaru-push': { '/push-key': 'BKEY' } }, subscribed: true })
+    await has.fire('pushsubscriptionchange', { oldSubscription: null, newSubscription: null })
+    expect(has.subscribed).toEqual([])
+  })
+})
+
+describe('a new version of the worker', () => {
+  it('clears old shell caches but keeps the push key', async () => {
+    const w = worker({ cached: { 'honmaru-shell-v2': {}, 'honmaru-shell-v3': {}, 'honmaru-push': { '/push-key': 'BKEY' } } })
+    await w.fire('activate', {})
+    expect(w.deleted).toEqual(['honmaru-shell-v2'])
   })
 })

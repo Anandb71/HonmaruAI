@@ -13,6 +13,11 @@
 // bring the feed to the front on the card it names.
 
 const SHELL = 'honmaru-shell-v3'
+// The Worker's push key, kept by the page (utils/push.ts) for this worker to
+// subscribe again with when the browser drops a subscription and says
+// nothing about the old one (Firefox for Android does).
+const PUSH_KEY_CACHE = 'honmaru-push'
+const PUSH_KEY = '/push-key'
 const PRECACHE = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/badge-96.png']
 
 self.addEventListener('install', (event) => {
@@ -24,7 +29,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== SHELL).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== PUSH_KEY_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   )
 })
@@ -98,6 +103,9 @@ function notificationFor(data) {
         channel: data.channel || null,
         url: data.url || null,
         kind: data.kind || null,
+        // The server's time for the message (created_at), the same one the
+        // open tab puts on its own notification for it.
+        at: data.at || null,
       },
       icon: ICON,
       badge: BADGE,
@@ -116,10 +124,30 @@ function alreadyShown(existing, data) {
   })
 }
 
+/// A notification on screen for a later message than this push's (the tab
+/// announced a newer one while this push waited its minute).
+function newerShown(existing, data) {
+  const at = Date.parse(data.at || '')
+  if (!Number.isFinite(at)) return null
+  return existing.find((n) => {
+    const d = n.data || {}
+    return d.kind === 'message' && Date.parse(d.at || '') > at
+  }) || null
+}
+
 async function showPush(data) {
   const { title, options } = notificationFor(data)
   if (options.renotify) {
     const existing = await self.registration.getNotifications({ tag: options.tag }).catch(() => [])
+    // Never roll the conversation back to an older message, and never ring
+    // for one already announced: show the newer one again, quietly.
+    const newer = newerShown(existing, data)
+    if (newer) {
+      return self.registration.showNotification(newer.title, {
+        body: newer.body, tag: options.tag, data: newer.data, timestamp: newer.timestamp,
+        icon: ICON, badge: BADGE, renotify: false,
+      })
+    }
     if (alreadyShown(existing, data)) options.renotify = false
   }
   return self.registration.showNotification(title, options)
@@ -187,8 +215,16 @@ self.addEventListener('notificationclick', (event) => {
 self.addEventListener('pushsubscriptionchange', (event) => {
   event.waitUntil((async () => {
     const old = event.oldSubscription
-    const key = old && old.options && old.options.applicationServerKey
-    if (!event.newSubscription && key) {
+    let key = old && old.options && old.options.applicationServerKey
+    // Firefox for Android (and Firefox before 137) says nothing about the
+    // old one: subscribe with the key the page kept. None kept means push
+    // was turned off here, and stays off.
+    if (!key) {
+      const kept = await caches.open(PUSH_KEY_CACHE).then((c) => c.match(PUSH_KEY)).catch(() => null)
+      key = kept ? await kept.text().catch(() => '') : ''
+    }
+    const current = await self.registration.pushManager.getSubscription().catch(() => null)
+    if (!event.newSubscription && !current && key) {
       await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }).catch(() => null)
     }
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
