@@ -7,7 +7,7 @@ productName: Honmaru AI
 copyright: Copyright © Honmaru AI
 directories:
   output: dist
-  buildResources: build
+  buildResources: resources
 files:
   - src/**
   - assets/**
