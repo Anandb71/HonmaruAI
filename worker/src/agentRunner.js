@@ -12,12 +12,14 @@ import { listMembers } from "./team.js";
 import { agentsHere, agentsCalled, listAgents } from "./customAgents.js";
 import { runAgents } from "./channelRoutes.js";
 import { useSecretKey } from "./secrets.js";
+import { useMirrorEnv } from "./store/mirror.js";
 
 const MAX_JOBS = 50;
 
 export class AgentRunner {
   constructor(state, env) {
     useSecretKey(env);
+    useMirrorEnv(env);
     this.state = state;
     this.env = env;
   }

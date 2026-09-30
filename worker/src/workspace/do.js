@@ -238,6 +238,50 @@ export class WorkspaceDO extends DurableObject {
     }));
   }
 
+  /// Rows as D1 now has them, from dual writing (store/mirror.js): new ones
+  /// get the next seq in their channel, known ones take D1's words and state.
+  /// `deletes` are rows D1 no longer has. Safe to repeat.
+  mirror({ upserts = [], deletes = [] }) {
+    return this.ctx.storage.transactionSync(() => this.measure((exec) => {
+      let written = 0;
+      for (const r of upserts) {
+        const known = exec("SELECT body, edited_at, deleted_at, parent_id, author, kind FROM messages WHERE id = ?", r.id).toArray()[0];
+        if (!known) {
+          const seq = this.nextSeq(exec, r.channel);
+          exec(
+            `INSERT INTO messages (id, channel_id, seq, author, kind, body, parent_id, created_at, edited_at, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            r.id, r.channel, seq, r.author_login ?? null, r.kind || "message", r.body ?? "", r.parent_id ?? null,
+            r.created_at, r.edited_at ?? null, r.deleted_at ?? null
+          );
+          written += 1;
+          continue;
+        }
+        const same = known.body === (r.body ?? "") && (known.edited_at ?? null) === (r.edited_at ?? null)
+          && (known.deleted_at ?? null) === (r.deleted_at ?? null) && (known.parent_id ?? null) === (r.parent_id ?? null)
+          && (known.author ?? null) === (r.author_login ?? null) && known.kind === (r.kind || "message");
+        if (same) continue;
+        exec(
+          "UPDATE messages SET body = ?, edited_at = ?, deleted_at = ?, parent_id = ?, author = ?, kind = ? WHERE id = ?",
+          r.body ?? "", r.edited_at ?? null, r.deleted_at ?? null, r.parent_id ?? null, r.author_login ?? null, r.kind || "message", r.id
+        );
+        written += 1;
+      }
+      for (const id of deletes) {
+        written += exec("DELETE FROM messages WHERE id = ?", id).rowsWritten ? 1 : 0;
+      }
+      return { written };
+    }));
+  }
+
+  /// The rows with ids in (after, until], for comparing a range with D1.
+  rows({ after = "", through, until }) {
+    return this.sql.exec(
+      "SELECT id, channel_id, body, created_at, edited_at, deleted_at FROM messages WHERE id > ? AND id <= ? AND created_at < ? ORDER BY id",
+      after, through, until
+    ).toArray();
+  }
+
   /// One page of the count and digest of messages said before `until`, by id
   /// after `after` — the same page the Worker reads from D1 (v2.js).
   async checksum({ until, after = "", limit = 1000 }) {

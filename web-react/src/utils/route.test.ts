@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseRoute, hashForJoin, hashForCard, hashForScreen, hashForView, hashForMessage } from './route'
+import { parseRoute, hashForJoin, hashForCard, hashForScreen, hashForView, hashForMessage, pathToHash } from './route'
 
 // The URL says where you are, and what a link you were sent opens.
 describe('parseRoute', () => {
@@ -59,4 +59,31 @@ it('a message link carries its workspace, and is read back with it', () => {
   expect(parseRoute('#/m/msg_1/personal%3Aabc')).toMatchObject({ messageId: 'msg_1', messageOrg: 'personal:abc' })
   expect(parseRoute('#/m/msg_1')).toMatchObject({ messageId: 'msg_1', messageOrg: null })
   expect(parseRoute('#/m/msg_1/<script>').messageOrg).toBeNull()
+})
+
+// A link from outside is a real path (packages/core/src/links.ts), the same
+// one the phone apps open; here it becomes its hash.
+describe('links from outside', () => {
+  it('turns a conversation path into the hash, with its workspace', () => {
+    const hash = pathToHash('/c/b%3Akitchen?org=team%3Aacme')
+    expect(hash).toBe('#/c/b%3Akitchen?org=team%3Aacme')
+    expect(parseRoute(hash!)).toMatchObject({ mode: 'classic', openView: 'b:kitchen', openOrg: 'team:acme' })
+    expect(parseRoute(pathToHash('/c/b%3Akitchen')!)).toMatchObject({ openView: 'b:kitchen', openOrg: null })
+  })
+
+  it('turns an invitation path into the join hash', () => {
+    const code = 'a3f9c0de'.repeat(4)
+    expect(parseRoute(pathToHash(`/join/${code}`)!).join).toBe(code)
+  })
+
+  it('leaves every other path alone', () => {
+    expect(pathToHash('/')).toBeNull()
+    expect(pathToHash('/index.html')).toBeNull()
+    expect(pathToHash('/c/javascript:alert(1)')).toBeNull()
+    expect(pathToHash('/privacy.html')).toBeNull()
+  })
+
+  it('drops a workspace that is not an id', () => {
+    expect(parseRoute('#/c/b%3Ax?org=%3Cx%3E').openOrg).toBeNull()
+  })
 })

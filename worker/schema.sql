@@ -277,16 +277,18 @@ CREATE TABLE IF NOT EXISTS ingested_items (
 );
 
 /* One row per device per user. Keyed by the token because that is what Apple
-   makes unique, and because the same person on two phones must get both. The
-   login is denormalized alongside the numeric id: the relay knows a recipient
-   by their login and would otherwise need a join on the hot path of every
-   card. */
+   (or Google) makes unique, and because the same person on two phones must get
+   both. The login is denormalized alongside the numeric id: the relay knows a
+   recipient by their login and would otherwise need a join on the hot path of
+   every card. `platform` says which push service the token belongs to: 'ios'
+   goes to APNs, 'android' to FCM. Every row from before Android is an iPhone. */
 CREATE TABLE IF NOT EXISTS device_tokens (
   device_token   TEXT PRIMARY KEY,
   user_github_id TEXT NOT NULL,
   login          TEXT NOT NULL,
   environment    TEXT NOT NULL DEFAULT 'production',
-  updated_at     TEXT NOT NULL
+  updated_at     TEXT NOT NULL,
+  platform       TEXT NOT NULL DEFAULT 'ios'
 );
 CREATE INDEX IF NOT EXISTS idx_device_tokens_login ON device_tokens (login);
 
@@ -1123,6 +1125,18 @@ CREATE TABLE IF NOT EXISTS sso_identities (
   PRIMARY KEY (issuer, subject)
 );
 CREATE INDEX IF NOT EXISTS idx_sso_identities_user ON sso_identities(user_github_id);
+
+/* Who a person is at Apple (Sign in with Apple, src/apple.js): Apple's stable
+   `sub` for our team, and their account here. The address is the one Apple
+   last vouched for — often a private relay one. */
+CREATE TABLE IF NOT EXISTS apple_identities (
+  subject         TEXT PRIMARY KEY,
+  user_github_id  TEXT NOT NULL,
+  email           TEXT,
+  created_at      TEXT NOT NULL,
+  last_login_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_apple_identities_user ON apple_identities(user_github_id);
 
 /* A sign-in on its way to the provider: state, nonce, PKCE. Ten minutes. */
 CREATE TABLE IF NOT EXISTS sso_states (

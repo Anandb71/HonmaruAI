@@ -32,3 +32,6 @@ node_modules
 
 # The workspace root (apps/*, packages/*)
 /node_modules/
+
+# Local agent worktrees
+/.claude/worktrees/

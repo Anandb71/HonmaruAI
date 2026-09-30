@@ -13,7 +13,7 @@ const TOKEN_TTL_MS = 45 * 60 * 1000;
 
 let cached = null; // { jwt, mintedAt, keyId }
 
-function base64url(bytes) {
+export function base64url(bytes) {
   let binary = "";
   const view = new Uint8Array(bytes);
   for (const byte of view) binary += String.fromCharCode(byte);
