@@ -992,6 +992,9 @@
 .status-actions { display: flex; align-items: center; gap: 12px; }
 /* ⌘/ — the shortcuts sheet. */
 .shortcuts-sheet { position: fixed; z-index: 41; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(92vw, 640px); max-height: 80vh; overflow-y: auto; background: var(--signal-white); border-radius: 18px; padding: 18px 22px 22px; box-shadow: 0 24px 64px rgba(0,0,0,.2); }
+/* It takes focus when it opens (for its Escape); the ring belongs on its
+   close button, not around the whole sheet. */
+.shortcuts-sheet:focus { outline: none; }
 .shortcuts-sheet .sheet-title { display: flex; justify-content: space-between; align-items: center; }
 .shortcuts-group h3 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ash); margin: 14px 0 6px; }
 .shortcuts-group dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 18px; }

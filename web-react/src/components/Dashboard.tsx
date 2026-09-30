@@ -494,18 +494,41 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.messageId, route.messageOrg, workspaces.length, orgId, navigate])
 
+  // ⌘/ — every key the app answers to, in one place.
+  const [shortcuts, setShortcuts] = useState(false)
+  // It takes focus when it opens, so its own Escape is heard, and hands it
+  // back when it closes — unless something else has taken it since.
+  const shortcutsSheet = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!shortcuts) return
+    const before = document.activeElement as HTMLElement | null
+    shortcutsSheet.current?.focus()
+    return () => {
+      const now = document.activeElement
+      if (!now || now === document.body || shortcutsSheet.current?.contains(now)) before?.focus?.()
+    }
+  }, [shortcuts])
+  useEffect(() => {
+    const on = () => setShortcuts(true)
+    window.addEventListener('honmaru:shortcuts', on)
+    return () => window.removeEventListener('honmaru:shortcuts', on)
+  }, [])
+
   // Escape closes whatever is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPalette((p) => !p); return }
       if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
       if (palette) return
+      // The shortcuts sheet is on top: Escape closes it, not what is under
+      // it, even with focus gone elsewhere; N waits too.
+      if (shortcuts) { if (e.key === 'Escape') setShortcuts(false); return }
       if (e.key === 'Escape') { setPanel(null); if (screen) closeScreen() }
       else if (e.key === 'n' && !panel && !screen && !(e.target as HTMLElement)?.matches('input, textarea')) { e.preventDefault(); setPanel('compose') }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [panel, screen, setScreen, closeScreen, palette])
+  }, [panel, screen, setScreen, closeScreen, palette, shortcuts])
   const pickFromPalette = useCallback((action: PaletteAction) => {
     setPalette(false)
     setPanel(null)
@@ -588,13 +611,6 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       }
     }
   }, [addDebugLog, userId, orgId])
-  // ⌘/ — every key the app answers to, in one place.
-  const [shortcuts, setShortcuts] = useState(false)
-  useEffect(() => {
-    const on = () => setShortcuts(true)
-    window.addEventListener('honmaru:shortcuts', on)
-    return () => window.removeEventListener('honmaru:shortcuts', on)
-  }, [])
   const [suggestRule, setSuggestRule] = useState<{ cardId: string; sender: string; business: string | null } | null>(null)
   const acceptRule = useCallback(async () => {
     if (!suggestRule) return
@@ -956,7 +972,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       {shortcuts && (
         <>
           <div className="scrim" onClick={() => setShortcuts(false)} />
-          <div className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape') setShortcuts(false) }}>
+          <div ref={shortcutsSheet} tabIndex={-1} className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setShortcuts(false) } }}>
             <div className="sheet-title">{t('Keyboard shortcuts')}<button className="close" onClick={() => setShortcuts(false)} aria-label={t('Close')}>×</button></div>
             {/* Each key written once, as code names it, and printed the way
                 this keyboard does: ⌘⇧A on a Mac, Ctrl+Shift+A elsewhere. */}
