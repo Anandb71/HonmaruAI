@@ -558,8 +558,10 @@ export const TypingLine: React.FC<{ names: string[] }> = ({ names }) => {
     if (next !== told) { setTold(next); return }
     if (!line || line === told.text) return
     // Too soon after the last thing said: said once the gap is over, if
-    // it is still true then.
-    const id = setTimeout(() => setTold((prev) => announce(prev, line, Date.now())), told.at + ANNOUNCE_GAP_MS - Date.now())
+    // it is still true then. A little past it: a timer can wake a
+    // millisecond before Date.now() agrees the gap is over, and one that
+    // changes nothing is not run again.
+    const id = setTimeout(() => setTold((prev) => announce(prev, line, Date.now())), told.at + ANNOUNCE_GAP_MS - Date.now() + 50)
     return () => clearTimeout(id)
   }, [line, told])
   return (
