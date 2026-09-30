@@ -1438,11 +1438,15 @@
    on top. (Editing never meets it: you only edit your own, and your own
    never calls you.) */
 .classic.slk.slk .slk-msg.mentions-me { background-image: linear-gradient(90deg, var(--slk-me-bg), transparent 75%); }
-.classic.slk.slk .slk-msg.mentions-me:hover { background-image: linear-gradient(90deg, var(--slk-me-bg-hover), transparent 75%); }
+/* Its right-click menu open, it stays lit as it is on hover. */
+.classic.slk.slk .slk-msg.mentions-me:is(:hover, .menu-open) { background-image: linear-gradient(90deg, var(--slk-me-bg-hover), transparent 75%); }
 .classic.slk.slk .slk-msg.mentions-me::before {
   content: ''; position: absolute; top: 0; bottom: 0; left: 0;
   border-left: 2px solid var(--slk-me-bar); pointer-events: none;
 }
+/* The bar lies over the edge a message given the focus from the keyboard
+   is marked on: while it has the focus, the bar is that mark's colour. */
+.classic.slk.slk .slk-msg.mentions-me:focus-visible::before { border-left-color: var(--slk-accent); }
 /* What a screen reader hears in place of all that. It is text in the
    message, so selecting the message and copying it would bring "Mentions
    you" along with the words: it cannot be selected. */
