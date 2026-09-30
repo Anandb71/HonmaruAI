@@ -826,7 +826,7 @@ html:not(.js) .keep-sticky { position:relative; height:auto; padding:90px 0; }
 .explorer .vis-biz { background:color-mix(in srgb,#dadcc9 50%,var(--bg)); }.explorer .vis-lang { background:color-mix(in srgb,#c8d7d0 40%,var(--bg)); }.explorer .vis-gh { background:color-mix(in srgb,#e8dcca 40%,var(--bg)); }.explorer .vis-graph { background:color-mix(in srgb,#d8d1e8 40%,var(--bg)); }
 .gate { background:var(--surface); }.gate-emblem { border-radius:28px; height:100px; background:var(--card); box-shadow:0 12px 30px -22px #0005; }
 .finale { background:linear-gradient(180deg,var(--bg),var(--scene)); }
-.finale::before { content:''; position:absolute; inset:0; background:url('/art/inner-keep.webp') center 60%/cover; opacity:.09; mask-image:linear-gradient(transparent,#000); pointer-events:none; }.finale-inner { position:relative; }
+.finale::before { content:''; position:absolute; inset:0; background:url('/art/inner-keep-castle.webp') center 60%/cover; opacity:.09; mask-image:linear-gradient(transparent,#000); pointer-events:none; }.finale-inner { position:relative; }
 @media(min-width:1000px) and (max-height:760px) { .hero-text { top:108px; }.hero-text .display,:lang(ja) .hero-text .display { font-size:64px; }.hero-text .label { margin-bottom:14px; }.hero-text .lead { font-size:14px; margin-top:16px; }.hero-text .ctas { margin-top:18px; }.ambient-two { bottom:6%; width:225px; }.ambient-one { bottom:10%; } }
 @media(max-width:999px) {
  .hero-text { top:130px; left:50%; right:auto; width:calc(100% - 48px); translate:-50% 0; }
