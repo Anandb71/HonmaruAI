@@ -3,6 +3,7 @@ import {
   readAppearance, writeAppearance, normalizeTheme, normalizeDensity, applyTheme, themeColorFor,
   colorSchemeFor, applyColorScheme, setAppearance, getAppearance, THEME_KEY, DENSITY_KEY, THEME_COLOR,
 } from './appearance'
+import indexHtml from '../../index.html?raw'
 
 function fakeStorage(): Storage {
   const m = new Map<string, string>()
@@ -102,5 +103,64 @@ describe('appearance', () => {
     setAppearance({ theme: 'system', density: 'cozy' })
     expect(getAppearance()).toEqual({ theme: 'system', density: 'cozy' })
     expect(localStorage.length).toBe(0)
+  })
+})
+
+// index.html paints the theme before this file has loaded, from its own copy
+// of the key and the two colours. Nothing ties the copies but these tests.
+describe('index.html first paint', () => {
+  const script = /<script>([\s\S]*?)<\/script>/.exec(indexHtml)?.[1] ?? ''
+
+  it('reads the same key and paints the same colours as appearance.ts', () => {
+    expect(script).toContain(`localStorage.getItem('${THEME_KEY}')`)
+    expect(script).toContain(`'${THEME_COLOR.light}'`)
+    expect(script).toContain(`'${THEME_COLOR.dark}'`)
+    expect(indexHtml).toContain(`<meta name="theme-color" content="${THEME_COLOR.light}" media="(prefers-color-scheme: light)" />`)
+    expect(indexHtml).toContain(`<meta name="theme-color" content="${THEME_COLOR.dark}" media="(prefers-color-scheme: dark)" />`)
+    expect(indexHtml).toContain(`<meta name="color-scheme" content="${colorSchemeFor('system')}" />`)
+  })
+
+  // The script run against a page made of index.html's own tags draws what
+  // paint() would draw for the same kept value.
+  function firstPaint(kept: string | null) {
+    const tag = (content: string, media: string | null) => {
+      const attrs: Record<string, string> = { content }
+      if (media !== null) attrs.media = media
+      return {
+        getAttribute: (k: string) => attrs[k] ?? null,
+        setAttribute: (k: string, v: string) => { attrs[k] = v },
+      }
+    }
+    const scheme = tag(/<meta name="color-scheme" content="([^"]+)"/.exec(indexHtml)![1], null)
+    const bars = [...indexHtml.matchAll(/<meta name="theme-color" content="([^"]+)" media="([^"]+)"/g)]
+      .map(([, content, media]) => tag(content, media))
+    const doc = {
+      documentElement: { dataset: {} as DOMStringMap },
+      querySelector: (sel: string) => (sel === 'meta[name="color-scheme"]' ? scheme : null),
+      querySelectorAll: (sel: string) => (sel === 'meta[name="theme-color"]' ? bars : []),
+    }
+    const storage = fakeStorage()
+    if (kept !== null) storage.setItem(THEME_KEY, kept)
+    new Function('localStorage', 'document', script)(storage, doc)
+    return {
+      theme: doc.documentElement.dataset.theme,
+      scheme: scheme.getAttribute('content'),
+      bars: bars.map((b) => [b.getAttribute('media'), b.getAttribute('content')]),
+    }
+  }
+
+  it.each([['dark'], ['light'], [null], ['Dark']])('draws what appearance.ts draws with %s kept', (kept) => {
+    const theme = normalizeTheme(kept)
+    const root = { dataset: {} as DOMStringMap }
+    applyTheme(root, theme)
+    const drawn = firstPaint(kept)
+    expect(drawn.theme).toBe(root.dataset.theme)
+    expect(drawn.scheme).toBe(colorSchemeFor(theme))
+    expect(drawn.bars).toHaveLength(2)
+    for (const [media, content] of drawn.bars) expect(content).toBe(themeColorFor(theme, media))
+  })
+
+  it('leaves the system to decide when storage refuses', () => {
+    expect(() => new Function('localStorage', 'document', script)(refusing, {})).not.toThrow()
   })
 })
