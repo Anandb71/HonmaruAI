@@ -343,6 +343,9 @@ function App() {
   // Signed out by a workspace's login rules: said on the way out.
   const [signedOutWhy, setSignedOutWhy] = useState<string | null>(null)
   const handleLogout = () => {
+    // Who this browser belongs to now. A tab left open from before someone
+    // else signed in (in another tab) must not wipe that person's things.
+    const stillOurs = localStorage.getItem('userId') === userId
     // This browser stops receiving this account's decisions before the
     // session is dropped — the Worker needs the token to forget the subscription.
     // Then the session itself ends on the server, so the token left in this
@@ -359,7 +362,7 @@ function App() {
     localStorage.removeItem('userId')
     // The workspace's cards, drafts, notes and unsent messages (outbox:*)
     // stay readable on this machine otherwise.
-    clearAccountData()
+    if (stillOurs) clearAccountData()
   }
 
   // A workspace's login rules ended this sign-in (utils/authGuard): out,
@@ -466,7 +469,10 @@ function App() {
           cache all restart, so nothing of one workspace is ever held — or
           written to the cache — under the name of another. */}
       <Dashboard
-        key={orgId}
+        // A new person in the same workspace (an SSO sign-in that came back
+        // as someone else) starts a new Dashboard: nothing of the last one's —
+        // its unsent messages above all — may carry over.
+        key={`${orgId}:${userId}`}
         userId={userId}
         orgId={orgId}
         relayUrl={wsBase(host)}
