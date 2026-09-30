@@ -1352,6 +1352,9 @@ export const ClassicList: React.FC<Props> = ({
   /// tab's, or one brought back that this tab has not touched — left as it
   /// is kept. `tempId`: one this tab does something with now, so its own.
   const keepOutbox = (tempId?: string) => {
+    // Signed out (or someone else signed in) while a send was still going:
+    // a failure that lands now must not write the words back to disk.
+    try { if (localStorage.getItem('userId') !== userId) return } catch { return }
     if (tempId) heldHere.current.add(tempId)
     const now: Unsent[] = []
     for (const o of outbox.current.values())
