@@ -89,6 +89,13 @@ interface Props {
   onDeleteChannel: (slug: string) => Promise<string | null>
   /// Another screen: the team to invite, tools to connect, you.
   onOpenScreen?: (screen: 'team' | 'tools' | 'profile' | 'agents') => void
+  /// Your status, from the You tab along a phone's bottom — the only
+  /// avatar a phone shows in the list, where the shell's top-bar avatar and
+  /// its tab bar are hidden. Given the tab, for the popover to sit above
+  /// and hand focus back to; the popover leads on to the You screen.
+  onStatus?: (tab: HTMLButtonElement) => void
+  /// That popover is open now, for the tab to say so.
+  statusOpen?: boolean
 }
 
 /// One conversation in the sidebar: a channel (a business), a person, or an app.
@@ -236,7 +243,7 @@ function when(iso?: string): string {
 export const ClassicList: React.FC<Props> = ({
   userId, orgName, pending, sent, decided, businesses, presence,
   onOpen, onNudge, onDecide, api, onSearch, onCompose, onTellAI, onDeleteCard, onViewChange, onOpenRecord, onImmersive, renderCard, onWorkspace, workspaceMenu,
-  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen,
+  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, onStatus, statusOpen,
 }) => {
   const t = useT()
   const locale = getLocale()
@@ -3721,7 +3728,13 @@ export const ClassicList: React.FC<Props> = ({
           <button type="button" className={tabOn('later') ? 'on' : ''} aria-current={tabOn('later') ? 'page' : undefined} onClick={openLater} data-phone-tab="later">
             <Icon name="bookmark" size={22} /><span>{t('Later')}</span>
           </button>
-          <button type="button" onClick={() => onOpenScreen?.('profile')} data-phone-tab="you">
+          <button
+            type="button"
+            onClick={(e) => (onStatus ? onStatus(e.currentTarget) : onOpenScreen?.('profile'))}
+            aria-haspopup={onStatus ? 'dialog' : undefined}
+            aria-expanded={onStatus ? Boolean(statusOpen) : undefined}
+            data-phone-tab="you"
+          >
             <Avatar name={myName || '?'} url={myAvatar} size={24} round /><span>{t('You')}</span>
           </button>
         </nav>

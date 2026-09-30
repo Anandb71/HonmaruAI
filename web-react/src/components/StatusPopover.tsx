@@ -17,9 +17,10 @@ interface Props {
   sessionToken: string
   /// Your name and photo, for the top of it.
   me: { name: string; url: string | null }
-  /// What opened it: the avatar in the top bar (a phone) or the one at the
-  /// foot of the rail (a laptop). It opens beside whichever it was.
-  from: 'top' | 'rail'
+  /// What opened it: the avatar in the top bar (a phone), the one at the
+  /// foot of the rail (a laptop), or the You tab along the bottom of the
+  /// list on a phone. It opens beside whichever it was.
+  from: 'top' | 'rail' | 'tabs'
   /// The button that opened it: a click on it is its toggle, not a click
   /// outside, and focus goes back to it when it closes.
   anchor: React.RefObject<HTMLElement>

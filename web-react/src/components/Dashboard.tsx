@@ -391,10 +391,12 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   // Your status, open from your avatar: the top bar's on a phone, the one
   // at the foot of the rail on a laptop — where the top bar's is not drawn,
   // and the rail's opens this instead of the You screen, which the popover
-  // still leads to.
-  const [statusFrom, setStatusFrom] = useState<null | 'top' | 'rail'>(null)
+  // still leads to. On a phone in the list neither is drawn: the list's own
+  // You tab, along the bottom, opens it there.
+  const [statusFrom, setStatusFrom] = useState<null | 'top' | 'rail' | 'tabs'>(null)
   const avatarButton = useRef<HTMLButtonElement>(null)
   const railAvatar = useRef<HTMLButtonElement>(null)
+  const listYou = useRef<HTMLElement | null>(null)
   const railed = useMinWidth(720)
   useEffect(() => { setStatusFrom(null) }, [orgId])
   // Notifications paused: said at the top, with a way out.
@@ -851,6 +853,8 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           )}
           onWorkspace={() => setScreen('team')}
           onOpenScreen={(sc) => setScreen(sc)}
+          onStatus={(tab) => { listYou.current = tab; setStatusFrom((f) => (f === 'tabs' ? null : 'tabs')) }}
+          statusOpen={statusFrom === 'tabs'}
           workspaceMenu={workspaceSwitcher('header')}
           onCreateChannel={(name, opts) => channelCall('POST', { name, ...(opts?.private ? { private: true } : {}) })}
           onRenameChannel={(slug, name) => channelCall('PUT', { slug, name })}
@@ -971,7 +975,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           sessionToken={sessionToken}
           me={{ name: myFace.name || displayName(userId), url: myFace.url }}
           from={statusFrom}
-          anchor={statusFrom === 'rail' ? railAvatar : avatarButton}
+          anchor={statusFrom === 'rail' ? railAvatar : statusFrom === 'tabs' ? listYou : avatarButton}
           onClose={() => setStatusFrom(null)}
           onProfile={() => { setStatusFrom(null); setScreen('profile') }}
         />

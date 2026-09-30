@@ -2849,8 +2849,14 @@ await step('a screen closed with its own button stays closed when Back is presse
   await page.goto(`${WEB}#/feed`, { waitUntil: 'load' })
   await page.goto(`${WEB}#/list`, { waitUntil: 'load' })
   await page.waitForSelector('.cl-tabs', { timeout: 20000 })
+  // The list's You tab opens your status, above the tabs; You is behind
+  // its "View profile".
   await page.click('[data-phone-tab="you"]')
+  await page.waitForSelector('[data-status-popover].from-tabs [data-view-profile]', { timeout: 10000 })
+    .catch(() => { throw new Error('the list’s You tab did not open your status') })
+  await page.click('[data-status-popover] [data-view-profile]')
   await page.waitForSelector('.profile-stats', { timeout: 10000 })
+  if (await page.$('[data-status-popover]')) throw new Error('the status popover stayed open over You')
   await page.click('.screen .back')
   await page.waitForSelector('.cl-tabs', { timeout: 10000 })
   if ((await page.evaluate(() => location.hash)) !== '#/list') throw new Error('closing You did not return to the list')
