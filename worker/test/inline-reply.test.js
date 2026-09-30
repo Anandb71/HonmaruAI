@@ -168,3 +168,28 @@ test("a scheduled message cannot be a reply yet", async () => {
   expect(res.status).toBe(400);
   expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM scheduled_messages").first()).n).toBe(0);
 });
+
+test("whoever is answered hears of it: a push, and a line in Activity", async () => {
+  const m = await say(mika, "Can someone cover Saturday?");
+  const r = await say(toru, "I can", { replyTo: m.id });
+  const queued = (await env.DB.prepare("SELECT login, reason FROM push_queue WHERE message_id = ?1").bind(r.id).all()).results;
+  expect(queued).toEqual([{ login: "u:mika@example.com", reason: "reply" }]);
+  const activity = await (await get(`/channels/activity?${q({ orgId: ORG })}`, mika)).json();
+  expect(activity.items.find((i) => i.message.id === r.id)).toMatchObject({ type: "reply", unread: true });
+  // Nobody else: Kenji was not answered.
+  const theirs = await (await get(`/channels/activity?${q({ orgId: ORG })}`, kenji)).json();
+  expect(theirs.items.some((i) => i.message.id === r.id)).toBe(false);
+  // Answering yourself is nobody's push.
+  const own = await say(mika, "Or I can, actually", { replyTo: m.id });
+  expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM push_queue WHERE message_id = ?1").bind(own.id).first()).n).toBe(0);
+});
+
+test("a muted conversation's replies stay quiet; one set to mentions still hears a reply", async () => {
+  const m = await say(mika, "Inventory tonight?");
+  await env.DB.prepare("INSERT INTO channel_prefs (org_id, login, channel, level) VALUES (?1, 'u:mika@example.com', 'b:cafe', 'mute')").bind(ORG).run();
+  const muted = await say(toru, "sure", { replyTo: m.id });
+  expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM push_queue WHERE message_id = ?1").bind(muted.id).first()).n).toBe(0);
+  await env.DB.prepare("UPDATE channel_prefs SET level = 'mentions' WHERE org_id = ?1 AND login = 'u:mika@example.com'").bind(ORG).run();
+  const heard = await say(kenji, "me too", { replyTo: m.id });
+  expect((await env.DB.prepare("SELECT reason FROM push_queue WHERE message_id = ?1").bind(heard.id).first())?.reason).toBe("reply");
+});
