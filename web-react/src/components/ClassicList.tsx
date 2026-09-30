@@ -10,6 +10,7 @@ import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage } from '../types/card'
 import { getLocale } from '../utils/locale'
+import { fullTime } from '../utils/ago'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
@@ -2349,7 +2350,7 @@ export const ClassicList: React.FC<Props> = ({
       {...(!wide ? longPress(opts.onHold) : {})}
       className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
       <div className="slk-gutter" aria-hidden="true">
-        {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span> : avatarFor(opts.app, opts.face || { name: opts.name })}
+        {opts.joined ? <span className="slk-hover-time" title={fullTime(opts.at, locale)}>{clock(opts.at)}</span> : avatarFor(opts.app, opts.face || { name: opts.name })}
       </div>
       <div className="slk-body">
         {opts.pinned && <div className="slk-pin-mark"><Icon name="pin" size={12} /> {t('Pinned')}</div>}
@@ -2360,7 +2361,7 @@ export const ClassicList: React.FC<Props> = ({
               : <span className="slk-author">{opts.name}</span>}
             {opts.badge && <span className={`slk-app-badge${opts.face?.emoji ? ' agent' : ''}`}>{opts.badge}</span>}
             {opts.to && <span className="slk-to">→ {opts.to}</span>}
-            <time className="slk-time" dateTime={opts.at}>{clock(opts.at)}</time>
+            <time className="slk-time" dateTime={opts.at} title={fullTime(opts.at, locale)}>{clock(opts.at)}</time>
           </div>
         )}
         {body}
