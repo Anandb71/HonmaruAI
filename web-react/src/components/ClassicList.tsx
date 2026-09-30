@@ -2189,14 +2189,16 @@ export const ClassicList: React.FC<Props> = ({
     }
     setJamBusy(false)
   }
+  // Escape closes the pane — unless the shell has something over the list:
+  // that Escape is for the screen or panel on top, not the pane under it.
   useEffect(() => {
-    if (!detailId && !thread) return
+    if (!active || (!detailId && !thread)) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !(e.target as HTMLElement)?.closest('textarea, input')) { setDetailId(null); setThread(null) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [detailId, thread])
+  }, [active, detailId, thread])
   // A phone gives a conversation, or a decision, the whole screen.
   // A conversation, a card or a thread takes the whole phone; Activity and
   // Later are tabs, with the tab bar under them.
