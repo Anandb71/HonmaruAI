@@ -1318,8 +1318,8 @@ export const ClassicList: React.FC<Props> = ({
   /// A message on its way, or one that did not go, by its temporary id:
   /// what Retry sends again, and (`landing`) the server's copy an edit begun
   /// on it waits for. Its words are in the log with it. `abort` gives up on
-  /// it while it goes — Delete, once it has been going too long.
-  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; landing?: Promise<ChannelMessage | null>; abort?: () => void }
+  /// it while it goes — Delete, offered once it is still going at `lateAt`.
+  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; landing?: Promise<ChannelMessage | null>; abort?: () => void; lateAt?: number }
   const outbox = useRef(new Map<string, Outgoing>())
   /// The same words to the same place, already going: a second Enter or a
   /// double tap before the box has cleared does not send them twice.
@@ -1379,7 +1379,7 @@ export const ClassicList: React.FC<Props> = ({
     }
     up.clear()
     if (parentId) threadComposer.current?.focus(); else composer.current?.focus()
-    const out: Outgoing = { tempId: temp.id, channel, body, decide, parentId, files }
+    const out: Outgoing = { tempId: temp.id, channel, body, decide, parentId, files, lateAt: Date.now() + SEND_TIMEOUT }
     outbox.current.set(temp.id, out)
     out.landing = deliver(out)
     await out.landing
@@ -1486,6 +1486,7 @@ export const ClassicList: React.FC<Props> = ({
   const retry = (m: ChannelMessage) => {
     const out = outbox.current.get(m.id) || { tempId: m.id, channel: m.channel, body: m.body, decide: false, parentId: m.parentId || undefined, files: m.files || [] }
     if (going.current.has(goingKey(out))) return
+    out.lateAt = Date.now() + SEND_TIMEOUT
     outbox.current.set(m.id, out)
     if (out.parentId) setThread((prev) => (prev && prev.parent.id === out.parentId ? { ...prev, replies: markPending(prev.replies, m.id) } : prev))
     else setMessages((prev) => (prev[out.channel] ? { ...prev, [out.channel]: markPending(prev[out.channel], m.id) } : prev))
@@ -2572,7 +2573,7 @@ export const ClassicList: React.FC<Props> = ({
   /// why it did not go (from the keyboard, back to the box it came from).
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
-      <UnsentNote message={m} onRetry={() => retry(m)} onDelete={() => discard(m)} onEdit={() => writeAgain(m)}
+      <UnsentNote message={m} onRetry={() => retry(m)} onDelete={() => discard(m)} onEdit={() => writeAgain(m)} lateAt={outbox.current.get(m.id)?.lateAt}
         refocus={() => (m.parentId ? threadComposer : composer).current?.focus()} />
       {!m.deleted && m.kind === 'message' && !m.previewsHidden && !isTemp(m) && (
         <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken}
