@@ -110,6 +110,11 @@ export function isMenuKey(e: { key: string; shiftKey: boolean; ctrlKey: boolean;
 export function messageMenuTriggers(open: ((at: { x: number; y: number }, anchor: string) => void) | undefined): HTMLAttributes<HTMLElement> {
   if (!open) return {}
   const ours = (el: HTMLElement, target: EventTarget | null, shiftKey: boolean) => {
+    // React hands a message the events of what it draws elsewhere through a
+    // portal as well (a picture opened over the whole page), which are not
+    // the message's: the browser's menu stays theirs, and a key there is
+    // theirs to use.
+    if (!el.contains(target as Node | null)) return false
     // Only what is inside this message counts, not whatever holds it.
     const spot = (target as Element | null)?.closest?.(NATIVE_MENU_SPOT)
     const sel = window.getSelection()

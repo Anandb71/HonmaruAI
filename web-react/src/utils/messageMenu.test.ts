@@ -143,7 +143,7 @@ function page({ selected = '', inMessage = true } = {}) {
   const words = { closest: () => null }
   const article = {
     id: 'msg-m1',
-    contains: (n: unknown) => n === link || n === words,
+    contains: (n: unknown): boolean => n === article || n === link || n === words,
     querySelector: (s: string) => (s === '.slk-body' ? { getBoundingClientRect: () => ({ left: 120, top: 300, bottom: 360 }) } : null),
     getBoundingClientRect: () => ({ left: 60, top: 300, bottom: 360 }),
   }
@@ -183,6 +183,20 @@ describe('a laptop’s ways into a message’s menu', () => {
     messageMenuTriggers(open).onContextMenu!(s.e)
     expect(open).not.toHaveBeenCalled()
     expect([a.prevented(), shifted.prevented(), s.prevented()]).toEqual([false, false, false])
+  })
+
+  it('leaves alone what the message draws outside itself, a picture opened over the page', () => {
+    // A portal's events reach the message through React, but its element
+    // does not hold them.
+    const { article } = page()
+    const viewer = { closest: () => null }
+    const open = vi.fn()
+    const click = event(article, viewer)
+    messageMenuTriggers(open).onContextMenu!(click.e)
+    const key = event(article, viewer, { key: 'ContextMenu' })
+    messageMenuTriggers(open).onKeyDown!(key.e)
+    expect(open).not.toHaveBeenCalled()
+    expect([click.prevented(), key.prevented()]).toEqual([false, false])
   })
 
   it('still opens when what is selected is somewhere else', () => {
