@@ -3444,7 +3444,7 @@ await step('an owner makes a workspace key; the admin API reads the team with it
   }
 })
 
-await step('an admin finds Claude under AI teammates in the studio, with nothing set up until a key is pasted', async () => {
+await step('an admin finds Claude, Devin and Cursor under AI teammates in the studio, with nothing set up until a key is pasted', async () => {
   const ctx = await browser.newContext({ storageState: await phone.storageState(), viewport: { width: 1280, height: 820 } })
   const w = await ctx.newPage()
   try {
@@ -3461,6 +3461,14 @@ await step('an admin finds Claude under AI teammates in the studio, with nothing
     await w.waitForSelector('[data-teammate-channel]', { timeout: 10000 })
       .catch(() => { throw new Error('choosing some channels did not list them') })
     await w.screenshot({ path: `${SHOTS}/72c-ai-teammates.png`, fullPage: true })
+    // Devin asks for its organization and not for a GitHub token.
+    await w.click('[data-teammate="devin"]')
+    await w.waitForSelector('[data-teammate-form="devin"] [data-teammate-account]', { timeout: 5000 })
+      .catch(() => { throw new Error('choosing Devin did not ask for its organization') })
+    if (await w.$('[data-teammate-form="devin"] [data-teammate-github]')) throw new Error('Devin asked for a GitHub token')
+    await w.click('[data-teammate="cursor"]')
+    await w.waitForSelector('[data-teammate-form="cursor"] input[data-teammate-model]', { timeout: 5000 })
+      .catch(() => { throw new Error('choosing Cursor did not offer a model ID') })
   } finally {
     await ctx.close()
   }
