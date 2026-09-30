@@ -84,6 +84,11 @@ describe('telling the relay', () => {
     expect(typedIn(null, here, '   ', 10)).toEqual({ next: null, send: [] })
   })
 
+  it('counts a thread reply that starts with a slash as typing: no command runs there', () => {
+    const thread = { channel: 'b:general', parentId: 'm-1' }
+    expect(typedIn(null, thread, '/shrug', 0).send).toEqual([{ type: 'typing', place: thread }])
+  })
+
   it('says nothing in a conversation with an agent, where nobody else is', () => {
     expect(typedIn(null, { channel: 'ag:hayao', parentId: null }, 'draw me a cat', 0)).toEqual({ next: null, send: [] })
   })

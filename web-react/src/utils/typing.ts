@@ -88,13 +88,16 @@ const placeOf = (o: Outgoing): Place => ({ channel: o.channel, parentId: o.paren
 /// What to tell the relay when the box in `place` now holds `text`:
 /// "typing" when it starts and again every few seconds while it goes on,
 /// and a stop when it empties or turns into a command, which is nobody
-/// else's to see. Typing somewhere else first stops it where it was. A
-/// conversation with an agent has nobody else in it to tell.
+/// else's to see. Commands are run from a conversation's box only: in a
+/// thread a '/' is sent as it is, so it is typing like anything else.
+/// Typing somewhere else first stops it where it was. A conversation with
+/// an agent has nobody else in it to tell.
 export function typedIn(prev: Outgoing | null, place: Place, text: string, now: number): { next: Outgoing | null; send: Signal[] } {
   const send: Signal[] = []
   const here = prev !== null && samePlace(prev, place)
   if (prev && !here) send.push({ type: 'typing_stop', place: placeOf(prev) })
-  const quiet = !text.trim() || text.trimStart().startsWith('/') || place.channel.startsWith('ag:')
+  const command = !place.parentId && text.trimStart().startsWith('/')
+  const quiet = !text.trim() || command || place.channel.startsWith('ag:')
   if (quiet) {
     if (here) send.push({ type: 'typing_stop', place: placeOf(prev!) })
     return { next: null, send }
