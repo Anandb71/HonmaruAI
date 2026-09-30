@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, echoOf, isDoubleSend, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, tempMessage, tempState } from '../utils/pendingSend'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, tempMessage, tempState } from '../utils/pendingSend'
 import { askingAboutData } from '../utils/authGuard'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
@@ -1427,13 +1427,17 @@ export const ClassicList: React.FC<Props> = ({
       return null
     }
     outbox.current.delete(tempId)
-    drawnAs.current.set(msg.id, tempId)
     // An edit begun on it while it went carries on, on the server's copy.
     setEditing((e) => (e && e.id === tempId ? { ...e, id: msg.id } : e))
     // Sent: a small confirmation, in a direct conversation — as Slack does.
     if (channel.startsWith('dm:') || channel.startsWith('ag:')) playSound('sent')
+    // Drawn on in ours' place — unless something else already took it.
     if (parentId) {
-      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: reconcile(prev.replies, tempId, msg) } : prev))
+      setThread((prev) => {
+        if (!prev || prev.parent.id !== parentId) return prev
+        drawUnder(drawnAs.current, msg.id, tempId, prev.replies)
+        return { ...prev, replies: reconcile(prev.replies, tempId, msg) }
+      })
       // The parent as the server now has it: its count is a fact, not
       // one more than whatever the live event already made it.
       const parent = data.parent as ChannelMessage | undefined
@@ -1443,7 +1447,11 @@ export const ClassicList: React.FC<Props> = ({
       if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
       return msg
     }
-    setMessages((prev) => ({ ...prev, [channel]: reconcile(prev[channel] || [], tempId, msg) }))
+    setMessages((prev) => {
+      const list = prev[channel] || []
+      drawUnder(drawnAs.current, msg.id, tempId, list)
+      return { ...prev, [channel]: reconcile(list, tempId, msg) }
+    })
     if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
     return msg
   }
