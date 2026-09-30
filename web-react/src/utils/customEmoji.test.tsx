@@ -18,8 +18,11 @@ describe('workspace emoji', () => {
     await loadCustomEmoji('https://api.example', 'tok', 'org:shogun')
     expect(html('done :shogun_party: now')).toContain('<img class="slk-custom-emoji" src="https://api.example/emoji/img/emoji-1" alt=":shogun_party:"')
     expect(html('done :other: now')).toBe('done :other: now')
-    // Alone on its line, larger.
+    // Alone on its line, larger — and beside Unicode emoji, both larger.
     expect(html(':shogun_party:')).toContain('slk-custom-emoji big')
+    expect(html(':shogun_party: 🎉')).toBe('<img class="slk-custom-emoji big" src="https://api.example/emoji/img/emoji-1" alt=":shogun_party:" title=":shogun_party:" draggable="false"/><span class="slk-emoji big"> 🎉</span>')
+    // Inside bold it is not a line of its own.
+    expect(html('*:shogun_party:* done')).not.toContain('big')
     // In code it is code.
     expect(html('`:shogun_party:`')).toBe('<code class="slk-code">:shogun_party:</code>')
     expect(renderToStaticMarkup(<EmojiGlyph emoji=":shogun_party:" />)).toContain('<img')

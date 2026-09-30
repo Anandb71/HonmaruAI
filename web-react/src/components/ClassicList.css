@@ -571,6 +571,8 @@
    emoji character is; larger when a line is nothing else. */
 .slk-custom-emoji { width: 1.35em; height: 1.35em; vertical-align: -0.3em; object-fit: contain; display: inline-block; margin: 0 1px; }
 .slk-custom-emoji.big { width: 32px; height: 32px; vertical-align: middle; }
+/* The characters on such a line, the same size as the pictures. */
+.slk-emoji.big { font-size: 32px; line-height: 1.25; vertical-align: middle; }
 .slk-reaction-emoji .slk-custom-emoji { width: 16px; height: 16px; vertical-align: -3px; margin: 0; }
 .slk-picker-emoji.custom { display: flex; align-items: center; justify-content: center; }
 .slk-picker-emoji.custom img { width: 24px; height: 24px; object-fit: contain; }

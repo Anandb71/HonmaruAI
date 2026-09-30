@@ -22,6 +22,15 @@ describe('renderRich', () => {
     expect(html('> one\n> two\nafter')).toBe('<blockquote class="slk-quote">one<br/>two</blockquote>after')
   })
 
+  it('draws a line of nothing but emoji large, and emoji among words as they are', () => {
+    expect(html('🎉')).toBe('<span class="slk-emoji big">🎉</span>')
+    expect(html('👍 🙏\nthanks 🙏')).toBe('<span class="slk-emoji big">👍 🙏</span><br/>thanks 🙏')
+    expect(html('- 🚀')).toBe('<ul class="slk-ul"><li><span class="slk-emoji big">🚀</span></li></ul>')
+    expect(html('*🎉* shipped')).toBe('<b>🎉</b> shipped')
+    expect(html('*🎉*')).toBe('<b>🎉</b>')
+    expect(html('`🎉`')).toBe('<code class="slk-code">🎉</code>')
+  })
+
   it('draws a numbered list, keeping its numbers, apart from bullets', () => {
     expect(html('1. a\n2. b\n- c')).toBe('<ol class="slk-ol"><li value="1">a</li><li value="2">b</li></ol><ul class="slk-ul"><li>c</li></ul>')
   })

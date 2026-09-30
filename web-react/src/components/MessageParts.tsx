@@ -5,7 +5,7 @@ import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
-import { gridStep, pickerSections, rememberEmoji, useEmojiData, useQuickReactions, useRecentEmoji } from '../utils/emojiSearch'
+import { gridStep, isEmojiOnly, pickerSections, rememberEmoji, useEmojiData, useQuickReactions, useRecentEmoji } from '../utils/emojiSearch'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
@@ -515,10 +515,13 @@ export function renderRich(text: string, mentionClass: (name: string) => string)
 
 const JAM_AUDIO = /^https?:\/\/[^\s]+\/channels\/jam\/audio\/[0-9a-f-]{36}$/
 
-function inline(line: string, mentionClass: (name: string) => string): React.ReactNode[] {
+/// `nested`: the words inside a *bold* or an _italic_, which are never a
+/// line of their own however few emoji they are.
+function inline(line: string, mentionClass: (name: string) => string, nested = false): React.ReactNode[] {
   const tokens = line.split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;]+|\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g)
-  // A line that is nothing but this workspace's emoji draws them large.
-  const onlyEmoji = tokens.every((p) => !p || !p.trim() || (CUSTOM_EMOJI.test(p) && Boolean(customEmojiUrl(p))))
+  // A line that is nothing but emoji — characters, or this workspace's own
+  // — draws them large.
+  const onlyEmoji = !nested && isEmojiOnly(line, (token) => Boolean(customEmojiUrl(token)))
   return tokens.map((part, i) => {
     if (!part) return null
     if (/^`[^`]+`$/.test(part)) return <code key={i} className="slk-code">{part.slice(1, -1)}</code>
@@ -531,10 +534,11 @@ function inline(line: string, mentionClass: (name: string) => string): React.Rea
     if (JAM_AUDIO.test(part)) return <audio key={i} className="slk-jam-audio" controls preload="none" src={part} />
     if (/^https?:\/\//.test(part)) return <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a>
     if (/^[@＠]/.test(part)) return <span key={i} className={mentionClass(part)}>{part}</span>
-    if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass)}</b>
-    if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{inline(part.slice(1, -1), mentionClass)}</b>
-    if (/^_[^_]+_$/.test(part)) return <i key={i}>{inline(part.slice(1, -1), mentionClass)}</i>
-    if (/^~[^~]+~$/.test(part)) return <s key={i}>{inline(part.slice(1, -1), mentionClass)}</s>
+    if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass, true)}</b>
+    if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{inline(part.slice(1, -1), mentionClass, true)}</b>
+    if (/^_[^_]+_$/.test(part)) return <i key={i}>{inline(part.slice(1, -1), mentionClass, true)}</i>
+    if (/^~[^~]+~$/.test(part)) return <s key={i}>{inline(part.slice(1, -1), mentionClass, true)}</s>
+    if (onlyEmoji && part.trim()) return <span key={i} className="slk-emoji big">{part}</span>
     return <React.Fragment key={i}>{part}</React.Fragment>
   })
 }
