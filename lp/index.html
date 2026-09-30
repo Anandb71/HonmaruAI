@@ -39,7 +39,7 @@
     </a>
     <nav class="nav-links" id="nav-links" data-i18n-aria="a11y.nav" aria-label="Primary">
       <a href="#keep" data-i18n="nav.why">Why Honmaru</a>
-      <a href="#how" data-i18n="nav.how">How it works</a>
+      <a href="#try" data-i18n="nav.how">How it works</a>
       <a href="#features" data-i18n="nav.features">Features</a>
       <a href="#gate" data-i18n="nav.privacy">Security</a>
       <a class="nav-cta-m" data-i18n-href="href.web" href="https://honmaru-web.pages.dev/?lang=en"><span data-i18n="nav.cta">Try free</span><span aria-hidden="true">→</span></a>
@@ -74,9 +74,9 @@
   <!-- ============ 01 STAGE: hero, then the pinned phone story ============ -->
   <section class="stage" id="top"><span id="story-start" class="story-anchor"></span>
     <div class="stage-sticky">
-      <div class="stage-scenery" aria-hidden="true"><div class="portal"><i></i><i></i><i></i><i></i></div><span class="hero-wordmark">Honmaru</span></div>
+      <div class="stage-scenery" aria-hidden="true"><div class="portal"><img src="/art/inner-keep.webp" srcset="/art/inner-keep-mobile.webp 840w, /art/inner-keep.webp 1672w" sizes="(max-width: 700px) 840px, 100vw" width="1672" height="941" fetchpriority="high" alt=""></div><div class="scene-wash"></div><span class="hero-wordmark">HONMARU — THE INNER KEEP</span></div>
       <div class="ambient-card ambient-one" aria-hidden="true"><span class="ambient-dot"></span><span data-i18n="ph.triage"></span></div>
-      <div class="ambient-card ambient-two" aria-hidden="true"><span class="ambient-check">✓</span><span data-i18n="gh.l.approved"></span><span class="ambient-line"></span></div>
+      <div class="ambient-card ambient-two" aria-hidden="true"><span class="preview-kicker" data-i18n="motion.sample">PRODUCT PREVIEW</span><b data-i18n="ph.c1.t"></b><span class="preview-bottom"><span class="ambient-check">✓</span><span data-i18n="ph.rec"></span><strong data-i18n="ph.approve"></strong><span class="preview-arrow">↗</span></span></div>
       <canvas class="rings" id="rings" aria-hidden="true"></canvas>
 
       <div class="hero-text" id="hero-text">
@@ -196,6 +196,8 @@
     </div>
   </section>
 
+  <div class="outcome-band"><div class="wrap"><p data-i18n="motion.manifesto">Less to manage. More to move forward.</p><div class="outcome-stat"><b>1</b><span data-i18n="fact.1"></span></div><div class="outcome-stat"><b>0</b><span data-i18n="fact.2"></span></div><div class="outcome-stat"><b>5</b><span data-i18n="fact.3"></span></div></div></div>
+
   <!-- ============ 02 THE KEEP: why the name ============ -->
   <section class="keep" id="keep">
     <div class="keep-sticky">
@@ -217,11 +219,23 @@
     </div>
   </section>
 
+  <section class="section decision-lab" id="try">
+    <div class="wrap lab-grid">
+      <header class="head reveal"><p class="label"><span class="idx">03</span><span data-i18n="motion.preview"></span></p><h2 class="title" data-i18n-html="try.title">A little swipe.<br>A big step forward.</h2><p class="lead" data-i18n="try.sub">Try a decision. Your AI has already gathered the context.</p><p class="lab-note" data-i18n="try.note">A sample card. No account or real action required.</p></header>
+      <div class="lab-surface reveal">
+        <div class="lab-status"><span class="ambient-dot"></span><span data-i18n="try.ready"></span><span class="lab-count">01 / 01</span></div>
+        <div class="lab-deck"><article class="lab-card" id="lab-card"><p class="pk"><i class="pink"></i><span data-i18n="ph.c1.k"></span></p><h3 data-i18n="ph.c1.t"></h3><p data-i18n="ph.c1.s"></p><div class="lab-person"><span class="av">K</span><span>Ken <small data-i18n="ph.c1.meta"></small></span></div><div class="lab-recommend"><span class="spark"></span><span data-i18n="ph.c1.why"></span></div><span class="lab-stamp" id="lab-stamp" aria-hidden="true"></span></article><div class="lab-result" id="lab-result" role="status" aria-live="polite"><span class="result-symbol" aria-hidden="true">✓</span><h3 id="lab-result-title"></h3><p id="lab-result-copy"></p></div></div>
+        <div class="lab-actions"><button type="button" class="lab-no" id="lab-no"><span aria-hidden="true">×</span><span data-i18n="try.decline"></span></button><button type="button" class="lab-yes" id="lab-yes"><span data-i18n="ph.approve"></span><span aria-hidden="true">↗</span></button><button type="button" class="lab-reset" id="lab-reset" hidden><span data-i18n="try.again"></span><span aria-hidden="true">↺</span></button></div>
+        <p class="lab-hint" data-i18n="try.hint">Drag the card, or choose a button.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ 03 HOW IT WORKS ============ -->
   <section class="section how" id="how">
     <div class="wrap">
       <header class="head reveal">
-        <p class="label"><span class="idx">03</span><span data-i18n="how.kicker">How it works</span></p>
+        <p class="label"><span class="idx">04</span><span data-i18n="how.kicker">How it works</span></p>
         <h2 class="title" data-i18n-html="how.title">Say it once.<br>It finds the right person.</h2>
         <p class="lead" data-i18n="how.sub">Your AI reads the org graph — who owns what, who can approve — and hands your intent to the right person’s AI. It arrives as a card, not a message.</p>
       </header>
@@ -268,13 +282,13 @@
   <section class="section features" id="features">
     <div class="wrap">
       <header class="head reveal">
-        <p class="label"><span class="idx">04</span><span data-i18n="ft.kicker">Inside the walls</span></p>
+        <p class="label"><span class="idx">05</span><span data-i18n="ft.kicker">Inside the walls</span></p>
         <h2 class="title" data-i18n-html="ft.title">Everything outside the keep<br>runs itself.</h2>
       </header>
 
       <div class="rows">
         <article class="row reveal">
-          <div class="row-copy"><span class="row-n">01</span><h3 data-i18n="f1.t">Filed under the right business.</h3><p data-i18n="f1.d">Ten people, ten businesses. The AI labels every card in the background — and creates a business the first time it’s named.</p></div>
+          <div class="row-copy"><span class="row-n">01</span><h3><button class="feature-toggle" type="button" aria-expanded="true" aria-controls="feature-detail-1" data-i18n="f1.t">Filed under the right business.</button></h3><p id="feature-detail-1" data-i18n="f1.d">Ten people, ten businesses. The AI labels every card in the background — and creates a business the first time it’s named.</p></div>
           <div class="row-vis vis-biz" aria-hidden="true">
             <div class="bcol"><span class="btag">CAFE SAKURA</span><span class="bcard"><i class="blue"></i><span data-i18n="hl.b1">Menu photo</span></span><span class="bcard"><i></i><span data-i18n="hl.b2">Oat milk supplier</span></span></div>
             <div class="bcol"><span class="btag" data-i18n="demo.hotel">HOTEL HONMARU</span><span class="bcard hot"><i class="pink"></i><span data-i18n="hl.b3">Spring budget</span></span><span class="bcard"><i></i><span data-i18n="hl.b4">Late checkout</span></span></div>
@@ -283,12 +297,12 @@
         </article>
 
         <article class="row reveal">
-          <div class="row-copy"><span class="row-n">02</span><h3 data-i18n="f2.t">Written in the reader’s language.</h3><p data-i18n="f2.d">Write in Japanese. Your German teammate’s card, push and email arrive in German.</p></div>
+          <div class="row-copy"><span class="row-n">02</span><h3><button class="feature-toggle" type="button" aria-expanded="true" aria-controls="feature-detail-2" data-i18n="f2.t">Written in the reader’s language.</button></h3><p id="feature-detail-2" data-i18n="f2.d">Write in Japanese. Your German teammate’s card, push and email arrive in German.</p></div>
           <div class="row-vis vis-lang" aria-hidden="true"><div class="lang-stack" id="lang-stack"></div></div>
         </article>
 
         <article class="row reveal">
-          <div class="row-copy"><span class="row-n">03</span><h3 data-i18n="f3.t">Approvals become GitHub Issues.</h3><p data-i18n="f3.d">Decisions, tasks, owners and results land on GitHub. Engineers read the same truth — nobody copy-pastes.</p></div>
+          <div class="row-copy"><span class="row-n">03</span><h3><button class="feature-toggle" type="button" aria-expanded="true" aria-controls="feature-detail-3" data-i18n="f3.t">Approvals become GitHub Issues.</button></h3><p id="feature-detail-3" data-i18n="f3.d">Decisions, tasks, owners and results land on GitHub. Engineers read the same truth — nobody copy-pastes.</p></div>
           <div class="row-vis vis-gh" aria-hidden="true">
             <div class="gh-issue">
               <div class="gh-top"><span class="gh-open">● <span data-i18n="gh.open">Open</span></span><b data-i18n="gh.title">Approve the spring campaign budget</b> <span class="gh-no">#128</span></div>
@@ -299,7 +313,7 @@
         </article>
 
         <article class="row reveal">
-          <div class="row-copy"><span class="row-n">04</span><h3 data-i18n="f4.t">Knows who decides.</h3><p data-i18n="f4.d">Roles, teams, projects and approval authority decide where a card goes — not who happens to be online.</p></div>
+          <div class="row-copy"><span class="row-n">04</span><h3><button class="feature-toggle" type="button" aria-expanded="true" aria-controls="feature-detail-4" data-i18n="f4.t">Knows who decides.</button></h3><p id="feature-detail-4" data-i18n="f4.d">Roles, teams, projects and approval authority decide where a card goes — not who happens to be online.</p></div>
           <div class="row-vis vis-graph" aria-hidden="true">
             <svg viewBox="0 0 400 200">
               <g class="ge"><path d="M200 30 L100 100"/><path d="M200 30 L300 100"/><path d="M100 100 L50 170"/><path d="M100 100 L150 170"/><path d="M300 100 L250 170"/><path d="M300 100 L350 170"/></g>
@@ -310,7 +324,7 @@
         </article>
 
         <article class="row reveal">
-          <div class="row-copy"><span class="row-n">05</span><h3 data-i18n="f5.t">It reaches people.</h3><p data-i18n="f5.d">Push first, then Web Push, then email as the floor. Nothing waits on a missed ping.</p></div>
+          <div class="row-copy"><span class="row-n">05</span><h3><button class="feature-toggle" type="button" aria-expanded="true" aria-controls="feature-detail-5" data-i18n="f5.t">It reaches people.</button></h3><p id="feature-detail-5" data-i18n="f5.d">Push first, then Web Push, then email as the floor. Nothing waits on a missed ping.</p></div>
           <div class="row-vis vis-notify" aria-hidden="true">
             <div class="nb"><span class="nb-i"></span><span><b>Honmaru AI</b> <span data-i18n="hl.n1">Ken needs a decision</span></span><em>PUSH</em></div>
             <div class="nb"><span class="nb-i web"></span><span><b>honmaru-web.pages.dev</b> <span data-i18n="hl.n2">Mio replied to your card</span></span><em>WEB</em></div>
@@ -324,9 +338,9 @@
   <!-- ============ 05 THE GATE: access ============ -->
   <section class="section gate" id="gate">
     <div class="wrap">
-      <div class="gate-emblem" aria-hidden="true"><span>✦</span></div>
+      <div class="gate-emblem" aria-hidden="true"><img src="icon.svg" alt="" width="64" height="64"></div>
       <header class="head reveal">
-        <p class="label"><span class="idx">05</span><span data-i18n="pv.kicker">Security &amp; access</span></p>
+        <p class="label"><span class="idx">06</span><span data-i18n="pv.kicker">Security &amp; access</span></p>
         <h2 class="title" data-i18n-html="pv.title">One gate<br>into the keep.</h2>
         <p class="lead" data-i18n="pv.sub">The relay holds every decision your organization makes, so it is built as the trust boundary.</p>
       </header>
@@ -342,7 +356,7 @@
   <!-- ============ 06 CTA ============ -->
   <section class="section finale" id="finale">
     <div class="wrap finale-inner">
-      <p class="label reveal"><span class="idx">06</span><span data-i18n="cta.label">Step inside</span></p>
+      <p class="label reveal"><span class="idx">07</span><span data-i18n="cta.label">Step inside</span></p>
       <h2 class="display reveal" data-i18n-html="cta.title">Clear your first decision<br>in the next minute.</h2>
       <p class="lead reveal" data-i18n="cta.sub">Free to start. On the web and iPhone today. Mac, Windows and Android are on the way.</p>
       <ul class="platforms reveal" data-i18n-aria="get.label" aria-label="Get Honmaru AI">

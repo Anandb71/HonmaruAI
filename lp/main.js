@@ -171,7 +171,7 @@
       if (wide) {
         m.s1 = m.s0 = Math.min(1, (vh - 130) / dh);
         m.x1 = m.x0 = Math.min(vw, 1160) * .25;
-        m.y1 = m.y0 = 34;
+        m.y1 = 34; m.y0 = vh * .8; m.x0 = 0; m.s0 = .7;
         story.style.top = '';
       } else {
         var heroBottom = hero.offsetTop + hero.offsetHeight;
@@ -190,11 +190,17 @@
     function update(r) {
       var p = clamp(-r.top / (r.height - m.vh), 0, 1);
       if (reduce) p = 0;
-      var h = ease(clamp(p / .12, 0, 1)), ho = clamp(p / .08, 0, 1);
+      if (m.previousProgress === p) return;
+      m.previousProgress = p;
+      var h = ease(clamp(p / .15, 0, 1)), ho = clamp(p / .09, 0, 1);
       hero.style.opacity = 1 - ho;
       atmosphere.forEach(function(el) { el.style.opacity = 1 - ho; el.style.visibility = ho >= 1 ? 'hidden' : ''; });
-      portal.style.transform = 'translate(-50%, -50%) scale(' + (1 + (reduce ? 0 : p * .35)) + ') rotate(' + (reduce ? 0 : p * 12) + 'deg)';
-      wordmark.style.transform = 'translate3d(' + (-p * 100) + 'px,0,0)';
+      portal.style.transform = 'scale(' + (1 + h * .22) + ')';
+      $('.stage-scenery').style.opacity = 1 - h;
+      device.style.opacity = reduce ? 0 : clamp((p - .025) / .1, 0, 1);
+      device.style.visibility = p < .025 ? 'hidden' : 'visible';
+      $('.rings').style.opacity = h * .3;
+      wordmark.style.transform = 'translate3d(' + (-p * 50) + 'px,0,0)';
       hero.style.transform = 'translate3d(0,' + (-h * 50).toFixed(1) + 'px,0)';
       hero.style.visibility = ho >= 1 ? 'hidden' : '';
 
@@ -402,10 +408,13 @@
 
   /* ============ the keep: the name, read and drawn as you scroll ============ */
   var keep = (function () {
-    var section = $('#keep'), box = $('#keep-text'), mark = $('.keep-mark'), plan = $('.keep-plan'), words = [];
+    var section = $('#keep'), box = $('#keep-text'), mark = $('.keep-mark'), plan = $('.keep-plan'), words = [], lastLit = -1;
     function build() {
       box.textContent = '';
-      words = [];
+      words = []; lastLit = -1;
+      var readable = document.createElement('span');
+      readable.className = 'sr-only'; readable.textContent = t('keep.text').replace(/\*/g, '');
+      box.appendChild(readable);
       t('keep.text').split('*').forEach(function (seg, i) {
         var hl = i % 2 === 1;
         var tokens = lang === 'ja' ? seg.match(/[^、。]+[、。]?|[、。]/g) || [] : seg.split(/(\s+)/);
@@ -415,20 +424,24 @@
           (lang === 'ja' ? Array.from(tok) : [tok]).forEach(function (ch) {
             var s = document.createElement('span');
             s.className = 'w' + (hl ? ' hl' : '');
+            s.setAttribute('aria-hidden', 'true');
             s.textContent = ch;
             box.appendChild(s);
             words.push(s);
           });
         });
       });
-      box.setAttribute('aria-label', t('keep.text').replace(/\*/g, ''));
+      box.removeAttribute('aria-label');
     }
     function update(r) {
       var vh = window.innerHeight;
       var p = clamp((-r.top + vh * .2) / (r.height - vh * .8), 0, 1);
       if (reduce) p = 1;
       var lit = Math.round(clamp(p / .8, 0, 1) * words.length);
-      for (var i = 0; i < words.length; i++) words[i].classList.toggle('lit', i < lit);
+      if (lit !== lastLit) {
+        for (var i = 0; i < words.length; i++) words[i].classList.toggle('lit', i < lit);
+        lastLit = lit;
+      }
       plan.style.setProperty('--k3', clamp(p / .3, 0, 1).toFixed(3));
       plan.style.setProperty('--k2', clamp((p - .22) / .3, 0, 1).toFixed(3));
       plan.style.setProperty('--k1', clamp((p - .45) / .25, 0, 1).toFixed(3));
@@ -596,6 +609,80 @@
       if (reduce || document.hidden || bounds.bottom < 0 || bounds.top > innerHeight) return;
       front = (front + 1) % cards.length; place();
     }, 1500);
+  })();
+
+  /* Feature explorer: native buttons, one selected detail, no timed cycling. */
+  (function () {
+    var rows = $$('.features .row');
+    function select(index) {
+      rows.forEach(function(row, i) {
+        var active = i === index;
+        row.classList.toggle('selected', active);
+        $('.feature-toggle', row).setAttribute('aria-expanded', String(active));
+        $('.row-copy p', row).hidden = !active;
+      });
+    }
+    $('.rows').classList.add('explorer');
+    rows.forEach(function(row, index) {
+      $('.feature-toggle', row).addEventListener('click', function() {
+        select(index);
+        if (innerWidth <= 700) requestAnimationFrame(function() { row.scrollIntoView({block:'start', behavior:reduce ? 'instant' : 'smooth'}); });
+      });
+    });
+    select(0);
+  })();
+
+  /* Local decision sandbox. No network, account mutation or external side effect. */
+  (function () {
+    var card = $('#lab-card'), surface = $('.lab-surface'), result = $('#lab-result');
+    var yes = $('#lab-yes'), no = $('#lab-no'), reset = $('#lab-reset');
+    var startX = null, delta = 0, decided = false, approved = true;
+    function copy() {
+      $('#lab-result-title').textContent = t(approved ? 'try.approved' : 'try.declined');
+      $('#lab-result-copy').textContent = t(approved ? 'try.approvedCopy' : 'try.declinedCopy');
+      $('#lab-stamp').textContent = t(delta >= 0 ? 'ph.approve' : 'try.decline');
+    }
+    function decide(value) {
+      if (decided) return;
+      decided = true; approved = value; copy();
+      card.inert = true; card.setAttribute('aria-hidden', 'true');
+      surface.classList.add('decided');
+      surface.classList.toggle('declined', !value);
+      card.style.transform = reduce ? 'none' : 'translateX(' + (value ? 115 : -115) + '%) rotate(' + (value ? 16 : -16) + 'deg)';
+      yes.hidden = no.hidden = true; reset.hidden = false;
+      result.classList.add('shown');
+      $('.result-symbol', result).textContent = value ? '✓' : '×';
+      reset.focus({preventScroll:true});
+    }
+    yes.addEventListener('click', function() { decide(true); });
+    no.addEventListener('click', function() { decide(false); });
+    reset.addEventListener('click', function() {
+      decided = false; delta = 0; card.inert = false; card.removeAttribute('aria-hidden');
+      surface.classList.remove('decided', 'declined');
+      result.classList.remove('shown');
+      $('#lab-result-title').textContent = ''; $('#lab-result-copy').textContent = '';
+      card.style.transform = ''; card.style.setProperty('--drag', 0);
+      yes.hidden = no.hidden = false; reset.hidden = true; yes.focus({preventScroll:true});
+    });
+    card.addEventListener('pointerdown', function(event) {
+      if (decided || event.button !== 0) return;
+      startX = event.clientX; card.setPointerCapture(event.pointerId); card.classList.add('dragging');
+    });
+    card.addEventListener('pointermove', function(event) {
+      if (startX === null || decided) return;
+      delta = event.clientX - startX;
+      card.style.transform = 'translateX(' + delta + 'px) rotate(' + (reduce ? 0 : delta / 18) + 'deg)';
+      card.style.setProperty('--drag', Math.min(Math.abs(delta) / 100, 1)); copy();
+    });
+    function release(event) {
+      if (startX === null) return;
+      startX = null; card.classList.remove('dragging');
+      if (event.type !== 'pointercancel' && Math.abs(delta) > 80) decide(delta > 0);
+      else { card.style.transform = ''; card.style.setProperty('--drag', 0); }
+      delta = 0;
+    }
+    card.addEventListener('pointerup', release); card.addEventListener('pointercancel', release);
+    onLang.push(function() { if (decided) copy(); });
   })();
 
   // the conic ring spins only while the finale is on screen
