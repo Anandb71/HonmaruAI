@@ -23,3 +23,18 @@ export function mediaKind(mime: string, name = ''): MediaKind {
   if (VIDEO.test(type)) return SOUND.test(name.trim()) ? 'audio' : 'video'
   return 'file'
 }
+
+/// The box a video is drawn in before it loads: its own shape when the
+/// upload measured it, widescreen when not; no wider than 400px nor taller
+/// than 360px, with a shape past 1:2 or 12:5 letterboxed inside it.
+export function videoBox(width?: number | null, height?: number | null): { ratio: number; width: number } {
+  const own = width && height && width > 0 && height > 0 ? width / height : 16 / 9
+  const ratio = Math.max(0.5, Math.min(2.4, own))
+  return { ratio, width: Math.round(Math.min(400, 360 * ratio)) }
+}
+
+/// A file's signed address, asked to be saved rather than shown: a link's
+/// download attribute is ignored across origins, and the API is another.
+export function downloadUrl(url: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}download=1`
+}

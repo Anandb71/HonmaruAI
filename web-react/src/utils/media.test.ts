@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mediaKind } from './media'
+import { mediaKind, videoBox, downloadUrl } from './media'
 
 // What a file in a message is drawn as.
 describe('mediaKind', () => {
@@ -36,5 +36,31 @@ describe('mediaKind', () => {
     expect(mediaKind('', 'song.mp3')).toBe('file')
     expect(mediaKind('text/html', 'page.mp4')).toBe('file')
     expect(mediaKind('application/pdf')).toBe('file')
+  })
+})
+
+describe('videoBox', () => {
+  it('draws a measured video at its own shape, inside 400 by 360', () => {
+    expect(videoBox(1920, 1080)).toEqual({ ratio: 16 / 9, width: 400 })
+    expect(videoBox(1080, 1920)).toEqual({ ratio: 1080 / 1920, width: 203 })
+    expect(videoBox(640, 480)).toEqual({ ratio: 4 / 3, width: 400 })
+    expect(videoBox(500, 500)).toEqual({ ratio: 1, width: 360 })
+  })
+  it('is widescreen when nothing was measured', () => {
+    expect(videoBox()).toEqual({ ratio: 16 / 9, width: 400 })
+    expect(videoBox(null, null)).toEqual({ ratio: 16 / 9, width: 400 })
+    expect(videoBox(1920, 0)).toEqual({ ratio: 16 / 9, width: 400 })
+    expect(videoBox(-4, 3)).toEqual({ ratio: 16 / 9, width: 400 })
+  })
+  it('letterboxes a shape too tall or too wide', () => {
+    expect(videoBox(100, 1000)).toEqual({ ratio: 0.5, width: 180 })
+    expect(videoBox(4000, 100)).toEqual({ ratio: 2.4, width: 400 })
+  })
+})
+
+describe('downloadUrl', () => {
+  it('asks a signed address to be saved', () => {
+    expect(downloadUrl('https://api.example/files/f_1?e=1&s=2')).toBe('https://api.example/files/f_1?e=1&s=2&download=1')
+    expect(downloadUrl('/files/f_1')).toBe('/files/f_1?download=1')
   })
 })
