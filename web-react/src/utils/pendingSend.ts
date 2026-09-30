@@ -61,13 +61,22 @@ export function reconcile(list: ChannelMessage[], tempId: string, real: ChannelM
   return [...list, real]
 }
 
-/// It did not go: kept where it was, with why.
-export const markFailed = (list: ChannelMessage[], tempId: string, why: string): ChannelMessage[] =>
-  list.map((x) => (x.id === tempId ? { ...x, pending: false, failed: why } : x))
+/// It did not go: kept where it was, with why — `refused` when the server
+/// said no to the words themselves, so it is edited, not sent again.
+export const markFailed = (list: ChannelMessage[], tempId: string, why: string, refused = false): ChannelMessage[] =>
+  list.map((x) => (x.id === tempId ? { ...x, pending: false, failed: why, refused: refused || undefined } : x))
 
 /// Sent again: on its way once more.
 export const markPending = (list: ChannelMessage[], tempId: string): ChannelMessage[] =>
-  list.map((x) => (x.id === tempId ? { ...x, pending: true, failed: undefined } : x))
+  list.map((x) => (x.id === tempId ? { ...x, pending: true, failed: undefined, refused: undefined } : x))
+
+/// An answer that sending the same words again would only meet again: the
+/// server read them and said no — a data rule (422, or 409 once "send it
+/// anyway" was declined), a thread that has gone (400, 404), no right to
+/// post there (403). Not a request that took too long (408) or too many at
+/// once (429): those, like a dropped connection or a server that fell over,
+/// Retry can get past.
+export const refusedOutright = (status: number) => status >= 400 && status < 500 && status !== 408 && status !== 429
 
 const words = (s: string) => s.replace(/\r\n/g, '\n').trim()
 const fileIds = (m: ChannelMessage) => (m.files || []).map((f) => f.id).sort().join(',')

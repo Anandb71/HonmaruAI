@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, sendTime, tempMessage, tempState } from './pendingSend'
+import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendTime, tempMessage, tempState } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -89,6 +89,24 @@ describe('a message that did not go', () => {
     const again = markPending(failed, temp.id)
     expect(again[1]).toMatchObject({ pending: true, failed: undefined })
     expect(tempState(again[1])).toBe('pending')
+  })
+
+  it('refused outright, is marked so — to be edited, not sent again as it is', () => {
+    const temp = tempMessage({ channel: 'b:hotel', body: 'card 4242 4242 4242 4242' }, you, at, () => 't')
+    const refused = markFailed([temp], temp.id, 'This can’t be sent here', true)
+    expect(refused[0]).toMatchObject({ pending: false, failed: 'This can’t be sent here', refused: true })
+    expect(tempState(refused[0])).toBe('failed')
+    expect(markFailed([temp], temp.id, 'Timed out')[0].refused).toBeUndefined()
+    expect(markPending(refused, temp.id)[0].refused).toBeUndefined()
+  })
+
+  it('is refused outright when the server read it and said no, not when it could not answer', () => {
+    // A data rule blocked it, or warned and "send it anyway" was declined;
+    // the thread has gone; no right to post there.
+    for (const status of [400, 401, 403, 404, 409, 413, 422]) expect(refusedOutright(status)).toBe(true)
+    // Too slow, too many, or the server fell over: worth sending again.
+    for (const status of [408, 429, 500, 502, 503, 504]) expect(refusedOutright(status)).toBe(false)
+    expect(refusedOutright(201)).toBe(false)
   })
 })
 
