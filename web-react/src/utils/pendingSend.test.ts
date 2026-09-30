@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendDeadline, sendTime, tempMessage, tempState } from './pendingSend'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptUnsent, markFailed, markPending, outboxKey, readUnsent, reconcile, refusedOutright, sendDeadline, sendTime, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -264,5 +264,56 @@ describe('a reload from the server', () => {
     const fresh = [said('a', 'first')]
     expect(keepTemps(fresh, undefined)).toBe(fresh)
     expect(keepTemps(fresh, [said('old', 'gone')])).toBe(fresh)
+  })
+})
+
+describe('what did not go, kept in this browser', () => {
+  const temp = (body: string, r: string, extra: Partial<ChannelMessage> = {}) => ({ ...tempMessage({ channel: 'b:hotel', body }, you, at, () => r), ...extra })
+
+  it('reads back what was kept, leaving out anything it cannot read', () => {
+    const kept = { said: temp('second', 'a'), decide: false, failed: 'That did not send. Try again.' }
+    expect(readUnsent(JSON.stringify([kept]))).toEqual([kept])
+    expect(readUnsent(null)).toEqual([])
+    expect(readUnsent('not json')).toEqual([])
+    expect(readUnsent('{"said":1}')).toEqual([])
+    expect(readUnsent(JSON.stringify([kept, null, 3, { said: { ...kept.said, id: 'real-1' } }, { said: { id: 'tmp-x' } }]))).toEqual([kept])
+    expect(outboxKey('team:x')).toBe('outbox:team:x')
+  })
+
+  it('keeps another tab’s as it left them, and this tab’s as they are now', () => {
+    const mine = { said: temp('mine', 'm'), decide: false }
+    const gone = { said: temp('sent since', 'g'), decide: false }
+    const theirs = { said: temp('theirs', 't'), decide: true, failed: 'No' }
+    const out = keptUnsent([gone, theirs], [mine], new Set([mine.said.id, gone.said.id]))
+    expect(out.map((u) => u.said.id)).toEqual([theirs.said.id, mine.said.id])
+  })
+
+  it('comes back failed, with why — or the reason it had — and refused stays refused', () => {
+    const was = { said: temp('second', 'a', { pending: true }), decide: false }
+    expect(unsentAgain(was, 'That did not send. Try again.')).toMatchObject({ id: was.said.id, body: 'second', pending: false, failed: 'That did not send. Try again.' })
+    const refused = unsentAgain({ ...was, failed: 'Blocked', refused: true }, 'x')
+    expect(refused).toMatchObject({ failed: 'Blocked', refused: true })
+    expect(tempState(refused)).toBe('failed')
+  })
+
+  it('is not brought back when the server turns out to have it', () => {
+    const held = temp('second', 'a')
+    const landed = said('real', 'second', { createdAt: new Date(at.getTime() + 800).toISOString() })
+    expect(wentAfterAll(held, [landed])).toBe(true)
+    // A clock a little ahead of the server's.
+    expect(wentAfterAll(held, [{ ...landed, createdAt: new Date(at.getTime() - 3000).toISOString() }])).toBe(true)
+    // An earlier "second", somebody else's, or other words: it did not go.
+    expect(wentAfterAll(held, [{ ...landed, createdAt: new Date(at.getTime() - 60_000).toISOString() }])).toBe(false)
+    expect(wentAfterAll(held, [{ ...landed, mine: false }])).toBe(false)
+    expect(wentAfterAll(held, [{ ...landed, body: 'third' }])).toBe(false)
+  })
+
+  it('is drawn once in a list, after what is there', () => {
+    const one = temp('one', 'a')
+    const list = [said('x', 'first'), one]
+    expect(withHeld(list, [])).toBe(list)
+    expect(withHeld(list, [one])).toBe(list)
+    const two = temp('two', 'b')
+    expect(ids(withHeld(list, [one, two]))).toEqual(['x', one.id, two.id])
   })
 })

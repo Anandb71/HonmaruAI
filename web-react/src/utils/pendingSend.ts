@@ -161,3 +161,55 @@ export function keepTemps(fresh: ChannelMessage[], held: ChannelMessage[] | unde
   const ours = (held || []).filter(isTemp)
   return ours.length ? [...fresh, ...ours] : fresh
 }
+
+/// Ours not drawn in `list` yet, at the end — each once, however often asked.
+export function withHeld(list: ChannelMessage[], held: ChannelMessage[]): ChannelMessage[] {
+  const more = held.filter((h) => !list.some((x) => x.id === h.id))
+  return more.length ? [...list, ...more] : list
+}
+
+// Kept in this browser, per workspace, so that closing the tab or reloading
+// never loses what did not go: each message on its way or failed, as it was
+// drawn, with how it was sent and, when it failed, why.
+
+export type Unsent = { said: ChannelMessage; decide: boolean; failed?: string; refused?: boolean }
+
+export const outboxKey = (orgId: string) => `outbox:${orgId}`
+
+const isUnsent = (u: unknown): u is Unsent => {
+  const said = (u as Unsent | null)?.said
+  return !!said && typeof said.id === 'string' && isTemp(said) && typeof said.channel === 'string'
+    && typeof said.body === 'string' && typeof said.createdAt === 'string'
+}
+
+/// What was kept, read back; anything unreadable is left out.
+export function readUnsent(raw: string | null): Unsent[] {
+  try {
+    const list: unknown = JSON.parse(raw || '[]')
+    return Array.isArray(list) ? list.filter(isUnsent) : []
+  } catch {
+    return []
+  }
+}
+
+/// What to keep once this tab's outbox has changed: its messages as they are
+/// now (`now`), and another tab's as that tab left them. `ours` is every
+/// message this tab has held, gone since or not, so one it has sent or
+/// thrown away is not brought back from what another tab wrote before.
+export const keptUnsent = (stored: Unsent[], now: Unsent[], ours: Set<string>): Unsent[] =>
+  [...stored.filter((u) => !ours.has(u.said.id)), ...now]
+
+/// A message kept from before this page loaded, as it comes back: failed —
+/// on its way when the page went, it may or may not have got there — with
+/// why, where it was, to send again or throw away.
+export const unsentAgain = (u: Unsent, why: string): ChannelMessage =>
+  ({ ...u.said, pending: false, failed: u.failed || why, refused: u.refused || undefined })
+
+/// Whether one kept from before this page loaded got there after all: the
+/// server has one of yours with the same words, files and thread, written
+/// no more than `skew` before ours was (the two clocks differ). Kept tight,
+/// so an earlier "ok" is not taken for a later one that did not go.
+export function wentAfterAll(held: ChannelMessage, fresh: ChannelMessage[], skew = 5000): boolean {
+  const from = Date.parse(held.createdAt) - skew
+  return fresh.some((m) => m.mine && sameAs(held, m) && Date.parse(m.createdAt) >= from)
+}
