@@ -20,6 +20,7 @@ import { getLocale } from '../utils/locale'
 import { displayName } from '../utils/names'
 import { useRoute, useDesktop, hashForCard, hashForMode, hashForScreen, hashForView } from '../utils/route'
 import { loadCardCache, saveCardCache } from '../utils/cardCache'
+import { reconnectWatch, wakeWatch } from '../utils/resync'
 import { needsLocalizing } from '../utils/language'
 import { aiHeaders } from '../utils/aiKey'
 import type { Screen, Mode } from '../utils/route'
@@ -302,11 +303,16 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (code === 'sso-required' || code === 'sso-reauth') window.dispatchEvent(new CustomEvent('honmaru:sso-required', { detail: { orgId, start: `/sso/start?orgId=${encodeURIComponent(orgId)}` } }))
     }
     wsClient.onToolCallResult = (toolCallId) => { if (!ignore) addDebugLog(`Tool result: ${toolCallId}`) }
+    // Back after a drop: what was said in the channels meanwhile did not
+    // come over the socket, and the join does not replay it. The list reads
+    // it again.
+    const back = reconnectWatch()
     wsClient.onConnectionChange = (connected) => {
       if (ignore) return
       setIsConnected(connected)
       if (connected) setError(null)
       addDebugLog(connected ? `Connected to ${relayUrl}` : 'Disconnected — will retry')
+      if (back(connected)) window.dispatchEvent(new Event('honmaru:resync'))
     }
     setSynced(false)
     wsClient.connect(relayUrl, userId, orgId, sessionToken).catch((err) => {
@@ -346,6 +352,15 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       for (const e of events) window.removeEventListener(e, seen)
       document.removeEventListener('visibilitychange', seen)
     }
+  }, [])
+  // Back after a while away — a closed lid, a locked phone — the socket may
+  // have slept through what was said without ever dropping: the list reads
+  // it again, as after a reconnect.
+  useEffect(() => {
+    const woke = wakeWatch()
+    const on = () => { if (woke(document.visibilityState === 'visible', Date.now())) window.dispatchEvent(new Event('honmaru:resync')) }
+    document.addEventListener('visibilitychange', on)
+    return () => document.removeEventListener('visibilitychange', on)
   }, [])
 
   // A notification tapped while a tab is open: the service worker tells us
