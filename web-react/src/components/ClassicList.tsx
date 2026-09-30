@@ -11,6 +11,7 @@ import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage } from '../types/card'
 import { getLocale } from '../utils/locale'
 import { fullTime } from '../utils/ago'
+import { deleteWarning, othersReplied, previewText, skipsDeleteConfirm } from '../utils/messageKeys'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
@@ -1707,19 +1708,30 @@ export const ClassicList: React.FC<Props> = ({
     const done = await act('PUT', '/channels/messages', channel, { messageId: editing.id, body: text })
     if (done) setEditing(null)
   }
-  const remove = async (channel: string, m: ChannelMessage) => {
-    // Somebody else's words in the thread go only when you say so outright.
-    const others = !m.parentId && (m.replyRefs || []).some((r) => r !== myRef)
-    const ask = others ? t('Delete this message and its thread? Replies from others will be deleted too. This cannot be undone.')
-      : m.replyCount ? t('Delete this message and its thread? This cannot be undone.') : t('Delete this message? This cannot be undone.')
-    if (!window.confirm(ask)) return
+  /// Delete a message, after asking in the app — not the browser's own box,
+  /// unstyled and in the browser's language. ⇧ skips the question, as in
+  /// Discord; somebody else's words in the thread go only when you say so
+  /// outright, so that one is always asked.
+  const [deleting, setDeleting] = useState<null | { channel: string; m: ChannelMessage; busy?: boolean }>(null)
+  const remove = (channel: string, m: ChannelMessage, skipConfirm = false) => {
+    if (skipsDeleteConfirm(skipConfirm, m, myRef)) void unsend(channel, m)
+    else setDeleting({ channel, m })
+  }
+  const unsend = async (channel: string, m: ChannelMessage) => {
     const done = await act('DELETE', '/channels/messages', channel, { messageId: m.id, withThread: true })
-    if (editing?.id === m.id) setEditing(null)
+    setEditing((cur) => (cur?.id === m.id ? null : cur))
     // Gone here at once, and its thread with it.
     if (done && !m.parentId) {
       setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
       setThread((prev) => (prev && prev.parent.id === m.id ? null : prev))
     }
+    return Boolean(done)
+  }
+  const confirmDelete = async () => {
+    if (!deleting || deleting.busy) return
+    setDeleting({ ...deleting, busy: true })
+    await unsend(deleting.channel, deleting.m)
+    setDeleting(null)
   }
   const togglePin = (channel: string, m: ChannelMessage) => void act('POST', '/channels/pins', channel, { messageId: m.id, pinned: !m.pinned })
   const openThread = async (channel: string, m: ChannelMessage) => {
@@ -2467,7 +2479,7 @@ export const ClassicList: React.FC<Props> = ({
       onReply={() => void openThread(channel, m)}
       onPin={() => togglePin(channel, m)}
       onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
-      onDelete={m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined}
+      onDelete={m.mine && m.kind === 'message' ? (skipConfirm) => remove(channel, m, skipConfirm) : undefined}
       onDecide={!m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined}
       onLater={(at) => void saveLater(channel, m, at)}
       onClip={() => toggleClip(channel, m)}
@@ -3735,7 +3747,7 @@ export const ClassicList: React.FC<Props> = ({
             onReply={() => void openThread(channel, m)}
             onPin={() => togglePin(channel, m)}
             onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
-            onDelete={m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined}
+            onDelete={m.mine && m.kind === 'message' ? () => remove(channel, m) : undefined}
             onDecide={!m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined}
             onLater={(at) => void saveLater(channel, m, at)}
             onCopyLink={() => copyLink(m)}
@@ -3848,6 +3860,40 @@ export const ClassicList: React.FC<Props> = ({
           {archiveDialog.error && <p className="dlg-error" role="alert">{archiveDialog.error}</p>}
         </Dialog>
       )}
+      {deleting && (() => {
+        const { m, busy } = deleting
+        const face = faceOfMessage(m)
+        return (
+          <Dialog
+            title={t('Delete message')}
+            lede={t(deleteWarning(m, myRef))}
+            className="cl-delete-dialog"
+            onClose={() => setDeleting(null)}
+            footer={(
+              <>
+                <button type="button" className="dlg-btn" onClick={() => setDeleting(null)}>{t('Cancel')}</button>
+                <button type="button" className="dlg-btn danger" data-delete-confirm disabled={busy} onClick={() => void confirmDelete()}>
+                  {busy ? t('Deleting…') : t('Delete')}
+                </button>
+              </>
+            )}
+          >
+            <div className="cl-delete-preview" data-delete-preview>
+              <div className="cl-delete-meta">
+                <Avatar name={face.name} url={face.url} size={24} />
+                <b>{face.name}</b>
+                <time dateTime={m.createdAt}>{fullTime(m.createdAt, locale)}</time>
+              </div>
+              {m.body && <div className="slk-text cl-delete-text">{rich(previewText(m.body))}</div>}
+              {(m.files || []).length > 0 && (
+                <div className="cl-delete-files"><Icon name="paperclip" size={12} /> {(m.files || []).map((f) => f.name).join(', ')}</div>
+              )}
+            </div>
+            {/* A phone has no ⇧ to hold. */}
+            {wide && !othersReplied(m, myRef) && <p className="dlg-hint">{t('Tip: hold Shift when you delete to skip this question.')}</p>}
+          </Dialog>
+        )
+      })()}
       {moveSheet && (
         <Sheet label={t('Move to a section')} onClose={() => setMoveSheet(null)}>
           <p className="msheet-title">{t('Move to a section')}</p>

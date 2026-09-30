@@ -388,6 +388,8 @@ const table: Record<string, string> = {
   '{n} archived.': '{n} archiviert.',
   '{n} cards': '{n} Karten',
   'Archiving…': 'Wird archiviert…',
+  'Deleting…': 'Wird gelöscht…',
+  'Tip: hold Shift when you delete to skip this question.': 'Tipp: Halte beim Löschen die Umschalttaste gedrückt, um diese Frage zu überspringen.',
   'Archive {n}': '{n} archivieren',
   'Record (Markdown)': 'Protokoll (Markdown)',
   '#{name}: the record': '#{name}: das Protokoll',

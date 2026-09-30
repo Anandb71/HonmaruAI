@@ -179,6 +179,8 @@ const table: Record<string, string> = {
   '{n} archived.': '{n}件をアーカイブしました。',
   '{n} cards': 'カード{n}件',
   'Archiving…': 'アーカイブ中…',
+  'Deleting…': '削除中…',
+  'Tip: hold Shift when you delete to skip this question.': 'ヒント：Shiftキーを押しながら削除すると、この確認を省略できます。',
   'Archive {n}': '{n}件をアーカイブ',
   'Record (Markdown)': '記録（Markdown）',
   '#{name}: the record': '#{name} の記録',

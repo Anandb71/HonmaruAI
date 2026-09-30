@@ -158,7 +158,9 @@ export const MessageActions: React.FC<{
   onReply?: () => void
   onPin?: () => void
   onEdit?: () => void
-  onDelete?: () => void
+  /// `skipConfirm`: ⇧ was held on Delete — delete without asking, as in
+  /// Discord (whoever deletes still decides whether that is allowed).
+  onDelete?: (skipConfirm?: boolean) => void
   onDecide?: () => void
   /// Save for later; with a time, come back as a card then.
   onLater?: (remindAt: string | null) => void
@@ -219,7 +221,7 @@ export const MessageActions: React.FC<{
             )}
             {message.body && <button type="button" role="menuitem" onClick={copy}>{t('Copy text')}</button>}
             {onDelete && <div className="slk-menu-sep" />}
-            {onDelete && <button type="button" role="menuitem" className="danger" onClick={() => { setMenu(false); onDelete() }}>{t('Delete message')}<kbd>⌫</kbd></button>}
+            {onDelete && <button type="button" role="menuitem" className="danger" onClick={(e) => { setMenu(false); onDelete(e.shiftKey) }} data-menu="delete">{t('Delete message')}<kbd>⌫</kbd></button>}
           </div>
         )}
       </div>
