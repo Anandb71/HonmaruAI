@@ -718,6 +718,12 @@
 .look-seg > label.on { background: var(--signal-white); color: var(--ink-black); box-shadow: rgba(0,0,0,.06) 0 1px 2px; }
 .look-seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .look-seg > label:has(input:focus-visible) { outline: 2px solid var(--brand-violet); outline-offset: 2px; }
+/* A browser without :has() (Safari before 15.4, Firefox before 121) drops
+   the rule above and the keyboard's place goes unseen: ring the option that
+   holds focus there, a click's included, rather than none. */
+@supports not selector(:has(*)) {
+  .look-seg > label:focus-within { outline: 2px solid var(--brand-violet); outline-offset: 2px; }
+}
 @media (prefers-color-scheme: dark) {
   :where(:root:not([data-theme="light"])) .look-seg { background: #0f0f0f; }
   :where(:root:not([data-theme="light"])) .look-seg > label { color: #a3a3a3; }
