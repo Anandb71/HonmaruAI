@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { isOrgId, parseAppLink, webHashFor } from '@honmaru/core/links'
 
 // Where you are, in the URL. The app used to keep this in React state, so a
 // reload landed on the feed, a notification could not open its card in a
@@ -13,7 +14,12 @@ import { useCallback, useEffect, useState } from 'react'
 //   #/m/<messageId>[/<orgId>]   one message in the list, for whoever can read
 //                     it — in the workspace it was said in, switched to
 //   #/jam/<view>      a conversation's Jam, joined — what the phone app opens
-//   #/c/<view>        a conversation, opened in the list — `ag:<id>` is one with an agent
+//   #/c/<view>[?org=<orgId>]  a conversation, opened in the list — `ag:<id>` is one
+//                     with an agent; in that workspace, switched to, when it is yours
+//
+// A link from outside is a real path — https://app.honmaruai.com/c/<view>?org=…
+// or /join/<code> (packages/core/src/links.ts) — so the phone apps can claim
+// it; `pathToHash` turns it into its hash here, once, on load.
 //   #/history … #/tools … #/you … #/team … #/insights … #/plans … #/notifications
 //   #/automations     what your AI does on a schedule
 //   #/playbook        the rules it follows
@@ -39,6 +45,8 @@ export interface Route {
   jamView?: string | null
   /// A conversation (as this person names it) to open in the list.
   openView?: string | null
+  /// The workspace that conversation is in, when the link says.
+  openOrg?: string | null
 }
 
 const SCREEN_BY_PATH: Record<string, Screen> = {
@@ -76,9 +84,12 @@ export function parseRoute(hash: string): Route {
     return { screen: null, mode: 'classic', cardId: null, join: null, jamView: /^(b|dm|g):[^\s]{1,200}$/.test(view) ? view : null }
   }
   if (head === 'c') {
-    let view = rest.join('/')
+    const [raw, query = ''] = rest.join('/').split('?')
+    let view = raw
     try { view = decodeURIComponent(view) } catch { /* as written */ }
-    return { screen: null, mode: 'classic', cardId: null, join: null, openView: /^(b|dm|g|ag):[^\s]{1,200}$/.test(view) ? view : null }
+    const openView = /^(b|dm|g|ag):[^\s]{1,200}$/.test(view) ? view : null
+    const org = new URLSearchParams(query).get('org')
+    return { screen: null, mode: 'classic', cardId: null, join: null, openView, openOrg: openView && org && isOrgId(org) ? org : null }
   }
   if (head === 'join') {
     const code = (rest[0] || '').trim()
@@ -94,6 +105,12 @@ export function hashForCard(cardId: string): string { return `#/feed/${encodeURI
 export function hashForMode(mode: Mode): string { return mode === 'classic' ? '#/list' : '#/feed' }
 /// A conversation, opened in the list: `#/c/ag%3A<id>` for one with an agent.
 export function hashForView(view: string): string { return `#/c/${encodeURIComponent(view)}` }
+/// A link's path (`/c/…?org=…`, `/join/…`) as the hash it means here, or
+/// null when the path is not a link — the root, `/index.html`, anything else.
+export function pathToHash(pathAndQuery: string): string | null {
+  const link = parseAppLink(pathAndQuery)
+  return link ? webHashFor(link) : null
+}
 export function hashForJoin(code: string): string { return `#/join/${encodeURIComponent(code)}` }
 /// A message, to paste anywhere: opens where it is, in its workspace.
 export function hashForMessage(messageId: string, orgId?: string | null): string {

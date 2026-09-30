@@ -8,7 +8,9 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.honmaru.ai.poc"
+      "bundleIdentifier": "com.honmaru.ai.poc",
+      "usesAppleSignIn": true,
+      "associatedDomains": ["applinks:app.honmaruai.com"]
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +20,18 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.honmaru.ai.poc"
+      "package": "com.honmaru.ai.poc",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "app.honmaruai.com", "pathPrefix": "/c/" },
+            { "scheme": "https", "host": "app.honmaruai.com", "pathPrefix": "/join/" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -33,7 +46,8 @@
           "color": "#1f6feb",
           "defaultChannel": "messages"
         }
-      ]
+      ],
+      "expo-apple-authentication"
     ],
     "scheme": "honmaru",
     "experiments": {

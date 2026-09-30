@@ -6,6 +6,15 @@ import './index.css'
 import { applyStoredLocale } from './utils/i18n'
 import { registerShell, watchInstallPrompt } from './utils/install'
 import { installAuthGuard } from './utils/authGuard'
+import { pathToHash } from './utils/route'
+
+// A link from outside (https://app.honmaruai.com/c/…, /join/…) — the same
+// address the phone apps open — becomes this page's own hash route, before
+// anything reads the address. Pages serves index.html for every path.
+{
+  const hash = pathToHash(location.pathname + location.search)
+  if (hash) history.replaceState(null, '', `/${hash}`)
+}
 
 // So <html lang> agrees with the stored choice, and its words are here,
 // before anything paints.

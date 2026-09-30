@@ -2,6 +2,7 @@ import { routeInstruction } from "./routing.js";
 import { toolManifest } from "./agui/tools.js";
 import { signup, login, createInvite, acceptInvite, isGitHubSession, inviteLink, peekInvite } from "./auth.js";
 import { requestCode, verifyCode } from "./otp.js";
+import { handleWellKnown } from "./wellKnown.js";
 import {
   createSession, getSession, upsertUser, upsertMembership, upsertAgent, isMember, listOrgNodes,
   getConnectorConfig, setConnectorConfig, rememberPullWorkspace, ingestWorkspaceOf, createOAuthState, consumeOAuthState,
@@ -301,6 +302,12 @@ async function handle(request, env, url, ctx) {
       });
     }
 
+    // What lets the phone apps open links to the web app (src/wellKnown.js).
+    if (url.pathname.startsWith("/.well-known/")) {
+      const known = handleWellKnown(request, env, url);
+      if (known) return known;
+    }
+
     // Conversations from a workspace's own Durable Object (PoC, off unless
     // WORKSPACE_V2 names the workspace).
     if (url.pathname.startsWith("/v2/w/")) {
@@ -439,6 +446,25 @@ async function handle(request, env, url, ctx) {
       });
       if (result.error) return json({ message: result.error }, result.status || 400);
       await signedIn(env, request, result.token, result.userId, "email_code");
+      return json(result);
+    }
+
+    // Sign in with Apple, from the phone app (src/apple.js). Same budget as
+    // the other ways of trading a credential for a session.
+    if (url.pathname === "/auth/apple" && request.method === "POST") {
+      const limited = await enforce(env, request, "oauth/token");
+      if (limited) return limited;
+      const body = await request.json().catch(() => ({}));
+      const { signInWithApple } = await import("./apple.js");
+      const result = await signInWithApple(env, {
+        identityToken: body.identityToken,
+        nonce: body.nonce,
+        name: body.name,
+        inviteCode: typeof body.inviteCode === "string" ? body.inviteCode : undefined,
+        locale: body.locale || localeFromRequest(request),
+      });
+      if (result.error) return json({ message: result.error }, result.status || 400);
+      await signedIn(env, request, result.token, result.userId, "apple");
       return json(result);
     }
 

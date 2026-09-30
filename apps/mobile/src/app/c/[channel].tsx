@@ -1,5 +1,9 @@
 // One channel: messages from the workspace's Durable Object through the
 // shared ChannelSync (packages/core), drawn with FlashList v2.
+//
+// Also where a link opens (https://app.honmaruai.com/c/<channel>?org=<orgId>,
+// see +native-intent.tsx): the link's workspace is switched to when it is
+// one of yours; a link to a workspace you are not in says so.
 
 import { FlashList } from '@shopify/flash-list'
 import { Stack, useLocalSearchParams } from 'expo-router'
@@ -11,20 +15,29 @@ import type { Message } from '@honmaru/protocol'
 import { useSession } from '../../lib/session'
 
 export default function Channel() {
-  const { channel, name } = useLocalSearchParams<{ channel: string; name?: string }>()
-  const { api, orgId, me } = useSession()
-  const sync = useMemo(() => new ChannelSync(api, orgId || '', channel), [api, orgId, channel])
+  const { channel, name, org } = useLocalSearchParams<{ channel: string; name?: string; org?: string }>()
+  const { api, orgId, me, chooseOrg } = useSession()
+  const linkedOrg = typeof org === 'string' && org ? org : null
+  const foreign = Boolean(linkedOrg && me && !(me.orgs || []).some((o) => o.id === linkedOrg))
+  // Until the link's workspace is the current one, nothing is opened.
+  const here = !linkedOrg || foreign ? orgId : (orgId === linkedOrg ? orgId : null)
+  useEffect(() => {
+    if (linkedOrg && !foreign && me && orgId !== linkedOrg) void chooseOrg(linkedOrg)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedOrg, foreign, me, orgId])
+  const sync = useMemo(() => new ChannelSync(api, here || '', channel), [api, here, channel])
   const [state, setState] = useState<ChannelState>(sync.snapshot)
   const [draft, setDraft] = useState('')
   const insets = useSafeAreaInsets()
 
   useEffect(() => {
+    if (!here || foreign) return
     const off = sync.subscribe(setState)
     void sync.open().then(() => sync.markRead())
     // Back to the front: whatever was said meanwhile, and no more.
     const sub = AppState.addEventListener('change', (s) => { if (s === 'active') void sync.catchUp().then(() => sync.markRead()) })
     return () => { off(); sub.remove() }
-  }, [sync])
+  }, [sync, here, foreign])
 
   const send = () => {
     const text = draft.trim()
@@ -37,6 +50,7 @@ export default function Channel() {
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
       <Stack.Screen options={{ title: name ? `# ${name}` : channel }} />
+      {foreign ? <Text style={styles.error}>This link is to a workspace you are not in.</Text> : null}
       <FlashList
         data={state.messages}
         keyExtractor={(m) => m.id}

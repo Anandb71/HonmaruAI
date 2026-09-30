@@ -390,6 +390,42 @@ Settings → Environment variables → **Preview** に
 プレースホルダのままだと Deploy Worker は staging を出さずに止まります
 （「Staging has no database yet」）。
 
+## 4.7 スマホアプリ（Expo）：リンクと Sign in with Apple（任意・10 分）
+
+`https://app.honmaruai.com/c/<チャンネル>?org=<orgId>` と `/join/<招待コード>` を
+iPhone / Android で開くとアプリ（`apps/mobile`）が開くようにする設定と、
+アプリの「Sign in with Apple」（`POST /auth/apple`）の設定。どれも Worker の
+変数で、秘密ではないので `[vars]` でも `secret put` でもよい。
+
+| 変数 | 値 | 無いと |
+|------|----|--------|
+| `APPLE_TEAM_ID` | Apple Developer の Team ID（10 文字、例 `ABCDE12345`）。**TODO: まだリポジトリに無い**（`project.yml` の `DEVELOPMENT_TEAM` も空）。developer.apple.com → Membership details で確認 | `/.well-known/apple-app-site-association` が 404。iPhone でリンクがアプリで開かない |
+| `ANDROID_CERT_SHA256` | アプリ署名証明書の SHA-256 指紋。カンマ区切りで複数可（EAS のキーと Play App Signing のキーの両方など）。`AA:BB:…` 形式でもコロン無しの 64 桁でもよい | `/.well-known/assetlinks.json` が 404。Android でリンクがアプリで開かない |
+| `APPLE_CLIENT_IDS` | Apple の ID トークンの `aud` として受け付けるもの、カンマ区切り。既定 `com.honmaru.ai,com.honmaru.ai.poc` | 既定のまま動く。Web で Sign in with Apple をするなら Services ID を足す |
+
+```bash
+cd worker
+npx wrangler@4 secret put APPLE_TEAM_ID          # 例: ABCDE12345
+npx wrangler@4 secret put ANDROID_CERT_SHA256    # eas credentials -p android の SHA256 Fingerprint
+# 任意
+npx wrangler@4 secret put APPLE_CLIENT_IDS       # 例: com.honmaru.ai,com.honmaru.ai.poc
+```
+
+2 つのファイルは Worker が変数から作り、Web（Pages）の
+`web-react/functions/.well-known/[file].ts` が同じパスで Worker に聞いて返す
+（リダイレクト無し、`application/json`）。Pages 側で別の Worker を向けるときは
+Pages の環境変数 `API_HOST`（ホスト名だけ）。確認：
+
+```bash
+curl -si https://app.honmaruai.com/.well-known/apple-app-site-association | head -3
+curl -si https://app.honmaruai.com/.well-known/assetlinks.json | head -3
+```
+
+Apple Developer 側でやること：App ID `com.honmaru.ai` と `com.honmaru.ai.poc` に
+**Sign in with Apple** と **Associated Domains** の capability を付ける（EAS Build は
+`app.json` の `usesAppleSignIn` / `associatedDomains` から自動で付ける）。
+iOS は AASA をインストール時に取りに行くので、変数を入れたあとに入れ直す。
+
 ## 5. 確認
 
 ```bash

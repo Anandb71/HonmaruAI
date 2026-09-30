@@ -1126,6 +1126,18 @@ CREATE TABLE IF NOT EXISTS sso_identities (
 );
 CREATE INDEX IF NOT EXISTS idx_sso_identities_user ON sso_identities(user_github_id);
 
+/* Who a person is at Apple (Sign in with Apple, src/apple.js): Apple's stable
+   `sub` for our team, and their account here. The address is the one Apple
+   last vouched for — often a private relay one. */
+CREATE TABLE IF NOT EXISTS apple_identities (
+  subject         TEXT PRIMARY KEY,
+  user_github_id  TEXT NOT NULL,
+  email           TEXT,
+  created_at      TEXT NOT NULL,
+  last_login_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_apple_identities_user ON apple_identities(user_github_id);
+
 /* A sign-in on its way to the provider: state, nonce, PKCE. Ten minutes. */
 CREATE TABLE IF NOT EXISTS sso_states (
   state           TEXT PRIMARY KEY,
