@@ -83,6 +83,10 @@ describe('emptyQueryPlaces', () => {
     expect(views(emptyQueryPlaces([ch('a'), ch('b')], ['b:gone', 'b:b', 'b:a'], 1))).toEqual(['b:b'])
     expect(emptyQueryPlaces([ch('a')], [])).toEqual([])
   })
+
+  it('lists each place once, even when the stored list names it twice', () => {
+    expect(views(emptyQueryPlaces([ch('a'), ch('b')], ['b:a', 'b:b', 'b:a']))).toEqual(['b:a', 'b:b'])
+  })
 })
 
 describe('pushRecent', () => {

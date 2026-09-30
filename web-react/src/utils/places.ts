@@ -121,11 +121,14 @@ export function emptyQueryPlaces(places: Place[], recent: string[], limit = 8): 
     .filter((x) => calling(x.p))
     .sort((a, b) => byAttention(a.p, b.p) || recency(a.p) - recency(b.p) || a.i - b.i)
     .map((x) => x.p)
+  // Each once, however the stored list came to name one twice.
   const shown = new Set(loud.map((p) => p.view))
   const byView = new Map(places.map((p) => [p.view, p] as const))
-  const lately = recent
-    .map((v) => byView.get(v))
-    .filter((p): p is Place => Boolean(p) && !shown.has(p!.view))
+  const lately: Place[] = []
+  for (const v of recent) {
+    const p = byView.get(v)
+    if (p && !shown.has(v)) { shown.add(v); lately.push(p) }
+  }
   return [...loud, ...lately].slice(0, limit)
 }
 
