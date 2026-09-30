@@ -31,7 +31,7 @@ import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
-import { foldedRows, sectionBadge, readFolds, writeFolds, withSectionFolds } from '../utils/sidebarSections'
+import { foldedRows, sectionBadge, visibleRows, readFolds, writeFolds, withSectionFolds } from '../utils/sidebarSections'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -529,6 +529,25 @@ export const ClassicList: React.FC<Props> = ({
 
   const everything = useMemo(() => [...channels, ...people, ...agentConvos, ...apps], [channels, people, agentConvos, apps])
 
+  // The sidebar's lists, top to bottom: starred first, then your sections,
+  // then the rest where they always were — what the starred and your
+  // sections hold leaves the defaults. Drawn from here, and walked by
+  // ⌥↑/⌥↓ in the same order.
+  const byView = (v: string) => everything.find((x) => x.view === v)
+  const starredRows = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
+  const ownSections = layout.sections.map((x) => ({ ...x, threads: x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)) }))
+  const channelRows = inYourOrder(channels.filter(unplaced))
+  const peopleRows = people.filter(unplaced)
+  const agentRows = agentConvos.filter(unplaced)
+  const sideLists = [
+    { id: 'starred', threads: starredRows },
+    ...ownSections.map((x) => ({ id: `sec:${x.id}`, threads: x.threads })),
+    { id: 'channels', threads: channelRows },
+    { id: 'people', threads: peopleRows },
+    ...(agents.length > 0 ? [{ id: 'agents', threads: agentRows }] : []),
+    { id: 'apps', threads: apps },
+  ]
+
   // Which conversation is open. On a laptop one always is — the first with
   // something waiting on you, else the first there is — the way a chat
   // client never shows an empty right half. On a phone none is until tapped.
@@ -928,7 +947,9 @@ export const ClassicList: React.FC<Props> = ({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        const list = [...channels, ...people, ...agentConvos, ...apps]
+        // The rows as the sidebar shows them, in its order: never one a
+        // folded section hides.
+        const list = visibleRows(sideLists, folded, foldContext())
         if (!list.length) return
         e.preventDefault()
         const i = list.findIndex((x) => x.key === current?.key)
@@ -1036,7 +1057,7 @@ export const ClassicList: React.FC<Props> = ({
     const shown = shut ? foldedRows(threads, foldContext()) : threads
     const badge = sectionBadge(shown, mentionsIn)
     return (
-      <section className={`cl-section${shut ? ' folded' : ''}`} data-section={id}>
+      <section key={id} className={`cl-section${shut ? ' folded' : ''}`} data-section={id}>
         <h2>
           <button className="cl-fold" onClick={() => toggleFold(id)} aria-expanded={!shut}>
             <span className="cl-caret" aria-hidden="true"><Icon name={shut ? 'chevron-right' : 'chevron-down'} size={12} /></span>
@@ -3677,27 +3698,18 @@ export const ClassicList: React.FC<Props> = ({
               </button>
             </li>
           </ul>
-          {(() => {
-            // Starred first, then your sections; what they hold leaves the defaults.
-            const byView = (v: string) => everything.find((x) => x.view === v)
-            const starred = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
-            return (
-              <>
-                {starred.length > 0 && section('starred', t('Starred'), starred, '', undefined, undefined, (views) => saveLayout({ ...layout, starred: views }))}
-                {layout.sections.map((x) => section(`sec:${x.id}`, x.name, x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)), t('Move a conversation here from its header.'), (
-                  <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
-                    <Icon name="x" size={12} />
-                  </button>
-                ), undefined, (views) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) })))}
-              </>
-            )
-          })()}
-          {section('channels', t('Channels'), inYourOrder(channels.filter(unplaced)), t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm,
+          {starredRows.length > 0 && section('starred', t('Starred'), starredRows, '', undefined, undefined, (views) => saveLayout({ ...layout, starred: views }))}
+          {ownSections.map((x) => section(`sec:${x.id}`, x.name, x.threads, t('Move a conversation here from its header.'), (
+            <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
+              <Icon name="x" size={12} />
+            </button>
+          ), undefined, (views) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) })))}
+          {section('channels', t('Channels'), channelRows, t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm,
             // Drag to reorder: the channels shown here in their new order,
             // then any placed elsewhere, as they were.
             (views) => saveLayout({ ...layout, order: [...views, ...inYourOrder(channels).map((th) => th.view!).filter((v) => v && !views.includes(v))] }))}
-          {section('people', t('Direct messages'), people.filter(unplaced), t('Nobody has sent you a decision yet.'))}
-          {agents.length > 0 && section('agents', t('Agents'), agentConvos.filter(unplaced), t('Talk to one of your team’s agents: it answers you here.'), addAgent, agentPicker)}
+          {section('people', t('Direct messages'), peopleRows, t('Nobody has sent you a decision yet.'))}
+          {agents.length > 0 && section('agents', t('Agents'), agentRows, t('Talk to one of your team’s agents: it answers you here.'), addAgent, agentPicker)}
           <button type="button" className="cl-add-section" onClick={() => { setSectionName(''); setAddingSection({}) }} data-add-section="1">
             <Icon name="plus" size={13} /> {t('Add a section')}
           </button>
