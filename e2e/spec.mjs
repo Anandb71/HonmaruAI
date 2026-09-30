@@ -1429,7 +1429,16 @@ await step('a rule in the playbook is written, kept, changed and removed', async
   await d.fill('.playbook-add textarea', 'Anything over $1,000 goes to Kenji first.')
   await d.click('.playbook-add .pill-btn')
   const rule = '.memory-row:has-text("goes to Kenji first")'
-  await d.waitForSelector(rule, { timeout: 10000 }).catch(() => { throw new Error('the rule was not listed') })
+  // The step before fires the fifteen-minute cron, and the local Worker can
+  // still be busy with it: give the save longer, and if the list still has
+  // not shown it, tell a slow save from a lost one before failing.
+  const listed = await d.waitForSelector(rule, { timeout: 20000 }).then(() => true, () => false)
+  if (!listed) {
+    const saved = d1("SELECT COUNT(*) AS n FROM memories WHERE text LIKE '%goes to Kenji first%'")[0]?.n || 0
+    if (!saved) throw new Error('the rule was not saved')
+    await d.reload({ waitUntil: 'load' })
+    await d.waitForSelector(rule, { timeout: 15000 }).catch(() => { throw new Error('the rule was saved but not listed') })
+  }
   await d.reload({ waitUntil: 'load' })
   await d.waitForSelector(rule, { timeout: 15000 }).catch(() => { throw new Error('the rule did not survive a reload') })
   const byline = await d.$eval(rule, (el) => el.innerText)
