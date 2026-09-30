@@ -838,9 +838,58 @@ CREATE TABLE IF NOT EXISTS custom_agents (
   updated_by    TEXT,
   updated_at    TEXT NOT NULL,
   deleted_at    TEXT,
+  /* Set for an AI teammate (teammates.js): "claude". It answers through
+     that service, not the workspace's model. */
+  provider      TEXT,
   PRIMARY KEY (org_id, id)
 );
 CREATE INDEX IF NOT EXISTS idx_custom_agents_handle ON custom_agents(org_id, handle);
+
+/* An AI teammate, set up by an admin (teammates.js): the key of the account
+   made for it, what it may reach, where it may work and what it may spend.
+   Tool keys are not here: they go to the service's own vault. */
+CREATE TABLE IF NOT EXISTS ai_teammates (
+  org_id              TEXT NOT NULL,
+  provider            TEXT NOT NULL,
+  enabled             INTEGER NOT NULL DEFAULT 0,
+  api_key             TEXT,
+  github_token        TEXT,
+  repos               TEXT,
+  model               TEXT,
+  instructions        TEXT,
+  /* JSON list of channel keys; NULL is every channel. */
+  channels            TEXT,
+  /* NULL is no limit. */
+  monthly_limit_cents INTEGER,
+  /* JSON: [{name, secretName, host, credentialId}]. */
+  tools               TEXT,
+  /* JSON: the service's own ids (agent, environment, vault). */
+  remote              TEXT,
+  agent_id            TEXT,
+  updated_by          TEXT,
+  updated_at          TEXT NOT NULL,
+  PRIMARY KEY (org_id, provider)
+);
+
+/* One piece of work a teammate took on in a thread: its session there,
+   what it has cost and how far it has been read. */
+CREATE TABLE IF NOT EXISTS ai_teammate_runs (
+  id             TEXT PRIMARY KEY,
+  org_id         TEXT NOT NULL,
+  provider       TEXT NOT NULL,
+  channel        TEXT NOT NULL,
+  thread_id      TEXT NOT NULL,
+  remote_id      TEXT NOT NULL,
+  status         TEXT NOT NULL,
+  cost_cents     INTEGER NOT NULL DEFAULT 0,
+  last_event_at  TEXT,
+  started_by     TEXT,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_teammate_runs_status ON ai_teammate_runs(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_teammate_runs_thread ON ai_teammate_runs(org_id, channel, thread_id);
+CREATE INDEX IF NOT EXISTS idx_teammate_runs_month ON ai_teammate_runs(org_id, provider, created_at);
 
 /* An agent added to a channel or a group: shown among its members, and
    called there by anyone in it — a personal agent too, once its owner

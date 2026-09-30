@@ -101,7 +101,7 @@ function toAgent(row) {
   return {
     id: row.id, handle: row.handle, name: row.name, emoji: row.emoji || null, avatarUrl: row.avatar_url || null, description: row.description || "",
     instructions: row.instructions, scope: row.scope === "personal" ? "personal" : "team",
-    ownerLogin: row.owner_login, preset: row.preset || null,
+    ownerLogin: row.owner_login, preset: row.preset || null, provider: row.provider || null,
     createdAt: row.created_at, updatedBy: row.updated_by || null, updatedAt: row.updated_at,
   };
 }
@@ -194,18 +194,19 @@ export function toClientAgent(agent, members, viewerLogin, { isAdmin = false } =
   const mine = agent.ownerLogin === viewerLogin;
   return {
     id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji, avatarUrl: agent.avatarUrl || null, description: agent.description,
-    instructions: agent.instructions, scope: agent.scope, preset: agent.preset,
+    instructions: agent.instructions, scope: agent.scope, preset: agent.preset, provider: agent.provider || null,
     createdBy: refOf(agent.ownerLogin), createdByName: nameOf(agent.ownerLogin), mine,
     updatedByName: nameOf(agent.updatedBy), updatedAt: agent.updatedAt,
-    canEdit: agent.scope === "team" || mine,
-    canDelete: mine || (agent.scope === "team" && isAdmin),
+    // A teammate is set up in Studio, not on the Agents screen.
+    canEdit: !agent.provider && (agent.scope === "team" || mine),
+    canDelete: !agent.provider && (mine || (agent.scope === "team" && isAdmin)),
     markdown: agentMarkdown(agent),
   };
 }
 
 /// Is "@x" free for an agent: nobody's name, no group's, no other agent's
 /// the same person could call.
-async function handleTaken(db, orgId, handle, { members, scope, ownerLogin, exceptId = null }) {
+export async function handleTaken(db, orgId, handle, { members, scope, ownerLogin, exceptId = null }) {
   const people = members.some((m) => [m.handle, m.name, String(m.login || "").replace(/^(u:|email:)/, "").split("@")[0]]
     .filter(Boolean).map(fold).includes(handle));
   if (people) return `@${handle} is already somebody's name here.`;
@@ -229,6 +230,7 @@ export async function saveAgent(db, orgId, { id = null, input, login, members, i
     if (!row) return { error: "No such agent.", status: 404 };
     existing = toAgent(row);
     if (existing.scope === "personal" && existing.ownerLogin !== login) return { error: "No such agent.", status: 404 };
+    if (existing.provider) return { error: "This teammate is set up in Studio → AI teammates.", status: 400 };
   }
   // A .md file fills what the form did not.
   const fromFile = typeof input?.markdown === "string" ? parseAgentMarkdown(input.markdown) : {};
@@ -287,6 +289,7 @@ export async function deleteAgent(db, orgId, { id, login, isAdmin }) {
   const row = await db.prepare("SELECT * FROM custom_agents WHERE org_id = ?1 AND id = ?2 AND deleted_at IS NULL").bind(orgId, String(id || "")).first();
   if (!row || (row.scope === "personal" && row.owner_login !== login)) return { error: "No such agent.", status: 404 };
   if (row.owner_login !== login && !isAdmin) return { error: "Only whoever made it, or an admin, can delete it.", status: 403 };
+  if (row.provider) return { error: "Turn this teammate off in Studio → AI teammates.", status: 400 };
   await db.prepare("UPDATE custom_agents SET deleted_at = ?3 WHERE org_id = ?1 AND id = ?2").bind(orgId, row.id, new Date().toISOString()).run();
   return { agent: toAgent(row) };
 }
