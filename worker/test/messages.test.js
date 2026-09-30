@@ -117,10 +117,12 @@ test("an unsent message does not end the history early: a page says outright whe
 
 test("a whole page of unsent messages is skipped, not taken for the start", async () => {
   const at = (i) => new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString();
-  // Two said long ago, then 160 unsent, then one said since.
+  // Two said long ago, then 160 unsent, then one said since. Cut to a
+  // page before the unsent were dropped, it was only the last one.
+  const kept = (i) => i < 2 || i === 162;
   await env.DB.batch(Array.from({ length: 163 }, (_, i) => env.DB.prepare(
     "INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, created_at, deleted_at) VALUES (?1, ?2, 'b:cafe', 'u:mika@example.com', 'message', ?3, ?4, ?5)"
-  ).bind(`h${i}`, ORG, i < 2 || i === 162 ? `line ${i}` : "", at(i), i < 2 || i === 162 ? null : at(200))));
+  ).bind(`h${i}`, ORG, kept(i) ? `line ${i}` : "", at(i), kept(i) ? null : at(200))));
   const first = await (await get(`/channels/messages?${q({ orgId: ORG, channel: "b:cafe" })}`, toru)).json();
   expect(first.messages.map((m) => m.id)).toEqual(["h0", "h1", "h162"]);
   expect(first.more).toBe(false);
