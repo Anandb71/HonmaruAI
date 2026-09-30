@@ -225,4 +225,14 @@ test("channels nobody talks in are offered for tidying, and archiving hides them
   expect((await listBusinesses(env.DB, ORG)).map((b) => b.slug)).toEqual(["research"]);
   const card = await env.DB.prepare("SELECT json_extract(data, '$.business') AS b FROM cards WHERE card_id = 'ft1'").first();
   expect(card.b).toBe("food-truck");
+  // Archived channels are listed, and one can be brought back as it was.
+  const archivedList = async (token) => (await SELF.fetch(`https://example.com/businesses/archived?orgId=${encodeURIComponent(ORG)}`, { headers: headers(token) })).json();
+  expect((await archivedList(memberToken)).channels).toEqual([expect.objectContaining({ slug: "food-truck", name: "Food Truck", private: false })]);
+  const restore = (token, slug) => SELF.fetch("https://example.com/businesses/unarchive", { method: "POST", headers: headers(token), body: JSON.stringify({ orgId: ORG, slug }) });
+  expect((await restore(outsiderToken, "food-truck")).status).toBe(403);
+  expect((await restore(memberToken, "research")).status).toBe(404);
+  const back = await restore(memberToken, "food-truck");
+  expect(back.status).toBe(200);
+  expect((await back.json()).businesses.map((b) => b.slug)).toContain("food-truck");
+  expect((await archivedList(memberToken)).channels).toEqual([]);
 });

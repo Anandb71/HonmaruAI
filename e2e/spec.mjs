@@ -1877,7 +1877,7 @@ await step('a channel opens at its newest message, and stays there while what is
   }
 })
 
-await step('right-clicking a channel in the sidebar offers what a desktop chat app does: star, notify, rename', async () => {
+await step('right-clicking a channel in the sidebar offers what a desktop chat app does: star, notify, rename, archive', async () => {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: await phone.storageState(), permissions: ['clipboard-read', 'clipboard-write'] })
   const d = await ctx.newPage()
   d.on('pageerror', (e) => thrown.push(String(e).slice(0, 200)))
@@ -1948,6 +1948,26 @@ await step('right-clicking a channel in the sidebar offers what a desktop chat a
     await d.keyboard.press('Shift+Escape')
     await d.waitForFunction(() => !document.querySelector('.slk-side .cl-fresh'), null, { timeout: 5000 })
       .catch(() => { throw new Error('⇧Esc left a conversation marked new') })
+    // Archive a channel from the menu, then bring it back from You.
+    await d.click('.cl-add')
+    await d.fill('.cl-add-form input', 'Old launch')
+    await d.keyboard.press('Enter')
+    await d.waitForSelector(rowOf('Old launch'), { timeout: 15000 })
+    await menu('Old launch')
+    await d.click('.row-menu [data-row-menu="archive"]')
+    await d.waitForSelector('[data-archive-confirm]', { timeout: 5000 })
+    await d.screenshot({ path: `${SHOTS}/39d-archive-dialog.png` })
+    await d.click('[data-archive-confirm]')
+    await d.waitForSelector(rowOf('Old launch'), { state: 'detached', timeout: 10000 })
+      .catch(() => { throw new Error('archiving from the menu left the channel in the sidebar') })
+    await d.goto(`${WEB}/#/you`, { waitUntil: 'load' })
+    await d.waitForSelector('[data-restore-channel="Old launch"]', { timeout: 15000 })
+      .catch(() => { throw new Error('the archived channel is not listed under Archived channels') })
+    await d.click('[data-restore-channel="Old launch"]')
+    await d.waitForSelector('[data-archived-channels] [role="status"]', { timeout: 10000 })
+    await d.goto(`${WEB}/#/list`, { waitUntil: 'load' })
+    await d.waitForSelector(rowOf('Old launch'), { timeout: 15000 })
+      .catch(() => { throw new Error('a restored channel did not come back to the sidebar') })
     // Escape closes the menu.
     await menu('Front desk')
     await d.keyboard.press('Escape')

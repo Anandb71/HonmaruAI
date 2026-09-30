@@ -743,6 +743,35 @@ enum ChatService {
         _ = try await call("DELETE", "/channels/members", base: base, body: ["orgId": orgId, "channel": channel], as: R.self)
     }
 
+    /// Archive a channel: out of everyone's list, everything it held kept.
+    static func archiveChannel(orgId: String, slug: String, base: URL) async throws -> [ChatBusiness] {
+        struct R: Decodable { let archived: Int; let businesses: [ChatBusiness] }
+        let r = try await call("POST", "/businesses/archive", base: base, body: ["orgId": orgId, "slugs": [slug]], as: R.self)
+        guard r.archived > 0 else { throw Failure.server(400, nil) }
+        return r.businesses
+    }
+
+    struct ArchivedChannel: Decodable, Identifiable, Hashable {
+        let slug: String
+        let name: String
+        let isPrivate: Bool
+        let archivedAt: String
+        var id: String { slug }
+        enum CodingKeys: String, CodingKey { case slug, name, isPrivate = "private", archivedAt }
+    }
+
+    /// The archived channels you may see, newest first.
+    static func archivedChannels(orgId: String, base: URL) async throws -> [ArchivedChannel] {
+        struct R: Decodable { let channels: [ArchivedChannel] }
+        return try await call("GET", "/businesses/archived", base: base, query: ["orgId": orgId], as: R.self).channels
+    }
+
+    /// Bring an archived channel back as it was.
+    static func unarchiveChannel(orgId: String, slug: String, base: URL) async throws -> [ChatBusiness] {
+        struct R: Decodable { let businesses: [ChatBusiness] }
+        return try await call("POST", "/businesses/unarchive", base: base, body: ["orgId": orgId, "slug": slug], as: R.self).businesses
+    }
+
     static func createChannel(orgId: String, name: String, base: URL) async throws -> [ChatBusiness] {
         struct R: Decodable { let businesses: [ChatBusiness] }
         return try await call("POST", "/businesses", base: base, body: ["orgId": orgId, "name": name], as: R.self).businesses

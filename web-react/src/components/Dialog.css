@@ -62,6 +62,8 @@
 .dlg-btn:hover:not(:disabled) { background: var(--dlg-hover); }
 .dlg-btn.primary { background: var(--dlg-ink); color: var(--dlg-bg); border-color: var(--dlg-ink); }
 .dlg-btn.primary:hover:not(:disabled) { opacity: .88; background: var(--dlg-ink); }
+.dlg-btn.danger { background: #e5484d; color: #fff; border-color: #e5484d; }
+.dlg-btn.danger:hover:not(:disabled) { opacity: .9; background: #e5484d; }
 .dlg-btn:disabled { opacity: .45; cursor: default; }
 .dlg-btn.link { border: none; background: none; padding: 0; height: auto; color: var(--dlg-accent); }
 .dlg-btn.link:hover:not(:disabled) { background: none; text-decoration: underline; }

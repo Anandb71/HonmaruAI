@@ -1224,6 +1224,44 @@ async function handle(request, env, url, ctx) {
       if (archived) await tellRoom(body.orgId);
       return json({ archived, businesses: await listBusinesses(env.DB, body.orgId, { viewer: who }) });
     }
+    // The archived channels you may see — a private one only to its members —
+    // newest first, so one archived by mistake can be brought back.
+    if (url.pathname === "/businesses/archived" && request.method === "GET") {
+      const orgId = url.searchParams.get("orgId");
+      if (!orgId) return json({ message: "orgId is required" }, 400);
+      const denied = await requireMember(env, request, orgId);
+      if (denied) return denied;
+      const who = await viewerLogin();
+      const { results } = await env.DB.prepare(
+        "SELECT slug, name, COALESCE(private, 0) AS private, archived_at FROM businesses WHERE org_id = ?1 AND archived_at IS NOT NULL ORDER BY archived_at DESC LIMIT 200"
+      ).bind(orgId).all();
+      const channels = [];
+      for (const r of results || []) {
+        if (r.private && !(await canTouchChannel(env.DB, orgId, r.slug, who))) continue;
+        channels.push({ slug: r.slug, name: r.name, private: Boolean(r.private), archivedAt: r.archived_at });
+      }
+      return json({ channels });
+    }
+    // Bring an archived channel back, with everything it held. Whoever may
+    // archive one may restore it.
+    if (url.pathname === "/businesses/unarchive" && request.method === "POST") {
+      const session = await getSession(env.DB, request.headers.get("x-session-token"));
+      if (!session) return json({ message: "invalid session" }, 401);
+      const body = await request.json().catch(() => ({}));
+      if (!body.orgId || !body.slug) return json({ message: "orgId and slug are required" }, 400);
+      const denied = await requireMember(env, request, body.orgId);
+      if (denied) return denied;
+      if (await isGuest(env.DB, body.orgId, session.github_id)) return json({ message: "A guest cannot restore channels." }, 403);
+      const who = await viewerLogin();
+      const slug = String(body.slug);
+      const row = await env.DB.prepare("SELECT name FROM businesses WHERE org_id = ?1 AND slug = ?2 AND archived_at IS NOT NULL").bind(body.orgId, slug).first();
+      if (!row || !(await canTouchChannel(env.DB, body.orgId, slug, who))) return json({ message: "That channel is not archived." }, 404);
+      await env.DB.prepare("UPDATE businesses SET archived_at = NULL WHERE org_id = ?1 AND slug = ?2").bind(body.orgId, slug).run();
+      const me = await getUserByGithubId(env.DB, session.github_id);
+      await audit(env, request, { orgId: body.orgId, action: "channel.unarchived", actor: person(me), entity: { type: "channel", id: slug, name: `#${row.name}` } });
+      await tellRoom(body.orgId);
+      return json({ restored: true, businesses: await listBusinesses(env.DB, body.orgId, { viewer: who }) });
+    }
     if (url.pathname === "/businesses" && request.method === "DELETE") {
       const body = await request.json().catch(() => ({}));
       if (!body.orgId || !body.slug) return json({ message: "orgId and slug are required" }, 400);

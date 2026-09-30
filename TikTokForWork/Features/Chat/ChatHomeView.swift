@@ -18,6 +18,7 @@ struct ChatHomeView: View {
     @State private var renaming: ChatConversation?
     @State private var renameTo = ""
     @State private var leaving: ChatConversation?
+    @State private var archiving: ChatConversation?
     @State private var menuProblem: String?
 
     var body: some View {
@@ -54,6 +55,9 @@ struct ChatHomeView: View {
                         ForEach(store.channels.filter { store.isUnplaced($0.view) }) { row($0) }
                         Button { creating = true } label: {
                             Label("Add a channel", systemImage: "plus").foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                        NavigationLink(value: ChatRoute.archived) {
+                            Label("Archived channels", systemImage: "archivebox").foregroundStyle(Theme.Colors.textSecondary)
                         }
                     } header: { Text("Channels") }
                     if !store.people.isEmpty || !store.groupConversations.isEmpty {
@@ -121,6 +125,7 @@ struct ChatHomeView: View {
                 case .later: ChatLaterView(store: store)
                 case .threads: ChatThreadsView(store: store)
                 case .agents: AgentsView(store: store).environmentObject(appState)
+                case .archived: ChatArchivedChannelsView(store: store)
                 }
             }
             .alert("New channel", isPresented: $creating) {
@@ -148,6 +153,12 @@ struct ChatHomeView: View {
                     Task { if let failed = await store.leaveChannel(c.view) { menuProblem = failed } }
                 }
             } message: { Text("You will need somebody inside to add you again.") }
+            .confirmationDialog(Text(verbatim: archiving.map { "#\($0.name)" } ?? ""), isPresented: Binding(get: { archiving != nil }, set: { if !$0 { archiving = nil } }), titleVisibility: .visible) {
+                Button("Archive channel", role: .destructive) {
+                    guard let c = archiving else { return }
+                    Task { if let failed = await store.archiveChannel(c.view) { menuProblem = failed } }
+                }
+            } message: { Text("It leaves everyone's sidebar. Its messages, files and decisions are kept, and it can be restored any time from Archived channels.") }
             .alert("That did not work", isPresented: Binding(get: { menuProblem != nil }, set: { if !$0 { menuProblem = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: { Text(verbatim: menuProblem ?? "") }
@@ -267,7 +278,7 @@ struct ChatHomeView: View {
 
     /// Hold a conversation: what the web's right-click offers — a star, a
     /// section, how much it notifies you, its link, and for a channel its
-    /// name, or leaving a private one.
+    /// name, archiving it, or leaving a private one.
     @ViewBuilder
     private func rowMenu(_ c: ChatConversation) -> some View {
         let starred = store.isStarred(c.view)
@@ -302,6 +313,7 @@ struct ChatHomeView: View {
         if c.kind == .channel {
             Divider()
             Button { renameTo = c.name; renaming = c } label: { Label("Rename channel…", systemImage: "pencil") }
+            Button(role: .destructive) { archiving = c } label: { Label("Archive channel…", systemImage: "archivebox") }
             if c.isPrivate {
                 Button(role: .destructive) { leaving = c } label: { Label("Leave channel", systemImage: "rectangle.portrait.and.arrow.right") }
             }

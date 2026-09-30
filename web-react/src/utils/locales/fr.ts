@@ -1843,6 +1843,16 @@ const table: Record<string, string> = {
   'Nothing new to mark as read': 'Rien de nouveau à marquer comme lu',
   'Marked {n} conversations as read': '{n} conversations marquées comme lues',
   'Activity marked as read': 'Activité marquée comme lue',
+  'archive.lede': 'Il disparaît de la barre latérale de tous. Ses messages, fichiers et décisions sont conservés, et il peut être restauré depuis « Canaux archivés » dans votre profil.',
+  'Archive': 'Archiver',
+  'Archive channel': 'Archiver le canal',
+  'Archive channel…': 'Archiver le canal…',
+  'Archive #{name}?': 'Archiver #{name} ?',
+  'Archived #{name}': '#{name} archivé',
+  'Archived channels': 'Canaux archivés',
+  'Restore': 'Restaurer',
+  'Restoring…': 'Restauration…',
+  'Restored #{name}': '#{name} restauré',
 }
 
 export default table

@@ -786,6 +786,8 @@ export const ClassicList: React.FC<Props> = ({
   const [rowMenu, setRowMenu] = useState<null | { thread: Thread; x: number; y: number }>(null)
   const closeRowMenu = useCallback(() => setRowMenu(null), [])
   const [renameDialog, setRenameDialog] = useState<null | { slug: string; name: string; error?: string | null; busy?: boolean }>(null)
+  // Archiving asks first, and says where to bring the channel back from.
+  const [archiveDialog, setArchiveDialog] = useState<null | { thread: Thread; error?: string | null; busy?: boolean }>(null)
   const openBeside = (th: Thread, tab: DetailsTab) => {
     if (current?.key === th.key) { setDetailId(null); setThread(null); setProfile(null); setPins(null); setSide({ kind: 'details', tab }); return }
     sideOnOpen.current = { kind: 'details', tab }
@@ -841,11 +843,10 @@ export const ClassicList: React.FC<Props> = ({
     if (isChannel && th.slug) {
       out.push({ kind: 'sep' })
       out.push({ kind: 'item', label: t('Rename channel…'), icon: 'edit', onSelect: () => setRenameDialog({ slug: th.slug!, name: th.name }), data: 'rename' })
-      if (th.private) {
-        out.push({ kind: 'item', label: t('Add people…'), icon: 'invite', onSelect: () => setAddingTo(v), data: 'add-people' })
-        out.push({ kind: 'sep' })
-        out.push({ kind: 'item', label: t('Leave channel'), danger: true, onSelect: () => void leaveChannel(th), data: 'leave' })
-      }
+      if (th.private) out.push({ kind: 'item', label: t('Add people…'), icon: 'invite', onSelect: () => setAddingTo(v), data: 'add-people' })
+      out.push({ kind: 'sep' })
+      out.push({ kind: 'item', label: t('Archive channel…'), icon: 'box', danger: true, onSelect: () => setArchiveDialog({ thread: th }), data: 'archive' })
+      if (th.private) out.push({ kind: 'item', label: t('Leave channel'), danger: true, onSelect: () => void leaveChannel(th), data: 'leave' })
     }
     return out
   }
@@ -858,6 +859,25 @@ export const ClassicList: React.FC<Props> = ({
     if (err) { setRenameDialog((d) => d && { ...d, busy: false, error: err }); return }
     setRenameDialog(null)
     setToast(t('Renamed to #{name}', { name }))
+  }
+  const archiveChannel = async () => {
+    if (!archiveDialog || archiveDialog.busy || !archiveDialog.thread.slug) return
+    const th = archiveDialog.thread
+    setArchiveDialog({ ...archiveDialog, busy: true, error: null })
+    const res = await fetch(`${api.httpBase}/businesses/archive`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, slugs: [th.slug] }),
+    }).catch(() => null)
+    const data = res ? await res.json().catch(() => null) : null
+    if (!res?.ok || !data?.archived) {
+      setArchiveDialog((d) => d && { ...d, busy: false, error: data?.message || t('That did not work. Try again.') })
+      return
+    }
+    setArchiveDialog(null)
+    setSettings(false)
+    if (current?.key === th.key) choose(null)
+    window.dispatchEvent(new Event('honmaru:reload-businesses'))
+    setToast(t('Archived #{name}', { name: th.name }))
   }
 
   // A teammate's profile, beside the conversation.
@@ -3123,6 +3143,7 @@ export const ClassicList: React.FC<Props> = ({
                 {thread.private && <button type="button" className="cl-nudge" onClick={() => setAddingTo(thread.view!)} data-add-people="1">{t('Add people')}</button>}
                 {thread.private && <button type="button" className="cl-nudge" onClick={() => void leaveChannel(thread)} data-leave="1">{t('Leave channel')}</button>}
                 <button type="button" className="cl-nudge" onClick={() => { setRenaming(thread.slug!); setRenameTo(thread.name) }}>{t('Rename')}</button>
+                <button type="button" className="cl-nudge" onClick={() => setArchiveDialog({ thread })} data-archive-channel="1">{t('Archive channel')}</button>
                 <button type="button" className="cl-nudge cl-danger" onClick={() => void deleteChannel(thread)}>{t('Delete channel')}</button>
               </>
             )}
@@ -3709,6 +3730,24 @@ export const ClassicList: React.FC<Props> = ({
               onChange={(e) => setRenameDialog({ ...renameDialog, name: e.target.value, error: null })} />
           </form>
           {renameDialog.error && <p className="dlg-error" role="alert">{renameDialog.error}</p>}
+        </Dialog>
+      )}
+      {archiveDialog && (
+        <Dialog
+          title={t('Archive #{name}?', { name: archiveDialog.thread.name })}
+          lede={t('archive.lede')}
+          className="cl-archive-dialog"
+          onClose={() => setArchiveDialog(null)}
+          footer={(
+            <>
+              <button type="button" className="dlg-btn" onClick={() => setArchiveDialog(null)}>{t('Cancel')}</button>
+              <button type="button" className="dlg-btn danger" data-archive-confirm disabled={archiveDialog.busy} onClick={() => void archiveChannel()}>
+                {archiveDialog.busy ? t('Archiving…') : t('Archive')}
+              </button>
+            </>
+          )}
+        >
+          {archiveDialog.error && <p className="dlg-error" role="alert">{archiveDialog.error}</p>}
         </Dialog>
       )}
       {moveSheet && (

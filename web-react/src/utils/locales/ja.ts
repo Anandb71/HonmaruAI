@@ -1907,6 +1907,16 @@ const table: Record<string, string> = {
   'Nothing new to mark as read': '既読にする新着はありません',
   'Marked {n} conversations as read': '{n}件の会話を既読にしました',
   'Activity marked as read': 'アクティビティを既読にしました',
+  'archive.lede': '全員のサイドバーから消えます。メッセージ・ファイル・決定はそのまま残り、プロフィールの「アーカイブ済みチャンネル」からいつでも元に戻せます。',
+  'Archive': 'アーカイブ',
+  'Archive channel': 'チャンネルをアーカイブ',
+  'Archive channel…': 'チャンネルをアーカイブ…',
+  'Archive #{name}?': '#{name} をアーカイブしますか？',
+  'Archived #{name}': '#{name} をアーカイブしました',
+  'Archived channels': 'アーカイブ済みチャンネル',
+  'Restore': '元に戻す',
+  'Restoring…': '戻しています…',
+  'Restored #{name}': '#{name} を元に戻しました',
 }
 
 export default table

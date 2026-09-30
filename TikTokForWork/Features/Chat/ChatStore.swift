@@ -632,6 +632,28 @@ final class ChatStore: ObservableObject {
             return nil
         } catch { return error.localizedDescription }
     }
+    /// Archive a channel; nil when done, else what went wrong.
+    func archiveChannel(_ view: String) async -> String? {
+        guard let orgId, let base, view.hasPrefix("b:") else { return String(localized: "That did not work. Try again.") }
+        do {
+            businesses = try await ChatService.archiveChannel(orgId: orgId, slug: String(view.dropFirst(2)), base: base)
+            await refresh()
+            return nil
+        } catch { return error.localizedDescription }
+    }
+    func archivedChannels() async -> [ChatService.ArchivedChannel] {
+        guard let orgId, let base else { return [] }
+        return (try? await ChatService.archivedChannels(orgId: orgId, base: base)) ?? []
+    }
+    /// Bring an archived channel back; nil when done, else what went wrong.
+    func unarchiveChannel(_ slug: String) async -> String? {
+        guard let orgId, let base else { return String(localized: "That did not work. Try again.") }
+        do {
+            businesses = try await ChatService.unarchiveChannel(orgId: orgId, slug: slug, base: base)
+            await refresh()
+            return nil
+        } catch { return error.localizedDescription }
+    }
     /// The web app's address for a conversation, as the web copies it.
     func conversationLink(_ view: String) async -> URL? {
         guard let base, let web = await ChatJamLink.webURL(base: base) else { return nil }
