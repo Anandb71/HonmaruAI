@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, isTemp, keepTemps, markFailed, reconcile, tempMessage } from '../utils/pendingSend'
+import { arrive, isTemp, keepTemps, markFailed, markPending, reconcile, tempMessage, tempState } from '../utils/pendingSend'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -1412,6 +1412,22 @@ export const ClassicList: React.FC<Props> = ({
     setMessages((prev) => (prev[channel] ? { ...prev, [channel]: markFailed(prev[channel], tempId, why) } : prev))
     if (shownNow.current.view !== channel) setProblem(why)
   }
+  /// Retry: the same words, files and thread, on their way again from
+  /// where they are.
+  const retry = (m: ChannelMessage) => {
+    const out = outbox.current.get(m.id) || { tempId: m.id, channel: m.channel, body: m.body, decide: false, parentId: m.parentId || undefined, files: m.files || [] }
+    if (going.current.has(goingKey(out))) return
+    outbox.current.set(m.id, out)
+    if (out.parentId) setThread((prev) => (prev && prev.parent.id === out.parentId ? { ...prev, replies: markPending(prev.replies, m.id) } : prev))
+    else setMessages((prev) => (prev[out.channel] ? { ...prev, [out.channel]: markPending(prev[out.channel], m.id) } : prev))
+    void deliver(out)
+  }
+  /// Delete: it was only ever here, so it just goes.
+  const discard = (m: ChannelMessage) => {
+    outbox.current.delete(m.id)
+    if (m.parentId) setThread((prev) => (prev && prev.parent.id === m.parentId ? { ...prev, replies: prev.replies.filter((x) => x.id !== m.id) } : prev))
+    else setMessages((prev) => (prev[m.channel] ? { ...prev, [m.channel]: prev[m.channel].filter((x) => x.id !== m.id) } : prev))
+  }
 
   // ---- Time and gathering: drafts, scheduled sends, Later, clips, notes ----
   // A draft per conversation, kept in this browser, as in any chat client.
@@ -2406,10 +2422,11 @@ export const ClassicList: React.FC<Props> = ({
 
   /// One block of a conversation: a gutter, a name and a time — or, joined
   /// to the one before, just the words — then what was said.
-  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void }, body: React.ReactNode) => (
+  /// `state`: yours, shown before the server has it — on its way, or failed.
+  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; state?: 'pending' | 'failed' }, body: React.ReactNode) => (
     <article key={key} id={opts.msgId ? `msg-${opts.msgId}` : undefined} tabIndex={opts.msgId ? -1 : undefined}
       {...(!wide ? longPress(opts.onHold) : {})}
-      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
+      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}${opts.state ? ` ${opts.state}` : ''}`}>
       <div className="slk-gutter" aria-hidden="true">
         {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span> : avatarFor(opts.app, opts.face || { name: opts.name })}
       </div>
@@ -2456,9 +2473,25 @@ export const ClassicList: React.FC<Props> = ({
     return <Avatar key={r} className="slk-face" name={mine ? (myName || t('You')) : nameOfRef(r)} url={mine ? myAvatar : memberByRef(r)?.avatarUrl} size={20} />
   }
 
+  /// Under one of yours the server does not have yet: that it is on its way
+  /// (said, not shown — it is drawn dimmed), or why it did not go and what
+  /// to do about it. Either button goes once pressed; pressed from the
+  /// keyboard, focus goes back to the box it was written in.
+  const unsentLine = (m: ChannelMessage) => {
+    const refocus = (e: React.MouseEvent) => { if (e.detail === 0) (m.parentId ? threadComposer : composer).current?.focus() }
+    return m.failed ? (
+      <div className="slk-unsent" role="alert" data-unsent={m.id}>
+        <span className="slk-unsent-why">{m.failed}</span>
+        <button type="button" className="slk-unsent-act" onClick={(e) => { retry(m); refocus(e) }} data-unsent-retry="1"><Icon name="refresh" size={12} />{t('Retry')}</button>
+        <button type="button" className="slk-unsent-act" onClick={(e) => { discard(m); refocus(e) }} data-unsent-delete="1"><Icon name="trash" size={12} />{t('Delete')}</button>
+      </div>
+    ) : m.pending ? <span className="sr-only">{t('Sending…')}</span> : null
+  }
+
   /// What sits under a message's words: its reactions and its thread.
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
+      {unsentLine(m)}
       {!m.deleted && m.kind === 'message' && !m.previewsHidden && !isTemp(m) && (
         <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken}
           onHide={m.mine ? () => void act('POST', '/channels/previews', channel, { messageId: m.id, hidden: true }) : undefined} />
@@ -2908,7 +2941,7 @@ export const ClassicList: React.FC<Props> = ({
                   name: whoSaid(m),
                   face: m.kind !== 'ai' ? faceOfMessage(m) : null,
                   msgId: i === 0 ? `thread-${m.id}` : m.id,
-                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true),
+                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true), state: tempState(m),
                 }, (
                   <>
                     {words(thread.channel, m)}
@@ -3075,7 +3108,7 @@ export const ClassicList: React.FC<Props> = ({
           const name = whoSaid(m)
           out.push(block(m.id, {
             joined: joined && !m.pinned, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
-            tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m),
+            tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m), state: tempState(m),
           }, (
             <>
               {words(thread.view!, m)}
