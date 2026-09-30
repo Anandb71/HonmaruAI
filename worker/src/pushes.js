@@ -131,6 +131,10 @@ const clip = (text, n) => {
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
 };
 
+/// What a message says, as a lock screen may show it: one line, and a
+/// ||spoiler|| never given away: its writer hid it until clicked.
+export const pushPreview = (text, n = 180) => clip(String(text || "").replace(/\|\|[^|\n]+\|\|/g, "▇▇▇"), n);
+
 /// Send what is due. Each row is claimed first, so two overlapping runs
 /// never push one message twice.
 export async function sendDuePushes(env, now = Date.now()) {
@@ -172,7 +176,7 @@ export async function sendDuePushes(env, now = Date.now()) {
       // In the language they set.
       const { textFor } = await import("./translate.js");
       const said = msg.body ? await textFor(env, job.org_id, msg, job.login).catch(() => msg.body) : "";
-      const body = clip(said || files, 180);
+      const body = said ? pushPreview(said) : files;
       const delivered = await pushMessage(env, job.login, { title, body, orgId: job.org_id, channel: view, messageId: msg.id, parentId: msg.parent_id || null });
       if (delivered) sent += 1; else skipped += 1;
     } catch (err) {
