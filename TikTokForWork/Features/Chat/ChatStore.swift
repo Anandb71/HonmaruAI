@@ -409,6 +409,18 @@ final class ChatStore: ObservableObject {
         await ChatService.markRead(orgId: orgId, channel: view, base: base)
     }
 
+    /// Every conversation with something new, or an @ waiting for you.
+    var freshViews: [String] {
+        (channels + groupConversations + people + agentConversations).map(\.view)
+            .filter { isFresh($0) || mentions(in: $0) > 0 }
+    }
+    /// Everything new, read at once — Slack's Mark all as read: those
+    /// conversations, and Activity with them.
+    func markEverythingRead() async {
+        for view in freshViews { await markRead(view) }
+        if unreadInbox > 0 { await markAllInboxRead() }
+    }
+
     /// Activity items looked at: read here at once, and everywhere else.
     func seenInbox(_ ids: [String]) async {
         guard let orgId, let base else { return }

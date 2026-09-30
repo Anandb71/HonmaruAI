@@ -1837,6 +1837,9 @@ const table: Record<string, string> = {
   'Everyone in the workspace sees the new name. Links to it keep working.': 'Todos en el espacio de trabajo verán el nuevo nombre. Los enlaces siguen funcionando.',
   'Renamed to #{name}': 'Renombrado a #{name}',
   'Mark as read': 'Marcar como leído',
+  'Nothing new to mark as read': 'No hay nada nuevo que marcar como leído',
+  'Marked {n} conversations as read': '{n} conversaciones marcadas como leídas',
+  'Activity marked as read': 'Actividad marcada como leída',
 }
 
 export default table

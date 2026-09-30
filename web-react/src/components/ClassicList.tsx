@@ -801,9 +801,12 @@ export const ClassicList: React.FC<Props> = ({
     const here = sectionOf(v)
     const shown = isChannel && !th.private ? `#${th.name}` : th.name
     const out: MenuEntry[] = []
+    const others = freshViews().filter((x) => x !== v).length
     if (th.fresh || (mentionsIn[v] || 0) > 0) {
-      out.push({ kind: 'item', label: t('Mark as read'), icon: 'check', onSelect: () => markViewRead(v), data: 'mark-read' }, { kind: 'sep' })
+      out.push({ kind: 'item', label: t('Mark as read'), icon: 'check', onSelect: () => markViewRead(v), data: 'mark-read' })
     }
+    if (others > 0) out.push({ kind: 'item', label: t('Mark all as read'), hint: '⇧Esc', onSelect: markEverythingRead, data: 'mark-all-read' })
+    if (out.length) out.push({ kind: 'sep' })
     if (isChannel || th.kind === 'group') {
       out.push({ kind: 'item', label: isChannel ? t('Channel details') : t('Conversation details'), icon: 'users', data: 'details', submenu: [
         { kind: 'item', label: t('Members'), icon: 'users', onSelect: () => openBeside(th, 'members'), data: 'members' },
@@ -883,6 +886,8 @@ export const ClassicList: React.FC<Props> = ({
         e.preventDefault(); openActivity()
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault(); setSideHidden((h) => !h)
+      } else if (e.shiftKey && e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault(); markEverythingRead()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -1158,6 +1163,17 @@ export const ClassicList: React.FC<Props> = ({
   }
   /// "Mark as read" from the sidebar, without opening it.
   const markViewRead = (v: string) => { readOnServer(v, readHere(v)) }
+  /// Everything new, read at once — ⇧Esc, as in Slack: every conversation
+  /// with a dot or an @ waiting, and Activity with them.
+  const freshViews = () => everything.filter((th) => th.view && (th.fresh || (mentionsIn[th.view] || 0) > 0)).map((th) => th.view!)
+  const markEverythingRead = () => {
+    const views = freshViews()
+    const activityNew = (activityItems || []).some((i) => i.unread)
+    if (!views.length && !activityNew) { setToast(t('Nothing new to mark as read')); return }
+    for (const v of views) markViewRead(v)
+    if (activityNew) markAllActivityRead()
+    setToast(views.length ? t('Marked {n} conversations as read', { n: views.length }) : t('Activity marked as read'))
+  }
   useEffect(() => {
     if (!view || heldUnread.current === view) return
     const now = readHere(view)
