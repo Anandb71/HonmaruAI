@@ -3002,6 +3002,69 @@ await step('a workspace adds its own emoji, and uses them in a message and a rea
   }
 })
 
+// Your status, one click from your avatar — on a laptop the rail's, at its
+// foot. A preset and Save, and a teammate's sidebar wears its emoji; Escape
+// shuts the popover and hands focus back to the avatar that opened it.
+await step('a status set from the avatar on a laptop shows in a teammate’s sidebar', async () => {
+  await closeEverything()
+  if (!mate) throw new Error('the teammate this step needs is not here')
+  // Kenji at a laptop, in the same browser as his phone; the owner at theirs.
+  const kdesk = await mate.newPage()
+  await kdesk.setViewportSize({ width: 1280, height: 820 })
+  const desk = await phone.newPage()
+  await desk.setViewportSize({ width: 1280, height: 820 })
+  try {
+    await kdesk.goto(`${WEB}#/feed`, { waitUntil: 'load' })
+    await kdesk.click('nav [data-tab="you"]')
+    await kdesk.waitForSelector('[data-status-popover].from-rail [data-status-preset="Focusing"]', { timeout: 15000 })
+      .catch(() => { throw new Error('the rail’s avatar did not open your status') })
+    if ((await kdesk.getAttribute('nav [data-tab="you"]', 'aria-expanded')) !== 'true') throw new Error('the avatar does not say its popover is open')
+    await kdesk.click('[data-status-preset="Focusing"]')
+    const picked = await kdesk.inputValue('[data-status-emoji]')
+    if (picked !== '🎧') throw new Error(`the Focusing preset put "${picked}" in the emoji`)
+    if (!(await kdesk.inputValue('[data-status-text]')).trim()) throw new Error('the Focusing preset left the words empty')
+    await kdesk.click('[data-status-save]')
+    await kdesk.waitForSelector('[data-status-popover]', { state: 'detached', timeout: 10000 })
+      .catch(async () => { throw new Error(`Save did not close it: ${(await kdesk.textContent('[data-status-popover] .dlg-error').catch(() => null)) || 'no reason given'}`) })
+
+    // Opened again, it says what is set now; Escape shuts it, and focus is
+    // back on the avatar.
+    await kdesk.click('nav [data-tab="you"]')
+    await kdesk.waitForSelector('[data-status-popover] [data-status-now]', { timeout: 15000 })
+      .catch(() => { throw new Error('the popover does not say the status just set') })
+    const now = await kdesk.textContent('[data-status-popover] [data-status-now]')
+    if (!now.includes('🎧')) throw new Error(`the popover says the status is: ${now}`)
+    await kdesk.screenshot({ path: `${SHOTS}/76-status-popover.png` })
+    await kdesk.keyboard.press('Escape')
+    await kdesk.waitForSelector('[data-status-popover]', { state: 'detached', timeout: 5000 })
+      .catch(() => { throw new Error('Escape did not close your status') })
+    const focused = await kdesk.evaluate(() => document.activeElement?.getAttribute('data-tab') || document.activeElement?.tagName)
+    if (focused !== 'you') throw new Error(`Escape left focus on ${focused}, not the avatar`)
+
+    // The owner's sidebar, read fresh: Kenji's row wears the emoji.
+    await desk.goto(`${WEB}#/list`, { waitUntil: 'load' })
+    const worn = desk.locator('.slk-side .cl-thread[data-view^="dm:"]', { hasText: 'Kenji' }).locator('.cl-status')
+    await worn.waitFor({ timeout: 20000 })
+      .catch(() => { throw new Error('the owner’s sidebar shows no status beside Kenji') })
+    const emoji = ((await worn.textContent()) || '').trim()
+    if (emoji !== '🎧') throw new Error(`Kenji's row wears "${emoji}", not the status he set`)
+    await desk.screenshot({ path: `${SHOTS}/77-status-sidebar.png` })
+
+    // Cleared from the same popover, for the steps after this one.
+    await kdesk.click('nav [data-tab="you"]')
+    await kdesk.click('[data-status-popover] [data-status-clear]')
+    await kdesk.waitForSelector('[data-status-popover]', { state: 'detached', timeout: 10000 })
+      .catch(() => { throw new Error('Clear status did not close it') })
+  } catch (err) {
+    await kdesk.screenshot({ path: `${SHOTS}/fail-${Date.now()}-status-kenji.png` }).catch(() => {})
+    await desk.screenshot({ path: `${SHOTS}/fail-${Date.now()}-status-owner.png` }).catch(() => {})
+    throw err
+  } finally {
+    await kdesk.close()
+    await desk.close()
+  }
+})
+
 await step('threads you are in, a message marked unread, and one forwarded as a link only', async () => {
   await closeEverything()
   if (!mate) throw new Error('the teammate this step needs is not here')
