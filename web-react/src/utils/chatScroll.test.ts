@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countNewBelow, focusAfterJump, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from './chatScroll'
+import { countNewBelow, focusAfterJump, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow, waitToSay } from './chatScroll'
 
 /// A message said `i` minutes into the day, by a teammate unless it is yours.
 const at = (i: number) => new Date(Date.UTC(2026, 8, 30, 0, i)).toISOString()
@@ -78,6 +78,18 @@ describe('what is new', () => {
 
   it('counts nothing for a reader at the bottom', () => {
     expect(countNewBelow([msg(1), msg(2)], null)).toBe(0)
+  })
+})
+
+describe('the count, said aloud', () => {
+  it('is said at once after a quiet spell', () => {
+    expect(waitToSay(0, 60_000)).toBe(0)
+    expect(waitToSay(10_000, 15_000)).toBe(0)
+  })
+
+  it('waits out the gap since it was last said', () => {
+    expect(waitToSay(10_000, 11_000)).toBe(4000)
+    expect(waitToSay(10_000, 11_000, 3000)).toBe(2000)
   })
 })
 

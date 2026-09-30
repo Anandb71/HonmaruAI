@@ -50,6 +50,14 @@ export function countNewBelow(list: ReadonlyArray<Pick<Said, 'mine' | 'createdAt
   return n
 }
 
+/// How long before a screen reader is told the count on "Jump to present"
+/// again: at once after a quiet spell, otherwise once `gap` has passed since
+/// it last was. A busy conversation is then one number every few seconds,
+/// not a stream of them read out over whatever the reader is reading.
+export function waitToSay(lastSaid: number, now: number, gap = 5000): number {
+  return Math.max(0, lastSaid + gap - now)
+}
+
 /// Whether "Jump to present" hands the focus on to the composer once pressed.
 /// The pill goes away under the focus when the log reaches the bottom, which
 /// drops a keyboard or screen-reader user at the top of the page — so when

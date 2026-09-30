@@ -14,7 +14,7 @@ import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
-import { countNewBelow, focusAfterJump, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from '../utils/chatScroll'
+import { countNewBelow, focusAfterJump, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow, waitToSay } from '../utils/chatScroll'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
@@ -2347,6 +2347,17 @@ export const ClassicList: React.FC<Props> = ({
     el.scrollTo({ top: el.scrollHeight, behavior: still ? 'auto' : 'smooth' })
     if (handOn) composer.current?.focus({ preventScroll: true })
   }
+  // What waits below, told to a screen reader in the pill's own words: the
+  // pill is out of sight of one, and its count changes silently. Politely,
+  // and no more often than waitToSay allows.
+  const newBelow = readingUp && readingUp.view === view ? countNewBelow(messages[view] || [], readingUp.since) : 0
+  const [heard, setHeard] = useState(0)
+  const heardAt = useRef(0)
+  useEffect(() => {
+    if (newBelow === 0) { setHeard(0); return }
+    const id = setTimeout(() => { heardAt.current = Date.now(); setHeard(newBelow) }, waitToSay(heardAt.current, Date.now()))
+    return () => clearTimeout(id)
+  }, [newBelow])
 
   // ---- The conversation ----
 
@@ -3473,6 +3484,11 @@ export const ClassicList: React.FC<Props> = ({
             )
           })()}
         </div>
+        )}
+        {thread.view && (
+          <div className="sr-only" role="status" aria-live="polite">
+            {heard === 0 ? '' : heard === 1 ? t('1 new message') : t('{n} new messages', { n: heard })}
+          </div>
         )}
         {thread.view && (() => {
           const here = scheduled.filter((x) => x.channel === thread.view)
