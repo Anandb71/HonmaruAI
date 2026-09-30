@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, isTemp, keepTemps, markFailed, markPending, reconcile, tempMessage, tempState } from '../utils/pendingSend'
+import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, tempMessage, tempState } from '../utils/pendingSend'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -1090,6 +1090,12 @@ export const ClassicList: React.FC<Props> = ({
     return map
   }, [pending, sent, decided])
   const [messages, setMessages] = useState<Record<string, ChannelMessage[]>>({})
+  /// A message sent from here stays drawn under its temporary id's key once
+  /// the server's copy has taken its place (server id → temp id): the same
+  /// element carries on, so nothing is redrawn and a picture in it is not
+  /// loaded twice.
+  const drawnAs = useRef(new Map<string, string>())
+  const keyOf = (m: ChannelMessage) => drawnAs.current.get(m.id) || m.id
   const [draft, setDraft] = useState('')
   // Files going up with the next message: the conversation's, and a thread's.
   const uploads = useUploads(api, setProblem)
@@ -1241,8 +1247,10 @@ export const ClassicList: React.FC<Props> = ({
         // count comes as an event of its own.
         setThread((prev) => {
           if (!prev || prev.parent.id !== m.parentId) return prev
-          const replies = m.deleted ? prev.replies.filter((x) => x.id !== m.id) : arrive(prev.replies, msg)
-          return { ...prev, replies }
+          if (m.deleted) return { ...prev, replies: prev.replies.filter((x) => x.id !== m.id) }
+          const held = echoOf(prev.replies, msg)
+          if (held) drawnAs.current.set(m.id, held.id)
+          return { ...prev, replies: arrive(prev.replies, msg) }
         })
         if (m.kind === 'ai') setThinking((prev) => ({ ...prev, [m.channel]: false }))
         if (m.kind === 'agent') agentDone(m.channel, m.agent?.id)
@@ -1259,6 +1267,8 @@ export const ClassicList: React.FC<Props> = ({
         if (m.deleted) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
         // Our own, back before the answer to the send, takes the place of
         // the copy on its way rather than showing twice.
+        const held = echoOf(list, msg)
+        if (held) drawnAs.current.set(m.id, held.id)
         return { ...prev, [m.channel]: arrive(list, msg) }
       })
       setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
@@ -1382,6 +1392,7 @@ export const ClassicList: React.FC<Props> = ({
     const msg = res?.ok ? (data.message as ChannelMessage | undefined) : undefined
     if (!msg?.id) { fail(out, res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return }
     outbox.current.delete(tempId)
+    drawnAs.current.set(msg.id, tempId)
     // Sent: a small confirmation, in a direct conversation — as Slack does.
     if (channel.startsWith('dm:') || channel.startsWith('ag:')) playSound('sent')
     if (parentId) {
@@ -2935,7 +2946,7 @@ export const ClassicList: React.FC<Props> = ({
     <>
           <div className="slk-thread-log">
             {[thread.parent, ...thread.replies].map((m, i) => (
-              <React.Fragment key={m.id}>
+              <React.Fragment key={keyOf(m)}>
                 {block(m.id, {
                   joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
                   name: whoSaid(m),
@@ -3106,7 +3117,7 @@ export const ClassicList: React.FC<Props> = ({
           const whoKey = `msg:${m.authorRef || m.authorName}`
           const joined = prevWho === whoKey && at - prevAt < 5 * 60000
           const name = whoSaid(m)
-          out.push(block(m.id, {
+          out.push(block(keyOf(m), {
             joined: joined && !m.pinned, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
             tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m), state: tempState(m),
           }, (
