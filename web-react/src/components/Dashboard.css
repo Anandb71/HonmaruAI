@@ -654,12 +654,22 @@
 .palette-empty { padding: 14px 12px; font-size: 13.5px; color: #838383; }
 .palette-foot { padding: 6px 14px 8px; font-size: 11px; color: #838383; border-top: 1px solid #e8e8e8; }
 .topbar-right .palette-button { display: grid; place-items: center; }
+/* A conversation: what kind it is before its name, as the sidebar draws it,
+   and what waits there after — the sidebar's own badges. */
+.palette-item.palette-place { align-items: center; gap: 10px; }
+.palette-lead { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; font-size: 15px; font-weight: 600; line-height: 1; color: #838383; }
+.palette-badge { flex: none; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 999px; background: #e01e5a; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.palette-badge.mention { background: #1264a3; }
+.palette-fresh { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #202020; }
 @media (prefers-color-scheme: dark) {
   .palette { background: #1a1a1a; border-color: #2a2a2a; }
   .palette-input { color: #f2f2f2; border-bottom-color: #2a2a2a; }
   .palette-item { color: #f2f2f2; }
   .palette-item.on { background: #26233a; }
   .palette-foot { border-top-color: #2a2a2a; }
+  .palette-lead { color: #a3a3a3; }
+  .palette-badge.mention { background: #4a9eda; }
+  .palette-fresh { background: #f2f2f2; }
 }
 
 .key-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
