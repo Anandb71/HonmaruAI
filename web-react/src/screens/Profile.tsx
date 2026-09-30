@@ -12,6 +12,7 @@ import { canInstall, promptInstall, onInstallChange } from '../utils/install'
 import { getAIKey, setAIKey } from '../utils/aiKey'
 import { TidyChannels } from '../components/TidyChannels'
 import { ArchivedChannels } from '../components/ArchivedChannels'
+import { useAppearance, setAppearance, THEMES, DENSITIES, type Theme, type Density } from '../utils/appearance'
 
 interface Props {
   httpBase: string
@@ -61,6 +62,8 @@ const ROLE_LABEL: Record<string, string> = {
   engineer: 'Engineer', designer: 'Designer', member: 'Member',
   admin: 'Admin', maintainer: 'Maintainer', triager: 'Triager',
 }
+const THEME_LABEL: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' }
+const DENSITY_LABEL: Record<Density, string> = { cozy: 'Cozy', compact: 'Compact' }
 
 /// You: who your AI thinks you are, what it has done for you, and the way out.
 export const Profile: React.FC<Props> = ({
@@ -68,6 +71,8 @@ export const Profile: React.FC<Props> = ({
   onOpen, onLocaleChange, onSwitchOrg, onLogout, onClose,
 }) => {
   const t = useT()
+  // Kept in this browser, and drawn the moment it changes.
+  const appearance = useAppearance()
   const [me, setMe] = useState<Me | null>(null)
   const [locale, setLocaleState] = useState(getLocale())
   const [error, setError] = useState<string | null>(null)
@@ -604,6 +609,42 @@ export const Profile: React.FC<Props> = ({
                   }).catch(() => {})
                 }}
               />
+            </div>
+          </div>
+
+          </section>
+          <section className="pf-sec pf-look">
+          <div className="rows-title">{t('Appearance')}</div>
+          <div className="rows">
+            <div className="row static look-row">
+              <span className="row-main">
+                {t('Theme')}
+                <span className="row-sub">{t('System follows the light or dark setting of this device.')}</span>
+              </span>
+              <div className="seg look-seg" role="radiogroup" aria-label={t('Theme')}>
+                {THEMES.map((theme) => (
+                  <label key={theme} className={appearance.theme === theme ? 'on' : undefined}>
+                    <input type="radio" name="look-theme" value={theme} checked={appearance.theme === theme}
+                      onChange={() => setAppearance({ theme })} data-look-theme={theme} />
+                    {t(THEME_LABEL[theme])}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="row static look-row">
+              <span className="row-main">
+                {t('Message display')}
+                <span className="row-sub">{t('Compact fits more of a conversation on screen: no pictures, the time and name on the line.')}</span>
+              </span>
+              <div className="seg look-seg" role="radiogroup" aria-label={t('Message display')}>
+                {DENSITIES.map((density) => (
+                  <label key={density} className={appearance.density === density ? 'on' : undefined}>
+                    <input type="radio" name="look-density" value={density} checked={appearance.density === density}
+                      onChange={() => setAppearance({ density })} data-look-density={density} />
+                    {t(DENSITY_LABEL[density])}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
 

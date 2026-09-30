@@ -1014,7 +1014,7 @@
    the right. On a phone it is one column in the order it always was. */
 .profile-layout { display: flex; flex-direction: column; }
 .profile-side, .profile-main { display: contents; }
-.pf-head { order: 1; } .pf-stats { order: 2; } .pf-err { order: 3; } .pf-profile { order: 4; } .pf-status { order: 4; } .pf-ai { order: 5; }
+.pf-head { order: 1; } .pf-stats { order: 2; } .pf-err { order: 3; } .pf-profile { order: 4; } .pf-status { order: 4; } .pf-ai { order: 5; } .pf-look { order: 5; }
 .pf-where { order: 6; } .pf-ws { order: 7; } .pf-biz { order: 8; } .pf-acct { order: 9; }
 @media (min-width: 1024px) {
   .profile-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 32px; align-items: start; }
