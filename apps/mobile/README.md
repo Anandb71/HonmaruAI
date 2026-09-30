@@ -75,6 +75,19 @@ proved address, or a new one (`worker/src/apple.js`). The App ID needs the
 **Sign in with Apple** capability in the Apple Developer account (EAS Build adds
 it from `usesAppleSignIn`).
 
+The app also sends Apple's `authorizationCode` from the same sign-in. After
+the person is in, the Worker trades it at `appleid.apple.com/auth/token` for a
+refresh token and keeps it sealed on `apple_identities`; deleting the account
+(`DELETE /account`) revokes it at `appleid.apple.com/auth/revoke` first, which
+is what App Review guideline 5.1.1(v) asks of an app with Sign in with Apple.
+Both calls need the Worker's Sign in with Apple key — `APPLE_SIGNIN_KEY` (the
+`.p8`), `APPLE_SIGNIN_KEY_ID` and `APPLE_TEAM_ID`, see
+`docs/setup-secrets.md` §4.7. Without them, or when Apple refuses, sign-in and
+deletion still work; there is just nothing revoked. A sign-in made before this
+kept no token, so its account has nothing to revoke until the person signs in
+with Apple again; they can always remove the app themselves in their Apple
+Account's Sign in with Apple settings.
+
 ## Push
 
 `src/lib/push.ts`. On sign-in (and every launch after) the app asks for
