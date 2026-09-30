@@ -1242,6 +1242,10 @@
 .classic.slk.slk .cl-section h2 .cl-section-remove { opacity: 0; }
 .classic.slk.slk .cl-section h2:hover .cl-section-remove, .classic.slk.slk .cl-section-remove:focus-visible { opacity: 1; }
 @media (hover: none) { .classic.slk.slk .cl-section h2 .cl-section-remove { opacity: 1; } }
+/* A folded section keeps what calls for you listed; its header says so
+   too, with the dot a row has when only something new was said. */
+.classic.slk.slk .cl-fold .cl-fresh { margin-left: 6px; }
+.classic.slk.slk .cl-fold:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -2px; border-radius: 6px; }
 .msheet-form { display: flex; flex-direction: column; gap: 8px; }
 /* The star and "move to a section" sit beside the name, as in Slack. */
 .classic.slk.slk .slk-head-text { display: grid; grid-template-columns: minmax(0, auto) auto 1fr; align-items: center; column-gap: 2px; }

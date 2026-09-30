@@ -1902,6 +1902,7 @@ const table: Record<string, string> = {
   "{name} is on. Write @{handle} in a channel to hand it work.": "{name} est activé. Écrivez @{handle} dans un canal pour lui confier du travail.",
   "{n} ACUs": "{n} ACU",
   "{n} tasks": "{n} tâches",
+  "Mentions: {n}": "Mentions : {n}",
 }
 
 export default table

@@ -31,6 +31,7 @@ import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
+import { foldedRows, sectionBadge } from '../utils/sidebarSections'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -731,6 +732,10 @@ export const ClassicList: React.FC<Props> = ({
   const [tick, setTick] = useState(0)
 
   const [folded, setFolded] = useState<Record<string, boolean>>({})
+  /// What a folded section goes by: the mentions waiting, the row open now
+  /// (none while Activity or another list is), and what is muted. A
+  /// function: `special` is declared further down.
+  const foldContext = () => ({ mentions: mentionsIn, currentKey: special ? null : current?.key ?? null, prefs })
   // Making a channel, renaming one: the box, its text, and what went wrong.
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
@@ -1011,19 +1016,24 @@ export const ClassicList: React.FC<Props> = ({
     const views = threads.map((th) => th.view).filter((v): v is string => Boolean(v))
     const place = reorder ? (to: { view: string; after: boolean }, from: string) => { if (views.includes(from)) reorder(moved(views, from, to)) } : undefined
     const shut = Boolean(folded[id])
-    const unread = threads.reduce((n, th) => n + th.unread, 0)
+    // Folded, it still shows the one open and what calls for you, as a chat
+    // client's collapsed category does; the header counts what that is.
+    const shown = shut ? foldedRows(threads, foldContext()) : threads
+    const badge = sectionBadge(shown, mentionsIn)
     return (
-      <section className={`cl-section${shut ? ' folded' : ''}`}>
+      <section className={`cl-section${shut ? ' folded' : ''}`} data-section={id}>
         <h2>
           <button className="cl-fold" onClick={() => setFolded((p) => ({ ...p, [id]: !p[id] }))} aria-expanded={!shut}>
             <span className="cl-caret" aria-hidden="true"><Icon name={shut ? 'chevron-right' : 'chevron-down'} size={12} /></span>
             {label}
-            {shut && unread > 0 && <span className="cl-badge">{unread}</span>}
+            {shut && badge.mentions > 0 && <><span className="cl-badge mention" aria-hidden="true">@{badge.mentions}</span><span className="sr-only">{t('Mentions: {n}', { n: badge.mentions })}</span></>}
+            {shut && badge.cards > 0 && <><span className="cl-badge" aria-hidden="true">{badge.cards}</span><span className="sr-only">{t('{n} waiting on you', { n: badge.cards })}</span></>}
+            {shut && !badge.mentions && !badge.cards && badge.fresh && <span className="cl-fresh" role="img" aria-label={t('New messages')} />}
           </button>
           {action}
         </h2>
         {!shut && threads.length === 0 && <p className="cl-empty">{empty}</p>}
-        {!shut && threads.length > 0 && <ul>{threads.map((th) => row(th, place))}</ul>}
+        {shown.length > 0 && <ul>{shown.map((th) => row(th, place))}</ul>}
         {!shut && below}
       </section>
     )
