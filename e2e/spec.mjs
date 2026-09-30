@@ -1036,9 +1036,13 @@ await step('your role is whatever you say it is', async () => {
 // whoever deploys the Worker.
 await step('You on a laptop lists where to go the way Tools does, and nothing twice', async () => {
   const d = desk.pages()[0]
-  await d.evaluate(() => { location.hash = '#/profile' })
-  await d.click('nav [data-tab="you"]').catch(() => {})
+  // On a laptop the rail's avatar opens your status; You is behind its
+  // "View profile", which closes it on the way.
+  await d.evaluate(() => { location.hash = '#/feed' })
+  await d.click('nav [data-tab="you"]')
+  await d.click('[data-status-popover] [data-view-profile]')
   await d.waitForSelector('.profile-stats', { timeout: 15000 })
+  if (await d.$('[data-status-popover]')) throw new Error('the status popover stayed open over You')
   // Tools and History have their own tabs on the rail: not rows here too.
   const shown = await d.$$eval('.pf-ws .row', (rows) => rows.filter((r) => r.offsetParent !== null).map((r) => (r.querySelector('.row-main')?.firstChild?.textContent || '').trim()))
   for (const twice of ['Tools', 'History']) if (shown.includes(twice)) throw new Error(`${twice} is both a tab and a row under You`)
@@ -1255,6 +1259,9 @@ await step('the other screens hold up on a laptop', async () => {
     ['you', '.profile-stats', '22-desktop-profile'],
   ]) {
     await d.click(`nav [data-tab="${label}"]`)
+    // The rail's avatar opens your status first; You is behind its
+    // "View profile".
+    if (label === 'you') await d.click('[data-status-popover] [data-view-profile]')
     await d.waitForSelector(marker, { timeout: 10000 })
     await d.screenshot({ path: `${SHOTS}/${name}.png` })
     // The rail stays: a screen is a place in the app, not a takeover.
