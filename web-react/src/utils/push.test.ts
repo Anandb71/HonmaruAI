@@ -166,6 +166,29 @@ describe('keeping it on', () => {
       expect(kept.has('/push-key')).toBe(false)
     })
 
+    it('is not written back by a resync that was still in flight when push was turned off', async () => {
+      permission = 'granted'
+      const kept1 = sub('https://push.example/kept', KEY)
+      current = kept1
+      const httpBase = http()
+      await prefetchVapidKey(httpBase)
+      // The resync's POST hangs until we let it go.
+      let letGo: () => void = () => {}
+      const held = new Promise<void>((resolve) => { letGo = resolve })
+      const realFetch = fetch
+      vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+        if (init?.method === 'POST') await held
+        return (realFetch as unknown as (u: string, i?: object) => Promise<Response>)(url, init)
+      }))
+      const resync = resyncWebPush(httpBase, 'tok')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await disableWebPush(httpBase, 'tok')
+      letGo()
+      expect(await resync).toBe(false)
+      expect(kept.has('/push-key')).toBe(false)
+      expect(kept1.unsubscribe).toHaveBeenCalled()
+    })
+
     it('makes again a subscription the browser dropped while push was on here', async () => {
       permission = 'granted'
       kept.set('/push-key', KEY)

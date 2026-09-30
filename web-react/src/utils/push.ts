@@ -155,6 +155,22 @@ async function keptKey(): Promise<string | null> {
   }
 }
 
+/// Bumped when push is turned off here (Settings, or signing out), so an
+/// enable or a resync that began before it cannot turn push back on when its
+/// request comes back.
+let generation = 0
+
+/// The end of an enable or a resync: keep the key — unless push was turned
+/// off meanwhile, in which case what was just handed over is taken back.
+async function finish(started: number, publicKey: string, subscription: PushSubscription, httpBase: string, sessionToken: string): Promise<boolean> {
+  if (started === generation) await keepKey(publicKey)
+  if (started === generation) return true
+  await keepKey(null)
+  await forget(httpBase, sessionToken, subscription.endpoint)
+  await subscription.unsubscribe().catch(() => false)
+  return false
+}
+
 async function forget(httpBase: string, sessionToken: string, endpoint: string): Promise<void> {
   await fetch(`${httpBase}/push/subscriptions`, {
     method: 'DELETE',
@@ -194,6 +210,7 @@ export async function enableWebPush(httpBase: string, sessionToken: string): Pro
   // Started now, awaited after the prompt: the network runs while the
   // person reads the prompt, and never stands between the click and it.
   const key = prefetchVapidKey(httpBase)
+  const started = generation
   const permission = Notification.permission === 'granted' ? 'granted' : await askPermission()
   if (permission === 'denied') return 'denied'
   if (permission !== 'granted') return 'dismissed'
@@ -203,8 +220,7 @@ export async function enableWebPush(httpBase: string, sessionToken: string): Pro
     const reg = await activeRegistration()
     const subscription = await subscriptionFor(reg, publicKey, httpBase, sessionToken)
     if (!(await tellWorker(httpBase, sessionToken, subscription))) return 'unavailable'
-    await keepKey(publicKey)
-    return 'on'
+    return (await finish(started, publicKey, subscription, httpBase, sessionToken)) ? 'on' : 'unavailable'
   } catch {
     return 'unavailable'
   }
@@ -219,6 +235,7 @@ export async function enableWebPush(httpBase: string, sessionToken: string): Pro
 /// Never prompts, never throws. Returns whether pushes will arrive.
 export async function resyncWebPush(httpBase: string, sessionToken: string): Promise<boolean> {
   if (pushSupport() !== 'ready' || Notification.permission !== 'granted') return false
+  const started = generation
   try {
     const reg = await navigator.serviceWorker.getRegistration('/')
     if (!reg) return false
@@ -228,8 +245,7 @@ export async function resyncWebPush(httpBase: string, sessionToken: string): Pro
     if (!publicKey) return false
     const subscription = existing && sameServerKey(existing, publicKey) ? existing : await subscriptionFor(reg, publicKey, httpBase, sessionToken)
     if (!(await tellWorker(httpBase, sessionToken, subscription))) return false
-    await keepKey(publicKey)
-    return true
+    return await finish(started, publicKey, subscription, httpBase, sessionToken)
   } catch {
     return false
   }
@@ -238,6 +254,7 @@ export async function resyncWebPush(httpBase: string, sessionToken: string): Pro
 /// Unsubscribe here and forget it on the Worker, so signing out on a shared
 /// machine stops the next person seeing your decisions.
 export async function disableWebPush(httpBase: string, sessionToken: string): Promise<void> {
+  generation += 1
   await keepKey(null)
   const subscription = await currentSubscription()
   if (!subscription) return
