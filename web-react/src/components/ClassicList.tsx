@@ -19,6 +19,7 @@ import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/m
 import type { AgentFace } from '../utils/mentions'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
+import type { MessageMenuActions } from '../utils/messageMenu'
 import { DailyReportDraft } from './DailyReport'
 import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
@@ -2458,22 +2459,27 @@ export const ClassicList: React.FC<Props> = ({
       </>
     )
   }
+  /// What this reader may do to one message, said once: the ⋯ menu over
+  /// it, a phone's long press and a right-click all offer exactly this.
+  const actionsFor = (channel: string, m: ChannelMessage, inThread: boolean): MessageMenuActions => ({
+    inThread,
+    onReply: () => void openThread(channel, m),
+    onPin: () => togglePin(channel, m),
+    onEdit: m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined,
+    onDelete: m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined,
+    onDecide: !m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined,
+    onLater: (at) => void saveLater(channel, m, at),
+    onClip: () => toggleClip(channel, m),
+    clipped: clip.some((x) => x.id === m.id),
+    onUnread: m.mine ? undefined : () => void markUnread(channel, m),
+    onForward: m.kind === 'message' || m.kind === 'ai' ? () => setForwarding({ channel, m }) : undefined,
+    onCopyLink: () => copyLink(m),
+  })
   const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id) ? undefined : (
     <MessageActions
       message={m}
-      inThread={inThread}
+      {...actionsFor(channel, m, inThread)}
       onReact={(e) => react(channel, m, e)}
-      onReply={() => void openThread(channel, m)}
-      onPin={() => togglePin(channel, m)}
-      onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
-      onDelete={m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined}
-      onDecide={!m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined}
-      onLater={(at) => void saveLater(channel, m, at)}
-      onClip={() => toggleClip(channel, m)}
-      clipped={clip.some((x) => x.id === m.id)}
-      onUnread={m.mine ? undefined : () => void markUnread(channel, m)}
-      onForward={m.kind === 'message' || m.kind === 'ai' ? () => setForwarding({ channel, m }) : undefined}
-      onCopyLink={() => copyLink(m)}
       onOpenChange={(open) => setToolsOpen((cur) => (open ? m.id : cur === m.id ? null : cur))}
     />
   )
@@ -3728,18 +3734,9 @@ export const ClassicList: React.FC<Props> = ({
         return (
           <MessageSheet
             message={m}
-            inThread={inThread}
+            {...actionsFor(channel, m, inThread)}
             onClose={() => setSheet(null)}
             onReact={(e) => react(channel, m, e)}
-            onReply={() => void openThread(channel, m)}
-            onPin={() => togglePin(channel, m)}
-            onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
-            onDelete={m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined}
-            onDecide={!m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined}
-            onLater={(at) => void saveLater(channel, m, at)}
-            onCopyLink={() => copyLink(m)}
-            onUnread={m.mine ? undefined : () => void markUnread(channel, m)}
-            onForward={() => setForwarding({ channel, m })}
           />
         )
       })()}

@@ -5,6 +5,7 @@ import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
+import { messageMenuEntries, type MessageMenuActions } from '../utils/messageMenu'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
@@ -151,26 +152,15 @@ export const Reactions: React.FC<{
 
 /// Everything you can do to one message, on hover — reactions, a thread,
 /// a pin, and behind ⋯ the rest: edit, delete, copy, make it a decision.
-export const MessageActions: React.FC<{
+/// What is behind ⋯ is the one list the right-click menu and a phone's
+/// long press draw too.
+export const MessageActions: React.FC<MessageMenuActions & {
   message: ChannelMessage
-  inThread?: boolean
   onReact: (emoji: string) => void
-  onReply?: () => void
-  onPin?: () => void
-  onEdit?: () => void
-  onDelete?: () => void
-  onDecide?: () => void
-  /// Save for later; with a time, come back as a card then.
-  onLater?: (remindAt: string | null) => void
-  /// Add to the clip being gathered for one decision.
-  onClip?: () => void
-  onUnread?: () => void
-  onForward?: () => void
-  onCopyLink?: () => void
-  clipped?: boolean
   onOpenChange: (open: boolean) => void
-}> = ({ message, inThread, onReact, onReply, onPin, onEdit, onDelete, onDecide, onLater, onClip, clipped, onOpenChange, onUnread, onForward, onCopyLink }) => {
+}> = ({ message, onReact, onOpenChange, ...actions }) => {
   const t = useT()
+  const { inThread, onReply, onPin } = actions
   const [picker, setPicker] = useState(false)
   const [menu, setMenu] = useState(false)
   const menuBox = useRef<HTMLDivElement>(null)
@@ -183,7 +173,6 @@ export const MessageActions: React.FC<{
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
   }, [menu])
-  const copy = () => { void navigator.clipboard?.writeText(message.body); setMenu(false) }
   return (
     <>
       {QUICK_REACTIONS.map((e) => (
@@ -200,26 +189,13 @@ export const MessageActions: React.FC<{
         <button type="button" className="slk-tool" onClick={() => setMenu((m) => !m)} aria-label={t('More actions')} aria-expanded={menu} aria-haspopup="menu"><Icon name="more" size={16} /></button>
         {menu && (
           <div className="slk-menu" role="menu">
-            {onEdit && <button type="button" role="menuitem" onClick={() => { setMenu(false); onEdit() }}>{t('Edit message')}<kbd>E</kbd></button>}
-            {onReply && !inThread && <button type="button" role="menuitem" onClick={() => { setMenu(false); onReply() }}>{t('Reply in thread')}<kbd>T</kbd></button>}
-            {onDecide && <button type="button" role="menuitem" onClick={() => { setMenu(false); onDecide() }}>{t('Make it a decision')}</button>}
-            {onPin && !inThread && <button type="button" role="menuitem" onClick={() => { setMenu(false); onPin() }}>{message.pinned ? t('Unpin') : t('Pin to channel')}<kbd>P</kbd></button>}
-            {onClip && <button type="button" role="menuitem" onClick={() => { setMenu(false); onClip() }}>{clipped ? t('Remove from clip') : t('Add to clip')}</button>}
-            {onUnread && <button type="button" role="menuitem" onClick={() => { setMenu(false); onUnread() }} data-menu="unread">{t('Mark unread')}</button>}
-            {onForward && <button type="button" role="menuitem" onClick={() => { setMenu(false); onForward() }} data-menu="forward">{t('Forward')}</button>}
-            {onCopyLink && <button type="button" role="menuitem" onClick={() => { setMenu(false); onCopyLink() }}>{t('Copy link')}</button>}
-            {onLater && (
-              <>
-                <div className="slk-menu-sep" />
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); onLater(null) }}>{t('Save for later')}</button>
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); onLater(new Date(Date.now() + 3600000).toISOString()) }}>{t('Remind me in 1 hour')}</button>
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); onLater(tomorrowAt(9)) }}>{t('Remind me tomorrow at 9:00')}</button>
-                <div className="slk-menu-sep" />
-              </>
-            )}
-            {message.body && <button type="button" role="menuitem" onClick={copy}>{t('Copy text')}</button>}
-            {onDelete && <div className="slk-menu-sep" />}
-            {onDelete && <button type="button" role="menuitem" className="danger" onClick={() => { setMenu(false); onDelete() }}>{t('Delete message')}<kbd>⌫</kbd></button>}
+            {messageMenuEntries(message, { ...actions, t }).map((e, i) => (e.kind === 'sep'
+              ? <div key={i} className="slk-menu-sep" />
+              : e.kind === 'item' && (
+                <button key={i} type="button" role="menuitem" className={e.danger ? 'danger' : undefined} data-menu={e.data} onClick={() => { setMenu(false); e.onSelect?.() }}>
+                  {e.label}{e.hint && <kbd>{e.hint}</kbd>}
+                </button>
+              )))}
           </div>
         )}
       </div>

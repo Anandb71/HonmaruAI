@@ -5,6 +5,8 @@ import type { ChannelMessage } from '../types/card'
 import { Icon, type IconName } from './Icon'
 import { EmojiPicker } from './MessageParts'
 import { Avatar } from './Avatar'
+import type { MenuEntry } from './RowMenu'
+import { messageMenuEntries, type MessageMenuActions } from '../utils/messageMenu'
 import './Sheet.css'
 
 // A sheet that comes up from the bottom of a phone: what a long press on a
@@ -58,26 +60,17 @@ export const SheetRow: React.FC<{ icon: IconName; label: string; onClick: () => 
 )
 
 /// What a long press on a message offers: a row of reactions, then what
-/// you can do to it. Everything a laptop has on hover and behind ⋯.
-export const MessageSheet: React.FC<{
+/// you can do to it. Everything a laptop has on hover and behind ⋯, from
+/// the same list, drawn as rows with no lines between them.
+export const MessageSheet: React.FC<MessageMenuActions & {
   message: ChannelMessage
-  inThread?: boolean
   onClose: () => void
   onReact: (emoji: string) => void
-  onReply?: () => void
-  onPin?: () => void
-  onEdit?: () => void
-  onDelete?: () => void
-  onDecide?: () => void
-  onLater?: (remindAt: string | null) => void
-  onCopyLink?: () => void
-  onUnread?: () => void
-  onForward?: () => void
-}> = ({ message, inThread, onClose, onReact, onReply, onPin, onEdit, onDelete, onDecide, onLater, onCopyLink, onUnread, onForward }) => {
+}> = ({ message, onClose, onReact, ...actions }) => {
   const t = useT()
   const [picker, setPicker] = React.useState(false)
-  const run = (fn?: () => void) => () => { onClose(); fn?.() }
   const QUICK = ['👍', '✅', '👀', '🙌', '🎉', '🙏']
+  const rows = messageMenuEntries(message, { ...actions, t }).filter((e): e is Extract<MenuEntry, { kind: 'item' }> => e.kind === 'item')
   return (
     <Sheet label={t('Message actions')} onClose={onClose}>
       <div className="msheet-reactions" role="group" aria-label={t('Add reaction')}>
@@ -88,17 +81,9 @@ export const MessageSheet: React.FC<{
       </div>
       {picker && <div className="msheet-picker"><EmojiPicker onPick={(e) => { onReact(e); onClose() }} onClose={() => setPicker(false)} /></div>}
       <div className="msheet-rows">
-        {onReply && !inThread && <SheetRow icon="message" label={t('Reply in thread')} onClick={run(onReply)} data="reply" />}
-        {message.body && <SheetRow icon="copy" label={t('Copy text')} onClick={run(() => { void navigator.clipboard?.writeText(message.body) })} data="copy" />}
-        {onCopyLink && <SheetRow icon="link" label={t('Copy link')} onClick={run(onCopyLink)} data="link" />}
-        {onForward && <SheetRow icon="send" label={t('Forward')} onClick={run(onForward)} data="forward" />}
-        {onUnread && <SheetRow icon="bell" label={t('Mark unread')} onClick={run(onUnread)} data="unread" />}
-        {onLater && <SheetRow icon="bookmark" label={t('Save for later')} onClick={run(() => onLater(null))} data="later" />}
-        {onLater && <SheetRow icon="clock" label={t('Remind me in 1 hour')} onClick={run(() => onLater(new Date(Date.now() + 3600000).toISOString()))} />}
-        {onPin && !inThread && <SheetRow icon="pin" label={message.pinned ? t('Unpin') : t('Pin to channel')} onClick={run(onPin)} data="pin" />}
-        {onDecide && <SheetRow icon="sparkle" label={t('Make it a decision')} onClick={run(onDecide)} data="decide" />}
-        {onEdit && <SheetRow icon="edit" label={t('Edit message')} onClick={run(onEdit)} data="edit" />}
-        {onDelete && <SheetRow icon="trash" label={t('Delete message')} onClick={run(onDelete)} danger data="delete" />}
+        {rows.map((e) => (
+          <SheetRow key={e.data} icon={e.icon || 'more'} label={e.label} onClick={() => { onClose(); e.onSelect?.() }} danger={e.danger} data={e.data} />
+        ))}
       </div>
     </Sheet>
   )
