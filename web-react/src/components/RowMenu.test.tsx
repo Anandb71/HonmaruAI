@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { RowMenu } from './RowMenu'
+import { RowMenu, keepOnScreen } from './RowMenu'
 
 // The sidebar's right-click menu: what it draws before anyone touches it.
 describe('RowMenu', () => {
@@ -51,5 +51,20 @@ describe('a strip in a RowMenu', () => {
     expect(html).toMatch(/<button[^>]*role="menuitem" aria-label="React with ✅"[^>]*data-row-menu="react:✅"[^>]*>✅<\/button>/)
     expect(html).toMatch(/aria-label="Add reaction"[^>]*data-row-menu="react-more"[^>]*><svg/)
     expect(html.indexOf('row-menu-strip')).toBeLessThan(html.indexOf('Reply in thread'))
+  })
+})
+
+// Where a menu (or the picker opened from one) goes on a 1000×700 window.
+describe('a menu kept on screen', () => {
+  const view = { width: 1000, height: 700 }
+  const size = { width: 240, height: 300 }
+  it('opens at the point when it fits there', () => {
+    expect(keepOnScreen({ x: 100, y: 200 }, size, view)).toEqual({ left: 100, top: 200 })
+  })
+  it('moves in from the right and the bottom edge, clear of them', () => {
+    expect(keepOnScreen({ x: 900, y: 650 }, size, view)).toEqual({ left: 756, top: 396 })
+  })
+  it('keeps its top and left on screen when it is bigger than the window', () => {
+    expect(keepOnScreen({ x: 10, y: 10 }, { width: 1200, height: 900 }, view)).toEqual({ left: 4, top: 4 })
   })
 })

@@ -28,6 +28,16 @@ interface Props {
   onClose: () => void
 }
 
+/// Where a box opened at a point goes so that all of it is on screen: at
+/// the point, or moved in from the right or bottom edge it would run past,
+/// a few pixels clear of every edge.
+export function keepOnScreen(at: { x: number; y: number }, size: { width: number; height: number }, view: { width: number; height: number }, margin = 4): { left: number; top: number } {
+  return {
+    left: Math.max(margin, Math.min(at.x, view.width - size.width - margin)),
+    top: Math.max(margin, Math.min(at.y, view.height - size.height - margin)),
+  }
+}
+
 // A strip counts once, by its first button, so ↑ and ↓ step over it whole.
 const items = (el: HTMLElement | null) => (el ? [...el.querySelectorAll<HTMLButtonElement>(':scope > li > button:not([disabled]), :scope > li > [role="group"] > button:first-child')] : [])
 
@@ -125,11 +135,7 @@ export const RowMenu: React.FC<Props> = ({ at, entries, label, onClose }) => {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const box = el.getBoundingClientRect()
-    setPlace({
-      left: Math.max(4, Math.min(at.x, window.innerWidth - box.width - 4)),
-      top: Math.max(4, Math.min(at.y, window.innerHeight - box.height - 4)),
-    })
+    setPlace(keepOnScreen(at, el.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight }))
   }, [at.x, at.y])
   // Shut, it hands the focus back to what had it — the message or the row
   // it was opened on — so a keyboard carries on from there. Not when what
