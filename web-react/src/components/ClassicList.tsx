@@ -14,6 +14,7 @@ import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
+import { leavesGap, mergeById, reachesPast } from '../utils/chatScroll'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
@@ -1113,14 +1114,21 @@ export const ClassicList: React.FC<Props> = ({
   // Whether there is more above what is loaded, per conversation.
   const [more, setMore] = useState<Record<string, boolean>>({})
   const PAGE = 150
+  /// The newest page, laid over what is loaded rather than in place of it:
+  /// it is read again on every answer from the AI and after a reconnect, and
+  /// replacing took away the older pages somebody had scrolled up to read.
+  /// Whether there is more above stays loadOlder's to say once those are
+  /// loaded; only a hole too big to join starts again from the page.
   const loadMessages = useCallback((channel: string) => {
     return fetch(`${api.httpBase}/channels/messages?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}`, { headers: authHeaders })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return
-        setMessages((prev) => ({ ...prev, [channel]: data.messages || [] }))
-        setMore((prev) => ({ ...prev, [channel]: (data.messages || []).length >= PAGE }))
-        maybeNewEmoji((data.messages || []).map((m: ChannelMessage) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
+        const page = (data.messages || []) as ChannelMessage[]
+        const had = messagesRef.current[channel]
+        setMessages((prev) => ({ ...prev, [channel]: leavesGap(prev[channel], page, PAGE) ? page : mergeById(prev[channel], page) }))
+        if (leavesGap(had, page, PAGE) || !reachesPast(had, page)) setMore((prev) => ({ ...prev, [channel]: page.length >= PAGE }))
+        maybeNewEmoji(page.map((m) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
       })
       .catch(() => { /* the decisions still show */ })
   }, [api.httpBase, api.orgId, authHeaders, maybeNewEmoji])
