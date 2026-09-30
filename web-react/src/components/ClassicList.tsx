@@ -9,7 +9,8 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendTime, tempMessage, tempState } from '../utils/pendingSend'
+import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, tempMessage, tempState } from '../utils/pendingSend'
+import { askingAboutData } from '../utils/authGuard'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -1316,8 +1317,9 @@ export const ClassicList: React.FC<Props> = ({
 
   /// A message on its way, or one that did not go, by its temporary id:
   /// what Retry sends again, and (`landing`) the server's copy an edit begun
-  /// on it waits for. Its words are in the log with it.
-  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; landing?: Promise<ChannelMessage | null> }
+  /// on it waits for. Its words are in the log with it. `abort` gives up on
+  /// it while it goes — Delete, once it has been going too long.
+  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; landing?: Promise<ChannelMessage | null>; abort?: () => void }
   const outbox = useRef(new Map<string, Outgoing>())
   /// The same words to the same place, already going: a second Enter or a
   /// double tap before the box has cleared does not send them twice.
@@ -1392,17 +1394,29 @@ export const ClassicList: React.FC<Props> = ({
     inLine.current.set(out.channel, turn.catch(() => null))
     return turn
   }
-  /// The server's copy takes the place of ours.
+  /// The server's copy takes the place of ours. No answer in SEND_TIMEOUT
+  /// and it is given up on as a dropped connection would be — with Retry —
+  /// and the next in line goes; a request that hangs holds nothing up.
   const post = async (out: Outgoing, key: string): Promise<ChannelMessage | null> => {
     const { tempId, channel, body, decide, parentId, files } = out
+    // Deleted while it waited its turn: it never goes.
+    if (outbox.current.get(tempId) !== out) { going.current.delete(key); return null }
+    const ctrl = new AbortController()
+    out.abort = () => ctrl.abort()
+    const stopClock = sendDeadline(ctrl, SEND_TIMEOUT, askingAboutData)
     const res = await fetch(`${api.httpBase}/channels/messages`, {
       method: 'POST',
       headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), ...(files.length ? { files: files.map((f) => f.id) } : {}) }),
+      signal: ctrl.signal,
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
+    stopClock()
+    out.abort = undefined
     going.current.delete(key)
     const msg = res?.ok ? (data.message as ChannelMessage | undefined) : undefined
+    // Deleted while it went, and it did not land: nothing more to say.
+    if (!msg?.id && outbox.current.get(tempId) !== out) return null
     if (!msg?.id) {
       if (res && !res.ok && refusedOutright(res.status)) refuse(out, refusal(data))
       else fail(out, res && !res.ok ? refusal(data) : t('That did not send. Try again.'))
@@ -1491,8 +1505,12 @@ export const ClassicList: React.FC<Props> = ({
     if (parentId) setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: prev.replies.filter((x) => x.id !== tempId) } : prev))
     else setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== tempId) } : prev))
   }
-  /// Delete: it was only ever here, so it just goes.
-  const discard = (m: ChannelMessage) => drop(m.id, m.channel, m.parentId)
+  /// Delete: it was only ever here, so it just goes — still on its way, it
+  /// is given up on first, or dropped from the line before its turn.
+  const discard = (m: ChannelMessage) => {
+    outbox.current.get(m.id)?.abort?.()
+    drop(m.id, m.channel, m.parentId)
+  }
 
   // ---- Time and gathering: drafts, scheduled sends, Later, clips, notes ----
   // A draft per conversation, kept in this browser, as in any chat client.
