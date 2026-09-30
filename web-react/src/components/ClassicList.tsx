@@ -1315,7 +1315,7 @@ export const ClassicList: React.FC<Props> = ({
       const done = await runCommand(channel, name.toLowerCase(), rest.trim())
       if (done === 'send-decide') { body = rest.trim(); decide = true }
       else if (done === 'send-later') return
-      else { if (done) setDraft(''); return }
+      else { if (done) clearDraftOf(channel); return }
       if (!body) return
     }
     setSending(true); setProblem(null)
@@ -1328,7 +1328,7 @@ export const ClassicList: React.FC<Props> = ({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setProblem(refusal(data)); return }
       if (data.scheduled) {
-        setDraft('')
+        if (parentId) setThreadDraft(''); else clearDraftOf(channel)
         setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
         note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
         return
@@ -1349,7 +1349,7 @@ export const ClassicList: React.FC<Props> = ({
         if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
         return
       }
-      setDraft('')
+      clearDraftOf(channel)
       setMessages((prev) => {
         const list = prev[channel] || []
         return list.some((x) => x.id === msg.id) ? prev : { ...prev, [channel]: [...list, msg] }
@@ -1390,6 +1390,14 @@ export const ClassicList: React.FC<Props> = ({
     setDrafts((prev) => (Boolean(prev[v]) === Boolean(draft) ? prev : { ...prev, [v]: Boolean(draft) }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft])
+  /// What was sent leaves the box it was written in. Moved on to another
+  /// conversation while it went, only what that one kept goes — never the
+  /// draft of the conversation open now, which the box holds by then.
+  const clearDraftOf = (v: string) => {
+    if (draftView.current === v) { setDraft(''); return }
+    try { localStorage.removeItem(draftKey(v)) } catch { /* nothing kept */ }
+    setDrafts((prev) => { if (!prev[v]) return prev; const next = { ...prev }; delete next[v]; return next })
+  }
 
   const [scheduled, setScheduled] = useState<Array<{ id: string; body: string; sendAt: string; channel: string; parentId?: string | null }>>([])
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -1504,7 +1512,7 @@ export const ClassicList: React.FC<Props> = ({
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
     if (!res?.ok) { setProblem(refusal(data)); return }
-    setDraft('')
+    clearDraftOf(channel)
     setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
     note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
   }
