@@ -454,7 +454,7 @@ natively (SDK ≥ 52); pnpm isolated installs are default since SDK 54 — use
 | Topic | Plan |
 | --- | --- |
 | SDK / architecture | Current Expo SDK (57, RN 0.86; 58 when stable), New Architecture, dev client, Continuous Native Generation — no hand edits under `ios/` or `android/`; everything via config plugins |
-| Push | APNs (existing Worker code) for iOS, FCM HTTP v1 for Android. Notification Service Extension via a config plugin (expo-apple-targets) for communication notifications (sender avatar) and payload decryption. Keep `thread-id = orgId|channel` grouping |
+| Push | APNs (existing Worker code) for iOS, FCM HTTP v1 for Android. Notification Service Extension via a config plugin (expo-apple-targets) for communication notifications (sender avatar) and payload decryption. Keep `thread-id = orgId|channel` grouping. **Built:** native tokens registered with their `platform` (`device_tokens.platform`), FCM in `worker/src/fcm.js` (tag / `collapse_key` `orgId|channel`), tap → `/c/[channel]`. NSE and Android read-clearing not yet |
 | Read clearing | Silent push (`content-available`) removes delivered notifications when read elsewhere — best-effort (iOS throttles), plus clearing on foreground |
 | Deep links | Universal Links (`associatedDomains`) + Android App Links; `apple-app-site-association` and `assetlinks.json` served by the Worker; route table shared in core |
 | Sign in | Email code (existing), SSO (existing), **Sign in with Apple** (App Review 4.8 when third-party login is offered), Google on Android |
@@ -537,8 +537,13 @@ emailed code, channel list with unread counts, a channel on FlashList v2). The
 repository root is an npm workspace for `apps/*` and `packages/*`. `web-react/`
 and `worker/` keep their own installs until they move under `apps/` (pnpm and
 Turborepo come with that move). CI job "Shared core and mobile" runs the core
-tests, both typechecks, and bundles the app for iOS and Android. Still to
-measure on devices: cold start and scroll frame rate. Still to build: push, links,
+tests, both typechecks, and bundles the app for iOS and Android. Push: the app
+registers the phone's native token (APNs or FCM) with its platform on sign-in,
+removes it on sign-out, and opens the conversation a tapped notification names;
+the Worker sends Android through FCM HTTP v1 (`worker/src/fcm.js`, secret
+`FCM_SERVICE_ACCOUNT`), grouped per `orgId|channel` on both platforms. Still to
+measure on devices: cold start, scroll frame rate, and push delivery. Still to
+build: the Notification Service Extension, clearing on read on Android, links,
 Sign in with Apple.
 
 ### Go / no-go
