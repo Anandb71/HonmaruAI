@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { notifyNewDecision, notifyMessage, notificationText, badgeCount, badgeLabel, markSeen, setTabBadge, setNotificationCopy } from './notifications'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { notifyNewDecision, notifyMessage, notificationText, badgeCount, badgeLabel, markSeen, setTabBadge, setNotificationCopy, watchWorkspace } from './notifications'
 import { changeLocale, localeReady } from './i18n'
 import { setQuietState } from './quiet'
 
@@ -42,7 +42,7 @@ describe('in-tab notification', () => {
 
 // A direct message or a mention while the tab is behind another.
 describe('in-tab message notification', () => {
-  const shown: Array<{ title: string; options: NotificationOptions & { renotify?: boolean } }> = []
+  const shown: Array<{ title: string; options: NotificationOptions & { renotify?: boolean; timestamp?: number } }> = []
   let doc: { visibilityState: string; hasFocus: () => boolean; documentElement: object; title: string }
   beforeEach(() => {
     shown.length = 0
@@ -96,6 +96,53 @@ describe('in-tab message notification', () => {
     expect(doc.title).toBe('Honmaru AI')
   })
 
+  it('carries the server\'s time for the message, so an older push never replaces it', () => {
+    notifyMessage({ ...message, createdAt: '2026-01-01T00:00:05.000Z' })
+    expect(shown[0].options.data).toMatchObject({ at: '2026-01-01T00:00:05.000Z' })
+    expect(shown[0].options.timestamp).toBe(Date.parse('2026-01-01T00:00:05.000Z'))
+  })
+
+  describe('with other tabs open', () => {
+    let stop: (() => void) | null = null
+    let other: BroadcastChannel | null = null
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 30))
+    beforeEach(() => {
+      // Web Locks that grant at once: this tab speaks for its workspace.
+      vi.stubGlobal('navigator', { locks: { request: (_n: string, _o: unknown, cb: () => Promise<void>) => cb() } })
+      other = new BroadcastChannel('honmaru-looking')
+    })
+    afterEach(() => { stop?.(); stop = null; other?.close(); other = null })
+
+    it('stays quiet while another tab is reading the same workspace, and speaks again once it is not', async () => {
+      stop = watchWorkspace('org1')
+      other!.postMessage({ type: 'looking', id: 'tab-2', orgId: 'org1', looking: true })
+      await tick()
+      notifyMessage(message)
+      notifyNewDecision('Budget', 'Kenji', 'card-1', 'org1')
+      expect(shown).toHaveLength(0)
+      expect(badgeCount()).toBe(0)
+      other!.postMessage({ type: 'looking', id: 'tab-2', orgId: 'org1', looking: false })
+      await tick()
+      notifyMessage(message)
+      expect(shown).toHaveLength(1)
+    })
+
+    it('is not silenced by a tab reading another workspace', async () => {
+      stop = watchWorkspace('org1')
+      other!.postMessage({ type: 'looking', id: 'tab-3', orgId: 'org2', looking: true })
+      await tick()
+      notifyMessage(message)
+      expect(shown).toHaveLength(1)
+    })
+
+    it('leaves it to the tab holding the workspace\'s lock', async () => {
+      vi.stubGlobal('navigator', { locks: { request: () => new Promise(() => { /* held elsewhere */ }) } })
+      stop = watchWorkspace('org1')
+      notifyMessage(message)
+      expect(shown).toHaveLength(0)
+    })
+  })
+
   it('gives a decision the card\'s own tag and address', () => {
     notifyNewDecision('Approve the budget', 'Kenji', 'card-9')
     expect(shown[0].options.tag).toBe('card-9')
@@ -114,6 +161,12 @@ describe('notification text', () => {
 
   it('keeps words that only look like marks', () => {
     expect(notificationText('snake_case_name and 2*3*4')).toBe('snake_case_name and 2*3*4')
+    expect(notificationText('edit __init__.py')).toBe('edit __init__.py')
+  })
+
+  it('keeps links and code whole, as the chat shows them', () => {
+    expect(notificationText('see https://x.io/src/__tests__/a.ts and `__init__.py`')).toBe('see https://x.io/src/__tests__/a.ts and __init__.py')
+    expect(notificationText('**ship** it, `**not bold**`')).toBe('ship it, **not bold**')
   })
 
   it('shortens a long message with an ellipsis', () => {

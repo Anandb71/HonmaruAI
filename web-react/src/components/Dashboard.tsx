@@ -12,7 +12,7 @@ import { CreateDecision } from './CreateDecision'
 import { RecordSheet } from './RecordSheet'
 import type { FlagReason, Answer } from './Feed'
 import { NotificationsButton } from './NotificationsBanner'
-import { notifyNewDecision, notifyMessage, closeCardNotifications, lookingHere, markSeen, setNotificationCopy, setTabBadge } from '../utils/notifications'
+import { notifyNewDecision, notifyMessage, closeCardNotifications, closeMessageNotifications, watchWorkspace, setNotificationCopy, setTabBadge } from '../utils/notifications'
 import type { AppState, Business, DecisionCard } from '../types/card'
 import './Dashboard.css'
 import { useT } from '../utils/i18n'
@@ -23,7 +23,7 @@ import { loadCardCache, saveCardCache } from '../utils/cardCache'
 import { needsLocalizing } from '../utils/language'
 import { aiHeaders } from '../utils/aiKey'
 import type { Screen, Mode } from '../utils/route'
-import { playSound, soundForMessage, getOpenView, levelOf, isLeaderTab } from '../utils/sound'
+import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
 import type { ChannelMessage } from '../types/card'
 
@@ -81,7 +81,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   // written in the last minute is news.
   const heard = useRef<Set<string>>(new Set())
   const soundFor = async (message: ChannelMessage) => {
-    if (!message?.id || message.deleted || heard.current.has(message.id)) return
+    // Unsent: whatever this browser showed of it comes off the screen.
+    if (message?.id && message.deleted) { closeMessageNotifications([message.id]); return }
+    if (!message?.id || heard.current.has(message.id)) return
     heard.current.add(message.id)
     if (Date.now() - Date.parse(message.createdAt) > 60_000) return
     const people = await loadMembers(relayUrl.replace(/^ws/, 'http'), orgId, sessionToken).catch(() => [])
@@ -92,15 +94,17 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     const open = getOpenView() === message.channel && document.visibilityState === 'visible' && document.hasFocus()
     const kind = soundForMessage({ mine, channel: message.channel, mentionsMe, kind: message.kind, parentId: message.parentId }, { level: levelOf(orgId, message.channel), open })
     if (kind) playSound(kind)
-    // A direct message or an @mention while the tab is not in front: on the
-    // screen now, from one tab only, rather than a push's delay later.
-    if (kind === 'mention' && isLeaderTab()) {
+    // A direct message or an @mention while nobody is looking at this
+    // workspace: on the screen now, rather than a push's delay later. Only
+    // what the Worker would push too (a person's message or an agent's
+    // answer — not the AI's own notes), and one tab decides (notifications.ts).
+    if (kind === 'mention' && (message.kind === 'message' || message.kind === 'agent')) {
       const business = message.channel.startsWith('b:') ? businessesRef.current.find((b) => `b:${b.slug}` === message.channel) : undefined
       notifyMessage({
         id: message.id, orgId, channel: message.channel,
         author: message.authorName || message.agent?.name || t('a teammate'),
         where: business ? `#${business.name}` : null,
-        body: message.body || '', hasFiles: Boolean(message.files?.length),
+        body: message.body || '', hasFiles: Boolean(message.files?.length), createdAt: message.createdAt,
       })
     }
   }
@@ -245,13 +249,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     setTabBadge(pending.length)
     return () => setTabBadge(0)
   }, [state, userId])
-  // Looked at again: what came in while the tab was away has been seen.
-  useEffect(() => {
-    const seen = () => { if (lookingHere()) markSeen() }
-    window.addEventListener('focus', seen)
-    document.addEventListener('visibilitychange', seen)
-    return () => { window.removeEventListener('focus', seen); document.removeEventListener('visibilitychange', seen) }
-  }, [])
+  // This tab takes part in choosing which tab notifies for the workspace,
+  // and clears what came in while away once it is looked at again.
+  useEffect(() => watchWorkspace(orgId), [orgId])
   useEffect(() => {
     if (synced) saveCardCache(orgId, state.cardsById || {})
   }, [state, synced, orgId])
@@ -276,7 +276,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (card.recipientUserID === userId && card.status === 'pending') {
         // Your own note to yourself does not need announcing to you.
         if (card.senderUserID !== userId) playSound('decision')
-        if (card.senderUserID !== userId && isLeaderTab()) notifyNewDecision(card.localized?.[getLocale()]?.title || card.title || t('A decision is waiting'), card.requestedBy?.name || displayName(card.senderUserID) || t('a teammate'), card.id)
+        if (card.senderUserID !== userId) notifyNewDecision(card.localized?.[getLocale()]?.title || card.title || t('A decision is waiting'), card.requestedBy?.name || displayName(card.senderUserID) || t('a teammate'), card.id, orgId)
       }
     }
     wsClient.onCardUpdated = (card) => { if (!ignore) addDebugLog(`Card updated: ${card.id}`) }

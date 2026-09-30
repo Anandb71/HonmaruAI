@@ -50,12 +50,107 @@ export function lookingHere(): boolean {
   return typeof document.hasFocus === 'function' ? document.hasFocus() : true
 }
 
-interface Shown { tag: string; body: string; data: Record<string, unknown>; renotify?: boolean }
+// ---- Which tab speaks for a workspace ----
+//
+// Several tabs may be open, on one workspace or on several. For each
+// workspace exactly one tab shows its notifications (a Web Lock per
+// workspace, so a tab on another workspace never silences it), and that tab
+// stays quiet while any tab on the same workspace is being looked at (each
+// tab says so on a BroadcastChannel). Without Web Locks every tab notifies;
+// the shared tags still make that one notification.
+
+const tabId = Math.random().toString(36).slice(2)
+/// Other tabs being looked at right now, and the workspace each is on.
+const lookers = new Map<string, string>()
+let watching: string | null = null
+let lead = true
+const channel: BroadcastChannel | null = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('honmaru-looking') : null
+// Node (the tests) keeps a process alive for an open channel; a page does not care.
+;(channel as unknown as { unref?: () => void } | null)?.unref?.()
+
+function announce(looking = lookingHere()): void {
+  if (looking) markSeen()
+  channel?.postMessage({ type: 'looking', id: tabId, orgId: watching, looking })
+}
+
+if (channel) {
+  channel.onmessage = (event: MessageEvent) => {
+    const d = event.data || {}
+    if (typeof d.id !== 'string' || d.id === tabId) return
+    // A tab just opened asks where everyone is.
+    if (d.type === 'hello') { announce(); return }
+    if (d.type !== 'looking') return
+    if (d.looking && typeof d.orgId === 'string') lookers.set(d.id, d.orgId)
+    else lookers.delete(d.id)
+  }
+}
+
+/// Someone is reading this workspace: in this tab, or in another one.
+export function someoneLookingAt(orgId: string): boolean {
+  if (lookingHere()) return true
+  for (const org of lookers.values()) if (org === orgId) return true
+  return false
+}
+
+/// Whether this tab should show a notification for `orgId` now.
+function mayNotify(orgId?: string): boolean {
+  if (!orgId || watching === null) return !lookingHere()
+  return lead && !someoneLookingAt(orgId)
+}
+
+type Locks = { request: (name: string, options: { signal?: AbortSignal }, callback: () => Promise<void>) => Promise<void> }
+
+/// This tab is showing `orgId`: take part in choosing the tab that notifies
+/// for it, and tell the other tabs whenever this one is looked at or left.
+/// Returns the cleanup, for when the tab moves to another workspace.
+export function watchWorkspace(orgId: string): () => void {
+  watching = orgId
+  const locks = typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: Locks }).locks : undefined
+  const abort = typeof AbortController !== 'undefined' ? new AbortController() : null
+  let release: (() => void) | null = null
+  if (locks?.request) {
+    lead = false
+    locks.request(`honmaru-notify:${orgId}`, { signal: abort?.signal }, () => {
+      // Granted after this tab already moved on: let the next one have it.
+      if (watching !== orgId) return Promise.resolve()
+      lead = true
+      return new Promise<void>((resolve) => { release = resolve })
+    }).catch(() => { /* aborted, or no locks here after all */ })
+  } else {
+    lead = true
+  }
+  const onChange = () => announce()
+  const onBlur = () => announce(false)
+  const onLeave = () => channel?.postMessage({ type: 'looking', id: tabId, orgId, looking: false })
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', onChange)
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('pagehide', onLeave)
+  }
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', onChange)
+  channel?.postMessage({ type: 'hello', id: tabId })
+  announce()
+  return () => {
+    onLeave()
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', onChange)
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('pagehide', onLeave)
+    }
+    if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') document.removeEventListener('visibilitychange', onChange)
+    if (watching === orgId) watching = null
+    lead = true
+    release?.()
+    abort?.abort()
+  }
+}
+
+interface Shown { tag: string; body: string; data: Record<string, unknown>; renotify?: boolean; timestamp?: number }
 
 /// Show one, through the service worker when there is one, else directly —
 /// with a click that brings this tab forward.
-function show(title: string, { tag, body, data, renotify = false }: Shown): void {
-  const options = { body, tag, data, icon: ICON, badge: BADGE, renotify, timestamp: Date.now() } as NotificationOptions
+function show(title: string, { tag, body, data, renotify = false, timestamp = Date.now() }: Shown): void {
+  const options = { body, tag, data, icon: ICON, badge: BADGE, renotify, timestamp } as NotificationOptions
   const direct = () => {
     try {
       const n = new Notification(title, options)
@@ -78,8 +173,8 @@ function show(title: string, { tag, body, data, renotify = false }: Shown): void
 
 /// A decision now waiting on you. `cardId` makes it the same notification
 /// as the Worker's push for this card.
-export function notifyNewDecision(title: string, from: string, cardId?: string): void {
-  if (!permitted() || lookingHere() || isQuiet()) return
+export function notifyNewDecision(title: string, from: string, cardId?: string, orgId?: string): void {
+  if (!permitted() || !mayNotify(orgId) || isQuiet()) return
   const { heading, byline } = words(from)
   show(heading, {
     tag: cardId || 'honmaru-decision',
@@ -88,17 +183,24 @@ export function notifyNewDecision(title: string, from: string, cardId?: string):
   })
 }
 
+/// Marks taken off words, only where they stand at a word's edges: a
+/// snake_case name, 2*3*4 and __init__.py stay as they are.
+const unmark = (text: string) => text
+  .replace(/(^|[\s(])(\*\*|__|~~)(\S(?:[^\n]*?\S)?)\2(?=$|[\s,!?)]|[.:;](?:\s|$))/g, '$1$3')
+  .replace(/(^|[\s(])([*_~])([^*_~\n]+)\2(?=$|[\s.,!?)])/g, '$1$3')
+
 /// What a message says, as a notification can show it: one line, marks
-/// taken off, and a ||spoiler|| never given away.
+/// taken off, and a ||spoiler|| never given away. Inline code and links are
+/// kept whole, as the chat itself shows them (MessageParts inline).
 export function notificationText(body: string, max = 180): string {
   const flat = String(body || '')
     .replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*\n?/g, '').trim())
     .replace(/\|\|[^|\n]+\|\|/g, '▇▇▇')
     .replace(/^(?:#{1,3}|-#)\s+/gm, '')
     .replace(/^\s*(?:>|&gt;)\s?/gm, '')
-    .replace(/(\*\*|__|~~)(.+?)\1/g, '$2')
-    .replace(/(^|[\s(])([*_~])([^*_~\n]+)\2(?=$|[\s.,!?)])/g, '$1$3')
-    .replace(/`([^`\n]+)`/g, '$1')
+    .split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」]+)/)
+    .map((part, i) => (i % 2 ? part.replace(/^`|`$/g, '') : unmark(part)))
+    .join('')
     .replace(/\s+/g, ' ')
     .trim()
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
@@ -112,18 +214,36 @@ let pending = 0
 /// A direct message or an @mention, while the tab is not in front. The
 /// caller has decided it deserves one (utils/sound.ts soundForMessage says
 /// "mention" — not muted, not yours, not a quiet channel message).
-export function notifyMessage(m: { id: string; orgId: string; channel: string; author: string; where?: string | null; body: string; hasFiles?: boolean }): void {
-  if (!permitted() || lookingHere() || isQuiet()) return
+export function notifyMessage(m: { id: string; orgId: string; channel: string; author: string; where?: string | null; body: string; hasFiles?: boolean; createdAt?: string }): void {
+  if (!permitted() || !mayNotify(m.orgId) || isQuiet()) return
   away += 1
   paintBadge()
+  const at = Date.parse(m.createdAt || '')
   show(m.where ? `${m.author} · ${m.where}` : m.author, {
     tag: `${m.orgId}|${m.channel}`,
     body: notificationText(m.body) || (m.hasFiles ? '📎' : ''),
     // A new message in the same conversation replaces the last one and must
     // still be heard, as the Worker's pushes are.
     renotify: true,
-    data: { messageId: m.id, orgId: m.orgId, channel: m.channel, kind: 'message', hash: `#/m/${encodeURIComponent(m.id)}/${encodeURIComponent(m.orgId)}` },
+    timestamp: Number.isFinite(at) ? at : Date.now(),
+    // `at` is the server's time for the message: the Worker's push carries
+    // the same, so the service worker can tell an older push from a newer
+    // notification already on screen (sw.js showPush).
+    data: { messageId: m.id, orgId: m.orgId, channel: m.channel, kind: 'message', at: m.createdAt || null, hash: `#/m/${encodeURIComponent(m.id)}/${encodeURIComponent(m.orgId)}` },
   })
+}
+
+/// These messages' notifications, taken down: they were read in Activity
+/// (here or on another device), or unsent — a message taken back must not
+/// stay on the lock screen.
+export function closeMessageNotifications(ids: string[]): void {
+  const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined
+  if (!sw || !ids.length) return
+  const wanted = new Set(ids)
+  sw.getRegistration('/')
+    .then((reg) => reg?.getNotifications())
+    .then((list) => { for (const n of list || []) if (wanted.has((n.data as { messageId?: string } | null)?.messageId || '')) n.close() })
+    .catch(() => { /* nothing shown, nothing to take down */ })
 }
 
 /// Cards that stopped waiting on you (decided here or anywhere): their
@@ -186,12 +306,13 @@ function paintFavicon(count: number): void {
     return
   }
   const draw = () => {
-    if (faviconPainted !== count || !faviconImage) return
+    if (faviconPainted !== count || !faviconImage || !faviconImage.naturalWidth) return
     const canvas = document.createElement('canvas')
     canvas.width = 64; canvas.height = 64
     const g = canvas.getContext('2d')
     if (!g) return
-    g.drawImage(faviconImage, 0, 0, 64, 64)
+    // A badge that cannot be drawn is no reason for the app to fall over.
+    try { g.drawImage(faviconImage, 0, 0, 64, 64) } catch { return }
     const label = badgeLabel(count)
     const r = label.length > 1 ? 20 : 17
     g.beginPath()
@@ -210,8 +331,10 @@ function paintFavicon(count: number): void {
     try { url = canvas.toDataURL('image/png') } catch { return }
     for (const link of links) link.href = url
   }
-  if (faviconImage?.complete) { draw(); return }
-  if (!faviconImage) {
+  if (faviconImage?.complete && faviconImage.naturalWidth > 0) { draw(); return }
+  // None yet, or one that failed to load (a broken image is "complete" too):
+  // fetch it again rather than draw nothing forever.
+  if (!faviconImage || faviconImage.complete) {
     faviconImage = new Image()
     faviconImage.src = ICON
   }
