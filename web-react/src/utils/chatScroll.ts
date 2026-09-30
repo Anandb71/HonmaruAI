@@ -68,9 +68,15 @@ export function reachesPast<T extends Said>(prev: readonly T[] | undefined, page
   return Boolean(prev?.length && page.length && prev[0].createdAt < page[0].createdAt)
 }
 
-/// A full newest page that begins after everything loaded: more was said
-/// while away than one page holds, and what is loaded cannot be joined to it
-/// without a hole in the middle. Start again from the page.
+/// A full newest page that does not reach back to what is loaded: more was
+/// said while away than one page holds, and what is loaded cannot be joined
+/// to it without a hole in the middle. Start again from the page.
+/// Told by overlap, not by the newest loaded: a live message that arrived
+/// after a reconnect, before the page was read, is inside the page's time
+/// though everything before it is far older. The page joins only if its
+/// first message is one already loaded.
 export function leavesGap<T extends Said>(prev: readonly T[] | undefined, page: readonly T[], pageSize: number): boolean {
-  return Boolean(prev?.length && page.length >= pageSize && prev[prev.length - 1].createdAt < page[0].createdAt)
+  if (!prev?.length || page.length < pageSize) return false
+  const first = page[0]
+  return prev.some((m) => m.createdAt < first.createdAt) && !prev.some((m) => m.id === first.id)
 }

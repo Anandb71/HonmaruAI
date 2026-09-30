@@ -123,4 +123,21 @@ describe('older pages, and a hole', () => {
     expect(leavesGap(range(0, 4), range(10, 12), 5)).toBe(false)
     expect(leavesGap(undefined, range(10, 14), 5)).toBe(false)
   })
+
+  it('sees the hole under a live message that came in after the drop', () => {
+    // Five loaded before the connection went, one said live after it came
+    // back, then the newest page read again: 26 to 30, with 5 to 25 missing.
+    const loaded = [...range(0, 4), msg(30)]
+    const page = range(26, 30)
+    expect(leavesGap(loaded, page, 5)).toBe(true)
+    // Merged, it would have read as one conversation with a hole in it.
+    expect(mergeById(loaded, page).map((m) => m.id)).toEqual([...range(0, 4), ...page].map((m) => m.id))
+    // With the page's first message already loaded, it joins.
+    expect(leavesGap([...range(0, 26), msg(30)], page, 5)).toBe(false)
+  })
+
+  it('joins a page that reaches no further back than what is loaded', () => {
+    // Only a live message loaded, older than nothing on the page: no hole.
+    expect(leavesGap([msg(30)], range(26, 30), 5)).toBe(false)
+  })
 })
