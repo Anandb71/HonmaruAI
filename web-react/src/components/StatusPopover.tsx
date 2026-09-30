@@ -3,7 +3,7 @@ import { useT } from '../utils/i18n'
 import { getLocale } from '../utils/locale'
 import {
   CLEAR_AFTER, EMOJI_MAX, STATUS_PRESETS, TEXT_MAX,
-  applyPreset, dayOf, draftFromMine, popoverKey, statusPayload, statusProblem, whenLabel,
+  applyPreset, dayOf, draftFromMine, liveDraft, popoverKey, statusPayload, statusProblem, whenLabel,
   type ClearAfter, type MyStatus, type StatusDraft,
 } from '../utils/status'
 import { Avatar } from './Avatar'
@@ -151,6 +151,9 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
   const lastDay = new Date(now.getTime() + 365 * 86400000)
   const status = mine?.status
   const delegate = mine?.delegateRef ? people.find((p) => p.ref === mine.delegateRef) : null
+  // The time a status was already set to, while it is still to come: once
+  // it has passed it is no longer offered, and saving clears tonight.
+  const clearing = liveDraft(draft, now)
 
   return (
     <div
@@ -244,11 +247,11 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
             <select
               id={`${id}-clear`}
               className="dlg-input"
-              value={draft.clear}
+              value={clearing.clear}
               onChange={(e) => edit({ clear: e.target.value as ClearAfter | 'keep' })}
               data-status-clear-after="1"
             >
-              {draft.keepUntil && <option value="keep">{cap(t('until {when}', { when: whenLabel(draft.keepUntil, now, locale) }))}</option>}
+              {clearing.keepUntil && <option value="keep">{cap(t('until {when}', { when: whenLabel(clearing.keepUntil, now, locale) }))}</option>}
               {CLEAR_AFTER.map((c) => <option key={c.id} value={c.id}>{t(c.label)}</option>)}
             </select>
           </div>

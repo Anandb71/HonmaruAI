@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   CLEAR_AFTER, STATUS_PRESETS, EMOJI_MAX, TEXT_MAX,
-  applyPreset, awayUntilTime, clearAfterTime, dayOf, draftFromMine, popoverKey, statusPayload, statusProblem, whenLabel,
+  applyPreset, awayUntilTime, clearAfterTime, dayOf, draftFromMine, liveDraft, popoverKey, statusPayload, statusProblem, whenLabel,
 } from './status'
 import type { StatusDraft } from './status'
 
@@ -72,6 +72,22 @@ describe('the draft', () => {
   })
 })
 
+describe('a time already set, once it has passed', () => {
+  const keepUntil = iso(2026, 8, 30, 9, 0)
+  it('is no longer offered, and a status kept to it clears tonight', () => {
+    expect(liveDraft(draft({ text: 'Standup', clear: 'keep', keepUntil }), wednesday)).toEqual(draft({ text: 'Standup', clear: 'today', keepUntil: null }))
+  })
+
+  it('leaves another choice as it is', () => {
+    expect(liveDraft(draft({ text: 'Standup', clear: '1h', keepUntil }), wednesday)).toEqual(draft({ text: 'Standup', clear: '1h', keepUntil: null }))
+  })
+
+  it('keeps a time still to come', () => {
+    const later = draft({ text: 'Standup', clear: 'keep', keepUntil: iso(2026, 8, 30, 15, 0) })
+    expect(liveDraft(later, wednesday)).toBe(later)
+  })
+})
+
 describe('what is sent', () => {
   it('trims what was typed, and gives a clearing time only to something said', () => {
     expect(statusPayload('org', draft({ emoji: ' 📅 ', text: ' In a meeting ', clear: '1h' }), wednesday)).toEqual({
@@ -117,7 +133,13 @@ describe('what the server would refuse', () => {
     expect(statusProblem(draft({ away: true, awayDate: '2026-09-29' }), wednesday)).toBe('Pick a time within the next year.')
     expect(statusProblem(draft({ away: true, awayDate: '2027-10-01' }), wednesday)).toBe('Pick a time within the next year.')
     expect(statusProblem(draft({ away: true, awayDate: dayOf(wednesday) }), wednesday)).toBeNull()
-    expect(statusProblem(draft({ text: 'Standup', clear: 'keep', keepUntil: iso(2026, 8, 30, 9, 0) }), wednesday)).toBe('Pick a time within the next year.')
+  })
+
+  it('lets a status whose time has passed be saved, clearing tonight', () => {
+    // It was to clear at 9:00; it is 10:15 now. Saving it again is not refused.
+    const gone = draft({ text: 'Standup', clear: 'keep', keepUntil: iso(2026, 8, 30, 9, 0) })
+    expect(statusProblem(gone, wednesday)).toBeNull()
+    expect(statusPayload('org', gone, wednesday).until).toBe(iso(2026, 9, 1))
   })
 
   it('refuses you deciding in your own place', () => {

@@ -121,10 +121,21 @@ export function applyPreset(draft: StatusDraft, preset: StatusPreset, t: (key: s
   return { ...draft, emoji: preset.emoji, text: t(preset.text), clear: preset.clear, keepUntil: null }
 }
 
+/// The draft as it can be saved now. The time a status already carried
+/// can pass while the popover is open (or be behind this clock), and the
+/// Worker refuses a time gone: kept, it would have every save refused. It
+/// stops being a choice, and a status kept to it clears tonight instead,
+/// as a new one does.
+export function liveDraft(draft: StatusDraft, now: Date): StatusDraft {
+  if (!draft.keepUntil || Date.parse(draft.keepUntil) > now.getTime()) return draft
+  return { ...draft, keepUntil: null, clear: draft.clear === 'keep' ? 'today' : draft.clear }
+}
+
 /// The body for PUT /channels/status. The Worker replaces every field at
 /// once, so a status goes with the away settings beside it, and clearing
 /// the status is this with its emoji and words taken out.
-export function statusPayload(orgId: string, draft: StatusDraft, now: Date): StatusPayload {
+export function statusPayload(orgId: string, typed: StatusDraft, now: Date): StatusPayload {
+  const draft = liveDraft(typed, now)
   const emoji = draft.emoji.trim() || null
   const text = draft.text.trim() || null
   const awayUntil = draft.away ? awayUntilTime(draft.awayDate) : null
