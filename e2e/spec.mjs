@@ -3444,6 +3444,28 @@ await step('an owner makes a workspace key; the admin API reads the team with it
   }
 })
 
+await step('an admin finds Claude under AI teammates in the studio, with nothing set up until a key is pasted', async () => {
+  const ctx = await browser.newContext({ storageState: await phone.storageState(), viewport: { width: 1280, height: 820 } })
+  const w = await ctx.newPage()
+  try {
+    await w.goto(`${WEB}#/tools/teammates`, { waitUntil: 'load' })
+    await w.reload({ waitUntil: 'load' })
+    await w.waitForSelector('[data-studio-page="teammates"] [data-teammate="claude"]', { timeout: 20000 })
+      .catch(async () => { throw new Error(`AI teammates did not open: ${await w.textContent('[data-studio-page="teammates"]').catch(() => '')}`) })
+    if (!(await w.$('[data-teammate-on][disabled]'))) throw new Error('Claude could be turned on without an API key')
+    await w.fill('[data-teammate-key]', 'sk-ant-e2e')
+    if (await w.$('[data-teammate-on][disabled]')) throw new Error('pasting a key did not let Claude be turned on')
+    await w.click('[data-teammate-add-tool]')
+    await w.waitForSelector('[data-teammate-tool]', { timeout: 5000 })
+    await w.click('[data-teammate-some]')
+    await w.waitForSelector('[data-teammate-channel]', { timeout: 10000 })
+      .catch(() => { throw new Error('choosing some channels did not list them') })
+    await w.screenshot({ path: `${SHOTS}/72c-ai-teammates.png`, fullPage: true })
+  } finally {
+    await ctx.close()
+  }
+})
+
 await step('a data rule warns before a message goes, and it goes when the person says so; SCIM and streams are offered', async () => {
   const ctx = await browser.newContext({ storageState: await phone.storageState(), viewport: { width: 1280, height: 820 } })
   const w = await ctx.newPage()

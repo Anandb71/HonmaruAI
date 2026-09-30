@@ -307,3 +307,19 @@
 .sso-badge.ok { background: #e6f4ea; color: #1e7b34; }
 .sso-domain-policy select { height: 30px; border: 1px solid var(--st-line); border-radius: 8px; background: var(--st-bg); color: var(--st-ink); font: inherit; font-size: 13px; }
 .sso-page .dlg-secret { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* AI teammates: one form, the login-rules controls in a column. */
+.teammate-form { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
+.teammate-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--st-dim); }
+.teammate-field > span { font-size: 14px; color: var(--st-ink); }
+.teammate-field small { font-size: 12px; color: var(--st-dim); }
+.sso-page .teammate-field textarea.rules-number { height: auto; padding: 8px 10px; resize: vertical; }
+.teammate-mark { font-size: 16px; }
+.teammate-tool { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 8px; align-items: center; }
+.sso-page .teammate-tool .rules-number { width: 100%; min-width: 0; }
+.teammate-where { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; color: var(--st-ink); }
+.teammate-channels { list-style: none; margin: 0; padding: 8px 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; border: 1px solid var(--st-line); border-radius: 10px; max-height: 240px; overflow: auto; font-size: 14px; color: var(--st-ink); }
+.teammate-save { margin: 8px 0 24px; }
+@media (max-width: 640px) {
+  .teammate-tool { grid-template-columns: 1fr 1fr; }
+}
