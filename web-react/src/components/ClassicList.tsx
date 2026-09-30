@@ -3143,7 +3143,7 @@ export const ClassicList: React.FC<Props> = ({
                 {thread.private && <button type="button" className="cl-nudge" onClick={() => setAddingTo(thread.view!)} data-add-people="1">{t('Add people')}</button>}
                 {thread.private && <button type="button" className="cl-nudge" onClick={() => void leaveChannel(thread)} data-leave="1">{t('Leave channel')}</button>}
                 <button type="button" className="cl-nudge" onClick={() => { setRenaming(thread.slug!); setRenameTo(thread.name) }}>{t('Rename')}</button>
-                <button type="button" className="cl-nudge cl-danger" onClick={() => setArchiveDialog({ thread })} data-archive-channel="1">{t('Archive channel')}</button>
+                <button type="button" className="cl-nudge" onClick={() => setArchiveDialog({ thread })} data-archive-channel="1">{t('Archive channel')}</button>
                 <button type="button" className="cl-nudge cl-danger" onClick={() => void deleteChannel(thread)}>{t('Delete channel')}</button>
               </>
             )}
