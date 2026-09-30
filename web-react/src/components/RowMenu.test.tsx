@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { RowMenu, keepOnScreen } from './RowMenu'
+import { RowMenu, keepOnScreen, step, focusGoesBack } from './RowMenu'
 
 // The sidebar's right-click menu: what it draws before anyone touches it.
 describe('RowMenu', () => {
@@ -66,5 +66,45 @@ describe('a menu kept on screen', () => {
   })
   it('keeps its top and left on screen when it is bigger than the window', () => {
     expect(keepOnScreen({ x: 10, y: 10 }, { width: 1200, height: 900 }, view)).toEqual({ left: 4, top: 4 })
+  })
+})
+
+// The arrow keys: ↑ and ↓ down the list, ← and → along a strip.
+describe('a step through a menu', () => {
+  it('goes to the next or the one before, round from one end to the other', () => {
+    expect(step(1, 4, true)).toBe(2)
+    expect(step(1, 4, false)).toBe(0)
+    expect(step(3, 4, true)).toBe(0)
+    expect(step(0, 4, false)).toBe(3)
+  })
+  it('starts at the first going forward and the last going back, from nowhere in it', () => {
+    expect(step(-1, 4, true)).toBe(0)
+    expect(step(-1, 4, false)).toBe(3)
+  })
+  it('stays where it is in a list of one, and goes nowhere in an empty one', () => {
+    expect(step(0, 1, true)).toBe(0)
+    expect(step(0, 1, false)).toBe(0)
+    expect(step(-1, 0, true)).toBe(-1)
+  })
+})
+
+// What has the focus as a menu shuts, and whether it goes back to the
+// message (or the row) that had it when the menu opened.
+describe('the focus when a menu shuts', () => {
+  const message = { isConnected: true }
+  const body = { name: 'body' }
+  const item = { name: 'an item' }
+  const menu = { contains: (n: object) => n === item }
+  it('goes back when it fell to the body with the item picked, or is still in the menu', () => {
+    expect(focusGoesBack(message, body, body, menu)).toBe(true)
+    expect(focusGoesBack(message, item, body, menu)).toBe(true)
+    expect(focusGoesBack(message, null, body, menu)).toBe(true)
+  })
+  it('stays where a pick put it: the box to edit in, a dialog', () => {
+    expect(focusGoesBack(message, { name: 'the edit box' }, body, menu)).toBe(false)
+  })
+  it('goes nowhere when what had it has left the page', () => {
+    expect(focusGoesBack({ isConnected: false }, body, body, menu)).toBe(false)
+    expect(focusGoesBack(null, body, body, menu)).toBe(false)
   })
 })

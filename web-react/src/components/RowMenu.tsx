@@ -38,6 +38,25 @@ export function keepOnScreen(at: { x: number; y: number }, size: { width: number
   }
 }
 
+/// One step along a list of `n` from the one at `at`, round from one end
+/// to the other: ↓ and → forward, ↑ and ← back. From none (-1), forward is
+/// the first and back the last.
+export function step(at: number, n: number, forward: boolean): number {
+  if (n <= 0) return -1
+  if (at < 0 || at >= n) return forward ? 0 : n - 1
+  return (at + (forward ? 1 : n - 1)) % n
+}
+
+/// Whether a menu, shutting, hands the focus back to what had it when it
+/// opened: when that is still on the page, and nothing has taken the focus
+/// since — it is on the page's body, where it falls when what had it goes,
+/// or still in the menu. A pick that took it (the box to edit a message in,
+/// a dialog's first field) keeps it.
+export function focusGoesBack<N>(before: { isConnected: boolean } | null, now: N | null, body: N | null, menu: { contains(node: N): boolean } | null): boolean {
+  if (!before?.isConnected) return false
+  return !now || now === body || Boolean(menu?.contains(now))
+}
+
 // A strip counts once, by its first button, so ↑ and ↓ step over it whole.
 const items = (el: HTMLElement | null) => (el ? [...el.querySelectorAll<HTMLButtonElement>(':scope > li > button:not([disabled]), :scope > li > [role="group"] > button:first-child')] : [])
 
@@ -45,9 +64,8 @@ const items = (el: HTMLElement | null) => (el ? [...el.querySelectorAll<HTMLButt
 const walkStrip = (e: React.KeyboardEvent<HTMLElement>) => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
   const all = [...e.currentTarget.querySelectorAll<HTMLButtonElement>(':scope > button')]
-  const at = Math.max(0, all.indexOf(document.activeElement as HTMLButtonElement))
   e.preventDefault(); e.stopPropagation()
-  all[(at + (e.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length]?.focus()
+  all[step(all.indexOf(document.activeElement as HTMLButtonElement), all.length, e.key === 'ArrowRight')]?.focus()
 }
 
 function List({ entries, onClose, onBack, level, label }: { entries: MenuEntry[]; onClose: () => void; onBack?: () => void; level: number; label?: string }) {
@@ -68,8 +86,7 @@ function List({ entries, onClose, onBack, level, label }: { entries: MenuEntry[]
     const active = document.activeElement as HTMLElement | null
     const strip = active?.parentElement?.getAttribute('role') === 'group' ? active.parentElement : null
     const at = list.indexOf((strip?.firstElementChild ?? active) as HTMLButtonElement)
-    if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); list[(at + 1) % list.length]?.focus() }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); list[(at - 1 + list.length) % list.length]?.focus() }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); list[step(at, list.length, e.key === 'ArrowDown')]?.focus() }
     else if (e.key === 'ArrowLeft' && onBack) { e.preventDefault(); e.stopPropagation(); onBack() }
   }
   return (
@@ -143,10 +160,7 @@ export const RowMenu: React.FC<Props> = ({ at, entries, label, onClose }) => {
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null
     const box = ref.current
-    return () => {
-      const now = document.activeElement
-      if (before?.isConnected && (!now || now === document.body || box?.contains(now))) before.focus({ preventScroll: true })
-    }
+    return () => { if (focusGoesBack(before, document.activeElement, document.body, box)) before!.focus({ preventScroll: true }) }
   }, [])
   useEffect(() => {
     items(ref.current?.querySelector('ul') as HTMLElement | null)[0]?.focus()
