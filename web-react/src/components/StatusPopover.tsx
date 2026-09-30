@@ -29,6 +29,9 @@ interface Props {
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+// A mouse or a trackpad: typing is the next thing. On a touch screen the
+// keyboard would cover the presets, so focus stays on the popover itself.
+const typing = () => typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches
 
 /// Your status, one click from your avatar, the way a chat client has it:
 /// what it says now, the usual ones a click each, your own emoji and words
@@ -83,9 +86,16 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
 
   // Into it when it opens, onto the words once they are there to edit.
   useEffect(() => {
-    if (phase === 'ready') words.current?.focus()
+    if (phase === 'ready' && typing()) words.current?.focus()
     else if (!box.current?.contains(document.activeElement)) box.current?.focus()
   }, [phase])
+  // A save that answers after it was closed another way still tells the
+  // lists, but does not close or move focus again.
+  const open = useRef(true)
+  useEffect(() => {
+    open.current = true
+    return () => { open.current = false }
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -105,6 +115,7 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
   }, [anchor])
 
   const send = async (next: StatusDraft) => {
+    if (busy) return
     const now = new Date()
     const wrong = statusProblem(next, now, myRef)
     if (wrong) { setProblem(t(wrong, { n: TEXT_MAX })); return }
@@ -115,12 +126,13 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
       body: JSON.stringify(statusPayload(orgId, next, now)),
     }).catch(() => null)
     const said = res && !res.ok ? await res.json().catch(() => null) : null
+    // Every list of the team reads it again, as when somebody joins: the
+    // sidebar, a DM's header, an open profile, the names @ offers.
+    if (res?.ok) window.dispatchEvent(new Event('honmaru:members-changed'))
+    if (!open.current) return
     setBusy(false)
     if (!res) { setProblem(t('Could not reach the server.')); return }
     if (!res.ok) { setProblem(said?.message ? t(said.message) : t('That did not save.')); return }
-    // Every list of the team reads it again, as when somebody joins: the
-    // sidebar, a DM's header, an open profile, the names @ offers.
-    window.dispatchEvent(new Event('honmaru:members-changed'))
     close()
   }
 
@@ -207,7 +219,7 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
                 <button
                   type="button"
                   className="status-pop-preset"
-                  onClick={() => { setDraft((d) => applyPreset(d, p, t)); setProblem(null); words.current?.focus() }}
+                  onClick={() => { setDraft((d) => applyPreset(d, p, t)); setProblem(null); if (typing()) words.current?.focus() }}
                   data-status-preset={p.text}
                 >
                   <span className="status-pop-preset-emoji" aria-hidden="true">{p.emoji}</span>
