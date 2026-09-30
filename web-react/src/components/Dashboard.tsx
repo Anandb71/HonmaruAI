@@ -284,6 +284,10 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (ignore) return
       window.dispatchEvent(new CustomEvent('honmaru:channel-progress', { detail: progress }))
     }
+    // Somebody typing: the list shows it where they are typing.
+    wsClient.onTyping = (typing) => {
+      if (!ignore) window.dispatchEvent(new CustomEvent('honmaru:typing', { detail: typing }))
+    }
     wsClient.onReaction = (cardId, emoji, on, by, reactions) => {
       if (ignore) return
       window.dispatchEvent(new CustomEvent('honmaru:reaction', { detail: { cardId, emoji, on, by, reactions } }))
@@ -325,7 +329,17 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (type) wsClient.sendJam(type, payload)
     }
     window.addEventListener('honmaru:jam-send', jamSend)
-    return () => { ignore = true; window.removeEventListener('honmaru:jam-send', jamSend); wsClient.disconnect() }
+    const typingSend = (e: Event) => {
+      const { channel, parentId, stop } = (e as CustomEvent<{ channel: string; parentId: string | null; stop: boolean }>).detail || {}
+      if (channel) wsClient.sendTyping(channel, parentId ?? null, Boolean(stop))
+    }
+    window.addEventListener('honmaru:typing-send', typingSend)
+    return () => {
+      ignore = true
+      window.removeEventListener('honmaru:jam-send', jamSend)
+      window.removeEventListener('honmaru:typing-send', typingSend)
+      wsClient.disconnect()
+    }
   }, [relayUrl, userId, orgId, sessionToken, addDebugLog, onLeft])
 
   // Using the app, here: the relay is told at most every thirty seconds, so
