@@ -12,13 +12,14 @@ import { CreateDecision } from './CreateDecision'
 import { RecordSheet } from './RecordSheet'
 import type { FlagReason, Answer } from './Feed'
 import { NotificationsButton } from './NotificationsBanner'
+import { StatusPopover } from './StatusPopover'
 import { notifyNewDecision, setNotificationCopy, setTabBadge } from '../utils/notifications'
 import type { AppState, Business, DecisionCard } from '../types/card'
 import './Dashboard.css'
 import { useT } from '../utils/i18n'
 import { getLocale } from '../utils/locale'
 import { displayName } from '../utils/names'
-import { useRoute, useDesktop, hashForCard, hashForMode, hashForScreen, hashForView } from '../utils/route'
+import { useRoute, useDesktop, useMinWidth, hashForCard, hashForMode, hashForScreen, hashForView } from '../utils/route'
 import { loadCardCache, saveCardCache } from '../utils/cardCache'
 import { needsLocalizing } from '../utils/language'
 import { aiHeaders } from '../utils/aiKey'
@@ -387,6 +388,15 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   // Your own name and photo, for the rail.
   const [myFace, setMyFace] = useState<{ name: string; url: string | null }>({ name: '', url: null })
+  // Your status, open from your avatar: the top bar's on a phone, the one
+  // at the foot of the rail on a laptop — where the top bar's is not drawn,
+  // and the rail's opens this instead of the You screen, which the popover
+  // still leads to.
+  const [statusFrom, setStatusFrom] = useState<null | 'top' | 'rail'>(null)
+  const avatarButton = useRef<HTMLButtonElement>(null)
+  const railAvatar = useRef<HTMLButtonElement>(null)
+  const railed = useMinWidth(720)
+  useEffect(() => { setStatusFrom(null) }, [orgId])
   // Notifications paused: said at the top, with a way out.
   const [quiet, setQuiet] = useState<QuietState>(getQuietState())
   useEffect(() => onQuietChange(() => setQuiet({ ...getQuietState() })), [])
@@ -895,7 +905,15 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
             <kbd className="palette-kbd">⌘K</kbd>
           </button>
           <NotificationsButton httpBase={relayHttpUrl} sessionToken={sessionToken} />
-          <button className="avatar-button" onClick={() => setScreen('profile')} aria-label={t('You')}>
+          <button
+            ref={avatarButton}
+            className="avatar-button"
+            onClick={() => setStatusFrom((f) => (f === 'top' ? null : 'top'))}
+            aria-label={t('You')}
+            aria-haspopup="dialog"
+            aria-expanded={statusFrom === 'top'}
+            data-status-open="top"
+          >
             {(userId.replace(/^(u:|email:)/, '')[0] || '?').toUpperCase()}
           </button>
         </div>
@@ -942,8 +960,21 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
             <span className="fab-face"><Icon name="plus" /></span>
           </button>
           <button className={screen === 'tools' ? 'tab on' : 'tab'} aria-current={screen === 'tools' ? 'page' : undefined} data-tab="tools" onClick={() => setScreen('tools')} aria-label={t('Tools')}><Icon name="tools" /></button>
-          <button className={screen && screen !== 'history' && screen !== 'tools' ? 'tab on' : 'tab'} aria-current={screen && screen !== 'history' && screen !== 'tools' ? 'page' : undefined} data-tab="you" onClick={() => setScreen('profile')} aria-label={t('You')}><Icon name="you" /><span className={`tab-avatar${myFace.url ? ' has-photo' : ''}`} aria-hidden="true" data-initial={((myFace.name || userId.replace(/^(u:|email:)/, ''))[0] || '?').toUpperCase()}>{myFace.url && <img src={myFace.url} alt="" referrerPolicy="no-referrer" />}</span></button>
+          <button className={screen && screen !== 'history' && screen !== 'tools' ? 'tab on' : 'tab'} aria-current={screen && screen !== 'history' && screen !== 'tools' ? 'page' : undefined} data-tab="you" ref={railAvatar} onClick={() => (railed ? setStatusFrom((f) => (f === 'rail' ? null : 'rail')) : setScreen('profile'))} aria-label={t('You')} aria-haspopup={railed ? 'dialog' : undefined} aria-expanded={railed ? statusFrom === 'rail' : undefined}><Icon name="you" /><span className={`tab-avatar${myFace.url ? ' has-photo' : ''}`} aria-hidden="true" data-initial={((myFace.name || userId.replace(/^(u:|email:)/, ''))[0] || '?').toUpperCase()}>{myFace.url && <img src={myFace.url} alt="" referrerPolicy="no-referrer" />}</span></button>
         </nav>
+      )}
+
+      {statusFrom && (
+        <StatusPopover
+          httpBase={relayHttpUrl}
+          orgId={orgId}
+          sessionToken={sessionToken}
+          me={{ name: myFace.name || displayName(userId), url: myFace.url }}
+          from={statusFrom}
+          anchor={statusFrom === 'rail' ? railAvatar : avatarButton}
+          onClose={() => setStatusFrom(null)}
+          onProfile={() => { setStatusFrom(null); setScreen('profile') }}
+        />
       )}
 
       {panel && <div className="scrim" onClick={() => { setPanel(null); setComposeSeed(null) }} />}
