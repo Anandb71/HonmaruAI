@@ -391,7 +391,7 @@ const table: Record<string, string> = {
   'Light': 'Claro',
   'Dark': 'Oscuro',
   'Message display': 'Visualización de mensajes',
-  'Compact fits more of a conversation on screen: no pictures, the time and name on the line.': 'Compacto muestra más de la conversación en pantalla: sin fotos, con la hora y el nombre en la misma línea.',
+  'Compact fits more of a conversation on screen: no profile pictures, the time and name on the line.': 'Compacto muestra más de la conversación en pantalla: sin fotos de perfil, con la hora y el nombre en la misma línea.',
   'Cozy': 'Cómodo',
   'Compact': 'Compacto',
   'Channels nobody talks in': 'Canales donde nadie habla',

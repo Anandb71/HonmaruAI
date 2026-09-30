@@ -181,7 +181,7 @@ const table: Record<string, string> = {
   'Light': 'ライト',
   'Dark': 'ダーク',
   'Message display': 'メッセージの表示',
-  'Compact fits more of a conversation on screen: no pictures, the time and name on the line.': 'コンパクトは写真を省き、時刻と名前をメッセージと同じ行に並べて、会話をより多く表示します。',
+  'Compact fits more of a conversation on screen: no profile pictures, the time and name on the line.': 'コンパクトはアイコンを省き、時刻と名前をメッセージと同じ行に並べて、会話をより多く表示します。',
   'Cozy': 'ゆったり',
   'Compact': 'コンパクト',
   'Channels nobody talks in': '誰も話していないチャンネル',

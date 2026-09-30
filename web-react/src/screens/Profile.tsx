@@ -634,7 +634,7 @@ export const Profile: React.FC<Props> = ({
             <div className="row static look-row">
               <span className="row-main">
                 {t('Message display')}
-                <span className="row-sub">{t('Compact fits more of a conversation on screen: no pictures, the time and name on the line.')}</span>
+                <span className="row-sub">{t('Compact fits more of a conversation on screen: no profile pictures, the time and name on the line.')}</span>
               </span>
               <div className="seg look-seg" role="radiogroup" aria-label={t('Message display')}>
                 {DENSITIES.map((density) => (
