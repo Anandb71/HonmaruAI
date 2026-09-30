@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../utils/i18n'
 import type { FileRef } from '../types/card'
+import { mediaKind } from '../utils/media'
 import { Icon } from './Icon'
 import './Attachments.css'
 
@@ -29,8 +30,12 @@ export interface Upload {
 
 const isPicture = (type: string) => /^image\/(png|jpeg|gif|webp|avif)$/.test(type)
 
-/// A picture's size, so the message keeps its shape before it loads.
-async function dimensions(file: File): Promise<{ width: number; height: number } | null> {
+type Size = { width: number; height: number }
+
+/// A picture's or a video's size, so the message keeps its shape before it
+/// loads.
+async function dimensions(file: File): Promise<Size | null> {
+  if (mediaKind(file.type, file.name) === 'video') return videoDimensions(file)
   if (!isPicture(file.type)) return null
   try {
     if (typeof createImageBitmap === 'function') {
@@ -41,6 +46,31 @@ async function dimensions(file: File): Promise<{ width: number; height: number }
     }
   } catch { /* fall through */ }
   return null
+}
+
+/// A video's size, from its header: the browser reads only as far as that,
+/// and the upload does not wait more than a few seconds for it.
+function videoDimensions(file: File): Promise<Size | null> {
+  if (typeof document === 'undefined') return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const v = document.createElement('video')
+    const src = URL.createObjectURL(file)
+    const done = (size: Size | null) => {
+      clearTimeout(timer)
+      v.onloadedmetadata = null
+      v.onerror = null
+      v.removeAttribute('src')
+      v.load()
+      URL.revokeObjectURL(src)
+      resolve(size)
+    }
+    const timer = setTimeout(() => done(null), 3000)
+    v.muted = true
+    v.preload = 'metadata'
+    v.onloadedmetadata = () => done(v.videoWidth && v.videoHeight ? { width: v.videoWidth, height: v.videoHeight } : null)
+    v.onerror = () => done(null)
+    v.src = src
+  })
 }
 
 export function sizeLabel(bytes: number): string {
