@@ -126,6 +126,35 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
   }
 }
 
+// ---- The key, kept for the service worker ----
+//
+// When a browser drops a subscription without saying which (Firefox for
+// Android, Firefox before 137), the service worker subscribes again with the
+// key kept here (sw.js pushsubscriptionchange). Kept only while push is on
+// in this browser: turning it off forgets it, so nothing turns it back on.
+
+const PUSH_KEY_CACHE = 'honmaru-push'
+const PUSH_KEY = '/push-key'
+
+async function keepKey(publicKey: string | null): Promise<void> {
+  try {
+    if (typeof caches === 'undefined') return
+    const cache = await caches.open(PUSH_KEY_CACHE)
+    if (publicKey) await cache.put(PUSH_KEY, new Response(publicKey))
+    else await cache.delete(PUSH_KEY)
+  } catch { /* storage refused: the next open resyncs instead */ }
+}
+
+async function keptKey(): Promise<string | null> {
+  try {
+    if (typeof caches === 'undefined') return null
+    const hit = await (await caches.open(PUSH_KEY_CACHE)).match(PUSH_KEY)
+    return hit ? (await hit.text()) || null : null
+  } catch {
+    return null
+  }
+}
+
 async function forget(httpBase: string, sessionToken: string, endpoint: string): Promise<void> {
   await fetch(`${httpBase}/push/subscriptions`, {
     method: 'DELETE',
@@ -173,7 +202,9 @@ export async function enableWebPush(httpBase: string, sessionToken: string): Pro
     if (!publicKey) return 'unavailable'
     const reg = await activeRegistration()
     const subscription = await subscriptionFor(reg, publicKey, httpBase, sessionToken)
-    return (await tellWorker(httpBase, sessionToken, subscription)) ? 'on' : 'unavailable'
+    if (!(await tellWorker(httpBase, sessionToken, subscription))) return 'unavailable'
+    await keepKey(publicKey)
+    return 'on'
   } catch {
     return 'unavailable'
   }
@@ -181,9 +212,10 @@ export async function enableWebPush(httpBase: string, sessionToken: string): Pro
 
 /// On every open: the subscription this browser already has, handed to the
 /// Worker again (it keeps one row per endpoint, so this is an upsert), and
-/// made again if the key changed or the browser dropped it. Without this, a
-/// subscription the Worker lost — pruned, re-bound on a shared computer,
-/// replaced by Firefox — stops pushes with nothing on screen to say so.
+/// made again if the key changed — or if the browser dropped it while push
+/// was on here (the key is still kept). Without this, a subscription the
+/// Worker lost — pruned, re-bound on a shared computer, replaced by
+/// Firefox — stops pushes with nothing on screen to say so.
 /// Never prompts, never throws. Returns whether pushes will arrive.
 export async function resyncWebPush(httpBase: string, sessionToken: string): Promise<boolean> {
   if (pushSupport() !== 'ready' || Notification.permission !== 'granted') return false
@@ -191,11 +223,13 @@ export async function resyncWebPush(httpBase: string, sessionToken: string): Pro
     const reg = await navigator.serviceWorker.getRegistration('/')
     if (!reg) return false
     const existing = await reg.pushManager.getSubscription()
-    if (!existing) return false
+    if (!existing && !(await keptKey())) return false
     const publicKey = await prefetchVapidKey(httpBase)
     if (!publicKey) return false
-    const subscription = sameServerKey(existing, publicKey) ? existing : await subscriptionFor(reg, publicKey, httpBase, sessionToken)
-    return await tellWorker(httpBase, sessionToken, subscription)
+    const subscription = existing && sameServerKey(existing, publicKey) ? existing : await subscriptionFor(reg, publicKey, httpBase, sessionToken)
+    if (!(await tellWorker(httpBase, sessionToken, subscription))) return false
+    await keepKey(publicKey)
+    return true
   } catch {
     return false
   }
@@ -204,6 +238,7 @@ export async function resyncWebPush(httpBase: string, sessionToken: string): Pro
 /// Unsubscribe here and forget it on the Worker, so signing out on a shared
 /// machine stops the next person seeing your decisions.
 export async function disableWebPush(httpBase: string, sessionToken: string): Promise<void> {
+  await keepKey(null)
   const subscription = await currentSubscription()
   if (!subscription) return
   try {

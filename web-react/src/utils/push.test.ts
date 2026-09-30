@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { askPermission, enableWebPush, prefetchVapidKey, resyncWebPush, sameServerKey, urlBase64ToUint8Array } from './push'
+import { askPermission, disableWebPush, enableWebPush, prefetchVapidKey, resyncWebPush, sameServerKey, urlBase64ToUint8Array } from './push'
 
 // A browser, as far as Web Push touches it: a permission, a service worker
 // with a push manager, and the Worker at the other end of fetch.
@@ -143,6 +143,37 @@ describe('keeping it on', () => {
     expect(await resyncWebPush(http(), 'tok')).toBe(true)
     expect(calls).not.toContain('prompt')
     expect(requests.filter((r) => r.method === 'POST')).toHaveLength(1)
+  })
+
+  describe('the key kept for the service worker', () => {
+    let kept: Map<string, string>
+    beforeEach(() => {
+      kept = new Map()
+      vi.stubGlobal('caches', {
+        open: async () => ({
+          put: async (key: string, res: Response) => { kept.set(key, await res.text()) },
+          delete: async (key: string) => kept.delete(key),
+          match: async (key: string) => (kept.has(key) ? new Response(kept.get(key)) : undefined),
+        }),
+      })
+    })
+
+    it('is kept once push is on, and forgotten when it is turned off', async () => {
+      const httpBase = http()
+      expect(await enableWebPush(httpBase, 'tok')).toBe('on')
+      expect(kept.get('/push-key')).toBe(KEY)
+      await disableWebPush(httpBase, 'tok')
+      expect(kept.has('/push-key')).toBe(false)
+    })
+
+    it('makes again a subscription the browser dropped while push was on here', async () => {
+      permission = 'granted'
+      kept.set('/push-key', KEY)
+      current = null
+      expect(await resyncWebPush(http(), 'tok')).toBe(true)
+      expect(calls).toContain('subscribe')
+      expect(calls).not.toContain('prompt')
+    })
   })
 
   it('does nothing for a browser that never turned it on', async () => {
