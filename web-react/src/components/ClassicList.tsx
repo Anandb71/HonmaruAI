@@ -362,7 +362,8 @@ export const ClassicList: React.FC<Props> = ({
     window.addEventListener('honmaru:agents-changed', on)
     return () => window.removeEventListener('honmaru:agents-changed', on)
   }, [api.httpBase, api.orgId, authHeaders])
-  // Somebody joined or left: the people in the sidebar are read again too.
+  // Somebody joined or left, or you set your status: the people in the
+  // sidebar are read again too.
   useEffect(() => {
     const on = () => setChannelsTick((n) => n + 1)
     window.addEventListener('honmaru:members-changed', on)
@@ -894,13 +895,26 @@ export const ClassicList: React.FC<Props> = ({
 
   // A teammate's profile, beside the conversation.
   const [profile, setProfile] = useState<null | { ref: string; data?: { name: string; handle: string | null; title: string; timezone: string | null; status: Member['status']; awayUntil: string | null; joinedAt: string; mine: boolean; stats: { waiting: number; decided90d: number; medianMinutes: number | null } } }>(null)
-  const openProfile = async (ref: string) => {
-    setDetailId(null); setThread(null)
-    setProfile({ ref })
+  const readProfile = useCallback(async (ref: string) => {
     const res = await fetch(`${api.httpBase}/channels/member?orgId=${encodeURIComponent(api.orgId)}&ref=${encodeURIComponent(ref)}`, { headers: authHeaders }).catch(() => null)
     const d = res?.ok ? await res.json().catch(() => null) : null
     if (d?.member) setProfile((prev) => (prev && prev.ref === ref ? { ref, data: d.member } : prev))
+  }, [api.httpBase, api.orgId, authHeaders])
+  const openProfile = async (ref: string) => {
+    setDetailId(null); setThread(null)
+    setProfile({ ref })
+    await readProfile(ref)
   }
+  // A status set — yours, from your avatar — or somebody joining or
+  // leaving: the profile open beside the conversation is read again, as
+  // the sidebar is.
+  const profileRef = profile?.ref
+  useEffect(() => {
+    if (!profileRef) return
+    const on = () => { void readProfile(profileRef) }
+    window.addEventListener('honmaru:members-changed', on)
+    return () => window.removeEventListener('honmaru:members-changed', on)
+  }, [profileRef, readProfile])
 
   // Keys a chat client has: ⌥↑/⌥↓ between conversations, ⌘⇧A Activity,
   // ⌘⇧D the sidebar.
