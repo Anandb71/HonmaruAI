@@ -1,0 +1,170 @@
+import { env } from "cloudflare:test";
+import { fetchMock } from "./helpers/fetch-mock.js";
+import { beforeEach, afterEach, expect, test } from "vitest";
+import schemaSql from "../schema.sql?raw";
+import worker from "../src/index.js";
+import { replyExcerpt, SPOILER_MASK } from "../src/channels.js";
+
+// Discord's inline reply: a message that answers another one right in the
+// conversation, with a line quoting who said what — not a thread. Only a
+// message in the same conversation can be answered, and the quote is read
+// from the original as it is now.
+
+const ORG = "personal:replies";
+let toru; let mika; let kenji;
+const pending = [];
+const ctx = { waitUntil: (p) => pending.push(p) };
+const settle = async () => { while (pending.length) await pending.shift(); };
+const call = async (path, init) => {
+  const res = await worker.fetch(new Request("https://example.com" + path, init), env, ctx);
+  await settle();
+  return res;
+};
+const headers = (token) => ({ "content-type": "application/json", "x-session-token": token });
+const post = (path, token, body) => call(path, { method: "POST", headers: headers(token), body: JSON.stringify(body) });
+const get = (path, token) => call(path, { headers: headers(token) });
+const del = (path, token, body) => call(path, { method: "DELETE", headers: headers(token), body: JSON.stringify(body) });
+const q = (o) => new URLSearchParams(o).toString();
+const list = async (token, channel = "b:cafe") => (await (await get(`/channels/messages?${q({ orgId: ORG, channel })}`, token)).json()).messages;
+const send = (token, body, extra = {}) => post("/channels/messages", token, { orgId: ORG, channel: "b:cafe", body, ...extra });
+const say = async (token, body, extra = {}) => (await (await send(token, body, extra)).json()).message;
+let refs;
+
+beforeEach(async () => {
+  await env.DB.exec(schemaSql.replace(/\n/g, " "));
+  const { createSession, upsertUser, upsertMembership, upsertBusiness } = await import("../src/db.js");
+  await upsertUser(env.DB, { githubId: "9801", login: "toru", name: "Toru", avatarUrl: null, locale: "en" });
+  await upsertUser(env.DB, { githubId: "email:mika@example.com", login: "u:mika@example.com", name: "Mika", avatarUrl: null, locale: "en" });
+  await upsertUser(env.DB, { githubId: "9803", login: "kenji", name: "Kenji", avatarUrl: null, locale: "en" });
+  await upsertMembership(env.DB, ORG, "9801", "admin");
+  await upsertMembership(env.DB, ORG, "email:mika@example.com", "member");
+  await upsertMembership(env.DB, ORG, "9803", "member");
+  await upsertBusiness(env.DB, ORG, { name: "Cafe", createdBy: "9801" });
+  await upsertBusiness(env.DB, ORG, { name: "Kitchen", createdBy: "9801" });
+  toru = await createSession(env.DB, "9801", "gho_t");
+  mika = await createSession(env.DB, "email:mika@example.com", "gho_m");
+  kenji = await createSession(env.DB, "9803", "gho_k");
+  const people = await (await get(`/channels?${q({ orgId: ORG })}`, toru)).json();
+  refs = Object.fromEntries(people.members.map((m) => [m.name, m.ref]));
+  fetchMock.activate();
+});
+afterEach(() => fetchMock.assertNoPendingInterceptors());
+
+test("a reply in the same channel says who it answers and how that began", async () => {
+  const m = await say(mika, "Roaster wants +8% from Friday");
+  const res = await send(toru, "Let's push back to +5%", { replyTo: m.id });
+  expect(res.status).toBe(201);
+  const { message } = await res.json();
+  const quote = { id: m.id, kind: "message", authorName: "Mika", authorRef: refs.Mika, excerpt: "Roaster wants +8% from Friday", deleted: false };
+  expect(message.replyTo).toEqual(quote);
+  // In the conversation, not in a thread: the main log has both, and the
+  // original gains no thread for it.
+  const shown = await list(kenji);
+  expect(shown.map((x) => x.id)).toEqual([m.id, message.id]);
+  expect(shown[1]).toMatchObject({ parentId: null, replyTo: quote });
+  expect(shown[0].replyTo).toBeUndefined();
+  expect(shown[0].replyCount).toBe(0);
+  // Never a login.
+  expect(JSON.stringify(shown)).not.toContain("mika@example.com");
+});
+
+test("every reply on a page is quoted, the originals read in one go", async () => {
+  const a = await say(mika, "first");
+  const b = await say(kenji, "second");
+  await say(toru, "to a", { replyTo: a.id });
+  await say(toru, "to b", { replyTo: b.id });
+  await say(mika, "to a again", { replyTo: a.id });
+  const shown = await list(toru);
+  expect(shown.filter((x) => x.replyTo).map((x) => [x.body, x.replyTo.authorName, x.replyTo.excerpt]))
+    .toEqual([["to a", "Mika", "first"], ["to b", "Kenji", "second"], ["to a again", "Mika", "first"]]);
+});
+
+test("a message in another conversation cannot be answered, and saying so gives nothing away", async () => {
+  const kitchen = (await (await post("/channels/messages", mika, { orgId: ORG, channel: "b:kitchen", body: "oven is out" })).json()).message;
+  const dm = (await (await post("/channels/messages", toru, { orgId: ORG, channel: `dm:${refs.Mika}`, body: "between us" })).json()).message;
+  const refused = async (res) => {
+    expect(res.status).toBe(400);
+    return res.json();
+  };
+  // Another channel, one Toru can read too.
+  const other = await refused(await send(toru, "same here", { replyTo: kitchen.id }));
+  // A DM Kenji is not in, and an id that names nothing: the same answer.
+  const hidden = await refused(await send(kenji, "what's this?", { replyTo: dm.id }));
+  const nothing = await refused(await send(kenji, "and this?", { replyTo: "no-such-message" }));
+  expect(hidden).toEqual(nothing);
+  expect(other).toEqual(nothing);
+  expect(nothing.code).toBe("reply_gone");
+  expect(JSON.stringify(hidden)).not.toContain("between us");
+  // Nothing was said.
+  expect(await list(toru)).toHaveLength(0);
+});
+
+test("a reply is answered where it is read: in the conversation, or in its own thread", async () => {
+  const m = await say(mika, "Friday price change?");
+  const inThread = await say(kenji, "Yes, from Friday", { parentId: m.id });
+  // A thread's reply is not in the main log, so nothing there quotes it.
+  expect((await send(toru, "agreed", { replyTo: inThread.id })).status).toBe(400);
+  // In the thread, its parent and its replies can be answered.
+  const r1 = await say(toru, "Agreed", { parentId: m.id, replyTo: inThread.id });
+  expect(r1.replyTo).toMatchObject({ id: inThread.id, authorName: "Kenji", excerpt: "Yes, from Friday" });
+  const r2 = await say(toru, "And the parent", { parentId: m.id, replyTo: m.id });
+  expect(r2.replyTo).toMatchObject({ id: m.id, authorName: "Mika" });
+  // Another thread's message is not this thread's.
+  const other = await say(kenji, "Staff party?");
+  expect((await send(toru, "x", { parentId: other.id, replyTo: inThread.id })).status).toBe(400);
+});
+
+test("the quote hides a spoiler, even one the cut would have halved", async () => {
+  const m = await say(mika, "The winner is ||Kenji|| — don't tell");
+  const r = await say(toru, "no way", { replyTo: m.id });
+  expect(r.replyTo.excerpt).toBe(`The winner is ${SPOILER_MASK} — don't tell`);
+  expect(JSON.stringify(r)).not.toContain("Kenji||");
+  const long = `${"a".repeat(110)} ||the secret that runs past the cut||`;
+  const r2 = await say(toru, "hm", { replyTo: (await say(mika, long)).id });
+  expect(r2.replyTo.excerpt).not.toContain("secret");
+  expect(Array.from(r2.replyTo.excerpt).length).toBeLessThanOrEqual(120);
+});
+
+test("an excerpt: one line, cut with an ellipsis, spoilers masked but code's bars left alone", () => {
+  expect(replyExcerpt("one\n\ntwo   three")).toBe("one two three");
+  expect(replyExcerpt("a ||b|| c ||d\ne|| f")).toBe(`a ${SPOILER_MASK} c ${SPOILER_MASK} f`);
+  // `x || y` is code: it opens no spoiler, and the real one after it is still hidden.
+  expect(replyExcerpt("run `a || b` then ||c||")).toBe(`run \`a || b\` then ${SPOILER_MASK}`);
+  expect(replyExcerpt("```if (a || b) {}``` ok")).toBe("```if (a || b) {}``` ok");
+  // Unmatched bars are just bars.
+  expect(replyExcerpt("a || b")).toBe("a || b");
+  const cut = replyExcerpt("x".repeat(200));
+  expect(cut).toBe(`${"x".repeat(119)}…`);
+  // An emoji is not split in two by the cut.
+  expect(Array.from(replyExcerpt("😀".repeat(130)))).toHaveLength(120);
+  // Only a file: it is named.
+  expect(replyExcerpt("", "plan.pdf")).toBe("📎 plan.pdf");
+  expect(replyExcerpt("", null)).toBe("");
+});
+
+test("an unsent original is flagged, not quoted, and cannot be answered again", async () => {
+  const m = await say(mika, "wrong channel, sorry");
+  const r = await say(toru, "no worries", { replyTo: m.id });
+  expect((await del("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", messageId: m.id })).status).toBe(200);
+  const shown = await list(kenji);
+  expect(shown.map((x) => x.id)).toEqual([r.id]);
+  expect(shown[0].replyTo).toEqual({ id: m.id, kind: null, authorName: null, authorRef: null, excerpt: "", deleted: true });
+  const again = await send(kenji, "what was it?", { replyTo: m.id });
+  expect(again.status).toBe(400);
+  expect((await again.json()).code).toBe("reply_gone");
+});
+
+test("an edit to the original shows in the quote", async () => {
+  const m = await say(mika, "Roaster wants +8%");
+  const r = await say(toru, "hm", { replyTo: m.id });
+  await call("/channels/messages", { method: "PUT", headers: headers(mika), body: JSON.stringify({ orgId: ORG, channel: "b:cafe", messageId: m.id, body: "Roaster wants +6%" }) });
+  const shown = (await list(kenji)).find((x) => x.id === r.id);
+  expect(shown.replyTo.excerpt).toBe("Roaster wants +6%");
+});
+
+test("a scheduled message cannot be a reply yet", async () => {
+  const m = await say(mika, "Doors at 8?");
+  const res = await send(toru, "yes", { replyTo: m.id, sendAt: new Date(Date.now() + 3600000).toISOString() });
+  expect(res.status).toBe(400);
+  expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM scheduled_messages").first()).n).toBe(0);
+});
