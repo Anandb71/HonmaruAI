@@ -147,6 +147,13 @@ describe('the keys the popover answers', () => {
     expect(popoverKey({ key: 'k', metaKey: true }, { inside: false, modal: false })).toBeNull()
   })
 
+  it('leaves Escape to an input method still composing', () => {
+    expect(popoverKey({ key: 'Escape', isComposing: true }, inside)).toBeNull()
+    // Safari says so by keyCode alone, on the keydown that ends it.
+    expect(popoverKey({ key: 'Escape', keyCode: 229 }, inside)).toBeNull()
+    expect(popoverKey({ key: 'Escape', keyCode: 27 }, inside)).toBe('close')
+  })
+
   it('ignores the letters typed into it', () => {
     expect(popoverKey({ key: 'k' }, inside)).toBeNull()
     expect(popoverKey({ key: '/' }, inside)).toBeNull()

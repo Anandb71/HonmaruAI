@@ -160,11 +160,14 @@ export function statusProblem(draft: StatusDraft, now: Date, myRef: string | nul
 /// from inside it or from the avatar that opened it, and never while a
 /// modal layer is up — ⌘K, the shortcuts, Tell your AI — whose Escape is
 /// its own. ⌘K and ⌘/ from inside it close it too, as the palette or the
-/// shortcuts open where it was.
+/// shortcuts open where it was. A key an input method is still composing
+/// with is the input method's: Escape there takes back the letters being
+/// turned into kana or kanji, not the popover.
 export function popoverKey(
-  e: { key: string; metaKey?: boolean; ctrlKey?: boolean },
+  e: { key: string; metaKey?: boolean; ctrlKey?: boolean; isComposing?: boolean; keyCode?: number },
   at: { inside: boolean; modal: boolean },
 ): 'close' | 'make-way' | null {
+  if (e.isComposing || e.keyCode === 229) return null
   if (!at.inside || at.modal) return null
   if (e.key === 'Escape') return 'close'
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K' || e.key === '/')) return 'make-way'
