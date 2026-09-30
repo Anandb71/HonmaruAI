@@ -1,0 +1,55 @@
+import { describe, it, expect } from 'vitest'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { Palette } from './Palette'
+import type { Place } from '../utils/places'
+
+const api = { httpBase: 'http://relay.test', orgId: 'org-1', sessionToken: 'session' }
+const noop = () => {}
+const html = (props: Partial<React.ComponentProps<typeof Palette>>) =>
+  renderToStaticMarkup(<Palette {...api} cards={[]} onPick={noop} onClose={noop} {...props} />)
+/// The rows, in order, by the conversation each opens.
+const rows = (out: string) => [...out.matchAll(/data-view="([^"]+)"/g)].map((m) => m[1])
+
+const places: Place[] = [
+  { view: 'b:general', kind: 'channel', name: 'general', handle: 'general' },
+  { view: 'b:board', kind: 'channel', name: 'board', handle: 'board', private: true, unread: 3 },
+  { view: 'dm:r1', kind: 'person', name: 'Kenji Tanaka', handle: 'kenji', mentions: 2 },
+  { view: 'g:abc', kind: 'group', name: 'Kenji Tanaka, Ana Ruiz', fresh: true },
+  { view: 'ag:7', kind: 'agent', name: 'Hayao', handle: 'hayao' },
+]
+
+// ⌘K opened with nothing typed: where to go before anything else.
+describe('Palette, with nothing typed', () => {
+  it('lists conversations first: what calls for you, then where you were — not the one you are in', () => {
+    const out = html({ places, recent: ['b:general', 'ag:7'], current: 'b:general' })
+    expect(rows(out)).toEqual(['dm:r1', 'b:board', 'g:abc', 'ag:7'])
+    expect(out.indexOf('Conversations')).toBeGreaterThan(-1)
+    expect(out.indexOf('Conversations')).toBeLessThan(out.indexOf('Go to'))
+    // The first row is the one Enter takes.
+    expect(out).toMatch(/aria-selected="true"[^>]*data-view="dm:r1"/)
+  })
+
+  it('says what each one is and what waits there, in words as well as marks', () => {
+    const out = html({ places, recent: ['b:general'] })
+    const row = (view: string) => out.slice(out.indexOf(`data-view="${view}"`), out.indexOf('</li>', out.indexOf(`data-view="${view}"`)))
+    expect(row('b:general')).toContain('<span class="palette-lead" aria-hidden="true">#</span>')
+    expect(row('b:board')).toContain('<svg')
+    expect(row('b:board')).toContain('<span class="sr-only">Private</span>')
+    expect(row('b:board')).toContain('<span aria-hidden="true">3</span><span class="sr-only">3 waiting on you</span>')
+    expect(row('dm:r1')).toContain('<span class="palette-lead" aria-hidden="true">@</span>')
+    expect(row('dm:r1')).toContain('<span class="palette-meta">@kenji</span>')
+    expect(row('dm:r1')).toContain('<span aria-hidden="true">@2</span><span class="sr-only">2 mentions of you</span>')
+    expect(row('g:abc')).toContain('<span class="palette-fresh"><span class="sr-only">New messages</span></span>')
+  })
+
+  it('knows the channels before the list has ever been drawn', () => {
+    const out = html({ businesses: [{ slug: 'front-desk', name: 'Front desk' }, { slug: 'ops', name: 'Ops' }], recent: ['b:ops'] })
+    expect(rows(out)).toEqual(['b:ops'])
+    expect(out).toContain('>Ops</span>')
+  })
+
+  it('tells how to jump to a conversation in the box itself', () => {
+    expect(html({})).toContain('placeholder="Jump to a conversation, or search messages and decisions')
+  })
+})
