@@ -29,7 +29,7 @@ import type { JamMode, JamState } from '../utils/jam'
 import { InviteDialog } from './InviteDialog'
 import { Avatar } from './Avatar'
 import { ProfileCard } from './ProfileCard'
-import { isOnline, statusShown, awayShown, nextExpiry } from '../utils/people'
+import { isOnline, statusShown, awayShown, nextExpiry, localTime } from '../utils/people'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
@@ -3973,13 +3973,12 @@ export const ClassicList: React.FC<Props> = ({
           </header>
           {!profile.data ? <p className="slk-empty">{t('Loading…')}</p> : (() => {
             const p = profile.data
-            let local = ''
-            try { if (p.timezone) local = new Date().toLocaleTimeString(locale, { timeZone: p.timezone, hour: 'numeric', minute: '2-digit' }) } catch { /* unknown zone */ }
+            const local = localTime(p.timezone, Date.now(), locale)
             const status = statusShown(p.status, Date.now())
             const away = awayShown(p.awayUntil, Date.now())
             return (
               <div className="slk-profile-body">
-                <div className="slk-profile-avatar" aria-hidden="true">{p.name.charAt(0).toUpperCase()}</div>
+                <div className="slk-profile-avatar" aria-hidden="true"><Avatar name={p.name} url={memberByRef(profile.ref)?.avatarUrl} size={96} /></div>
                 <h3>{p.name}</h3>
                 {p.handle && <p className="slk-profile-handle">@{p.handle}</p>}
                 <p className="slk-profile-title">{t(p.title.charAt(0).toUpperCase() + p.title.slice(1))}</p>
