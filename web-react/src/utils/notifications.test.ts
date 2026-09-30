@@ -106,9 +106,22 @@ describe('in-tab message notification', () => {
     let stop: (() => void) | null = null
     let other: BroadcastChannel | null = null
     const tick = () => new Promise((resolve) => setTimeout(resolve, 30))
+    // The other tabs' own locks, held while they live: releasing one is the
+    // browser freeing it when that tab goes, crash included.
+    let alive: Map<string, () => void>
     beforeEach(() => {
-      // Web Locks that grant at once: this tab speaks for its workspace.
-      vi.stubGlobal('navigator', { locks: { request: (_n: string, _o: unknown, cb: () => Promise<void>) => cb() } })
+      alive = new Map()
+      vi.stubGlobal('navigator', {
+        locks: {
+          request: (name: string, _o: unknown, cb: () => Promise<void>) => {
+            const them = /^honmaru-tab:(tab-\d+)$/.exec(name)
+            // Another tab's lock: granted only once that tab is gone.
+            if (them) return new Promise<void>((resolve) => { alive.set(them[1], () => { void cb().then(resolve) }) })
+            // Everything else — this tab's own, and the workspace's — at once.
+            return cb()
+          },
+        },
+      })
       other = new BroadcastChannel('honmaru-looking')
     })
     afterEach(() => { stop?.(); stop = null; other?.close(); other = null })
@@ -122,6 +135,19 @@ describe('in-tab message notification', () => {
       expect(shown).toHaveLength(0)
       expect(badgeCount()).toBe(0)
       other!.postMessage({ type: 'looking', id: 'tab-2', orgId: 'org1', looking: false })
+      await tick()
+      notifyMessage(message)
+      expect(shown).toHaveLength(1)
+    })
+
+    it('forgets a tab that crashed while it was being read', async () => {
+      stop = watchWorkspace('org1')
+      other!.postMessage({ type: 'looking', id: 'tab-4', orgId: 'org1', looking: true })
+      await tick()
+      notifyMessage(message)
+      expect(shown).toHaveLength(0)
+      // It never said goodbye; the browser freed its lock.
+      alive.get('tab-4')!()
       await tick()
       notifyMessage(message)
       expect(shown).toHaveLength(1)
@@ -157,6 +183,11 @@ describe('notification text', () => {
 
   it('never gives a spoiler away', () => {
     expect(notificationText('||Snape|| did it, ||twice||')).toBe('▇▇▇ did it, ▇▇▇')
+  })
+
+  it('never pairs the || of code with a real spoiler', () => {
+    expect(notificationText('use `a || b` to check; the answer is ||42||')).toBe('use a || b to check; the answer is ▇▇▇')
+    expect(notificationText('||x `a || b` y||')).toBe('▇▇▇')
   })
 
   it('keeps words that only look like marks', () => {

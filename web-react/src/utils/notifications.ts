@@ -59,6 +59,9 @@ export function lookingHere(): boolean {
 // tab says so on a BroadcastChannel). Without Web Locks every tab notifies;
 // the shared tags still make that one notification.
 
+type Locks = { request: (name: string, options: { signal?: AbortSignal }, callback: () => Promise<void>) => Promise<void> }
+const locksHere = (): Locks | undefined => (typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: Locks }).locks : undefined)
+
 const tabId = Math.random().toString(36).slice(2)
 /// Other tabs being looked at right now, and the workspace each is on.
 const lookers = new Map<string, string>()
@@ -67,6 +70,26 @@ let lead = true
 const channel: BroadcastChannel | null = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('honmaru-looking') : null
 // Node (the tests) keeps a process alive for an open channel; a page does not care.
 ;(channel as unknown as { unref?: () => void } | null)?.unref?.()
+
+// A tab that crashes while being read never says it stopped. So each tab
+// holds a lock named after itself for as long as it lives — the browser
+// frees it when the tab goes, however it went — and the others wait on that
+// lock to forget it.
+let holdingOwnLock = false
+function holdOwnLock(): void {
+  if (holdingOwnLock) return
+  const locks = locksHere()
+  if (!locks?.request) return
+  holdingOwnLock = true
+  locks.request(`honmaru-tab:${tabId}`, {}, () => new Promise<void>(() => { /* held while the tab lives */ })).catch(() => { holdingOwnLock = false })
+}
+const followed = new Set<string>()
+function follow(id: string): void {
+  const locks = locksHere()
+  if (!locks?.request || followed.has(id)) return
+  followed.add(id)
+  locks.request(`honmaru-tab:${id}`, {}, async () => { lookers.delete(id); followed.delete(id) }).catch(() => { followed.delete(id) })
+}
 
 function announce(looking = lookingHere()): void {
   if (looking) markSeen()
@@ -80,7 +103,7 @@ if (channel) {
     // A tab just opened asks where everyone is.
     if (d.type === 'hello') { announce(); return }
     if (d.type !== 'looking') return
-    if (d.looking && typeof d.orgId === 'string') lookers.set(d.id, d.orgId)
+    if (d.looking && typeof d.orgId === 'string') { lookers.set(d.id, d.orgId); follow(d.id) }
     else lookers.delete(d.id)
   }
 }
@@ -98,14 +121,14 @@ function mayNotify(orgId?: string): boolean {
   return lead && !someoneLookingAt(orgId)
 }
 
-type Locks = { request: (name: string, options: { signal?: AbortSignal }, callback: () => Promise<void>) => Promise<void> }
-
 /// This tab is showing `orgId`: take part in choosing the tab that notifies
 /// for it, and tell the other tabs whenever this one is looked at or left.
 /// Returns the cleanup, for when the tab moves to another workspace.
 export function watchWorkspace(orgId: string): () => void {
   watching = orgId
-  const locks = typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: Locks }).locks : undefined
+  // Before the first announcement, so any tab that hears it can wait on it.
+  holdOwnLock()
+  const locks = locksHere()
   const abort = typeof AbortController !== 'undefined' ? new AbortController() : null
   let release: (() => void) | null = null
   if (locks?.request) {
@@ -119,8 +142,26 @@ export function watchWorkspace(orgId: string): () => void {
   } else {
     lead = true
   }
-  const onChange = () => announce()
-  const onBlur = () => announce(false)
+  // Focus moving into a frame of this page (a video player in a link card)
+  // blurs the window while the person is still reading here. So a blur is
+  // judged once it has settled, and while a frame holds focus — when no
+  // later event will say it left — it is looked at again every second.
+  let poll: ReturnType<typeof setInterval> | null = null
+  let settle: ReturnType<typeof setTimeout> | null = null
+  const stopWatching = () => {
+    if (poll) { clearInterval(poll); poll = null }
+    if (settle) { clearTimeout(settle); settle = null }
+  }
+  const onChange = () => { stopWatching(); announce() }
+  const onBlur = () => {
+    stopWatching()
+    settle = setTimeout(() => {
+      settle = null
+      const still = lookingHere()
+      announce(still)
+      if (still) poll = setInterval(() => { if (!lookingHere()) { stopWatching(); announce(false) } }, 1000)
+    }, 0)
+  }
   const onLeave = () => channel?.postMessage({ type: 'looking', id: tabId, orgId, looking: false })
   if (typeof window !== 'undefined') {
     window.addEventListener('focus', onChange)
@@ -131,6 +172,7 @@ export function watchWorkspace(orgId: string): () => void {
   channel?.postMessage({ type: 'hello', id: tabId })
   announce()
   return () => {
+    stopWatching()
     onLeave()
     if (typeof window !== 'undefined') {
       window.removeEventListener('focus', onChange)
@@ -183,6 +225,11 @@ export function notifyNewDecision(title: string, from: string, cardId?: string, 
   })
 }
 
+/// A ||spoiler|| — or an inline code span, matched first so the `||` of
+/// `a || b` never pairs with a real spoiler's bars. A spoiler may hold code.
+/// The same rule as the Worker's pushPreview (worker/src/pushes.js).
+const SPOILER = /`[^`\n]+`|\|\|(?:`[^`\n]+`|[^|\n])+?\|\|/g
+
 /// Marks taken off words, only where they stand at a word's edges: a
 /// snake_case name, 2*3*4 and __init__.py stay as they are.
 const unmark = (text: string) => text
@@ -195,7 +242,7 @@ const unmark = (text: string) => text
 export function notificationText(body: string, max = 180): string {
   const flat = String(body || '')
     .replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*\n?/g, '').trim())
-    .replace(/\|\|[^|\n]+\|\|/g, '▇▇▇')
+    .replace(SPOILER, (m) => (m[0] === '`' ? m : '▇▇▇'))
     .replace(/^(?:#{1,3}|-#)\s+/gm, '')
     .replace(/^\s*(?:>|&gt;)\s?/gm, '')
     .split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」]+)/)
