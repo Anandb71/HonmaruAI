@@ -907,6 +907,7 @@ const table: Record<string, string> = {
   'This browser cannot receive push notifications here.': 'このブラウザではプッシュ通知を受け取れません。',
   'This browser cannot receive them.': 'このブラウザでは受け取れません。',
   'Could not turn notifications on. Try again in a moment.': '通知をオンにできませんでした。しばらくして試してください。',
+  'Notifications are still off. You can turn them on whenever you like.': '通知はまだオフです。いつでもオンにできます。',
   'That did not work. Try again in a moment.': 'うまくいきませんでした。しばらくして試してください。',
   'We could not save that.': '保存できませんでした。',
 
