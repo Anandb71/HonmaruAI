@@ -61,6 +61,18 @@ export function reconcile(list: ChannelMessage[], tempId: string, real: ChannelM
   return [...list, real]
 }
 
+/// The answer to the send: the server's copy is drawn under the temporary
+/// id it takes the place of (`drawn`: server id → key), so the element
+/// carries on — while ours is still in `list` and nothing else is drawn
+/// under that id already. The same words from another of your devices may
+/// have been taken for ours and put in its place; two messages under one
+/// key would be one too many.
+export function drawUnder(drawn: Map<string, string>, realId: string, tempId: string, list: ChannelMessage[]): void {
+  if (!list.some((x) => x.id === tempId)) return
+  for (const [id, key] of drawn) if (key === tempId && id !== realId) return
+  drawn.set(realId, tempId)
+}
+
 /// It did not go: kept where it was, with why — `refused` when the server
 /// said no to the words themselves, so it is edited, not sent again.
 export const markFailed = (list: ChannelMessage[], tempId: string, why: string, refused = false): ChannelMessage[] =>

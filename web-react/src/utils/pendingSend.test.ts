@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, echoOf, isDoubleSend, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendDeadline, sendTime, tempMessage, tempState } from './pendingSend'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendDeadline, sendTime, tempMessage, tempState } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -86,6 +86,30 @@ describe('the answer to the send', () => {
   it('shows the server’s copy even when ours is no longer held', () => {
     const out = reconcile([said('a', 'first')], 'tmp-gone', said('real-2', 'second'))
     expect(ids(out)).toEqual(['a', 'real-2'])
+  })
+
+  it('is drawn under ours’ key while ours is there, and never under a key already taken', () => {
+    const temp = tempMessage({ channel: 'b:hotel', body: 'ok' }, you, at, () => 't')
+    // The answer first: the same element carries on.
+    const drawn = new Map<string, string>()
+    drawUnder(drawn, 'real', temp.id, [said('a', 'first'), temp])
+    expect(drawn.get('real')).toBe(temp.id)
+    drawUnder(drawn, 'real', temp.id, [said('a', 'first'), temp])
+    expect([...drawn]).toEqual([['real', temp.id]])
+
+    // The same words from your phone came first and were taken for ours:
+    // that one has the key, and the answer to the send gets its own.
+    const taken = new Map([['from-phone', temp.id]])
+    const list = arrive([temp], said('from-phone', 'ok'))
+    drawUnder(taken, 'real', temp.id, list)
+    expect(taken.has('real')).toBe(false)
+    drawUnder(taken, 'real', temp.id, [temp])
+    expect(taken.has('real')).toBe(false)
+
+    // Ours gone from the list (a thread closed and opened again): nothing to carry on.
+    const gone = new Map<string, string>()
+    drawUnder(gone, 'real', temp.id, [said('a', 'first')])
+    expect(gone.size).toBe(0)
   })
 
   it('changes nothing when the socket already put the server’s copy in ours’ place', () => {
