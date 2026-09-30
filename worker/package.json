@@ -21,6 +21,7 @@
     "miniflare": "5.20260911.0-alpha"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "@xmldom/xmldom": "^0.9.12",
     "xml-crypto": "^6.3.2"
   }

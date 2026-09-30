@@ -35,11 +35,12 @@ import { createTeam, renameTeam, teamName, canRename } from "./orgs.js";
 import { settleUsage, jevEntry } from "./ledger.js";
 import { runScheduledSync, runAutomations } from "./scheduled.js";
 import { handleAutomation } from "./automation.js";
-import { handleChannels, broadcastStored } from "./channelRoutes.js";
+import { handleChannels, broadcastStored, watchTeammateRuns } from "./channelRoutes.js";
 import { handleAudit, audit, auditEverywhere, person, migrateLegacyAudit } from "./audit.js";
 import { shredPerson } from "./auditCrypto.js";
 import { allowed, ensureOwner, soleOwnerships } from "./permissions.js";
 import { handlePolicy, policyDenial, reauthDenial } from "./policy.js";
+import { PROVIDERS, loadTeammate, saveTeammate, toClientTeammate, spentThisMonth } from "./teammates.js";
 import { handleOrgKeys, warnExpiringKeys } from "./orgKeys.js";
 import { handleAdminApi } from "./adminApi.js";
 import { handleScim } from "./scim.js";
@@ -201,6 +202,8 @@ export default {
     if (event?.cron === "* * * * *") {
       ctx.waitUntil(runMinuteJobs(env, { now: new Date(event?.scheduledTime || Date.now()), broadcast: (orgId, key, row) => broadcastStored(env, orgId, key, row) })
         .catch((err) => console.error("minute jobs failed", err?.message || err)));
+      // AI teammates at work: whatever they have finished, posted back.
+      ctx.waitUntil(watchTeammateRuns(env).catch((err) => console.error("teammate watch failed", err?.message || err)));
       // The audit log, to each workspace's SIEM, as it is written.
       ctx.waitUntil(deliverStreams(env, { now: event?.scheduledTime || Date.now() }).catch((err) => console.error("audit streams failed", err?.message || err)));
       return;
@@ -617,6 +620,45 @@ async function handle(request, env, url, ctx) {
         } });
       }
       return json({ orgId, canEdit, ...(await aiStatus(env, orgId)) });
+    }
+    // AI teammates (teammates.js): an admin sets one up and turns it on;
+    // anyone in the workspace sees whether it is there and what it has
+    // spent this month. Keys never come back out.
+    if (url.pathname === "/teammates" && (request.method === "GET" || request.method === "PUT")) {
+      const limited = await enforce(env, request, "team");
+      if (limited) return limited;
+      const session = await getSession(env.DB, request.headers.get("x-session-token"));
+      if (!session) return json({ message: "Please sign in." }, 401);
+      const body = request.method === "PUT" ? await request.json().catch(() => null) : null;
+      if (request.method === "PUT" && (!body || typeof body !== "object")) return json({ message: "Invalid JSON body." }, 400);
+      const orgId = request.method === "GET" ? url.searchParams.get("orgId") : body.orgId;
+      const provider = (request.method === "GET" ? url.searchParams.get("provider") : body.provider) || "claude";
+      if (!orgId || typeof orgId !== "string") return json({ message: "orgId is required" }, 400);
+      if (!PROVIDERS[provider]) return json({ message: "Unknown teammate." }, 400);
+      if (!(await isMember(env.DB, orgId, session.github_id))) return json({ message: "not a member of this org" }, 403);
+      { const held = await policyDenial(env, session, orgId); if (held) return json(held.body, held.status); }
+      const canEdit = membershipIsOurs(orgId) && await allowed(env.DB, orgId, session.github_id, "workspace.ai_settings");
+      if (request.method === "PUT") {
+        if (!canEdit) return json({ message: "Only an admin of this workspace can set up AI teammates." }, 403);
+        const me = await getUserByGithubId(env.DB, session.github_id);
+        const org = await env.DB.prepare("SELECT name FROM orgs WHERE id = ?1").bind(orgId).first().catch(() => null);
+        const members = await listMembers(env.DB, orgId, session.github_id).catch(() => []);
+        const before = await loadTeammate(env.DB, orgId, provider);
+        const result = await saveTeammate(env, orgId, provider, body, { login: me?.login || String(session.github_id), workspaceName: org?.name || "Workspace", members });
+        if (result.error) return json({ message: result.error }, 400);
+        // What changed, never a key.
+        await audit(env, request, { orgId, action: "workspace.teammate_changed", actor: await actorOf(env, session), entity: { type: "teammate", id: provider, name: PROVIDERS[provider].name }, details: {
+          enabled: Boolean(result.teammate?.enabled), wasEnabled: Boolean(before?.enabled),
+          apiKey: body.apiKey === undefined ? undefined : (body.apiKey ? "set" : "removed"),
+          githubToken: body.githubToken === undefined ? undefined : (body.githubToken ? "set" : "removed"),
+          repos: body.repos === undefined ? undefined : result.teammate?.repos,
+          channels: body.channels === undefined ? undefined : (result.teammate?.channels === null ? "all" : result.teammate?.channels?.length),
+          monthlyLimitUsd: body.monthlyLimitUsd,
+          tools: body.tools === undefined ? undefined : (result.teammate?.tools || []).map((t) => t.name),
+        } });
+      }
+      const t = await loadTeammate(env.DB, orgId, provider);
+      return json({ orgId, canEdit, teammate: toClientTeammate(t, provider, await spentThisMonth(env.DB, orgId, provider)) });
     }
     // The workspace's mark. Anyone can see it (the id is unguessable, like a
     // card's video); its admins set and remove it.

@@ -174,6 +174,7 @@ Phase 列は実装の優先度（§11）。
 | `workspace.created` / `workspace.deleted` / `workspace.renamed` | warning | 1 |
 | `workspace.icon_changed` | info | 2 |
 | `workspace.ai_settings_changed` （モデル、プロバイダ。鍵そのものは記録しない） | warning | 1 |
+| `workspace.teammate_changed` （AIチームメイトのオン・オフ、リポジトリ、チャンネル、上限額、ツール名。鍵そのものは記録しない） | warning | 1 |
 | `workspace.ai_key_set` / `workspace.ai_key_removed` | critical | 1 |
 | `workspace.retention_changed` （§8） | critical | 2 |
 | `workspace.audit_stream_changed` （SIEM 配信先の追加・変更） | critical | 2 |

@@ -3,7 +3,7 @@ import { attachedTexts } from "./dlpFiles.js";
 import { linksIn, readLinks, linksBlock } from "./links.js";
 import { agentTools } from "./agentTools.js";
 import { translateMessages } from "./translate.js";
-import { getSession, isMember, getUserByGithubId, saveCard, getCard, listBusinesses } from "./db.js";
+import { getSession, isMember, getUserByGithubId, getUserByLogin, saveCard, getCard, listBusinesses } from "./db.js";
 import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText, discardDraft, dailyChannelFor } from "./dailyReport.js";
 import { providerFor, readerEnvFor } from "./orgAI.js";
 import { groupsIn, toClientGroup, saveGroup, deleteGroup, getSidebar, saveSidebar } from "./people-groups.js";
@@ -12,6 +12,7 @@ import { enforce } from "./ratelimit.js";
 import { listMembers } from "./team.js";
 import { allowed } from "./permissions.js";
 import { resolveMentions } from "./threads.js";
+import { teammateForAgent, startTeammateRun, loadTeammate, readRun, settleRun, openRuns } from "./teammates.js";
 import { appendCardEvent } from "./events.js";
 import { announceCards, announceEvents, announceTo } from "./announce.js";
 import { localizeForRecipient } from "./localize.js";
@@ -456,6 +457,16 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
     : {};
   let answered = 0;
   for (const agent of agents) {
+    // An AI teammate works through its own service, not the workspace's
+    // model: it starts, says so, and answers when it is done.
+    if (agent.provider) {
+      await progress(agent, "agent");
+      const t = await teammateForAgent(env.DB, orgId, agent).catch(() => null);
+      await runTeammate(env, { orgId, user, resolved, row, members, locale, agent, t, deadline: Date.now() + (env.TEAMMATE_WATCH_MS !== undefined ? Number(env.TEAMMATE_WATCH_MS) : env.AGENT_INLINE === "1" || !env.AGENT_RUNNER ? 20000 : 240000) })
+        .catch((err) => console.error("teammate failed", safe(err?.message)));
+      await progress(agent, "done");
+      continue;
+    }
     await progress(agent, "agent");
     let text;
     try {
@@ -492,6 +503,81 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
   }
   if (provider) await settleUsage(env.DB, provider, { orgId, githubId: session.github_id });
   return answered;
+}
+
+/// Where a teammate's words go: under the message that called it, or, in a
+/// conversation with it, into the conversation itself ("-").
+const teammateParent = (resolved, row) => row.parent_id || (resolved.kind === "agent" ? null : row.id);
+
+/// An AI teammate's turn (teammates.js): the thread handed to it, a line
+/// saying it has started, and its answer when it has one — watched here
+/// while this request may still run, and by the minute cron after that.
+async function runTeammate(env, { orgId, user, resolved, row, members, locale, agent, t, deadline }) {
+  const parentId = teammateParent(resolved, row);
+  const say = async (key) => {
+    const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: `agent:${agent.id}`, body: serverText(locale, key), kind: "agent", parentId });
+    if (out.row) {
+      await broadcastWithParent(env, orgId, resolved, out.row, members);
+      await emitMessage(env, orgId, out.row);
+    }
+  };
+  if (!t) return say("teammate.off");
+  let started;
+  try {
+    const transcript = await contextFor(env.DB, orgId, resolved.key, row).catch(() => []);
+    const where = resolved.kind === "business" ? `the #${resolved.slug} channel` : resolved.kind === "agent" ? "a direct conversation with you" : "a direct conversation";
+    started = await startTeammateRun(env, {
+      orgId, t, key: resolved.key, threadId: parentId || "-", where, askedBy: user.name || "a teammate",
+      transcript, request: requestFor(row.body, agent), login: user.login,
+    });
+  } catch (err) {
+    console.error("teammate start failed", safe(err?.message));
+    return say("teammate.failed");
+  }
+  if (started.refused) return say(started.refused === "limit" ? "teammate.limit" : "teammate.notHere");
+  await say(started.continued ? "teammate.continued" : "teammate.started");
+  await watchTeammateRuns(env, { ids: [started.run.id], deadline });
+}
+
+/// Look in on teammates at work, and post what each finished with into the
+/// thread it came from. Once (the minute cron), or until `deadline`.
+export async function watchTeammateRuns(env, { ids = null, deadline = 0, pause = 8000 } = {}) {
+  for (;;) {
+    const runs = await openRuns(env.DB, { ids });
+    if (!runs.length) return;
+    let working = 0;
+    for (const run of runs) {
+      working += 1;
+      try {
+        const t = await loadTeammate(env.DB, run.org_id, run.provider);
+        const read = t?.apiKey ? await readRun(env, t, run) : { texts: [], stop: "terminated", last: null, costCents: null };
+        const status = await settleRun(env.DB, run, read);
+        if (read.stop || status) working -= 1;
+        if (status) await postTeammateResult(env, run, t, read, status);
+      } catch (err) {
+        console.error("teammate watch failed", safe(err?.message));
+      }
+    }
+    if (!working || Date.now() + pause + 5000 > deadline) return;
+    await new Promise((resolve) => setTimeout(resolve, pause));
+  }
+}
+
+async function postTeammateResult(env, run, t, read, status) {
+  const starter = run.started_by ? await getUserByLogin(env.DB, run.started_by).catch(() => null) : null;
+  const locale = await loadCopy(env, starter?.locale || "en", { orgId: run.org_id });
+  const words = read.texts.join("\n\n").trim();
+  let body;
+  if (status === "budget") body = [words, serverText(locale, "teammate.budget")].filter(Boolean).join("\n\n");
+  else if (status === "failed") body = [words, serverText(locale, read.stop === "terminated" ? "teammate.failed" : "teammate.stopped")].filter(Boolean).join("\n\n");
+  else body = words || (read.error ? serverText(locale, "teammate.stopped") : serverText(locale, "teammate.done"));
+  const agentId = t?.agentId;
+  if (!agentId) return;
+  const out = await postMessage(env.DB, {
+    orgId: run.org_id, key: run.channel, authorLogin: `agent:${agentId}`, body: body.length > MAX_MESSAGE_CHARS ? `${body.slice(0, MAX_MESSAGE_CHARS - 1)}…` : body, kind: "agent",
+    parentId: run.thread_id === "-" ? null : run.thread_id,
+  });
+  if (out.row) await broadcastStored(env, run.org_id, run.channel, out.row);
 }
 
 /// The sidebar's previews in the language the reader set: kept translations

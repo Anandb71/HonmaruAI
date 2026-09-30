@@ -15,7 +15,7 @@ const withKey = { ...env, DATA_KEY: KEY };
 
 beforeEach(async () => {
   await env.DB.exec(schemaSql.replace(/\n/g, " "));
-  await env.DB.exec("DELETE FROM org_ai_settings; DELETE FROM sessions; DELETE FROM org_github; DELETE FROM org_webhooks;");
+  await env.DB.exec("DELETE FROM org_ai_settings; DELETE FROM sessions; DELETE FROM org_github; DELETE FROM org_webhooks; DELETE FROM ai_teammates;");
   useSecretKey(withKey);
 });
 afterEach(() => useSecretKey({}));
@@ -92,4 +92,20 @@ test("without a key, values pass through as before", async () => {
   const sealed = await sealField("plain", "x");
   useSecretKey({});
   expect(await openField(sealed, "x")).toBeNull();
+});
+
+test("an AI teammate's API key and GitHub token are sealed, read back plain, and old rows are moved over", async () => {
+  const { loadTeammate } = await import("../src/teammates.js");
+  const at = new Date().toISOString();
+  await env.DB.prepare("INSERT INTO ai_teammates (org_id, provider, enabled, api_key, github_token, updated_at) VALUES ('team:a', 'claude', 0, 'sk-ant-plain123', 'ghp_plain456', ?1)").bind(at).run();
+  expect((await loadTeammate(env.DB, "team:a", "claude")).apiKey).toBe("sk-ant-plain123");
+  await sealLegacySecrets(withKey);
+  const row = await env.DB.prepare("SELECT api_key, github_token FROM ai_teammates WHERE org_id = 'team:a'").first();
+  expect(isSealed(row.api_key) && isSealed(row.github_token)).toBe(true);
+  expect(row.api_key).not.toContain("plain123");
+  const t = await loadTeammate(env.DB, "team:a", "claude");
+  expect([t.apiKey, t.githubToken]).toEqual(["sk-ant-plain123", "ghp_plain456"]);
+  // Another workspace's row does not open it.
+  await env.DB.prepare("INSERT INTO ai_teammates (org_id, provider, enabled, api_key, updated_at) VALUES ('team:b', 'claude', 0, ?1, ?2)").bind(row.api_key, at).run();
+  expect((await loadTeammate(env.DB, "team:b", "claude")).apiKey).toBeNull();
 });

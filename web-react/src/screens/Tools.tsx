@@ -10,6 +10,7 @@ import { DataRules } from '../components/DataRules'
 import { Governance } from '../components/Governance'
 import { SmitheryApps } from '../components/SmitheryApps'
 import { DomainsSso } from '../components/DomainsSso'
+import { AiTeammates } from '../components/AiTeammates'
 import { BrandLogo, isBrand } from '../components/BrandLogo'
 import { getAIKey } from '../utils/aiKey'
 import { ago } from '../utils/ago'
@@ -19,7 +20,7 @@ import './Studio.css'
 
 interface Connector { id: string; label: string; status: string }
 
-type StudioPage = 'apps' | 'ai' | 'api' | 'emoji' | 'groups' | 'audit' | 'security' | 'sso' | 'dlp' | 'compliance'
+type StudioPage = 'apps' | 'ai' | 'teammates' | 'api' | 'emoji' | 'groups' | 'audit' | 'security' | 'sso' | 'dlp' | 'compliance'
 
 /// One tile in the catalogue: a connector of your own, the workspace's
 /// GitHub, or the address that turns mail into cards.
@@ -447,7 +448,7 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
 
   const [page, setPage] = useState<StudioPage>(() => {
     const asked = (typeof window !== 'undefined' ? window.location.hash : '').split('?')[0].split('/')[2]
-    return asked === 'ai' || asked === 'api' || asked === 'emoji' || asked === 'groups' || asked === 'audit' || asked === 'security' || asked === 'sso' || asked === 'dlp' || asked === 'compliance' ? asked : 'apps'
+    return asked === 'ai' || asked === 'teammates' || asked === 'api' || asked === 'emoji' || asked === 'groups' || asked === 'audit' || asked === 'security' || asked === 'sso' || asked === 'dlp' || asked === 'compliance' ? asked : 'apps'
   })
   const go = (next: StudioPage) => {
     setPage(next)
@@ -1118,6 +1119,7 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
   const NAV: Array<{ id: StudioPage; label: string; icon: IconName }> = [
     { id: 'apps', label: t('Apps'), icon: 'grid' },
     { id: 'ai', label: t('AI'), icon: 'sparkle' },
+    { id: 'teammates', label: t('AI teammates'), icon: 'zap' },
     { id: 'api', label: t('API & Webhooks'), icon: 'code' },
     { id: 'emoji', label: t('Emoji'), icon: 'smile' },
     { id: 'groups', label: t('User groups'), icon: 'users' },
@@ -1147,6 +1149,7 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
           <main className="studio-main">
             {page === 'apps' && appsPage}
             {page === 'ai' && aiPage}
+            {page === 'teammates' && <AiTeammates httpBase={httpBase} orgId={orgId} sessionToken={sessionToken} />}
             {page === 'api' && apiPage}
             {page === 'emoji' && <EmojiManager httpBase={httpBase} orgId={orgId} sessionToken={sessionToken} />}
             {page === 'groups' && <UserGroupsManager httpBase={httpBase} orgId={orgId} sessionToken={sessionToken} />}
