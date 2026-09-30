@@ -128,6 +128,23 @@ test("a whole page of unsent messages is skipped, not taken for the start", asyn
   expect(first.more).toBe(false);
 });
 
+test("exactly a page of messages, unsent ones among them, is the whole history", async () => {
+  const at = (i) => new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString();
+  // 150 kept and four unsent, one of them the oldest of all. The row read
+  // past the page is what says there is more; with exactly 150 there is
+  // none to read, and the page is full but the start.
+  const unsent = new Set([0, 40, 100, 153]);
+  await env.DB.batch(Array.from({ length: 154 }, (_, i) => env.DB.prepare(
+    "INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, created_at, deleted_at) VALUES (?1, ?2, 'b:cafe', 'u:mika@example.com', 'message', ?3, ?4, ?5)"
+  ).bind(`h${i}`, ORG, unsent.has(i) ? "" : `line ${i}`, at(i), unsent.has(i) ? at(200) : null)));
+  const first = await (await get(`/channels/messages?${q({ orgId: ORG, channel: "b:cafe" })}`, toru)).json();
+  expect(first.messages).toHaveLength(150);
+  expect(first.messages.some((m) => unsent.has(Number(m.id.slice(1))))).toBe(false);
+  expect(first.messages[0].id).toBe("h1");
+  expect(first.messages[149].id).toBe("h152");
+  expect(first.more).toBe(false);
+});
+
 test("the author takes a message's link cards off; nobody else can", async () => {
   const m = await say(mika, "look https://blog.example.com/a");
   const post = (token, body) => worker.fetch(new Request("https://example.com/channels/previews", { method: "POST", headers: { "content-type": "application/json", "x-session-token": token }, body: JSON.stringify(body) }), env, { waitUntil: () => {} });
