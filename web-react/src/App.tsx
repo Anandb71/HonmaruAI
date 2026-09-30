@@ -357,7 +357,8 @@ function App() {
     setStage('welcome')
     localStorage.removeItem('sessionToken')
     localStorage.removeItem('userId')
-    // The workspace's cards, drafts and notes stay readable on this machine otherwise.
+    // The workspace's cards, drafts, notes and unsent messages (outbox:*)
+    // stay readable on this machine otherwise.
     clearAccountData()
   }
 
