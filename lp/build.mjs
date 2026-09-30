@@ -22,6 +22,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -143,6 +144,10 @@ esbuild(path.join(here, 'styles.css'), '--minify', '--loader:.css=css', `--outfi
 const css = fs.readFileSync(path.join(tmp, 'styles.css'), 'utf8').replace(/url\((["']?)(?!data:|https?:|\/)/g, 'url($1/')
 fs.rmSync(tmp, { recursive: true, force: true })
 
+// Content versions prevent returning visitors from mixing new HTML with cached JS.
+const scriptVersion = (file) => createHash('sha256').update(fs.readFileSync(path.join(out, file))).digest('hex').slice(0, 12)
+const scriptVersions = Object.fromEntries(['main.js', 'i18n.js'].map((file) => [file, scriptVersion(file)]))
+
 const alternates = LANGS.map((l) => `<link rel="alternate" hreflang="${l}" href="${site}/${l}/">`).join('\n') +
   `\n<link rel="alternate" hreflang="x-default" href="${site}/">`
 
@@ -165,6 +170,7 @@ for (const lang of LANGS) {
   html = swap(html, `<li role="option" data-lang="${lang}">`, `<li role="option" data-lang="${lang}" aria-selected="true">`, 'language option')
   html = swap(html, /(id="fregion">)[^<]*</, (_, a) => `${a}${escText(t('region'))}<`, 'region')
   html = swap(html, /(id="fl-their-ai">)[^<]*</, (_, a) => `${a}${escText(t('how.theirAi', { name: 'Dana' }))}<`, 'their-AI label')
+  html = html.replace(/src="(main|i18n)\.js"/g, (_, name) => `src="${name}.js?v=${scriptVersions[name + '.js']}"`)
   // one folder down, so local files are addressed from the root
   html = html.replace(/(\s(?:src|href)=")(?![a-z][a-z0-9+.-]*:|#|\/|\?)/g, '$1/')
   fs.mkdirSync(path.join(out, lang), { recursive: true })
