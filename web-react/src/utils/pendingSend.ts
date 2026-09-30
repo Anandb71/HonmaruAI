@@ -72,15 +72,22 @@ const sameAs = (held: ChannelMessage, real: ChannelMessage) => isTemp(held)
   && words(held.body) === words(real.body)
   && fileIds(held) === fileIds(real)
 
+/// Which of ours still held here a message the socket brought is the
+/// server's copy of — none when it is already held, or not ours. One on its
+/// way before one that failed with the same words: that one was sent again.
+export const echoOf = (list: ChannelMessage[], msg: ChannelMessage): ChannelMessage | undefined =>
+  msg.mine && !list.some((x) => x.id === msg.id)
+    ? list.find((x) => x.pending && sameAs(x, msg)) || list.find((x) => sameAs(x, msg))
+    : undefined
+
 /// A message the socket brought. The copy already held changes in place;
 /// our own words still held here take the server's copy where they are, so
 /// the socket beating the answer to the send never shows them twice; any
 /// other message is new, at the end.
 export function arrive(list: ChannelMessage[], msg: ChannelMessage): ChannelMessage[] {
   if (list.some((x) => x.id === msg.id)) return list.map((x) => (x.id === msg.id ? msg : x))
-  const at = msg.mine ? list.findIndex((x) => sameAs(x, msg)) : -1
-  if (at < 0) return [...list, msg]
-  return list.map((x, i) => (i === at ? msg : x))
+  const held = echoOf(list, msg)
+  return held ? list.map((x) => (x === held ? msg : x)) : [...list, msg]
 }
 
 /// A fresh copy from the server, with what is still held only here kept at

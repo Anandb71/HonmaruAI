@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, isTemp, keepTemps, markFailed, markPending, reconcile, tempMessage, tempState } from './pendingSend'
+import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, tempMessage, tempState } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -115,6 +115,23 @@ describe('the socket’s copy of a message', () => {
     expect(ids(arrive(list, said('r', 'ok!')))).toEqual([temp.id, 'r'])
     expect(ids(arrive(list, said('r', 'ok', { parentId: 'p1' })))).toEqual([temp.id, 'r'])
     expect(ids(arrive(list, said('r', 'ok', { editedAt: '2026-09-30T09:01:00.000Z' })))).toEqual([temp.id, 'r'])
+  })
+
+  it('names the copy of ours it stands for, and only that one', () => {
+    const one = tempMessage({ channel: 'b:hotel', body: 'one' }, you, at, () => 'a')
+    const two = tempMessage({ channel: 'b:hotel', body: 'two' }, you, at, () => 'b')
+    const list = [said('x', 'two'), one, two]
+    expect(echoOf(list, said('real-2', 'two'))).toBe(two)
+    expect(echoOf(list, said('x', 'two'))).toBeUndefined() // already held
+    expect(echoOf(list, said('k', 'two', { mine: false }))).toBeUndefined()
+    expect(echoOf(list, said('real-3', 'three'))).toBeUndefined()
+  })
+
+  it('stands for the one on its way, not an earlier one with the same words that failed', () => {
+    const failed = markFailed([tempMessage({ channel: 'b:hotel', body: 'ok' }, you, at, () => 'a')], `tmp-${at.getTime().toString(36)}-a`, 'No')[0]
+    const again = tempMessage({ channel: 'b:hotel', body: 'ok' }, you, at, () => 'b')
+    expect(echoOf([failed, again], said('real', 'ok'))).toBe(again)
+    expect(ids(arrive([failed, again], said('real', 'ok')))).toEqual([failed.id, 'real'])
   })
 
   it('matches a reply to ours in the same thread, files and all', () => {
