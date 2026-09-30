@@ -25,6 +25,7 @@ import { aiHeaders } from '../utils/aiKey'
 import type { Screen, Mode } from '../utils/route'
 import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
+import { isMacPlatform, formatCombo } from '../utils/keys'
 import type { ChannelMessage } from '../types/card'
 
 // The screens a person opens now and then load when they are opened: the
@@ -59,6 +60,9 @@ type Panel = null | 'compose' | 'record'
 // the viewport while it is open. Which one is open, and which card the feed
 // is on, live in the URL (utils/route.ts): a reload, the back button and a
 // pasted link all mean what they say.
+
+// ⌘ on a Mac, Ctrl everywhere else, in every key the shell prints.
+const isMac = isMacPlatform()
 
 // What just happened, said back. English keys, translated where read.
 const DECIDED_WORD: Record<string, string> = {
@@ -888,12 +892,12 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
               connection is said in words, just before this. The marker is
               for whoever needs to know without looking — a test, a script. */}
           <span className="conn-state" data-connected={isConnected ? '1' : '0'} hidden />
-          <button className="palette-button" onClick={() => setPalette(true)} aria-label={t('Search or jump to')} title="⌘K" aria-keyshortcuts="Meta+K Control+K">
+          <button className="palette-button" onClick={() => setPalette(true)} aria-label={t('Search or jump to')} title={formatCombo('Mod+K', isMac)} aria-keyshortcuts="Meta+K Control+K">
             <Icon name="search" size={18} />
             {/* The search field a chat client puts across its top: words on a
                 laptop, a magnifier on a phone. */}
             <span className="palette-label">{t('Search {name}', { name: workspaceLabel(workspaces.find((w) => w.id === orgId) || (orgName ? { id: orgId, name: orgName, role: 'member' } : undefined), t) })}</span>
-            <kbd className="palette-kbd">⌘K</kbd>
+            <kbd className="palette-kbd">{formatCombo('Mod+K', isMac)}</kbd>
           </button>
           <NotificationsButton httpBase={relayHttpUrl} sessionToken={sessionToken} />
           <button className="avatar-button" onClick={() => setScreen('profile')} aria-label={t('You')}>
