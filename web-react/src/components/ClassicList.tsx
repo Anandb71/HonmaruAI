@@ -14,7 +14,7 @@ import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
-import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from '../utils/chatScroll'
+import { countNewBelow, focusAfterJump, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from '../utils/chatScroll'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
@@ -2338,14 +2338,14 @@ export const ClassicList: React.FC<Props> = ({
     }
   }, [logEl])
   /// "Jump to present": down to the newest, which reads it on arriving.
-  /// Smoothly, unless the reader asked for less motion. From the keyboard,
-  /// on to the composer, since the button goes away under the focus.
-  const goToPresent = (fromKeys: boolean) => {
+  /// Smoothly, unless the reader asked for less motion. The focus goes on to
+  /// the composer when focusAfterJump says, since the pill goes away under it.
+  const goToPresent = (handOn: boolean) => {
     const el = logRef.current
     if (!el) return
     const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     el.scrollTo({ top: el.scrollHeight, behavior: still ? 'auto' : 'smooth' })
-    if (fromKeys) composer.current?.focus({ preventScroll: true })
+    if (handOn) composer.current?.focus({ preventScroll: true })
   }
 
   // ---- The conversation ----
@@ -3460,7 +3460,11 @@ export const ClassicList: React.FC<Props> = ({
             const n = countNewBelow(said, readingUp.since)
             return (
               <div className="slk-present">
-                <button type="button" onClick={(e) => goToPresent(e.detail === 0)}>
+                <button type="button" onClick={(e) => goToPresent(focusAfterJump({
+                  held: document.activeElement === e.currentTarget,
+                  detail: e.detail,
+                  pointerType: (e.nativeEvent as Partial<PointerEvent>).pointerType,
+                }))}>
                   {n > 0 && <b>{n === 1 ? t('1 new message') : t('{n} new messages', { n })}</b>}
                   <span>{t('Jump to present')}</span>
                   <Icon name="chevron-down" size={14} />

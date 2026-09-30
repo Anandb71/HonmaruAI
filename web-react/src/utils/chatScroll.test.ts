@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from './chatScroll'
+import { countNewBelow, focusAfterJump, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow } from './chatScroll'
 
 /// A message said `i` minutes into the day, by a teammate unless it is yours.
 const at = (i: number) => new Date(Date.UTC(2026, 8, 30, 0, i)).toISOString()
@@ -78,6 +78,25 @@ describe('what is new', () => {
 
   it('counts nothing for a reader at the bottom', () => {
     expect(countNewBelow([msg(1), msg(2)], null)).toBe(0)
+  })
+})
+
+describe('after "Jump to present"', () => {
+  it('hands the focus on when the pill had it, clicked or pressed', () => {
+    expect(focusAfterJump({ held: true, detail: 1, pointerType: 'mouse' })).toBe(true)
+    expect(focusAfterJump({ held: true, detail: 0, pointerType: '' })).toBe(true)
+  })
+
+  it('hands it on when a keyboard or screen reader pressed it, focused or not', () => {
+    expect(focusAfterJump({ held: false, detail: 0 })).toBe(true)
+  })
+
+  it('leaves it where it was when the pill never had it', () => {
+    expect(focusAfterJump({ held: false, detail: 1, pointerType: 'mouse' })).toBe(false)
+  })
+
+  it('does not raise the on-screen keyboard after a tap', () => {
+    expect(focusAfterJump({ held: true, detail: 1, pointerType: 'touch' })).toBe(false)
   })
 })
 

@@ -50,7 +50,18 @@ export function countNewBelow(list: ReadonlyArray<Pick<Said, 'mine' | 'createdAt
   return n
 }
 
-const byTime = <T extends Said>(a: T, b: T) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0)
+/// Whether "Jump to present" hands the focus on to the composer once pressed.
+/// The pill goes away under the focus when the log reaches the bottom, which
+/// drops a keyboard or screen-reader user at the top of the page — so when
+/// the pill had the focus, however it was pressed (a click focuses it too,
+/// in most browsers), or a keyboard pressed it (`detail` 0). Not from a
+/// finger: the composer taking the focus raises the on-screen keyboard over
+/// what they came down to read.
+export function focusAfterJump(o: { held: boolean; detail: number; pointerType?: string }): boolean {
+  return (o.held || o.detail === 0) && o.pointerType !== 'touch'
+}
+
+const byTime =<T extends Said>(a: T, b: T) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0)
 
 /// The newest page laid over what is loaded: a message it has replaces the
 /// copy loaded, one it adds goes in by time, and the older pages loaded by
