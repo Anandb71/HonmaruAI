@@ -3,6 +3,16 @@
 // In keep.text, *asterisks* mark the words painted violet.
 window.I18N = {
   "en": {
+    "preview.search": "Search decisions",
+    "preview.waiting": "Waiting on you",
+    "preview.decided": "Decided",
+
+    "ph.original": "View original →",
+    "ph.ask": "Ask anything…",
+    "ph.home": "Home",
+    "ph.chat": "Chat",
+    "ph.you": "You",
+
     "motion.scroll": "Scroll to discover",
     "motion.demo": "From one request to the right person.",
     "motion.preview": "Try it for yourself",
@@ -171,6 +181,16 @@ window.I18N = {
     "try.declinedCopy": "This time, it’s a no. In the app, that decision reaches the person who asked."
   },
   "ja": {
+    "preview.search": "判断を検索",
+    "preview.waiting": "あなたの判断待ち",
+    "preview.decided": "判断済み",
+
+    "ph.original": "元の依頼を見る →",
+    "ph.ask": "なんでも聞いてください…",
+    "ph.home": "ホーム",
+    "ph.chat": "チャット",
+    "ph.you": "あなた",
+
     "motion.scroll": "新しい仕事の流れを体験",
     "motion.demo": "ひと言から、届くべき人へ。",
     "motion.preview": "さわって、体験。",
@@ -339,6 +359,16 @@ window.I18N = {
     "try.declinedCopy": "今回は、見送り。実際のアプリでは、その判断が相手に伝わります。"
   },
   "es": {
+    "preview.search": "Buscar decisiones",
+    "preview.waiting": "Pendiente de ti",
+    "preview.decided": "Decidido",
+
+    "ph.original": "Ver original →",
+    "ph.ask": "Pregunta lo que quieras…",
+    "ph.home": "Inicio",
+    "ph.chat": "Chat",
+    "ph.you": "Tú",
+
     "motion.scroll": "Desliza para descubrir",
     "motion.demo": "Prueba el relevo",
     "motion.preview": "Demo interactiva",
@@ -507,6 +537,16 @@ window.I18N = {
     "try.declinedCopy": "Rechazaste el ejemplo. El solicitante recibe una respuesta clara."
   },
   "fr": {
+    "preview.search": "Rechercher des décisions",
+    "preview.waiting": "En attente de vous",
+    "preview.decided": "Décidé",
+
+    "ph.original": "Voir l’original →",
+    "ph.ask": "Posez une question…",
+    "ph.home": "Accueil",
+    "ph.chat": "Chat",
+    "ph.you": "Vous",
+
     "motion.scroll": "Défiler pour découvrir",
     "motion.demo": "Essayez le relais",
     "motion.preview": "Démo interactive",
@@ -675,6 +715,16 @@ window.I18N = {
     "try.declinedCopy": "Vous avez refusé l’exemple. Le demandeur reçoit une réponse claire."
   },
   "de": {
+    "preview.search": "Entscheidungen suchen",
+    "preview.waiting": "Wartet auf dich",
+    "preview.decided": "Entschieden",
+
+    "ph.original": "Original ansehen →",
+    "ph.ask": "Frag mich etwas…",
+    "ph.home": "Start",
+    "ph.chat": "Chat",
+    "ph.you": "Du",
+
     "motion.scroll": "Scrollen und entdecken",
     "motion.demo": "Übergabe ausprobieren",
     "motion.preview": "Interaktive Demo",

@@ -153,7 +153,7 @@
     var section = $('.stage'), sticky = $('.stage-sticky'), hero = $('#hero-text'), story = $('#story');
     var device = $('#device'), caps = $$('.caption'), rail = $$('#rail li');
     var card1 = $('#pcard1'), card2 = $('#pcard2'), stamp = $('#stamp'), banner = $('#banner');
-    var triage = $('#triage'), yes = $('#yes-btn'), count = $('#ph-count');
+    var yes = $('#yes-btn'), count = $('#ph-count');
     var RANGES = [[.12, .345], [.345, .545], [.545, .745], [.745, 1.01]];
     var atmosphere = $$('.ambient-card, .scroll-cue'), portal = $('.portal'), wordmark = $('.hero-wordmark');
     var m = {}, pose = { cx: 0, cy: 0, r: 200, p: 0 };
@@ -232,8 +232,6 @@
 
       var g = 1 - clamp((p - .29) / .06, 0, 1);
       device.style.setProperty('--glow', g.toFixed(3));
-      triage.style.opacity = g.toFixed(3);
-      triage.style.transform = 'translateY(' + ((1 - g) * -10).toFixed(1) + 'px)';
 
       var sw = ease(clamp((p - .40) / .12, 0, 1));
       card1.style.transform = 'translate3d(' + (sw * 135).toFixed(2) + '%,' + (sw * -4).toFixed(2) + '%,0) rotate(' + (sw * 18).toFixed(2) + 'deg)';
