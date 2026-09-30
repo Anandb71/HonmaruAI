@@ -11,7 +11,7 @@ import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage } from '../types/card'
 import { getLocale } from '../utils/locale'
 import { fullTime } from '../utils/ago'
-import { deleteWarning, othersReplied, previewText, skipsDeleteConfirm } from '../utils/messageKeys'
+import { deleteWarning, messageIdOf, messageKeyAction, othersReplied, previewText, skipsDeleteConfirm } from '../utils/messageKeys'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
@@ -1725,6 +1725,8 @@ export const ClassicList: React.FC<Props> = ({
       setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
       setThread((prev) => (prev && prev.parent.id === m.id ? null : prev))
     }
+    // Still here: focus stays on it rather than waiting for it to go.
+    if (!done) dropKeyReturn('delete')
     return Boolean(done)
   }
   const confirmDelete = async () => {
@@ -1733,6 +1735,35 @@ export const ClassicList: React.FC<Props> = ({
     await unsend(deleting.channel, deleting.m)
     setDeleting(null)
   }
+  const cancelDelete = () => { dropKeyReturn('delete'); setDeleting(null) }
+
+  /// A message a key acted on (see logKeys): focus goes back to it when the
+  /// edit box or the picker the key opened closes, and to the one beside it
+  /// once it is deleted — never taken from wherever you went meanwhile.
+  const keyReturn = useRef<{ kind: 'edit' | 'react' | 'delete'; row: HTMLElement; near: HTMLElement | null } | null>(null)
+  const dropKeyReturn = (kind: 'edit' | 'react' | 'delete') => { if (keyReturn.current?.kind === kind) keyReturn.current = null }
+  /// The message the arrow keys last picked: the one whose letters work.
+  const keyPicked = useRef<HTMLElement | null>(null)
+  // After every render: what closes it, or takes the message away, is any
+  // of several states (the edit, the picker, the list, the thread).
+  useEffect(() => {
+    const r = keyReturn.current
+    if (!r || deleting) return
+    const active = document.activeElement
+    const lost = !active || active === document.body || r.row.contains(active)
+    if (r.row.isConnected) {
+      if (r.kind === 'delete' || (r.kind === 'edit' ? editing : pickerFor)) return
+      keyReturn.current = null
+      if (lost) r.row.focus({ preventScroll: true })
+      return
+    }
+    keyReturn.current = null
+    if (lost && r.near?.isConnected) {
+      keyPicked.current = r.near
+      r.near.focus({ preventScroll: true })
+      r.near.scrollIntoView({ block: 'nearest' })
+    }
+  })
   const togglePin = (channel: string, m: ChannelMessage) => void act('POST', '/channels/pins', channel, { messageId: m.id, pinned: !m.pinned })
   const openThread = async (channel: string, m: ChannelMessage) => {
     setDetailId(null)
@@ -2495,6 +2526,64 @@ export const ClassicList: React.FC<Props> = ({
   const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id)
     ? undefined
     : () => setSheet({ channel, m, inThread })
+  /// Keys on a log, as in Discord. On the log itself ↑ picks its last
+  /// message; on a message, ↑ ↓ move to the one beside it, E T P + ⌫ do
+  /// what its ⋯ menu does (⇧⌫ without asking), and Esc goes back to the box
+  /// to write in. Only a message itself answers: a key typed in its edit
+  /// box, or pressed on one of its buttons, is that box's or button's.
+  /// A click focuses a message too, but its letters wait until an arrow
+  /// has picked it (keyPicked, which a press of the mouse in the log lets
+  /// go): what is typed after a click was meant for the composer, and a "p"
+  /// in it would pin the message for everyone.
+  const unpick = () => { keyPicked.current = null }
+  const logKeys = (channel: string, list: ChannelMessage[], box: React.RefObject<HTMLTextAreaElement>, inThread = false) => (e: React.KeyboardEvent<HTMLElement>) => {
+    const log = e.currentTarget
+    const target = e.target as HTMLElement
+    const rows = () => Array.from(log.querySelectorAll<HTMLElement>('article.slk-msg[id^="msg-"]'))
+    const show = (el: HTMLElement | undefined) => {
+      if (!el) return
+      keyPicked.current = el
+      el.focus({ preventScroll: true })
+      el.scrollIntoView({ block: 'nearest' })
+    }
+    if (target === log) {
+      const action = messageKeyAction(e.nativeEvent, null)
+      if (action === 'prev') { const all = rows(); if (all.length) { e.preventDefault(); show(all[all.length - 1]) } }
+      if (action === 'composer' && box.current) { e.preventDefault(); e.stopPropagation(); box.current.focus() }
+      return
+    }
+    if (target.closest('input, textarea, select, button, a, audio, video, iframe, [contenteditable]')) return
+    const row = target.closest<HTMLElement>('article.slk-msg[id^="msg-"]')
+    if (!row || !log.contains(row)) return
+    const id = messageIdOf(row.id)
+    const found = list.find((x) => x.id === id)
+    // A card, or a message with its edit box open, is only moved past.
+    const m = found && editing?.id !== found.id ? found : null
+    const action = messageKeyAction(e.nativeEvent, m, inThread)
+    if (!action) return
+    const moving = action === 'prev' || action === 'next' || action === 'composer'
+    if (!moving && keyPicked.current !== row) return
+    e.preventDefault()
+    // Esc on a message is not the window's too, which closes the thread.
+    e.stopPropagation()
+    const all = rows()
+    const at = all.indexOf(row)
+    if (action === 'prev') show(all[at - 1])
+    else if (action === 'next') show(all[at + 1])
+    else if (action === 'composer') box.current?.focus()
+    else if (!m) return
+    else if (action === 'edit') { keyReturn.current = { kind: 'edit', row, near: null }; setEditing({ id: m.id, text: m.body }) }
+    else if (action === 'thread') void openThread(channel, m)
+    else if (action === 'pin') togglePin(channel, m)
+    else if (action === 'react') {
+      keyReturn.current = { kind: 'react', row, near: null }
+      setPickerFor(m.id)
+      requestAnimationFrame(() => row.querySelector<HTMLElement>('.slk-picker .slk-picker-emoji')?.focus())
+    } else if (action === 'delete') {
+      keyReturn.current = { kind: 'delete', row, near: all[at + 1] || all[at - 1] || null }
+      remove(channel, m, e.shiftKey)
+    }
+  }
   /// A link to one message that opens it for anyone who can read it — the
   /// message's id, not the conversation's name, which differs per reader.
   const copyLink = (m: ChannelMessage) => {
@@ -2850,7 +2939,8 @@ export const ClassicList: React.FC<Props> = ({
   /// conversation, and in Activity when what you picked is part of one.
   const threadBody = (thread: { channel: string; parent: ChannelMessage; replies: ChannelMessage[] }) => (
     <>
-          <div className="slk-thread-log">
+          <div className="slk-thread-log" tabIndex={0} role="region" aria-label={t('Messages')}
+            onKeyDown={logKeys(thread.channel, [thread.parent, ...thread.replies], threadComposer, true)} onMouseDown={unpick}>
             {[thread.parent, ...thread.replies].map((m, i) => (
               <React.Fragment key={m.id}>
                 {block(m.id, {
@@ -3300,7 +3390,9 @@ export const ClassicList: React.FC<Props> = ({
             })}
           </div>
         ) : (
-        <div className="slk-log" ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
+        <div className="slk-log" ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}
+          tabIndex={0} role="region" aria-label={t('Messages in {name}', { name: thread.kind === 'channel' ? `#${thread.name}` : thread.name })}
+          onKeyDown={thread.view ? logKeys(thread.view, said, composer) : undefined} onMouseDown={unpick}>
           {thread.view && more[thread.view] && <div className="slk-older" role="status">{t('Loading earlier messages…')}</div>}
           {!(thread.view && more[thread.view]) && <div className="slk-start">
             {lead(thread, 'head')}
@@ -3868,10 +3960,10 @@ export const ClassicList: React.FC<Props> = ({
             title={t('Delete message')}
             lede={t(deleteWarning(m, myRef))}
             className="cl-delete-dialog"
-            onClose={() => setDeleting(null)}
+            onClose={cancelDelete}
             footer={(
               <>
-                <button type="button" className="dlg-btn" onClick={() => setDeleting(null)}>{t('Cancel')}</button>
+                <button type="button" className="dlg-btn" onClick={cancelDelete}>{t('Cancel')}</button>
                 <button type="button" className="dlg-btn danger" data-delete-confirm disabled={busy} onClick={() => void confirmDelete()}>
                   {busy ? t('Deleting…') : t('Delete')}
                 </button>

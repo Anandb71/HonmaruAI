@@ -544,6 +544,7 @@ const table: Record<string, string> = {
   'Connectors': 'コネクタ',
   'Everything your AI reads from, and writes back to.': 'AIが読み取り、書き戻す先のツールです。',
   'Messages': 'メッセージ',
+  'Messages in {name}': '{name} のメッセージ',
   'Activity': 'アクティビティ',
   'Open in Cards': 'カードで開く',
   'Write who it is for and what they decide first.': 'まず、誰に何を決めてほしいかを書いてください。',

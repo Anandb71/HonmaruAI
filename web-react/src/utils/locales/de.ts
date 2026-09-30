@@ -757,6 +757,7 @@ const table: Record<string, string> = {
   'Connectors': 'Konnektoren',
   'Everything your AI reads from, and writes back to.': 'Alles, was deine KI liest und wohin sie zurückschreibt.',
   'Messages': 'Nachrichten',
+  'Messages in {name}': 'Nachrichten in {name}',
   'Activity': 'Aktivität',
   'Open in Cards': 'In Karten öffnen',
   'Write who it is for and what they decide first.': 'Schreib zuerst, für wen es ist und was entschieden wird.',
