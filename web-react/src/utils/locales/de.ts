@@ -1903,6 +1903,7 @@ const table: Record<string, string> = {
   "{n} ACUs": "{n} ACUs",
   "{n} tasks": "{n} Aufgaben",
   'View full profile': 'Ganzes Profil ansehen',
+  'Profile of {name}': 'Profil von {name}',
 }
 
 export default table

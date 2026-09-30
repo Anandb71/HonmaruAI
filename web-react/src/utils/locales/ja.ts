@@ -1967,6 +1967,7 @@ const table: Record<string, string> = {
   "{n} ACUs": "{n} ACU",
   "{n} tasks": "{n}タスク",
   'View full profile': 'プロフィール全体を見る',
+  'Profile of {name}': '{name}のプロフィール',
 }
 
 export default table

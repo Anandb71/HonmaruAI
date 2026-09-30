@@ -1900,6 +1900,7 @@ const table: Record<string, string> = {
   "{n} ACUs": "{n} ACU",
   "{n} tasks": "{n} tareas",
   'View full profile': 'Ver perfil completo',
+  'Profile of {name}': 'Perfil de {name}',
 }
 
 export default table
