@@ -1315,8 +1315,9 @@ export const ClassicList: React.FC<Props> = ({
   }, [agentDone])
 
   /// A message on its way, or one that did not go, by its temporary id:
-  /// what Retry sends again. Its words are in the log with it.
-  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[] }
+  /// what Retry sends again, and (`landing`) the server's copy an edit begun
+  /// on it waits for. Its words are in the log with it.
+  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; landing?: Promise<ChannelMessage | null> }
   const outbox = useRef(new Map<string, Outgoing>())
   /// The same words to the same place, already going: a second Enter or a
   /// double tap before the box has cleared does not send them twice.
@@ -1374,11 +1375,12 @@ export const ClassicList: React.FC<Props> = ({
     if (parentId) threadComposer.current?.focus(); else composer.current?.focus()
     const out: Outgoing = { tempId: temp.id, channel, body, decide, parentId, files }
     outbox.current.set(temp.id, out)
-    await deliver(out)
+    out.landing = deliver(out)
+    await out.landing
   }
 
   /// Send what shows as on its way: the server's copy takes its place.
-  const deliver = async (out: Outgoing) => {
+  const deliver = async (out: Outgoing): Promise<ChannelMessage | null> => {
     const { tempId, channel, body, decide, parentId, files } = out
     const key = goingKey(out)
     going.current.add(key)
@@ -1390,9 +1392,11 @@ export const ClassicList: React.FC<Props> = ({
     const data = res ? await res.json().catch(() => ({})) : {}
     going.current.delete(key)
     const msg = res?.ok ? (data.message as ChannelMessage | undefined) : undefined
-    if (!msg?.id) { fail(out, res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return }
+    if (!msg?.id) { fail(out, res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return null }
     outbox.current.delete(tempId)
     drawnAs.current.set(msg.id, tempId)
+    // An edit begun on it while it went carries on, on the server's copy.
+    setEditing((e) => (e && e.id === tempId ? { ...e, id: msg.id } : e))
     // Sent: a small confirmation, in a direct conversation — as Slack does.
     if (channel.startsWith('dm:') || channel.startsWith('ag:')) playSound('sent')
     if (parentId) {
@@ -1404,10 +1408,11 @@ export const ClassicList: React.FC<Props> = ({
         : parent ? { ...x, replyCount: Math.max(parent.replyCount || 0, x.replyCount || 0), lastReplyAt: parent.lastReplyAt || msg.createdAt, replyRefs: parent.replyRefs || x.replyRefs }
           : { ...x, replyCount: (x.replyCount || 0) + 1, lastReplyAt: msg.createdAt })) }))
       if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
-      return
+      return msg
     }
     setMessages((prev) => ({ ...prev, [channel]: reconcile(prev[channel] || [], tempId, msg) }))
     if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
+    return msg
   }
 
   /// It did not go: it stays where it was, marked, with why. Moved on from
@@ -1431,7 +1436,15 @@ export const ClassicList: React.FC<Props> = ({
     outbox.current.set(m.id, out)
     if (out.parentId) setThread((prev) => (prev && prev.parent.id === out.parentId ? { ...prev, replies: markPending(prev.replies, m.id) } : prev))
     else setMessages((prev) => (prev[out.channel] ? { ...prev, [out.channel]: markPending(prev[out.channel], m.id) } : prev))
-    void deliver(out)
+    out.landing = deliver(out)
+  }
+  /// The server's id for one of yours sent from here: waited for while it
+  /// is on its way, none when it did not go.
+  const landedId = async (tempId: string) => {
+    const out = outbox.current.get(tempId)
+    if (out) return (await out.landing)?.id || null
+    for (const [id, drawn] of drawnAs.current) if (drawn === tempId) return id
+    return null
   }
   /// Delete: it was only ever here, so it just goes.
   const discard = (m: ChannelMessage) => {
@@ -1791,9 +1804,16 @@ export const ClassicList: React.FC<Props> = ({
     if (!editing) return
     const text = editing.text.trim()
     if (!text) return
-    const done = await act('PUT', '/channels/messages', channel, { messageId: editing.id, body: text })
+    // Begun while it was on its way: saved to the server's copy once it has
+    // landed — not at all if it did not go.
+    const id = isTemp(editing) ? await landedId(editing.id) : editing.id
+    if (!id) { setProblem(t('That did not save.')); return }
+    const done = await act('PUT', '/channels/messages', channel, { messageId: id, body: text })
     if (done) setEditing(null)
   }
+  /// The message an edit is open on. Begun on one of yours still on its way,
+  /// it stays open on the server's copy that took its place.
+  const editingThis = (m: ChannelMessage) => Boolean(editing && (editing.id === m.id || editing.id === drawnAs.current.get(m.id)))
   const remove = async (channel: string, m: ChannelMessage) => {
     // Somebody else's words in the thread go only when you say so outright.
     const others = !m.parentId && (m.replyRefs || []).some((r) => r !== myRef)
@@ -2526,7 +2546,7 @@ export const ClassicList: React.FC<Props> = ({
   /// A person's message: the words (or the box to change them), what is
   /// under them, and on hover everything you can do to it.
   const words = (channel: string, m: ChannelMessage) => {
-    if (editing?.id === m.id) {
+    if (editing && editingThis(m)) {
       return (
         <form className="slk-edit" onSubmit={(e) => { e.preventDefault(); void saveEdit(channel) }}>
           <textarea
@@ -2565,7 +2585,7 @@ export const ClassicList: React.FC<Props> = ({
     )
   }
   // Nothing to do to a message only held here: the server has no such id.
-  const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id || isTemp(m)) ? undefined : (
+  const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editingThis(m) || isTemp(m)) ? undefined : (
     <MessageActions
       message={m}
       inThread={inThread}
@@ -2586,7 +2606,7 @@ export const ClassicList: React.FC<Props> = ({
   )
 
   /// A long press, on a phone: the same things, in a sheet from the bottom.
-  const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id || isTemp(m))
+  const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editingThis(m) || isTemp(m))
     ? undefined
     : () => setSheet({ channel, m, inThread })
   /// A link to one message that opens it for anyone who can read it — the
@@ -3495,10 +3515,11 @@ export const ClassicList: React.FC<Props> = ({
               onKeyDown={(e) => {
                 if (mention.onKeyDown(e)) return
                 // ↑ in an empty box edits what you last said, as in Slack —
-                // once the server has it; not the one before it meanwhile.
+                // on its way still, the edit waits for it to land; one that
+                // did not go has its own Retry and Delete instead.
                 if (e.key === 'ArrowUp' && !draft && !e.nativeEvent.isComposing) {
                   const last = [...(messages[thread.view!] || [])].reverse().find((m) => m.mine && m.kind === 'message' && !m.deleted)
-                  if (last && !isTemp(last)) { e.preventDefault(); setEditing({ id: last.id, text: last.body }) }
+                  if (last && !last.failed) { e.preventDefault(); setEditing({ id: last.id, text: last.body }) }
                   return
                 }
                 // Bold, italic, strike, as everywhere.

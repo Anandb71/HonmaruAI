@@ -612,7 +612,7 @@
    no fade, so a quick send never flickers — and, when it did not go, a faint
    red wash with the reason and what to do under the words. The red is mixed
    toward the ink so the reason reads on both themes. */
-.classic.slk.slk .slk-msg.pending .slk-body > :not(.slk-meta) { opacity: .55; }
+.classic.slk.slk .slk-msg.pending:not(.editing) .slk-body > :not(.slk-meta) { opacity: .55; }
 .classic.slk.slk .slk-msg.failed,
 .classic.slk.slk .slk-msg.failed:hover { background: color-mix(in srgb, var(--slk-red) 7%, transparent); }
 .classic.slk.slk .slk-unsent {
