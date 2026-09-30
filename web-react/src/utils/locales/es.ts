@@ -1850,6 +1850,15 @@ const table: Record<string, string> = {
   'Restore': 'Restaurar',
   'Restoring…': 'Restaurando…',
   'Restored #{name}': '#{name} restaurado',
+  'Drafts & sent': 'Borradores y enviados',
+  'What you started writing and left, and what you said, newest first.': 'Lo que empezaste a escribir y dejaste, y lo que dijiste, lo más reciente primero.',
+  'Drafts': 'Borradores',
+  'Sent': 'Enviados',
+  'No drafts': 'No hay borradores',
+  'A message you start and leave unsent waits here, in the conversation it was for.': 'Un mensaje que empiezas y no envías espera aquí, en la conversación para la que era.',
+  'What you say in a channel, a DM or a thread is listed here.': 'Lo que dices en un canal, un MD o un hilo aparece aquí.',
+  'in a thread': 'en un hilo',
+  'Discard': 'Descartar',
 }
 
 export default table

@@ -472,6 +472,12 @@ enum ChatService {
         return try await call("GET", "/channels/scheduled", base: base, query: ["orgId": orgId], as: R.self).scheduled
     }
 
+    /// What you said, newest first, where you can still read it.
+    static func sent(orgId: String, base: URL) async throws -> [ChatMessage] {
+        struct R: Decodable { let items: [ChatMessage] }
+        return try await call("GET", "/channels/sent", base: base, query: ["orgId": orgId], as: R.self).items
+    }
+
     static func later(orgId: String, base: URL) async throws -> [ChatSaved] {
         struct R: Decodable { let items: [ChatSaved] }
         return try await call("GET", "/channels/later", base: base, query: ["orgId": orgId], as: R.self).items

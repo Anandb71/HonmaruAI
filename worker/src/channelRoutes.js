@@ -30,7 +30,7 @@ import { emitMessage, emitCard } from "./webhooks.js";
 import { sha256Hex } from "./auth.js";
 import { applyAutoRule, listAutoRules, addAutoRule, removeAutoRule } from "./autorules.js";
 import { setStatus, rememberTimezone, redirectIfAway, setChannelPref, prefsFor, memberProfile } from "./people.js";
-import { scheduleMessage, listScheduled, cancelScheduled, saveForLater, listSaved, finishSaved } from "./later.js";
+import { scheduleMessage, listScheduled, cancelScheduled, saveForLater, listSaved, finishSaved, listSent } from "./later.js";
 import { channelDetails, setDescription, channelRow } from "./channelDetails.js";
 import { channelJournal, forgetJournalDay, validDay, validZone } from "./journal.js";
 import { settleUsage } from "./ledger.js";
@@ -1573,6 +1573,25 @@ export async function handleChannels(request, env, url, { route, after }) {
       if (out.error) return json({ message: out.error }, 400);
       return json({ id: out.id }, 201);
     }
+  }
+
+  // Sent: what you said, newest first, where you can still read it — the
+  // "Drafts & sent" list of a chat client.
+  if (path === "/channels/sent" && request.method === "GET") {
+    const orgId = url.searchParams.get("orgId");
+    const who = await caller(env, request, orgId);
+    if (who.denied) return who.denied;
+    const members = await listMembers(env.DB, orgId, who.session.github_id);
+    const access = await accessFor(env.DB, orgId, who.user.login);
+    const items = [];
+    for (const r of await listSent(env.DB, orgId, who.user.login)) {
+      const view = viewOf(r.channel, who.user.login, members, access);
+      if (!view) continue;
+      const [message] = await present(env.DB, orgId, [r], who.user.login, view, members);
+      items.push(message);
+      if (items.length >= 50) break;
+    }
+    return json({ items });
   }
 
   // Clips: messages picked from anywhere you can read, made one decision.

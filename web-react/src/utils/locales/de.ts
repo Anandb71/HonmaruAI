@@ -1853,6 +1853,15 @@ const table: Record<string, string> = {
   'Restore': 'Wiederherstellen',
   'Restoring…': 'Wird wiederhergestellt…',
   'Restored #{name}': '#{name} wiederhergestellt',
+  'Drafts & sent': 'Entwürfe & Gesendet',
+  'What you started writing and left, and what you said, newest first.': 'Was du angefangen und liegen gelassen hast, und was du gesagt hast – das Neueste zuerst.',
+  'Drafts': 'Entwürfe',
+  'Sent': 'Gesendet',
+  'No drafts': 'Keine Entwürfe',
+  'A message you start and leave unsent waits here, in the conversation it was for.': 'Eine angefangene, nicht gesendete Nachricht wartet hier, in der Unterhaltung, für die sie war.',
+  'What you say in a channel, a DM or a thread is listed here.': 'Was du in einem Channel, einer DM oder einem Thread sagst, steht hier.',
+  'in a thread': 'in einem Thread',
+  'Discard': 'Verwerfen',
 }
 
 export default table

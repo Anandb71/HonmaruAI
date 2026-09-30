@@ -117,3 +117,18 @@ test("a rule is made from a decision of yours, and listed and removed by you", a
   expect(JSON.stringify(rules)).not.toContain('"toru"');
   expect((await del("/channels/auto-rules", mika, { orgId: ORG, id: rules[0].id })).status).toBe(200);
 });
+
+test("Sent lists what you said, newest first, only where you can still read it", async () => {
+  const first = await say(toru, "Menu is up");
+  await say(mika, "Thanks");
+  const dm = (await (await post("/channels/messages", toru, { orgId: ORG, channel: `dm:${refs.Mika}`, body: "Call me later" })).json()).message;
+  const gone = await say(toru, "Oops, wrong channel");
+  expect((await del("/channels/messages", toru, { orgId: ORG, channel: "b:cafe", messageId: gone.id })).status).toBe(200);
+  const sent = (await (await get(`/channels/sent?${q({ orgId: ORG })}`, toru)).json()).items;
+  expect(sent.map((m) => m.body)).toEqual(["Call me later", "Menu is up"]);
+  expect(sent[0]).toMatchObject({ id: dm.id, channel: `dm:${refs.Mika}` });
+  expect(sent[1]).toMatchObject({ id: first.id, channel: "b:cafe" });
+  // Another person's list is their own.
+  expect((await (await get(`/channels/sent?${q({ orgId: ORG })}`, mika)).json()).items.map((m) => m.body)).toEqual(["Thanks"]);
+  expect((await get(`/channels/sent?${q({ orgId: ORG })}`, "nope")).status).toBe(401);
+});

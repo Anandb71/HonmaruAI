@@ -1853,6 +1853,15 @@ const table: Record<string, string> = {
   'Restore': 'Restaurer',
   'Restoring…': 'Restauration…',
   'Restored #{name}': '#{name} restauré',
+  'Drafts & sent': 'Brouillons et envoyés',
+  'What you started writing and left, and what you said, newest first.': 'Ce que vous avez commencé à écrire sans l’envoyer, et ce que vous avez dit, du plus récent au plus ancien.',
+  'Drafts': 'Brouillons',
+  'Sent': 'Envoyés',
+  'No drafts': 'Aucun brouillon',
+  'A message you start and leave unsent waits here, in the conversation it was for.': 'Un message commencé et non envoyé attend ici, dans la conversation à laquelle il était destiné.',
+  'What you say in a channel, a DM or a thread is listed here.': 'Ce que vous dites dans un canal, un MP ou un fil apparaît ici.',
+  'in a thread': 'dans un fil',
+  'Discard': 'Supprimer',
 }
 
 export default table

@@ -82,6 +82,19 @@ export async function listSaved(db, orgId, login) {
   return results || [];
 }
 
+/// What this person sent, newest first: their own messages and replies,
+/// not what an agent or the AI said for them. The caller keeps only those
+/// in conversations the person can still read.
+export async function listSent(db, orgId, login, limit = 200) {
+  const { results } = await db.prepare(
+    `SELECT m.*, u.name AS author_name
+       FROM channel_messages m LEFT JOIN users u ON u.login = m.author_login
+      WHERE m.org_id = ?1 AND m.author_login = ?2 AND m.kind = 'message' AND m.deleted_at IS NULL
+      ORDER BY m.created_at DESC LIMIT ?3`
+  ).bind(orgId, login, limit).all();
+  return results || [];
+}
+
 export async function finishSaved(db, orgId, login, id) {
   const res = await db.prepare("UPDATE saved_items SET done_at = ?4 WHERE id = ?1 AND org_id = ?2 AND login = ?3 AND done_at IS NULL")
     .bind(id, orgId, login, new Date().toISOString()).run();

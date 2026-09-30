@@ -533,6 +533,7 @@ export const ClassicList: React.FC<Props> = ({
     setActivityOpen(false)
     setLaterOpen(false)
     setThreadsOpen(false)
+    setSentOpen(false)
     setOpenKey(key)
     setProblem(null)
     setRenaming(null)
@@ -582,6 +583,16 @@ export const ClassicList: React.FC<Props> = ({
   const [activityOpen, setActivityOpen] = useState(false)
   // Threads: every thread you are in, the one with the newest reply first.
   const [threadsOpen, setThreadsOpen] = useState(false)
+  // Drafts & sent: what you are still writing, and what you said.
+  const [sentOpen, setSentOpen] = useState(false)
+  const [sentTab, setSentTab] = useState<'drafts' | 'sent'>('drafts')
+  const [sentItems, setSentItems] = useState<ChannelMessage[] | null>(null)
+  const loadSent = useCallback(() => {
+    return fetch(`${api.httpBase}/channels/sent?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) setSentItems(data.items || []) })
+      .catch(() => { /* the list stays as it was */ })
+  }, [api.httpBase, api.orgId, authHeaders])
   const [threadItems, setThreadItems] = useState<ThreadItem[] | null>(null)
   const loadThreads = useCallback(() => {
     return fetch(`${api.httpBase}/channels/threads?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
@@ -676,6 +687,7 @@ export const ClassicList: React.FC<Props> = ({
     setOpenKey(null)
     setLaterOpen(false)
     setThreadsOpen(false)
+    setSentOpen(false)
     setActivityOpen(true)
     setDetailId(null)
     setActivityPick(null)
@@ -1359,6 +1371,7 @@ export const ClassicList: React.FC<Props> = ({
     try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i) || ''; if (k.startsWith(`draft:${api.orgId}:`) && localStorage.getItem(k)) out[k.slice(`draft:${api.orgId}:`.length)] = true } } catch { /* none kept */ }
     return out
   })
+  const draftCount = Object.keys(drafts).filter((v) => drafts[v] && everything.some((x) => x.view === v)).length
   const draftView = useRef<string | undefined>(undefined)
   // Before paint, so a conversation never shows an empty box first.
   useLayoutEffect(() => {
@@ -1398,7 +1411,7 @@ export const ClassicList: React.FC<Props> = ({
   // Later: saved messages.
   const [laterOpen, setLaterOpen] = useState(false)
   // One of the lists that is not a conversation is on screen.
-  const special = activityOpen || laterOpen || threadsOpen
+  const special = activityOpen || laterOpen || threadsOpen || sentOpen
   // Which conversation is on screen, for the sound a new message makes.
   const openView = !special ? (current?.view || null) : null
   useEffect(() => { setOpenView(openView); return () => { setOpenView(null) } }, [openView])
@@ -1952,7 +1965,7 @@ export const ClassicList: React.FC<Props> = ({
   // phone the conversation itself, then whatever is open over it.
   useBackStack([
     [!wide && !!current, () => choose(null)],
-    [activityOpen || laterOpen || threadsOpen, () => { setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false) }],
+    [activityOpen || laterOpen || threadsOpen || sentOpen, () => { setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false); setSentOpen(false) }],
     [!!side, () => setSide(null)],
     [!!profile, () => setProfile(null)],
     [!!thread, () => setThread(null)],
@@ -2610,6 +2623,82 @@ export const ClassicList: React.FC<Props> = ({
       </div>
     </>
   )
+
+  /// Drafts & sent: what you started writing and left, each where it
+  /// waits, and what you said, newest first — as a chat client keeps them.
+  const draftList = () => Object.keys(drafts).filter((v) => drafts[v]).flatMap((v) => {
+    const th = everything.find((x) => x.view === v)
+    let text = ''
+    try { text = localStorage.getItem(draftKey(v)) || '' } catch { /* none kept */ }
+    return th && text ? [{ view: v, th, text }] : []
+  })
+  const discardDraft = (v: string) => {
+    try { localStorage.removeItem(draftKey(v)) } catch { /* nothing kept */ }
+    if (current?.view === v) setDraft('')
+    setDrafts((prev) => { const next = { ...prev }; delete next[v]; return next })
+  }
+  const sentView = () => {
+    const kept = draftList()
+    const where = (th?: Thread) => (th ? (th.kind === 'channel' && !th.private ? `#${th.name}` : th.name) : '')
+    return (
+      <>
+        <header className="slk-head slk-later-head slk-sent-head">
+          <button className="slk-back" onClick={() => setSentOpen(false)} aria-label={t('Back')}><Icon name="chevron-left" size={20} /></button>
+          <span className="cl-lead cl-app sz-head" aria-hidden="true"><Icon name="send" size={16} /></span>
+          <div className="slk-head-text">
+            <h1>{t('Drafts & sent')}</h1>
+            <p>{t('What you started writing and left, and what you said, newest first.')}</p>
+          </div>
+        </header>
+        <div className="slk-inbox-tabs slk-sent-tabs" role="tablist">
+          <button type="button" role="tab" aria-selected={sentTab === 'drafts'} className={sentTab === 'drafts' ? 'on' : ''} onClick={() => setSentTab('drafts')} data-sent-tab="drafts">
+            {t('Drafts')}{kept.length > 0 && <span className="slk-sent-count">{kept.length}</span>}
+          </button>
+          <button type="button" role="tab" aria-selected={sentTab === 'sent'} className={sentTab === 'sent' ? 'on' : ''} onClick={() => { setSentTab('sent'); void loadSent() }} data-sent-tab="sent">{t('Sent')}</button>
+        </div>
+        <div className="slk-log slk-activity">
+          {sentTab === 'drafts' && kept.length === 0 && (
+            <div className="slk-start">
+              <span className="cl-lead cl-app sz-head" aria-hidden="true"><Icon name="edit" size={16} /></span>
+              <h2>{t('No drafts')}</h2>
+              <p>{t('A message you start and leave unsent waits here, in the conversation it was for.')}</p>
+            </div>
+          )}
+          {sentTab === 'drafts' && kept.map(({ view: v, th, text }) => (
+            <div key={v} className="slk-act later" data-draft={th.name}>
+              <span className="slk-act-kind">{where(th)}</span>
+              <span className="slk-act-body">{text.slice(0, 280)}</span>
+              <span className="slk-act-actions">
+                <button type="button" className="cl-nudge" onClick={() => choose(th.key)} data-draft-open="1">{t('Open')}</button>
+                <button type="button" className="cl-nudge" onClick={() => discardDraft(v)} data-draft-discard="1">{t('Discard')}</button>
+              </span>
+            </div>
+          ))}
+          {sentTab === 'sent' && sentItems === null && <p className="slk-empty">{t('Loading…')}</p>}
+          {sentTab === 'sent' && sentItems && sentItems.length === 0 && (
+            <div className="slk-start">
+              <span className="cl-lead cl-app sz-head" aria-hidden="true"><Icon name="send" size={16} /></span>
+              <h2>{t('Nothing sent yet')}</h2>
+              <p>{t('What you say in a channel, a DM or a thread is listed here.')}</p>
+            </div>
+          )}
+          {sentTab === 'sent' && (sentItems || []).map((m) => {
+            const th = everything.find((x) => x.view === m.channel)
+            return (
+              <div key={m.id} className="slk-act later" data-sent-message={m.id}>
+                <span className="slk-act-kind">{where(th)}{m.parentId ? ` · ${t('in a thread')}` : ''}</span>
+                <span className="slk-act-line"><span className="slk-act-when">{when(m.createdAt)}</span></span>
+                <span className="slk-act-body">{shownBody(m).text.slice(0, 280)}</span>
+                <span className="slk-act-actions">
+                  <button type="button" className="cl-nudge" onClick={() => openAt({ view: m.channel, id: m.id, parentId: m.parentId })}>{t('Open')}</button>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </>
+    )
+  }
 
   const activityView = () => {
     const nameOfView = (v: string) => {
@@ -3466,8 +3555,9 @@ export const ClassicList: React.FC<Props> = ({
   const dmUnread = [...people, ...agentConvos].filter((th) => th.unread > 0 || th.fresh).length
   const phoneRoot = !wide && !current && !detail && !thread && !profile
   const tabOn = (which: 'home' | 'dms' | 'activity' | 'later') => (activityOpen ? 'activity' : laterOpen ? 'later' : phoneTab) === which
-  const openLater = () => { setOpenKey(null); setActivityOpen(false); setThreadsOpen(false); setLaterOpen(true); void loadLater() }
-  const openThreads = () => { setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setThreadsOpen(true); void loadThreads() }
+  const openLater = () => { setOpenKey(null); setActivityOpen(false); setThreadsOpen(false); setSentOpen(false); setLaterOpen(true); void loadLater() }
+  const openThreads = () => { setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setSentOpen(false); setThreadsOpen(true); void loadThreads() }
+  const openSent = () => { setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false); setSentOpen(true); void loadSent() }
   /// Somebody to write to, from "New message": one person is a DM.
   const startWith = async (refs: string[]) => {
     setStarting(null)
@@ -3554,6 +3644,13 @@ export const ClassicList: React.FC<Props> = ({
                 {(laterItems || []).length > 0 && <span className="cl-count">{laterItems!.length}</span>}
               </button>
             </li>
+            <li className={`cl-row cl-thread${sentOpen ? ' on' : ''}`}>
+              <button className="cl-open" onClick={openSent} aria-current={sentOpen ? 'true' : undefined} data-sent="1">
+                <span className="cl-lead cl-app sz-row" aria-hidden="true"><Icon name="send" size={13} /></span>
+                <span className="cl-title">{t('Drafts & sent')}</span>
+                {draftCount > 0 && <span className="cl-count">{draftCount}</span>}
+              </button>
+            </li>
           </ul>
           {(() => {
             // Starred first, then your sections; what they hold leaves the defaults.
@@ -3587,7 +3684,7 @@ export const ClassicList: React.FC<Props> = ({
         onDragOver={(e) => { if (current?.view && current.kind !== 'app' && !special && e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDropping(true) } }}
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false) }}
         onDrop={(e) => { setDropping(false); if (current?.view && current.kind !== 'app' && e.dataTransfer.files.length) { e.preventDefault(); uploads.add([...e.dataTransfer.files], current.view) } }}>
-        {activityOpen ? activityView() : laterOpen ? laterView() : threadsOpen ? threadsView() : current ? conversation(current) : (
+        {activityOpen ? activityView() : laterOpen ? laterView() : threadsOpen ? threadsView() : sentOpen ? sentView() : current ? conversation(current) : (
           <div className="slk-none"><p>{t('Pick a conversation.')}</p></div>
         )}
       </main>

@@ -11,6 +11,8 @@ enum ChatRoute: Hashable {
     case agents
     /// Channels that were archived, each with a way back.
     case archived
+    /// Drafts & sent: what you are still writing, and what you said.
+    case sent
 }
 
 /// One conversation, the way a chat app on a phone draws it: messages you

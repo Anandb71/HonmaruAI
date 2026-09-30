@@ -774,4 +774,21 @@ final class ChatStore: ObservableObject {
         if text.isEmpty { UserDefaults.standard.removeObject(forKey: key) } else { UserDefaults.standard.set(text, forKey: key) }
     }
     func hasDraft(_ view: String) -> Bool { !draft(view).isEmpty }
+    /// Every conversation with something still being written in it.
+    struct Draft: Identifiable {
+        let conversation: ChatConversation
+        let text: String
+        var id: String { conversation.view }
+    }
+    var drafts: [Draft] {
+        (channels + groupConversations + people + agentConversations).compactMap { c in
+            let text = draft(c.view)
+            return text.isEmpty ? nil : Draft(conversation: c, text: text)
+        }
+    }
+    /// What you said, newest first.
+    func loadSent() async -> [ChatMessage] {
+        guard let orgId, let base else { return [] }
+        return (try? await ChatService.sent(orgId: orgId, base: base)) ?? []
+    }
 }
