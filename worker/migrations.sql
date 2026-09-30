@@ -90,6 +90,8 @@ ALTER TABLE channel_messages ADD COLUMN previews_hidden INTEGER NOT NULL DEFAULT
 ALTER TABLE sso_connections ADD COLUMN idp_slo_url TEXT;
 ALTER TABLE custom_agents ADD COLUMN avatar_url TEXT;
 ALTER TABLE custom_agents ADD COLUMN provider TEXT;
+/* Cursor hands each follow-up to a run of its own. */
+ALTER TABLE ai_teammate_runs ADD COLUMN remote_turn TEXT;
 CREATE INDEX IF NOT EXISTS idx_sessions_github ON sessions(github_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_sso_connection ON sessions(sso_connection_id);
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_github_id);
