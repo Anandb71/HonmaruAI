@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, tempMessage, tempState } from '../utils/pendingSend'
+import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, sendTime, tempMessage, tempState } from '../utils/pendingSend'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -1367,7 +1367,7 @@ export const ClassicList: React.FC<Props> = ({
     }
     // In the conversation at once, marked as on its way, and the box free
     // for the next line while it goes — the files in it are already up.
-    const temp = tempMessage({ channel, body, parentId, files }, { name: myName || null, ref: myRef || null, avatar: myAvatar })
+    const temp = tempMessage({ channel, body, parentId, files }, { name: myName || null, ref: myRef || null, avatar: myAvatar }, sendTime(parentId ? undefined : messagesRef.current[channel]))
     if (parentId) {
       setThreadDraft('')
       setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: [...prev.replies, temp] } : prev))
