@@ -85,6 +85,19 @@ export function useUploads(api: { httpBase: string; orgId: string; sessionToken:
     }
   }, [api.httpBase, api.orgId, api.sessionToken, onProblem, t])
 
+  /// Files already up, back in the box: a message that did not go, being
+  /// written again. Nothing to upload — they are named as they are — and,
+  /// as for any file added, no more than a message can carry.
+  const restore = useCallback((files: FileRef[]) => {
+    const room = MAX_FILES - itemsRef.current.length
+    if (files.length > room) onProblem(t('Up to {n} files in one message.', { n: MAX_FILES }))
+    const back = files.slice(0, Math.max(0, room)).map((f): Upload => ({
+      key: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: f.name, type: f.type, size: f.size,
+      preview: isPicture(f.type) ? `${api.httpBase}${f.url}` : null, state: 'done', file: f,
+    }))
+    if (back.length) setItems((prev) => [...prev, ...back])
+  }, [api.httpBase, onProblem, t])
+
   const remove = useCallback((key: string) => {
     setItems((prev) => {
       const gone = prev.find((x) => x.key === key)
@@ -97,7 +110,7 @@ export function useUploads(api: { httpBase: string; orgId: string; sessionToken:
   }, [])
   const ids = items.filter((i) => i.state === 'done' && i.file).map((i) => i.file!.id)
   const busy = items.some((i) => i.state === 'up')
-  return { items, add, remove, clear, ids, busy }
+  return { items, add, restore, remove, clear, ids, busy }
 }
 
 /// What is going up, over the words, each with a way to take it back.
