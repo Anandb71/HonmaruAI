@@ -19,6 +19,14 @@ export const isTemp = (m: Pick<ChannelMessage, 'id'>) => m.id.startsWith(TEMP)
 export const tempState = (m: ChannelMessage): 'pending' | 'failed' | undefined =>
   m.failed ? 'failed' : m.pending ? 'pending' : undefined
 
+/// When a message sent now is drawn: now — or, with this device's clock
+/// behind the server's, just after the newest message held, so what you
+/// send never lands above what is already there while it goes.
+export function sendTime(list: ChannelMessage[] | undefined, now = new Date()): Date {
+  const newest = (list || []).reduce((n, m) => Math.max(n, Date.parse(m.createdAt) || 0), 0)
+  return new Date(Math.max(now.getTime(), newest + 1))
+}
+
 /// Ours, as it will look once the server has it: written by you, now.
 export function tempMessage(
   said: { channel: string; body: string; parentId?: string | null; files?: FileRef[] },

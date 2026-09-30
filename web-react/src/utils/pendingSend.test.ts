@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, tempMessage, tempState } from './pendingSend'
+import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, sendTime, tempMessage, tempState } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -32,6 +32,14 @@ describe('a message on its way', () => {
     const a = tempMessage({ channel: 'b:hotel', body: 'one' }, you, at)
     const b = tempMessage({ channel: 'b:hotel', body: 'two' }, you, at)
     expect(a.id).not.toBe(b.id)
+  })
+
+  it('is drawn now, or after the newest message held when this clock is behind the server’s', () => {
+    const now = new Date('2026-09-30T09:00:00.000Z')
+    expect(sendTime([said('a', 'earlier', { createdAt: '2026-09-30T08:59:00.000Z' })], now)).toEqual(now)
+    expect(sendTime(undefined, now)).toEqual(now)
+    const ahead = [said('a', 'x', { createdAt: '2026-09-30T09:02:00.000Z' }), said('b', 'y', { createdAt: '2026-09-30T09:01:00.000Z' })]
+    expect(sendTime(ahead, now).toISOString()).toBe('2026-09-30T09:02:00.001Z')
   })
 
   it('a message from the server is never taken for one of ours', () => {
