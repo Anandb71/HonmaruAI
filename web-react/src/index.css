@@ -14,11 +14,25 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     color: #202020;
     background-color: #ffffff;
   }
 }
+:root[data-theme="light"] {
+  color: #202020;
+  background-color: #ffffff;
+}
+
+/* A theme chosen on You (utils/appearance.ts) sits on the root as
+   data-theme, and wins over the system's: every rule written for the
+   system's dark asks first that light was not chosen, and is said once more,
+   outside the query, for dark chosen. Rules that used to take the system's
+   word alone ask through :where(), which weighs nothing, so each still wins
+   and loses exactly where it did. The browser's own parts — scrollbars,
+   form controls, the ground behind the page — follow the same choice. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 html, body, #root {
   margin: 0;
