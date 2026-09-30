@@ -1401,6 +1401,7 @@ const table: Record<string, string> = {
   'Replace the secret': 'Remplacer le secret',
   'Saved': 'Enregistrés',
   'Send again': 'Renvoyer',
+  'Retry': 'Réessayer',
   'Sign out everywhere else': 'Se déconnecter partout ailleurs',
   'Sign out of every device': 'Déconnecter de tous les appareils',
   'Someone': 'Quelqu’un',
