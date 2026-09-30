@@ -1,0 +1,28 @@
+# Installers for Windows (NSIS), macOS (DMG) and Linux (AppImage).
+# Signing is not configured yet (docs/architecture/discord-model-platform-plan.md
+# §11.4: Apple Developer ID + notarization, Azure Trusted Signing on Windows):
+# unsigned builds run, with the operating system's warning.
+appId: com.honmaru.ai
+productName: Honmaru AI
+copyright: Copyright © Honmaru AI
+directories:
+  output: dist
+  buildResources: build
+files:
+  - src/**
+  - assets/**
+  - package.json
+protocols:
+  - name: Honmaru AI
+    schemes: [honmaru]
+win:
+  target: nsis
+nsis:
+  oneClick: true
+  perMachine: false
+mac:
+  target: dmg
+  category: public.app-category.productivity
+linux:
+  target: AppImage
+  category: Office

@@ -1,0 +1,21 @@
+{
+  "name": "@honmaru/desktop",
+  "productName": "Honmaru AI",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Honmaru AI for Windows, macOS and Linux: the web app in its own window, in the tray, with a badge and honmaru:// links.",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --app-url=http://localhost:3000",
+    "test": "vitest run",
+    "dist": "electron-builder",
+    "dist:dir": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "vitest": "^5.0.2"
+  }
+}
