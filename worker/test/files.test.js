@@ -223,6 +223,16 @@ test("a video keeps the shape it was measured at; a song and a document have non
   expect(odd).toMatchObject({ width: null, height: null });
 });
 
+test("a voice memo is played where it is, under the type the browser gave it", async () => {
+  for (const type of ["audio/x-m4a", "audio/aac", "audio/flac", "audio/x-wav"]) {
+    const { file } = await (await upload(mika, "b:cafe", { name: "memo", type })).json();
+    const got = await call(file.url, {});
+    expect(got.headers.get("content-type")).toBe(type);
+    expect(got.headers.get("content-disposition")).toMatch(/^inline;/);
+    expect(got.headers.get("content-security-policy")).toContain("sandbox");
+  }
+});
+
 test("a Range opens nothing a plain request does not, and a download stays one", async () => {
   const html = new TextEncoder().encode("<script>alert(1)</script>");
   const { file } = await (await upload(mika, "b:cafe", { name: "page.html", type: "text/html", bytes: html })).json();

@@ -28,6 +28,9 @@ const SHOWN = new Set([
   "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/heic",
   "video/mp4", "video/webm", "video/quicktime",
   "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm",
+  // What Chrome and Safari call an .m4a (a phone's voice memo), and the
+  // other names browsers give .aac, .flac and .wav.
+  "audio/x-m4a", "audio/aac", "audio/flac", "audio/x-wav",
   "text/plain",
 ]);
 export const isPicture = (type) => /^image\/(png|jpeg|gif|webp|avif)$/.test(type);
