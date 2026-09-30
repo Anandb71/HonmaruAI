@@ -129,6 +129,16 @@ describe('the note under a message on its way', () => {
     expect(await note({ pending: true })).toBe('<span class="sr-only">Sending…</span>')
   })
 
+  it('on its way for longer than a send should take, says so with Delete', async () => {
+    const { UnsentNote } = await import('./MessageParts')
+    const at = (lateAt: number) => renderToStaticMarkup(<UnsentNote message={{ ...said, pending: true }} onRetry={() => {}} onDelete={() => {}} lateAt={lateAt} />)
+    expect(at(Date.now() + 60_000)).toBe('<span class="sr-only">Sending…</span>')
+    const late = at(Date.now() - 1)
+    expect(late).toContain('class="slk-unsent late"')
+    expect(late).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-delete="1">.*Delete<\/button>/)
+    expect(late).not.toContain('data-unsent-retry')
+  })
+
   it('is nothing under a message the server has', async () => {
     expect(await note({ id: '0f9c-uuid' })).toBe('')
   })
