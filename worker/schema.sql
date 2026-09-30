@@ -1177,13 +1177,18 @@ CREATE INDEX IF NOT EXISTS idx_sso_identities_user ON sso_identities(user_github
 
 /* Who a person is at Apple (Sign in with Apple, src/apple.js): Apple's stable
    `sub` for our team, and their account here. The address is the one Apple
-   last vouched for — often a private relay one. */
+   last vouched for — often a private relay one. `refresh_token` is Apple's,
+   from trading the app's authorization code, sealed under DATA_KEY and kept
+   only so deleting the account can revoke it; `client_id` is the app it was
+   issued to. Both are empty for a sign-in made before they were kept. */
 CREATE TABLE IF NOT EXISTS apple_identities (
   subject         TEXT PRIMARY KEY,
   user_github_id  TEXT NOT NULL,
   email           TEXT,
   created_at      TEXT NOT NULL,
-  last_login_at   TEXT NOT NULL
+  last_login_at   TEXT NOT NULL,
+  refresh_token   TEXT,
+  client_id       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_apple_identities_user ON apple_identities(user_github_id);
 

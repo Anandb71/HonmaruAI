@@ -465,7 +465,8 @@ async function handle(request, env, url, ctx) {
         name: body.name,
         inviteCode: typeof body.inviteCode === "string" ? body.inviteCode : undefined,
         locale: body.locale || localeFromRequest(request),
-      });
+        authorizationCode: typeof body.authorizationCode === "string" ? body.authorizationCode : undefined,
+      }, { after: ctx && typeof ctx.waitUntil === "function" ? (work) => after(ctx, work) : undefined });
       if (result.error) return json({ message: result.error }, result.status || 400);
       await signedIn(env, request, result.token, result.userId, "apple");
       return json(result);
@@ -1720,6 +1721,12 @@ async function handle(request, env, url, ctx) {
       // Their app connections, here and at Smithery, before the rows that
       // say whose they were are gone.
       await forgetAppConnections(env, { githubId: session.github_id }).catch((err) => console.error("app connections not ended", err?.message || err));
+      // Their Sign in with Apple authorization for the app, which Apple asks
+      // to end with the account (src/apple.js). Apple saying no, or not
+      // answering, is logged and does not keep the account alive.
+      await import("./apple.js")
+        .then(({ revokeAppleTokens }) => revokeAppleTokens(env, session.github_id))
+        .catch((err) => console.error("apple tokens not revoked", err?.message || err));
       await deleteAccount(env.DB, session.github_id, user?.login || null);
       // Their entries in every audit log become unreadable: the rows stay and
       // still verify, and who they were goes with the key.
