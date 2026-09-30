@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getLocale } from '../utils/locale'
 import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
+import { gridStep, pickerSections, rememberEmoji, useEmojiData, useRecentEmoji } from '../utils/emojiSearch'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
@@ -13,19 +14,33 @@ import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmo
 /// The reactions most people reach for, first in the bar as in Slack.
 export const QUICK_REACTIONS = ['✅', '👀', '🙌']
 
-/// A small, fixed set rather than the whole Unicode table: enough to answer
-/// with, and it opens instantly.
-const EMOJI_SETS: Array<{ label: string; list: string[] }> = [
-  { label: 'Frequently used', list: ['👍', '✅', '👀', '🙌', '🎉', '🙏', '❤️', '😂', '🔥', '💯', '👏', '🚀'] },
-  { label: 'Work', list: ['📌', '📎', '📅', '⏰', '💡', '❓', '❗', '⚠️', '🛑', '✍️', '📈', '💰', '🧾', '📦', '🤝', '🗳️'] },
-  { label: 'Feelings', list: ['😀', '😊', '😅', '🤔', '😮', '😢', '😬', '🙃', '😎', '🥳', '😴', '🤯'] },
-  { label: 'Answers', list: ['⭕', '❌', '🆗', '🆖', '👌', '👎', '🤞', '💪', '☕', '🍣', '🍺', '🌱'] },
-]
+/// Cells to a row in the picker's grids, as ClassicList.css lays them out.
+const PICKER_COLS = 8
+const PICKER_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'])
 
+/// Every emoji to react with: a search box on top, this workspace's own
+/// first, the ones you used lately, then the list by group. Typing turns it
+/// into one grid of what matches, and Enter takes the first. The arrows move
+/// through the grids, and Tab leaves them in one step.
 export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: () => void }> = ({ onPick, onClose }) => {
   const t = useT()
   const box = useRef<HTMLDivElement>(null)
+  const search = useRef<HTMLInputElement>(null)
   const custom = useCustomEmoji()
+  const recent = useRecentEmoji()
+  const data = useEmojiData()
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const id = useId()
+  // Closed by a key or a pick, focus goes back to what opened the picker; a
+  // click somewhere else leaves it where the click put it.
+  const giveBack = useRef(false)
+  const sections = useMemo(() => pickerSections(query, custom, recent, data), [query, custom, recent, data])
+  const sizes = sections.map((s) => s.cells.length)
+  const starts = sizes.map((_, i) => sizes.slice(0, i).reduce((a, b) => a + b, 0))
+  const total = sizes.reduce((a, b) => a + b, 0)
+  const current = Math.min(active, Math.max(0, total - 1))
+  const searching = Boolean(query.trim())
   useEffect(() => {
     const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -33,33 +48,91 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
   }, [onClose])
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    // Not on a phone, whose keyboard would come up over the picker.
+    if (!window.matchMedia?.('(pointer: coarse)').matches) search.current?.focus({ preventScroll: true })
+    return () => { if (giveBack.current && opener?.isConnected) opener.focus({ preventScroll: true }) }
+  }, [])
+  useEffect(() => { setActive(0); if (box.current) box.current.scrollTop = 0 }, [query])
+  const pick = (emoji: string) => {
+    rememberEmoji(emoji)
+    giveBack.current = true
+    onPick(emoji)
+    onClose()
+  }
+  const focusCell = (i: number) => box.current?.querySelector<HTMLElement>(`[data-cell="${i}"]`)?.focus()
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      // The picker's, not the pane's behind it: a search clears first.
+      e.stopPropagation()
+      if (query) { setQuery(''); search.current?.focus() } else { giveBack.current = true; onClose() }
+      return
+    }
+    if (e.target === search.current) {
+      if (e.key === 'ArrowDown' && total) { e.preventDefault(); focusCell(current) }
+      if (e.key === 'Enter' && !e.nativeEvent.isComposing && searching) {
+        e.preventDefault()
+        const first = sections[0]?.cells[0]
+        if (first) pick(first.emoji)
+      }
+      return
+    }
+    const at = Number((e.target as HTMLElement).dataset.cell)
+    if (!Number.isInteger(at) || !PICKER_KEYS.has(e.key)) return
+    e.preventDefault()
+    const next = gridStep(sizes, at, e.key, PICKER_COLS)
+    if (next < 0) search.current?.focus()
+    else focusCell(next)
+  }
   return (
-    <div className="slk-picker" ref={box} role="dialog" aria-label={t('Add reaction')}>
-      <div className="slk-picker-set workspace">
-        <div className="slk-picker-label">
-          {t('This workspace')}
-          <a className="slk-picker-add" href="#/tools/emoji" onClick={() => onClose()} data-add-emoji="1"><Icon name="plus" size={12} /> {t('Add emoji')}</a>
-        </div>
-        {custom.length > 0 && (
-          <div className="slk-picker-grid">
-            {custom.map((e) => (
-              <button key={e.name} type="button" className="slk-picker-emoji custom" onClick={() => { onPick(`:${e.name}:`); onClose() }} aria-label={`:${e.name}:`} title={`:${e.name}:`} data-custom-emoji={e.name}>
-                <img src={e.url} alt={`:${e.name}:`} loading="lazy" draggable={false} />
-              </button>
-            ))}
-          </div>
-        )}
+    <div className="slk-picker" ref={box} role="dialog" aria-label={t('Add reaction')} onKeyDown={onKeyDown}>
+      <div className="slk-picker-head">
+        <input
+          ref={search}
+          className="slk-picker-search"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('Search emoji')}
+          aria-label={t('Search emoji')}
+          autoComplete="off"
+          spellCheck={false}
+          data-emoji-search
+        />
       </div>
-      {EMOJI_SETS.map((set) => (
-        <div key={set.label} className="slk-picker-set">
-          <div className="slk-picker-label">{t(set.label)}</div>
-          <div className="slk-picker-grid">
-            {set.list.map((e) => (
-              <button key={e} type="button" className="slk-picker-emoji" onClick={() => { onPick(e); onClose() }} aria-label={e}>{e}</button>
-            ))}
+      {sections.map((s, si) => (s.cells.length > 0 || s.workspace) && (
+        <div key={s.label} className={`slk-picker-set${s.workspace ? ' workspace' : ''}`} role="group" aria-labelledby={`${id}-${si}`}>
+          <div className="slk-picker-label">
+            <span id={`${id}-${si}`}>{t(s.label)}</span>
+            {s.workspace && <a className="slk-picker-add" href="#/tools/emoji" onClick={() => onClose()} data-add-emoji="1"><Icon name="plus" size={12} /> {t('Add emoji')}</a>}
           </div>
+          {s.cells.length > 0 && (
+            <div className="slk-picker-grid">
+              {s.cells.map((c, ci) => {
+                const i = starts[si] + ci
+                return (
+                  <button
+                    key={c.emoji}
+                    type="button"
+                    className={`slk-picker-emoji${c.url ? ' custom' : ''}`}
+                    onClick={() => pick(c.emoji)}
+                    onFocus={() => setActive(i)}
+                    tabIndex={i === current ? 0 : -1}
+                    aria-label={c.emoji}
+                    title={c.name ? `:${c.name}:` : undefined}
+                    data-cell={i}
+                    data-custom-emoji={c.url ? c.name : undefined}
+                  >
+                    {c.url ? <img src={c.url} alt={c.emoji} loading="lazy" draggable={false} /> : c.emoji}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       ))}
+      {searching && !total && <p className="slk-picker-empty" role="status">{t('Nothing matches that.')}</p>}
     </div>
   )
 }

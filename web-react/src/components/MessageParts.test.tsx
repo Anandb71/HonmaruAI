@@ -88,6 +88,25 @@ describe('the links a message unfurls', () => {
   })
 })
 
+describe('the emoji picker', () => {
+  it('opens on a search box, the usual emoji, and every group once the list is here', async () => {
+    const { EmojiPicker } = await import('./MessageParts')
+    const { loadEmojiData } = await import('../utils/emojiSearch')
+    const draw = () => renderToStaticMarkup(<EmojiPicker onPick={() => {}} onClose={() => {}} />)
+    const before = draw()
+    expect(before).toContain('<input class="slk-picker-search" type="search" placeholder="Search emoji" aria-label="Search emoji"')
+    expect(before).toContain('Frequently used')
+    expect(before).not.toContain('Smileys &amp; people')
+    await loadEmojiData()
+    const after = draw()
+    expect(after).toContain('Smileys &amp; people')
+    expect(after).toContain('aria-label="👍" title=":+1:"')
+    // One stop for Tab; the arrows do the rest.
+    expect(after.match(/tabindex="0"/g)).toHaveLength(1)
+    expect(after.match(/data-cell="/g)!.length).toBeGreaterThan(380)
+  })
+})
+
 describe('who reacted', () => {
   it('is a sentence in the reader’s language, with the rest counted when there are many', async () => {
     const { reactorNames } = await import('./MessageParts')

@@ -555,6 +555,17 @@
 .classic.slk.slk .slk-picker-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
 .classic.slk.slk .slk-picker-emoji { border: none; background: none; font-size: 20px; line-height: 1; padding: 5px 0; border-radius: 6px; cursor: pointer; }
 .classic.slk.slk .slk-picker-emoji:hover { background: var(--slk-hover); }
+.classic.slk.slk .slk-picker-emoji:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -2px; background: var(--slk-hover); }
+/* The search box stays on top while the grids scroll under it. */
+.classic.slk.slk .slk-picker-head { position: sticky; top: -8px; z-index: 1; margin: -8px -10px 0; padding: 8px 10px 4px; background: var(--slk-bg); }
+.classic.slk.slk .slk-picker-search {
+  width: 100%; box-sizing: border-box; height: 32px; padding: 0 10px;
+  border: 1px solid var(--slk-line); border-radius: 8px; background: var(--slk-field);
+  font: inherit; font-size: 13.5px; color: var(--slk-ink);
+}
+.classic.slk.slk .slk-picker-search::placeholder { color: var(--slk-faint); }
+.classic.slk.slk .slk-picker-search:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -1px; }
+.classic.slk.slk .slk-picker-empty { margin: 14px 2px 8px; font-size: 13px; color: var(--slk-dim); text-align: center; }
 
 /* The workspace's own emoji: a picture the height of a line of text, as an
    emoji character is; larger when a line is nothing else. */
