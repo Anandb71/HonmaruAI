@@ -31,6 +31,8 @@ import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
+import { placesFrom } from '../utils/places'
+import type { Place } from '../utils/places'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -89,6 +91,9 @@ interface Props {
   onDeleteChannel: (slug: string) => Promise<string | null>
   /// Another screen: the team to invite, tools to connect, you.
   onOpenScreen?: (screen: 'team' | 'tools' | 'profile' | 'agents') => void
+  /// Every conversation that can be opened, with what is unread in each,
+  /// for ⌘K to jump to by name. Told again whenever the sidebar changes.
+  onPlaces?: (places: Place[]) => void
 }
 
 /// One conversation in the sidebar: a channel (a business), a person, or an app.
@@ -236,7 +241,7 @@ function when(iso?: string): string {
 export const ClassicList: React.FC<Props> = ({
   userId, orgName, pending, sent, decided, businesses, presence,
   onOpen, onNudge, onDecide, api, onSearch, onCompose, onTellAI, onDeleteCard, onViewChange, onOpenRecord, onImmersive, renderCard, onWorkspace, workspaceMenu,
-  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen,
+  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, onPlaces,
 }) => {
   const t = useT()
   const locale = getLocale()
@@ -683,6 +688,17 @@ export const ClassicList: React.FC<Props> = ({
     return out
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activityItems])
+  // What ⌘K jumps to: every conversation here with somewhere to open, each
+  // with the second name it answers to — a teammate's or an agent's @handle,
+  // a channel's slug.
+  useEffect(() => {
+    if (!onPlaces) return
+    const handleOf = new Map<string, string | null>(members.map((m) => [`dm:${m.ref}`, m.handle || null]))
+    onPlaces(placesFrom(everything.map((th) => ({
+      ...th,
+      handle: th.kind === 'channel' ? th.slug : th.kind === 'agent' ? th.agent?.handle : th.view ? handleOf.get(th.view) : null,
+    })), mentionsIn))
+  }, [everything, mentionsIn, members, onPlaces])
   const openActivity = () => {
     setOpenKey(null)
     setLaterOpen(false)
