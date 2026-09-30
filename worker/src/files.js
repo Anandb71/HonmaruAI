@@ -152,9 +152,10 @@ export async function claimable(db, { orgId, key, login, ids }) {
 export const fileKey = (orgId, id) => `org/${encodeURIComponent(orgId)}/files/${id}`;
 const legacyFileKey = (id) => `file-${id}`;
 
-export async function getFileObject(env, orgId, id) {
+/// `options` are R2's own, as `{ range }` to read one span of the bytes.
+export async function getFileObject(env, orgId, id, options) {
   if (!env.MEDIA) return null;
-  return (await env.MEDIA.get(fileKey(orgId, id))) || env.MEDIA.get(legacyFileKey(id));
+  return (await env.MEDIA.get(fileKey(orgId, id), options)) || env.MEDIA.get(legacyFileKey(id), options);
 }
 
 export async function deleteFileObject(env, orgId, id) {
@@ -235,7 +236,9 @@ export async function uploadFile(request, env, url, { orgId, resolved, login }) 
   return json({ file: await toFile(env.DB, row) }, 201);
 }
 
-/// GET /files/:id?e=…&s=… — the bytes, for a signed address still good.
+/// GET /files/:id?e=…&s=… — the bytes, for a signed address still good:
+/// all of them, or the one span a Range asks for, which is how a video or
+/// a song is played and a long download picks up where it stopped.
 export async function serveFile(request, env, url) {
   const m = url.pathname.match(/^\/files\/(f_[0-9a-f]{24})$/);
   if (!m) return null;
@@ -247,19 +250,32 @@ export async function serveFile(request, env, url) {
     return new Response("Not found", { status: 404 });
   }
   const row = await env.DB.prepare("SELECT * FROM message_files WHERE id = ?1").bind(id).first();
-  const obj = row ? await getFileObject(env, row.org_id, id) : null;
+  if (!row) return new Response("Not found", { status: 404 });
+  const guard = {
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+    "cross-origin-resource-policy": "cross-origin",
+    "access-control-allow-origin": "*",
+    "accept-ranges": "bytes",
+  };
+  // No validator is ever sent, so an If-Range cannot match one: the whole
+  // file, as RFC 9110 asks.
+  const range = request.headers.has("if-range") ? null : byteRange(request.headers.get("range"), row.size);
+  if (range === UNSATISFIABLE) {
+    return new Response(null, { status: 416, headers: { ...guard, "content-range": `bytes */${row.size}` } });
+  }
+  const obj = await getFileObject(env, row.org_id, id, range ? { range } : undefined);
   if (!obj) return new Response("Not found", { status: 404 });
   const shown = SHOWN.has(row.type);
   const encoded = encodeURIComponent(row.name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   return new Response(obj.body, {
+    status: range ? 206 : 200,
     headers: {
       "content-type": shown ? (row.type === "text/plain" ? "text/plain; charset=utf-8" : row.type) : "application/octet-stream",
       "content-disposition": `${shown ? "inline" : "attachment"}; filename*=UTF-8''${encoded}`,
-      "content-length": String(row.size),
-      "x-content-type-options": "nosniff",
-      "content-security-policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
-      "cross-origin-resource-policy": "cross-origin",
-      "access-control-allow-origin": "*",
+      "content-length": String(range ? range.length : row.size),
+      ...(range ? { "content-range": `bytes ${range.offset}-${range.offset + range.length - 1}/${row.size}` } : {}),
+      ...guard,
       "cache-control": `private, max-age=${Math.max(0, until - now)}`,
     },
   });

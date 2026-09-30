@@ -153,7 +153,85 @@ test("bytes are kept under the workspace, and files stored before that still ope
   await env.MEDIA.put(`file-${file.id}`, await obj.arrayBuffer());
   await env.MEDIA.delete(key);
   expect((await call(file.url, {})).status).toBe(200);
+  const part = await call(file.url, { headers: { range: "bytes=1-3" } });
+  expect(part.status).toBe(206);
+  expect([...new Uint8Array(await part.arrayBuffer())]).toEqual([...PNG.slice(1, 4)]);
   await say(mika, "b:cafe", "old one", [file.id]);
+});
+
+test("a video is answered in parts, the way a player asks for it", async () => {
+  const bytes = Uint8Array.from({ length: 100 }, (_, i) => i);
+  const { file } = await (await upload(mika, "b:cafe", { name: "clip.mp4", type: "video/mp4", bytes })).json();
+  const get = (range, extra = {}) => call(file.url, { headers: { range, ...extra } });
+  const body = async (res) => [...new Uint8Array(await res.arrayBuffer())];
+
+  const whole = await call(file.url, {});
+  expect(whole.status).toBe(200);
+  expect(whole.headers.get("accept-ranges")).toBe("bytes");
+  expect(whole.headers.get("content-length")).toBe("100");
+  expect(whole.headers.get("content-range")).toBeNull();
+  expect(await body(whole)).toEqual([...bytes]);
+
+  // Safari's first question, then the rest of the file.
+  const probe = await get("bytes=0-1");
+  expect(probe.status).toBe(206);
+  expect(probe.headers.get("content-range")).toBe("bytes 0-1/100");
+  expect(probe.headers.get("content-length")).toBe("2");
+  expect(probe.headers.get("accept-ranges")).toBe("bytes");
+  expect(probe.headers.get("content-type")).toBe("video/mp4");
+  expect(probe.headers.get("content-disposition")).toMatch(/^inline;/);
+  expect(probe.headers.get("content-security-policy")).toContain("sandbox");
+  expect(probe.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(probe.headers.get("cache-control")).toMatch(/^private, max-age=\d+$/);
+  expect(await body(probe)).toEqual([0, 1]);
+
+  const middle = await get("bytes=10-19");
+  expect(middle.headers.get("content-range")).toBe("bytes 10-19/100");
+  expect(await body(middle)).toEqual([...bytes.slice(10, 20)]);
+  const rest = await get("bytes=90-");
+  expect(rest.headers.get("content-range")).toBe("bytes 90-99/100");
+  expect(await body(rest)).toEqual([...bytes.slice(90)]);
+  const tail = await get("bytes=-5");
+  expect(tail.headers.get("content-range")).toBe("bytes 95-99/100");
+  expect(tail.headers.get("content-length")).toBe("5");
+  expect(await body(tail)).toEqual([95, 96, 97, 98, 99]);
+  const over = await get("bytes=98-500");
+  expect(over.headers.get("content-range")).toBe("bytes 98-99/100");
+  expect(await body(over)).toEqual([98, 99]);
+
+  // Past the end: nothing, and how long the file is.
+  const past = await get("bytes=100-");
+  expect(past.status).toBe(416);
+  expect(past.headers.get("content-range")).toBe("bytes */100");
+  expect(past.headers.get("accept-ranges")).toBe("bytes");
+
+  // Several ranges, another unit, or an If-Range with nothing to match: all of it.
+  for (const res of [await get("bytes=0-1,5-6"), await get("items=0-1"), await get("bytes=0-1", { "if-range": '"x"' })]) {
+    expect(res.status).toBe(200);
+    expect(await body(res)).toEqual([...bytes]);
+  }
+});
+
+test("a Range opens nothing a plain request does not, and a download stays one", async () => {
+  const html = new TextEncoder().encode("<script>alert(1)</script>");
+  const { file } = await (await upload(mika, "b:cafe", { name: "page.html", type: "text/html", bytes: html })).json();
+  const [path, query] = file.url.split("?");
+  const p = new URLSearchParams(query);
+  expect((await call(path, { headers: { range: "bytes=0-1" } })).status).toBe(404);
+  expect((await call(`${path}?e=${p.get("e")}&s=${"0".repeat(32)}`, { headers: { range: "bytes=999-" } })).status).toBe(404);
+
+  const part = await call(file.url, { headers: { range: "bytes=0-7" } });
+  expect(part.status).toBe(206);
+  expect(part.headers.get("content-type")).toBe("application/octet-stream");
+  expect(part.headers.get("content-disposition")).toMatch(/^attachment;/);
+  expect(part.headers.get("content-security-policy")).toContain("sandbox");
+  expect(await part.text()).toBe("<script>");
+
+  // Unsent with its message, the bytes are gone, however they are asked for.
+  const { message } = await (await say(mika, "b:cafe", "here", [file.id])).json();
+  await call("/channels/messages", { method: "DELETE", headers: auth(mika, { "content-type": "application/json" }), body: JSON.stringify({ orgId: ORG, channel: "b:cafe", messageId: message.id }) });
+  expect((await call(file.url, { headers: { range: "bytes=0-1" } })).status).toBe(404);
+  expect((await call(file.url, { headers: { range: "bytes=999-" } })).status).toBe(404);
 });
 
 test("a Range header reads as one span of the file, or is ignored", () => {
