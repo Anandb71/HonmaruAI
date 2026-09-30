@@ -2358,6 +2358,22 @@ export const ClassicList: React.FC<Props> = ({
     const id = setTimeout(() => { heardAt.current = Date.now(); setHeard(newBelow) }, waitToSay(heardAt.current, Date.now()))
     return () => clearTimeout(id)
   }, [newBelow])
+  // ⇧PageDown goes to the present from anywhere the keys are not writing —
+  // an empty composer included, where there is nothing for it to select.
+  // (Esc already closes what is open, and ⇧Esc reads everything.)
+  useEffect(() => {
+    if (atBottom) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'PageDown' || !e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return
+      const field = (e.target as HTMLElement | null)?.closest?.('textarea, input, select, [contenteditable="true"]')
+      if (field && !(field === composer.current && composer.current.value === '')) return
+      e.preventDefault()
+      goToPresent(Boolean(document.activeElement?.closest('.slk-present')))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atBottom])
 
   // ---- The conversation ----
 
@@ -3471,7 +3487,7 @@ export const ClassicList: React.FC<Props> = ({
             const n = countNewBelow(said, readingUp.since)
             return (
               <div className="slk-present">
-                <button type="button" onClick={(e) => goToPresent(focusAfterJump({
+                <button type="button" aria-keyshortcuts="Shift+PageDown" onClick={(e) => goToPresent(focusAfterJump({
                   held: document.activeElement === e.currentTarget,
                   detail: e.detail,
                   pointerType: (e.nativeEvent as Partial<PointerEvent>).pointerType,
