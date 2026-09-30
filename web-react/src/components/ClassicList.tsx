@@ -11,6 +11,7 @@ import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
 import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, tempMessage, tempState } from '../utils/pendingSend'
 import { askingAboutData } from '../utils/authGuard'
+import { draftToClear, withoutDraft } from '../utils/drafts'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -1556,9 +1557,9 @@ export const ClassicList: React.FC<Props> = ({
   /// conversation while it went, only what that one kept goes — never the
   /// draft of the conversation open now, which the box holds by then.
   const clearDraftOf = (v: string) => {
-    if (draftView.current === v) { setDraft(''); return }
+    if (draftToClear(v, draftView.current) === 'box') { setDraft(''); return }
     try { localStorage.removeItem(draftKey(v)) } catch { /* nothing kept */ }
-    setDrafts((prev) => { if (!prev[v]) return prev; const next = { ...prev }; delete next[v]; return next })
+    setDrafts((prev) => withoutDraft(prev, v))
   }
 
   const [scheduled, setScheduled] = useState<Array<{ id: string; body: string; sendAt: string; channel: string; parentId?: string | null }>>([])
