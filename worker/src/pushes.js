@@ -133,7 +133,17 @@ const clip = (text, n) => {
 
 /// What a message says, as a lock screen may show it: one line, and a
 /// ||spoiler|| never given away: its writer hid it until clicked.
-export const pushPreview = (text, n = 180) => clip(String(text || "").replace(/\|\|[^|\n]+\|\|/g, "▇▇▇"), n);
+const SPOILER = /\|\|[^|\n]+\|\|/g;
+export const pushPreview = (text, n = 180) => clip(String(text || "").replace(SPOILER, "▇▇▇"), n);
+const spoilers = (text) => (String(text || "").match(SPOILER) || []).length;
+
+/// The words a push shows: the reader's translation, unless it lost a
+/// ||spoiler|| mark on the way (a model may drop the bars or write them
+/// full-width), in which case the words as written, whose spoiler is masked.
+export function pushWords(written, translated) {
+  if (!translated) return written || "";
+  return spoilers(translated) === spoilers(written) ? translated : written;
+}
 
 /// Send what is due. Each row is claimed first, so two overlapping runs
 /// never push one message twice.
@@ -175,9 +185,10 @@ export async function sendDuePushes(env, now = Date.now()) {
       const files = msg.body ? "" : "📎";
       // In the language they set.
       const { textFor } = await import("./translate.js");
-      const said = msg.body ? await textFor(env, job.org_id, msg, job.login).catch(() => msg.body) : "";
+      const translated = msg.body ? await textFor(env, job.org_id, msg, job.login).catch(() => msg.body) : "";
+      const said = pushWords(msg.body, translated);
       const body = said ? pushPreview(said) : files;
-      const delivered = await pushMessage(env, job.login, { title, body, orgId: job.org_id, channel: view, messageId: msg.id, parentId: msg.parent_id || null });
+      const delivered = await pushMessage(env, job.login, { title, body, orgId: job.org_id, channel: view, messageId: msg.id, parentId: msg.parent_id || null, at: msg.created_at });
       if (delivered) sent += 1; else skipped += 1;
     } catch (err) {
       console.error("message push failed", err?.message || err);
@@ -267,7 +278,7 @@ export async function clearDeliveredMessages(env, orgId, login, messageIds) {
 
 /// One message to every phone and browser this person has: iPhones through
 /// APNs, Android phones through FCM, each only when its key is set.
-async function pushMessage(env, login, { title, body, orgId, channel, messageId, parentId }) {
+async function pushMessage(env, login, { title, body, orgId, channel, messageId, parentId, at = null }) {
   let delivered = 0;
   const devices = (apnsConfigured(env) || isFcmConfigured(env)) ? await devicesForLogin(env.DB, login) : [];
   if (isFcmConfigured(env)) {
@@ -301,7 +312,9 @@ async function pushMessage(env, login, { title, body, orgId, channel, messageId,
     for (const subscription of await subscriptionsForLogin(env.DB, login)) {
       const result = await sendWebPush(env, {
         subscription, topic: messageId.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32),
-        payload: { title, body, kind: "message", tag: `${orgId}|${channel}`, orgId, channel, messageId, ...(base ? { url: `${base}/#/m/${encodeURIComponent(messageId)}/${encodeURIComponent(orgId)}` } : {}) },
+        // `at`: when it was written, so a browser that already shows a later
+        // message in this conversation keeps that one (web-react/public/sw.js).
+        payload: { title, body, kind: "message", tag: `${orgId}|${channel}`, orgId, channel, messageId, ...(at ? { at } : {}), ...(base ? { url: `${base}/#/m/${encodeURIComponent(messageId)}/${encodeURIComponent(orgId)}` } : {}) },
       });
       if (result.ok) delivered += 1;
       else if (isDeadSubscription(result)) await removeSubscription(env.DB, subscription.endpoint);
