@@ -184,7 +184,7 @@ test("the recipient's browsers get the alert in their language", async () => {
     kind: "created", excludeLogin: "alice", badge: 2,
   });
   expect(result.sent).toBe(2);
-  expect(result.channels).toEqual({ apns: 0, webpush: 2, email: 0 });
+  expect(result.channels).toEqual({ apns: 0, fcm: 0, webpush: 2, email: 0 });
   expect(result.locale).toBe("ja");
 });
 

@@ -162,6 +162,32 @@ npx wrangler secret put VAPID_SUBJECT        # mailto:you@example.com（プッ�
 
 ---
 
+## 2b. Android アプリ（Expo）：FCM サービスアカウント（任意・10 分）
+
+`apps/mobile` の Android 版に通知を届けるためのもの。入れなければ Android の
+端末は黙って飛ばされるだけで、iPhone・Web・メールには影響しない。
+
+1. [Firebase コンソール](https://console.firebase.google.com) でプロジェクトを作り、
+   Android アプリを追加する（パッケージ名は `apps/mobile/app.json` の
+   `android.package`。いまは `com.honmaru.ai.poc`）
+2. そこで出る `google-services.json` はアプリ側に渡す（Worker ではない）。
+   EAS ならファイル型の環境変数 `GOOGLE_SERVICES_JSON` に、手元なら
+   `apps/mobile/google-services.json` に置く（git には入らない）
+3. プロジェクトの設定 → サービスアカウント → 「新しい秘密鍵を生成」で JSON が
+   1 つ落ちてくる。それを丸ごと Worker に入れる：
+
+```bash
+cd worker
+npx wrangler secret put FCM_SERVICE_ACCOUNT < ~/Downloads/<project>-firebase-adminsdk-xxxxx.json
+```
+
+ファイルをそのまま流し込むので、改行の崩れを気にしなくてよい（base64 にした
+JSON でも受け付ける）。Worker はこの鍵で自分で署名してアクセストークンを取り、
+FCM HTTP v1 に送る。入れたら JSON ファイルは消す。鍵を失効させたら新しいものを
+入れ直すだけでよい。
+
+---
+
 ## 3. メール：Resend
 
 送信は Resend 一本。**API キー 1 本だけで、ドメインも DNS レコードも要らない。**
@@ -377,6 +403,7 @@ curl -s https://tiktokforwork.torubj0904.workers.dev/health
 - `webPush: true` … VAPID 3 つが入っている
 - `email: true` … `RESEND_API_KEY` が入っている
 - `push` は iOS の APNs。Apple 側の作業が別途要る（`docs/push-notifications.md`）。当面 false でよい
+- `fcm: true` … `FCM_SERVICE_ACCOUNT` が入っている（Android アプリ。2b）
 - `aiRouting: true` … `OPENAI_API_KEY` が入っている（翻訳と事業の振り分けもこれを使う）
 
 Web を開いて右上のベルを押し、ブラウザの許可を出す。別のアカウントから

@@ -16,6 +16,7 @@
 
 import { devicesForLogin, removeDevice, subscriptionsForLogin, removeSubscription } from "./db.js";
 import { sendPush, isDeadToken, isConfigured as apnsConfigured } from "./apns.js";
+import { sendFcm, isDeadFcmToken, isFcmConfigured } from "./fcm.js";
 import { sendWebPush, isWebPushConfigured, isDeadSubscription } from "./webpush.js";
 import { audienceOf } from "./access.js";
 import { resolveMentions, mentionTokens, broadcastOf } from "./threads.js";
@@ -199,6 +200,11 @@ export async function readAlready(db, orgId, login, msg) {
   return Boolean(looked);
 }
 
+/// Which push service a registered device is reached through. A row from
+/// before the platform column is an iPhone.
+export const isIPhone = (device) => (device?.platform || "ios") === "ios";
+export const isAndroid = (device) => device?.platform === "android";
+
 /// Read somewhere, so a phone that still shows its notifications for it
 /// takes them down: a silent push, sent only when one was pushed there in
 /// the last day and is now read.
@@ -213,7 +219,10 @@ export async function clearDelivered(env, orgId, login, { key, view, thread, las
   ).bind(orgId, login, since, key, lastReadAt || new Date().toISOString(), ...(thread ? [thread] : [])).first().catch(() => null);
   if (!hit) return 0;
   let sent = 0;
-  for (const device of await devicesForLogin(env.DB, login)) {
+  // iPhones only. An Android token sent to Apple comes back BadDeviceToken
+  // and would be deleted as dead; clearing on Android waits for the app to
+  // handle a silent FCM message.
+  for (const device of (await devicesForLogin(env.DB, login)).filter(isIPhone)) {
     const result = await sendPush(env, {
       deviceToken: device.device_token,
       pushType: "background",
@@ -239,7 +248,7 @@ export async function clearDeliveredMessages(env, orgId, login, messageIds) {
   ).bind(orgId, login, since, ...ids).first().catch(() => null);
   if (!hit) return 0;
   let sent = 0;
-  for (const device of await devicesForLogin(env.DB, login)) {
+  for (const device of (await devicesForLogin(env.DB, login)).filter(isIPhone)) {
     const result = await sendPush(env, {
       deviceToken: device.device_token,
       pushType: "background",
@@ -252,11 +261,27 @@ export async function clearDeliveredMessages(env, orgId, login, messageIds) {
   return sent;
 }
 
-/// One message to every phone and browser this person has.
+/// One message to every phone and browser this person has: iPhones through
+/// APNs, Android phones through FCM, each only when its key is set.
 async function pushMessage(env, login, { title, body, orgId, channel, messageId, parentId }) {
   let delivered = 0;
+  const devices = (apnsConfigured(env) || isFcmConfigured(env)) ? await devicesForLogin(env.DB, login) : [];
+  if (isFcmConfigured(env)) {
+    for (const device of devices.filter(isAndroid)) {
+      const result = await sendFcm(env, {
+        token: device.device_token,
+        title, text: body,
+        // One notification per workspace and conversation in the tray, as the
+        // iPhone groups them by thread-id; the newest replaces the last.
+        tag: `${orgId}|${channel}`,
+        data: { kind: "message", orgId, channel, messageId, parentId },
+      });
+      if (result.ok) delivered += 1;
+      else if (isDeadFcmToken(result)) await removeDevice(env.DB, device.device_token);
+    }
+  }
   if (apnsConfigured(env)) {
-    for (const device of await devicesForLogin(env.DB, login)) {
+    for (const device of devices.filter(isIPhone)) {
       const result = await sendPush(env, {
         deviceToken: device.device_token,
         collapseId: messageId,

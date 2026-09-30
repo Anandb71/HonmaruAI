@@ -658,26 +658,28 @@ export async function rememberConnections(db, githubId, connectorIds, activeIds)
   }
 }
 
-export async function registerDevice(db, { deviceToken, githubId, login, environment }) {
+export async function registerDevice(db, { deviceToken, githubId, login, environment, platform }) {
   await db
     .prepare(
-      `INSERT INTO device_tokens (device_token, user_github_id, login, environment, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5)
+      `INSERT INTO device_tokens (device_token, user_github_id, login, environment, updated_at, platform)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
        ON CONFLICT(device_token) DO UPDATE SET
          user_github_id = excluded.user_github_id,
          login = excluded.login,
          environment = excluded.environment,
-         updated_at = excluded.updated_at`
+         updated_at = excluded.updated_at,
+         platform = excluded.platform`
     )
-    .bind(deviceToken, String(githubId), login, environment || "production", new Date().toISOString())
+    .bind(deviceToken, String(githubId), login, environment || "production", new Date().toISOString(), platform === "android" ? "android" : "ios")
     .run();
 }
 
 // By login, because that is the name a card carries its recipient under.
+// Every platform: each sender picks APNs or FCM by the row's `platform`.
 export async function devicesForLogin(db, login) {
   if (!login) return [];
   const { results } = await db
-    .prepare("SELECT device_token, environment FROM device_tokens WHERE login = ?1")
+    .prepare("SELECT device_token, environment, platform FROM device_tokens WHERE login = ?1")
     .bind(login)
     .all();
   return results || [];
