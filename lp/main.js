@@ -192,11 +192,11 @@
       if (reduce) p = 0;
       if (m.previousProgress === p) return;
       m.previousProgress = p;
-      var h = ease(clamp(p / .15, 0, 1)), ho = clamp(p / .09, 0, 1);
+      var h = ease(clamp(p / .15, 0, 1)), ho = p >= .1 ? 1 : 0;
       hero.style.opacity = 1 - ho;
       atmosphere.forEach(function(el) { el.style.opacity = 1 - ho; el.style.visibility = ho >= 1 ? 'hidden' : ''; });
       portal.style.transform = 'scale(' + (1 + h * .22) + ')';
-      $('.stage-scenery').style.opacity = 1 - h;
+      $('.stage-scenery').style.opacity = 1 - ease(clamp((p - .1) / .05, 0, 1));
       device.style.opacity = reduce ? 0 : clamp((p - .025) / .1, 0, 1);
       device.style.visibility = p < .025 ? 'hidden' : 'visible';
       $('.rings').style.opacity = h * .3;
@@ -204,7 +204,7 @@
       hero.style.transform = 'translate3d(0,' + (-h * 50).toFixed(1) + 'px,0)';
       hero.style.visibility = ho >= 1 ? 'hidden' : '';
 
-      var so = clamp((p - .1) / .04, 0, 1);
+      var so = p >= .1 ? 1 : 0;
       story.style.opacity = so;
       story.style.visibility = so <= 0 ? 'hidden' : 'visible';
 
@@ -222,12 +222,11 @@
       });
 
       caps.forEach(function (c, i) {
-        var a = RANGES[i][0], b = RANGES[i][1];
-        var fin = clamp((p - a) / .025, 0, 1), fout = i < 3 ? clamp((b - p) / .025, 0, 1) : 1;
-        var o = Math.min(fin, fout);
-        c.style.opacity = o.toFixed(3);
-        c.style.transform = 'translate3d(0,' + ((1 - fin) * 28 - (1 - fout) * 28).toFixed(1) + 'px,0)';
-        c.style.visibility = o <= 0 ? 'hidden' : '';
+        // Reading must not depend on stopping at an exact scroll offset.
+        // Keep one complete, opaque caption visible throughout each chapter.
+        c.style.opacity = i === active ? '1' : '0';
+        c.style.transform = 'none';
+        c.style.visibility = i === active ? 'visible' : 'hidden';
       });
 
       var g = 1 - clamp((p - .29) / .06, 0, 1);
