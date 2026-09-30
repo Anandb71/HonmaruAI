@@ -339,33 +339,61 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .brandmark span { background: #0f0f0f; }
-  .otp-box { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
-  .otp-box:focus, .otp-box.filled { background: #222222; }
-  .ob-art { background: #1a1a1a; border-color: #2a2a2a; }
-  .ob-you { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
-  .ob-demo { background: #1a1a1a; }
-  .ob-card { background: #1a1a1a; border-color: #2a2a2a; }
-  .ob-card p, .ob-demo-done { color: #a3a3a3; }
-  .ob-round { background: #1a1a1a; border-color: #2a2a2a; }
-  .ob-round.yes { background: #f2f2f2; color: #1a1a1a; border-color: #f2f2f2; }
-  .radio { border-color: #3a3a3a; }
-  .radio.on { border-color: #f2f2f2; }
-  .radio.on::after { background: #f2f2f2; }
-  .billing-toggle, .seg { background: #1a1a1a; }
-  .billing-toggle button.on { background: #f2f2f2; color: #1a1a1a; }
-  .seg button.on { background: #2a2a2a; color: #f2f2f2; }
-  .plan-card { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
-  .plan-tagline, .plan-features li { color: #a3a3a3; }
-  .pill-btn { background: #f2f2f2; color: #1a1a1a; border-color: #f2f2f2; }
-  .profile-avatar { background: #f2f2f2; color: #1a1a1a; }
-  .profile-stats { border-color: #2a2a2a; }
-  .profile-stats div { border-right-color: #2a2a2a; }
-  .row-select, .join-code, .alias-input { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
-  .btn-text { color: #a3a3a3; }
-  .btn-text:hover { color: #f2f2f2; }
-  .welcome-points li { border-top-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .brandmark span { background: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .otp-box { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .otp-box:focus, :where(:root:not([data-theme="light"])) .otp-box.filled { background: #222222; }
+  :where(:root:not([data-theme="light"])) .ob-art { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .ob-you { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .ob-demo { background: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .ob-card { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .ob-card p, :where(:root:not([data-theme="light"])) .ob-demo-done { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .ob-round { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .ob-round.yes { background: #f2f2f2; color: #1a1a1a; border-color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .radio { border-color: #3a3a3a; }
+  :where(:root:not([data-theme="light"])) .radio.on { border-color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .radio.on::after { background: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .billing-toggle, :where(:root:not([data-theme="light"])) .seg { background: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .billing-toggle button.on { background: #f2f2f2; color: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .seg button.on { background: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .plan-card { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .plan-tagline, :where(:root:not([data-theme="light"])) .plan-features li { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .pill-btn { background: #f2f2f2; color: #1a1a1a; border-color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .profile-avatar { background: #f2f2f2; color: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .profile-stats { border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .profile-stats div { border-right-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .row-select,
+  :where(:root:not([data-theme="light"])) .join-code,
+  :where(:root:not([data-theme="light"])) .alias-input { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .btn-text { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .btn-text:hover { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .welcome-points li { border-top-color: #2a2a2a; }
 }
+:where(:root[data-theme="dark"]) .brandmark span { background: #0f0f0f; }
+:where(:root[data-theme="dark"]) .otp-box { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .otp-box:focus, :where(:root[data-theme="dark"]) .otp-box.filled { background: #222222; }
+:where(:root[data-theme="dark"]) .ob-art { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .ob-you { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .ob-demo { background: #1a1a1a; }
+:where(:root[data-theme="dark"]) .ob-card { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .ob-card p, :where(:root[data-theme="dark"]) .ob-demo-done { color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .ob-round { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .ob-round.yes { background: #f2f2f2; color: #1a1a1a; border-color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .radio { border-color: #3a3a3a; }
+:where(:root[data-theme="dark"]) .radio.on { border-color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .radio.on::after { background: #f2f2f2; }
+:where(:root[data-theme="dark"]) .billing-toggle, :where(:root[data-theme="dark"]) .seg { background: #1a1a1a; }
+:where(:root[data-theme="dark"]) .billing-toggle button.on { background: #f2f2f2; color: #1a1a1a; }
+:where(:root[data-theme="dark"]) .seg button.on { background: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .plan-card { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .plan-tagline, :where(:root[data-theme="dark"]) .plan-features li { color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .pill-btn { background: #f2f2f2; color: #1a1a1a; border-color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .profile-avatar { background: #f2f2f2; color: #1a1a1a; }
+:where(:root[data-theme="dark"]) .profile-stats { border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .profile-stats div { border-right-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .row-select, :where(:root[data-theme="dark"]) .join-code, :where(:root[data-theme="dark"]) .alias-input { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .btn-text { color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .btn-text:hover { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .welcome-points li { border-top-color: #2a2a2a; }
 
 /* Inviting someone. The sheet above carries the title, so this is the row,
    the button, and — once it exists — the code itself, which is the only
@@ -394,9 +422,11 @@
 .invite-copy { width: 100%; }
 
 @media (prefers-color-scheme: dark) {
-  .invite-code { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
-  .invite .row.static { border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .invite-code { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .invite .row.static { border-color: #2a2a2a; }
 }
+:where(:root[data-theme="dark"]) .invite-code { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .invite .row.static { border-color: #2a2a2a; }
 
 /* ── Insights ────────────────────────────────────────────────────────── */
 .insights-stats { margin-top: 16px; }
@@ -425,13 +455,19 @@
 .insights-hint { margin: 4px 4px 20px; color: var(--ash); font-size: 12.5px; line-height: 1.5; }
 
 @media (prefers-color-scheme: dark) {
-  .bars, .bars-axis { background: #1a1a1a; border-color: #2a2a2a; }
-  .bar i { background: #f2f2f2; }
-  .bar i.zero { background: #2a2a2a; }
-  .barlist-label { color: #f2f2f2; }
-  .barlist-track { background: #2a2a2a; }
-  .barlist-track i { background: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .bars, :where(:root:not([data-theme="light"])) .bars-axis { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .bar i { background: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .bar i.zero { background: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .barlist-label { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .barlist-track { background: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .barlist-track i { background: #f2f2f2; }
 }
+:where(:root[data-theme="dark"]) .bars, :where(:root[data-theme="dark"]) .bars-axis { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .bar i { background: #f2f2f2; }
+:where(:root[data-theme="dark"]) .bar i.zero { background: #2a2a2a; }
+:where(:root[data-theme="dark"]) .barlist-label { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .barlist-track { background: #2a2a2a; }
+:where(:root[data-theme="dark"]) .barlist-track i { background: #f2f2f2; }
 
 /* Its own class, not .join-code: the end-to-end suite fills ".join-code"
    with an invite, and a second input wearing that class took the code. */
@@ -473,8 +509,11 @@
 }
 .app-toasts { z-index: 60; }
 @media (prefers-color-scheme: dark) {
-  .team-name-input, .invite-email, .invite-link { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .team-name-input,
+  :where(:root:not([data-theme="light"])) .invite-email,
+  :where(:root:not([data-theme="light"])) .invite-link { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
 }
+:where(:root[data-theme="dark"]) .team-name-input, :where(:root[data-theme="dark"]) .invite-email, :where(:root[data-theme="dark"]) .invite-link { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
 
 /* What you do, typed; what the AI runs on, entered. */
 .role-edit { align-items: stretch; }
@@ -611,21 +650,37 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .pill-btn.quiet { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
-  .pill-btn.quiet:hover:not([disabled]) { background: #222222; }
-  .auto-compose { background: #1a1a1a; border-color: #2a2a2a; }
-  .auto-question, .auto-say { color: #f2f2f2; }
-  .daily-toggle { color: #f2f2f2; }
-  .ob-daily .daily-part { border-bottom-color: #2a2a2a; }
-  .daily-toggle input { accent-color: #f2f2f2; }
-  .auto-say::placeholder { color: #6a6a6a; }
-  .auto-understood { border-top-color: #2a2a2a; }
-  .auto-hint, .routine-ask, .routine-cost { color: #a3a3a3; }
-  .row .row-sub.routine-error, .agent-warn { color: #e3b341; }
-  .agent-warn { background: rgba(227, 179, 65, 0.08); border-color: rgba(227, 179, 65, 0.25); }
-  .row .row-sub.routine-origin, .memory-source { color: #a996ff; }
-  .agent-code { background: #0f0f0f; border-color: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .pill-btn.quiet { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .pill-btn.quiet:hover:not([disabled]) { background: #222222; }
+  :where(:root:not([data-theme="light"])) .auto-compose { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .auto-question, :where(:root:not([data-theme="light"])) .auto-say { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .daily-toggle { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .ob-daily .daily-part { border-bottom-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .daily-toggle input { accent-color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .auto-say::placeholder { color: #6a6a6a; }
+  :where(:root:not([data-theme="light"])) .auto-understood { border-top-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .auto-hint,
+  :where(:root:not([data-theme="light"])) .routine-ask,
+  :where(:root:not([data-theme="light"])) .routine-cost { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .row .row-sub.routine-error, :where(:root:not([data-theme="light"])) .agent-warn { color: #e3b341; }
+  :where(:root:not([data-theme="light"])) .agent-warn { background: rgba(227, 179, 65, 0.08); border-color: rgba(227, 179, 65, 0.25); }
+  :where(:root:not([data-theme="light"])) .row .row-sub.routine-origin, :where(:root:not([data-theme="light"])) .memory-source { color: #a996ff; }
+  :where(:root:not([data-theme="light"])) .agent-code { background: #0f0f0f; border-color: #2a2a2a; color: #f2f2f2; }
 }
+:where(:root[data-theme="dark"]) .pill-btn.quiet { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .pill-btn.quiet:hover:not([disabled]) { background: #222222; }
+:where(:root[data-theme="dark"]) .auto-compose { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .auto-question, :where(:root[data-theme="dark"]) .auto-say { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .daily-toggle { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .ob-daily .daily-part { border-bottom-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .daily-toggle input { accent-color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .auto-say::placeholder { color: #6a6a6a; }
+:where(:root[data-theme="dark"]) .auto-understood { border-top-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .auto-hint, :where(:root[data-theme="dark"]) .routine-ask, :where(:root[data-theme="dark"]) .routine-cost { color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .row .row-sub.routine-error, :where(:root[data-theme="dark"]) .agent-warn { color: #e3b341; }
+:where(:root[data-theme="dark"]) .agent-warn { background: rgba(227, 179, 65, 0.08); border-color: rgba(227, 179, 65, 0.25); }
+:where(:root[data-theme="dark"]) .row .row-sub.routine-origin, :where(:root[data-theme="dark"]) .memory-source { color: #a996ff; }
+:where(:root[data-theme="dark"]) .agent-code { background: #0f0f0f; border-color: #2a2a2a; color: #f2f2f2; }
 
 /* A username: the @ is part of the field, not something to type. */
 .handle-field { position: relative; display: block; margin-top: 8px; }
@@ -646,6 +701,43 @@
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .profile-avatar-cta { background: #f2f2f2; color: #0f0f0f; border-color: #0f0f0f; } }
 :root[data-theme="dark"] .profile-avatar-cta { background: #f2f2f2; color: #0f0f0f; border-color: #0f0f0f; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Appearance on You: real radio buttons, drawn as the segmented control
+   History uses — so the arrow keys move the choice, and it takes effect as
+   it moves. The control drops under its label when the row runs out of room.
+   `.row.look-row`: theme.css sets `.row .row-main` after this file. */
+.row.look-row { flex-wrap: wrap; }
+.row.look-row .row-main { flex: 1 1 200px; }
+.look-seg { flex: none; margin: 0; }
+.look-seg > label {
+  position: relative; flex: 1;
+  border-radius: var(--radius-pill); padding: 7px 14px;
+  font-family: var(--font-body); font-size: 13.5px; font-weight: 600; color: var(--slate);
+  text-align: center; white-space: nowrap; cursor: pointer;
+}
+.look-seg > label.on { background: var(--signal-white); color: var(--ink-black); box-shadow: rgba(0,0,0,.06) 0 1px 2px; }
+.look-seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.look-seg > label:has(input:focus-visible) { outline: 2px solid var(--brand-violet); outline-offset: 2px; }
+/* A browser without :has() (Safari before 15.4, Firefox before 121) drops
+   the rule above and the keyboard's place goes unseen: ring the option that
+   holds focus there, a click's included, rather than none. */
+@supports not selector(:has(*)) {
+  .look-seg > label:focus-within { outline: 2px solid var(--brand-violet); outline-offset: 2px; }
+}
+@media (prefers-color-scheme: dark) {
+  :where(:root:not([data-theme="light"])) .look-seg { background: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .look-seg > label { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .look-seg > label.on { background: #2a2a2a; color: #f2f2f2; box-shadow: none; }
+}
+:where(:root[data-theme="dark"]) .look-seg { background: #0f0f0f; }
+:where(:root[data-theme="dark"]) .look-seg > label { color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .look-seg > label.on { background: #2a2a2a; color: #f2f2f2; box-shadow: none; }
+/* High-contrast modes throw away the background and shadow that mark the
+   chosen option, leaving three words that look alike: an outline in the
+   system's own text colour marks it instead. */
+@media (forced-colors: active) {
+  .look-seg > label.on { outline: 2px solid CanvasText; outline-offset: -2px; }
+}
 
 /* Sounds: a volume, and a ▶ beside each kind to hear it. */
 .sound-volume { display: block; margin-top: 8px; }
@@ -671,10 +763,13 @@
 .team-signout { display: inline-flex; align-items: center; gap: 5px; }
 @media (max-width: 520px) { .team-manage-panel { margin-left: 0; } }
 @media (prefers-color-scheme: dark) {
-  .keyword-chip { background: #2a2a2a; }
-  .keyword-chip button:hover { background: #333; }
-  .keyword-add input, .team-manage-panel { border-color: #333; }
+  :where(:root:not([data-theme="light"])) .keyword-chip { background: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .keyword-chip button:hover { background: #333; }
+  :where(:root:not([data-theme="light"])) .keyword-add input, :where(:root:not([data-theme="light"])) .team-manage-panel { border-color: #333; }
 }
+:where(:root[data-theme="dark"]) .keyword-chip { background: #2a2a2a; }
+:where(:root[data-theme="dark"]) .keyword-chip button:hover { background: #333; }
+:where(:root[data-theme="dark"]) .keyword-add input, :where(:root[data-theme="dark"]) .team-manage-panel { border-color: #333; }
 /* Owners: a crown beside the name, and handing the workspace on. */
 .team-crown { display: inline-flex; margin-left: 6px; color: #b7791f; vertical-align: -1px; }
 .team-transfer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 4px 0 8px; }

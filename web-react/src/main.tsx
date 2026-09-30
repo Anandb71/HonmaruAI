@@ -6,6 +6,7 @@ import './index.css'
 import { applyStoredLocale } from './utils/i18n'
 import { registerShell, watchInstallPrompt } from './utils/install'
 import { installAuthGuard } from './utils/authGuard'
+import { installAppearance } from './utils/appearance'
 import { pathToHash } from './utils/route'
 
 // A link from outside (https://app.honmaruai.com/c/…, /join/…) — the same
@@ -24,6 +25,8 @@ registerShell()
 watchInstallPrompt()
 // A workspace's login rules, and admin actions that want a recent sign-in.
 installAuthGuard()
+// The theme index.html already drew, and another tab's choice followed.
+installAppearance()
 
 void localeLoaded.finally(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(

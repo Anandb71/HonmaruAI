@@ -33,6 +33,7 @@ import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, rememberLevel, startRing, stopRing } from '../utils/sound'
 import { closeMessageNotifications } from '../utils/notifications'
 import { hasOlder } from '../utils/historyPage'
+import { useAppearance } from '../utils/appearance'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -231,6 +232,8 @@ export const ClassicList: React.FC<Props> = ({
   onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen,
 }) => {
   const t = useT()
+  // Cozy or compact, as chosen on You: the stylesheet does the rest.
+  const { density } = useAppearance()
   const locale = getLocale()
   const titleOf = (c: DecisionCard) => c.localized?.[locale]?.title || c.title
   /// The summary, unless it only repeats the title — which it does for a
@@ -3600,7 +3603,7 @@ export const ClassicList: React.FC<Props> = ({
   }
 
   return (
-    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}`}>
+    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}${density === 'compact' ? ' compact' : ''}`}>
       <aside className="slk-side" aria-label={t('Conversations')}>
         {!wide && phoneTab === 'dms' ? dmsView() : <>
         <header className="cl-top">
