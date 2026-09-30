@@ -213,6 +213,8 @@ final class ChatStore: ObservableObject {
         return a.lastAt > (reads[view] ?? "")
     }
     var unreadInbox: Int { inbox.filter(\.unread).count }
+    /// Direct and group conversations with something new, for the DMs tab.
+    var unreadDMs: Int { (people + groupConversations).filter { isFresh($0.view) }.count }
     func mentions(in view: String) -> Int { inbox.filter { $0.unread && $0.type == "mention" && $0.message.channel == view }.count }
     func nameOf(ref: String) -> String {
         if ref == myRef { return String(localized: "You") }
@@ -408,6 +410,17 @@ final class ChatStore: ObservableObject {
         PushService.clearDelivered(channel: view, parentId: nil, orgId: orgId)
         await ChatService.markRead(orgId: orgId, channel: view, base: base)
     }
+
+    /// A conversation's latest messages without reading it: Catch up shows
+    /// them, and only a swipe to the right marks the conversation read.
+    func peek(_ view: String) async -> [ChatMessage] {
+        guard let orgId, let base else { return [] }
+        let list = (try? await ChatService.messages(orgId: orgId, channel: view, base: base)) ?? []
+        await translate(view, list)
+        return list
+    }
+    /// When this person last read a conversation, as the server keeps it.
+    func readAt(_ view: String) -> String? { reads[view] }
 
     /// Every conversation with something new, or an @ waiting for you.
     var freshViews: [String] {

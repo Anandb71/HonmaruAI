@@ -4,6 +4,8 @@ struct AppShell: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var push: PushService
     @State private var tab: AppTab = .home
+    /// Home as cards, or as Slack's list of channels.
+    @AppStorage("home.list") private var homeList = false
     @State private var showCompose = false
     @State private var showHistory = false
     @State private var captureMode: CaptureMode?
@@ -23,13 +25,21 @@ struct AppShell: View {
         VStack(spacing: 0) {
             Group {
                 switch tab {
-                case .home: FeedView(onProfile: { tab = .you }, onComposeToMember: { id in composer.recipientID = id; showCompose = true })
-                case .chat: ChatHomeView(store: chat)
+                case .home:
+                    if homeList {
+                        ChatHomeView(store: chat, mode: .home) { search in
+                            AnyView(HomeHeader(service: appState.cardService, list: $homeList, onSearch: search, onProfile: { tab = .you }))
+                        }
+                    } else {
+                        FeedView(list: $homeList, onProfile: { tab = .you })
+                    }
+                case .dms: ChatHomeView(store: chat, mode: .dms)
+                case .activity: ChatHomeView(store: chat, mode: .activity)
                 case .you: YouView(chat: chat) { showCompose = true }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            if tab == .home { promptBar }
-            AppTabBar(selection: $tab, chatBadge: chat.unreadInbox) { promptFocused = false; showCompose = true }
+            if tab == .home && !homeList { promptBar }
+            AppTabBar(selection: $tab, dmBadge: chat.unreadDMs, activityBadge: chat.unreadInbox) { promptFocused = false; showCompose = true }
         }
         .background(Theme.Colors.surface)
         .tint(Theme.Colors.accent)
@@ -66,7 +76,7 @@ struct AppShell: View {
             }
         }
         .onChange(of: appState.currentUser?.teamID) { _, _ in composer.teamChanged() }
-        .onChange(of: push.pendingCardID) { _, id in if id != nil { tab = .home } }
+        .onChange(of: push.pendingCardID) { _, id in if id != nil { homeList = false; tab = .home } }
         .onReceive(appState.webSocketService.$deliveryError) { if let message = $0 { composer.restoreRejectedDraft(appState: appState); deliveryError = message } }
         .alert("Delivery needs attention", isPresented: Binding(get: { deliveryError != nil }, set: { if !$0 { deliveryError = nil } })) {
             Button("OK") { deliveryError = nil; appState.webSocketService.clearDeliveryError() }

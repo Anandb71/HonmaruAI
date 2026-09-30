@@ -13,6 +13,11 @@ enum ChatRoute: Hashable {
     case archived
     /// Drafts & sent: what you are still writing, and what you said.
     case sent
+    /// Every message you can read, searched.
+    case search
+    /// Slack's Catch up: one unread conversation at a time, swiped right to
+    /// mark it read or left to keep it for later.
+    case catchUp
 }
 
 /// One conversation, the way a chat app on a phone draws it: messages you
