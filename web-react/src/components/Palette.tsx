@@ -223,6 +223,9 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
   // The arrows are the palette's while it is open: the list's own ⌥↑/⌥↓,
   // on the window, would otherwise change the conversation underneath.
   const onKey = (e: React.KeyboardEvent) => {
+    // Mid-word in a Japanese or Chinese input method, Enter picks the word
+    // and the arrows pick among candidates: those keys are the IME's.
+    if (e.nativeEvent.isComposing) return
     if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setCursor((c) => Math.min(c + 1, Math.max(items.length - 1, 0))) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setCursor((c) => Math.max(c - 1, 0)) }
     else if (e.key === 'Enter') { e.preventDefault(); const it = items[cursor]; if (it) onPick(it.action) }
