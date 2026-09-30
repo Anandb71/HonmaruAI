@@ -159,7 +159,7 @@ export const MessageActions: React.FC<{
   onPin?: () => void
   onEdit?: () => void
   /// `skipConfirm`: ⇧ was held on Delete — delete without asking, as in
-  /// Discord (whoever deletes still decides whether that is allowed).
+  /// Discord. The caller still asks when others' replies would go too.
   onDelete?: (skipConfirm?: boolean) => void
   onDecide?: () => void
   /// Save for later; with a time, come back as a card then.
