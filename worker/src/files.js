@@ -182,6 +182,30 @@ export async function sweepUnsent(env, now = Date.now()) {
 
 // ---- Upload and fetch ----
 
+export const UNSATISFIABLE = "unsatisfiable";
+
+/// The one span of a file `size` bytes long that a Range header asks for:
+/// `{ offset, length }` to answer in part, UNSATISFIABLE when it starts past
+/// the end, or null to send the whole file — no header, several ranges, or
+/// one that does not read as bytes, which RFC 9110 lets a server ignore.
+/// Safari will not play a video from a server that never answers in part.
+export function byteRange(header, size) {
+  const m = /^bytes=(\d*)-(\d*)$/i.exec(String(header || "").trim());
+  if (!m || (!m[1] && !m[2])) return null;
+  if (!m[1]) {
+    // bytes=-n: the last n bytes, or all of them when n is more.
+    const suffix = Number(m[2]);
+    if (!suffix || !size) return UNSATISFIABLE;
+    const length = Math.min(suffix, size);
+    return { offset: size - length, length };
+  }
+  const first = Number(m[1]);
+  const last = m[2] ? Number(m[2]) : size - 1;
+  if (m[2] && last < first) return null;
+  if (first >= size) return UNSATISFIABLE;
+  return { offset: first, length: Math.min(last, size - 1) - first + 1 };
+}
+
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "content-type": "application/json", "cache-control": "no-store", "access-control-allow-origin": "*" },
 });

@@ -3,7 +3,7 @@ import { fetchMock } from "./helpers/fetch-mock.js";
 import { beforeEach, afterEach, expect, test } from "vitest";
 import schemaSql from "../schema.sql?raw";
 import worker from "../src/index.js";
-import { sweepUnsent, cleanName, validUntil } from "../src/files.js";
+import { sweepUnsent, cleanName, validUntil, byteRange, UNSATISFIABLE } from "../src/files.js";
 import { transcriptUpTo, channelActivity } from "../src/channels.js";
 
 // Files and pictures in a conversation: uploaded into a place you can read,
@@ -154,4 +154,24 @@ test("bytes are kept under the workspace, and files stored before that still ope
   await env.MEDIA.delete(key);
   expect((await call(file.url, {})).status).toBe(200);
   await say(mika, "b:cafe", "old one", [file.id]);
+});
+
+test("a Range header reads as one span of the file, or is ignored", () => {
+  expect(byteRange("bytes=0-1", 100)).toEqual({ offset: 0, length: 2 });
+  expect(byteRange("bytes=10-19", 100)).toEqual({ offset: 10, length: 10 });
+  expect(byteRange("bytes=90-", 100)).toEqual({ offset: 90, length: 10 });
+  expect(byteRange("bytes=0-", 100)).toEqual({ offset: 0, length: 100 });
+  expect(byteRange("bytes=-5", 100)).toEqual({ offset: 95, length: 5 });
+  // Past the end is the rest of the file; a suffix longer than it, all of it.
+  expect(byteRange("bytes=95-1000", 100)).toEqual({ offset: 95, length: 5 });
+  expect(byteRange("bytes=-500", 100)).toEqual({ offset: 0, length: 100 });
+  expect(byteRange("Bytes=99-99", 100)).toEqual({ offset: 99, length: 1 });
+  // Nothing the file has.
+  expect(byteRange("bytes=100-", 100)).toBe(UNSATISFIABLE);
+  expect(byteRange("bytes=100-200", 100)).toBe(UNSATISFIABLE);
+  expect(byteRange("bytes=-0", 100)).toBe(UNSATISFIABLE);
+  // Not asked, several ranges, another unit, or backwards: the whole file.
+  for (const h of [null, "", "bytes=", "bytes=-", "bytes=0-1,5-6", "items=0-1", "bytes=5-2", "bytes=a-b", "bytes=1.5-2"]) {
+    expect(byteRange(h, 100)).toBeNull();
+  }
 });
