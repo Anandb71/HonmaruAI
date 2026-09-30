@@ -234,4 +234,29 @@ describe('WebSocketClient', () => {
     socket.emit({ type: 'STATE_SNAPSHOT', snapshot: { cardsById: {} } })
     expect(socket.sent.map((m) => m.type)).toEqual(['join', 'rollback'])
   })
+
+  it('says someone is typing now or not at all: never held for a later socket', async () => {
+    const early = await connectedClient('user-alice', { snapshot: false })
+    expect(early.client.sendTyping('b:general', null)).toBe(false)
+    early.socket.emit({ type: 'STATE_SNAPSHOT', snapshot: { cardsById: {} } })
+    expect(early.socket.sent.map((m) => m.type)).toEqual(['join'])
+
+    expect(early.client.sendTyping('b:general', 'm-1')).toBe(true)
+    expect(early.client.sendTyping('b:general', 'm-1', true)).toBe(true)
+    expect(early.socket.sent.slice(1)).toEqual([
+      { type: 'typing', payload: { channel: 'b:general', parentId: 'm-1' } },
+      { type: 'typing_stop', payload: { channel: 'b:general', parentId: 'm-1' } },
+    ])
+  })
+
+  it('hands on who is typing, and nothing that does not say where or who', async () => {
+    const { client, socket } = await connectedClient()
+    const heard: any[] = []
+    client.onTyping = (e) => heard.push(e)
+    const value = { channel: 'dm:r-aki', parentId: null, who: { ref: 'r-aki', name: 'Aki' } }
+    socket.emit({ type: 'CUSTOM', name: 'typing', value })
+    socket.emit({ type: 'CUSTOM', name: 'typing', value: { channel: 'dm:r-aki' } })
+    socket.emit({ type: 'CUSTOM', name: 'typing', value: { who: { ref: 'r-aki', name: 'Aki' } } })
+    expect(heard).toEqual([value])
+  })
 })
