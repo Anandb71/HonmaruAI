@@ -42,22 +42,25 @@ export async function handleTyping(relay, att, type, payload) {
       channel: view, parentId, who: { ref: me.ref, name: me.name },
       ...(type === "typing_stop" ? { stop: true } : {}),
     });
+    // Everyone who can read it, each under their name for it — or null for a
+    // public channel in a workspace without guests: everyone here but a
+    // guest, as the room's own events go.
     const logins = await audienceOf(relay.db, orgId, resolved.key);
-    if (!logins) {
-      // A public channel in a workspace without guests: everyone else here.
-      // Only sockets that have joined, and never a guest's, as the room's
-      // own events go.
-      const text = JSON.stringify(event(resolved.key));
-      for (const ws of relay.state.getWebSockets()) {
-        const other = ws.deserializeAttachment?.();
-        if (other?.orgId === orgId && other.authed && !other.guest && other.userId !== att.userId) relay.constructor.deliver(ws, text);
-      }
-      return;
-    }
-    for (const login of logins) {
-      if (login === att.userId) continue;
+    const views = logins && new Map();
+    for (const login of logins || []) {
       const view = viewOf(resolved.key, login, members);
-      if (view) relay.sendTo(orgId, login, event(view));
+      if (view) views.set(login, view);
+    }
+    // One pass over the sockets rather than one per reader: this runs every
+    // few seconds for everyone typing. Only sockets that have joined.
+    const texts = new Map();
+    for (const ws of relay.state.getWebSockets()) {
+      const other = ws.deserializeAttachment?.();
+      if (other?.orgId !== orgId || !other.authed || other.userId === att.userId) continue;
+      const view = views ? views.get(other.userId) : (other.guest ? null : resolved.key);
+      if (!view) continue;
+      if (!texts.has(view)) texts.set(view, JSON.stringify(event(view)));
+      relay.constructor.deliver(ws, texts.get(view));
     }
   } catch (err) {
     console.warn("typing relay failed", safe(err?.message));
