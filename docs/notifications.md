@@ -90,6 +90,51 @@ screen first, because Safari only exposes push to an installed web app. The
 manifest and `apple-mobile-web-app-capable` meta in `index.html` are what
 make it installable.
 
+### Chrome, Firefox, Edge, Safari: what the web client does
+
+- **The prompt comes first.** Firefox and Safari only show a permission
+  prompt while the click that asked for it still counts as the person's. A
+  network wait before the prompt can use that up, and the prompt is then
+  swallowed: Firefox shows a crossed-out bell in the address bar instead. So
+  `enableWebPush` calls `requestPermission()` before any `await`. The VAPID
+  key is fetched ahead of time, when the bell or the settings screen
+  appears (`prefetchVapidKey`), or alongside the prompt, never before it.
+- **Closed is not blocked.** A prompt dismissed without an answer
+  (`default`) leaves the bell in place so the person can ask again. Only
+  `denied` says "blocked in your browser settings".
+- **Resubscribed on every open.** `resyncWebPush` hands the browser's
+  existing subscription to `POST /push/subscriptions` again (an upsert), and
+  makes a new one if the Worker's key changed or the browser dropped it.
+  `sw.js` handles `pushsubscriptionchange`, which Firefox fires when it
+  rotates a subscription: it subscribes again with the same key and asks any
+  open tab to resync.
+- **Raster icons.** Notifications use `icon-192.png`, plus `badge-96.png`, a
+  white-on-transparent mark that is the only badge format Android draws.
+  Chrome does not reliably draw SVG notification icons.
+- **One notification per conversation, still heard.** Message pushes carry the
+  tag `<orgId>|<view>`, so a new message in the same conversation replaces the
+  last one, with `renotify` so it still makes a sound. A card's tag is its id.
+- **In-tab notifications.** While a tab is open but not in front (hidden, or
+  its window unfocused), a direct message, an @mention or a new decision is
+  shown at once through the service worker (`utils/notifications.ts`), from
+  one tab only (the one holding the sound lock). The Worker's push for the
+  same message arrives about a minute later with the same tag. `sw.js` sees
+  the message id is already on screen and replaces it without a second
+  sound. Quiet hours and muted conversations apply as they do for sounds.
+- **Counts.** The tab title (`(3) Honmaru AI`), the tab's icon (a red count)
+  and an installed app's icon (`navigator.setAppBadge`) show decisions
+  waiting plus mentions that arrived while away. The mentions clear when the
+  tab is looked at again.
+- **Taken down when read.** Opening a conversation closes its notifications
+  in this browser. A card that stops waiting on you (decided anywhere) closes
+  its notification too.
+- **Clicks go to the right place.** A click focuses the app window that is in
+  front or visible (never `privacy.html`) and opens the message in its own
+  workspace (`#/m/<id>/<orgId>`). With no window open, it opens a new one on
+  that address.
+- **Spoilers stay hidden.** `||spoiler||` text becomes `▇▇▇` in every push
+  (`pushPreview` in `worker/src/pushes.js`) and in-tab notification.
+
 ## Email — setup
 
 **Resend.** One API key: no domain, no DNS records, and a free tier that is a
@@ -163,6 +208,8 @@ did not throw.
 | The bell only shows a hint on an iPhone | the site is open in Safari, not from the home screen |
 | The bell says notifications are blocked | the browser's site permission is "Block"; only the browser settings can undo that |
 | A push arrives in the wrong language | check `GET /me` — the app toggle and the browser both write it; the last one wins |
-| A subscription stops delivering after a while | the push service answered 404/410 and the row was deleted; the client re-subscribes on the next visit |
+| A subscription stops delivering after a while | the push service answered 404/410 and the row was deleted; the client hands its subscription over again on the next visit (`resyncWebPush`) |
+| Firefox shows a crossed-out bell in the address bar and no prompt | the prompt was not tied to a click; `enableWebPush` must reach `requestPermission()` before any `await` |
+| Pushes stopped after the VAPID keys were rotated | the push service refuses sends signed with the new key for subscriptions made with the old one; the client compares `subscription.options.applicationServerKey` and resubscribes on the next visit |
 | Email arrives alongside a push | the push failed (not "was not registered"): APNs or the push service answered with an error |
 | No email at all | `RESEND_API_KEY` unset, the person has no `email`, or `notifyEmail` is off |
