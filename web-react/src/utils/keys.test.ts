@@ -50,4 +50,14 @@ describe('a combo as the keyboard prints it', () => {
     // A key named like something on Object's prototype is still just a key.
     expect(formatCombo('Mod+constructor', false)).toBe('Ctrl+constructor')
   })
+  it('runs on a browser older than Object.hasOwn (Safari before 15.4)', () => {
+    const was = Object.getOwnPropertyDescriptor(Object, 'hasOwn')
+    Reflect.deleteProperty(Object, 'hasOwn')
+    try {
+      expect(formatCombo('Mod+Shift+A', true)).toBe('⌘⇧A')
+      expect(formatCombo('Mod+K', false)).toBe('Ctrl+K')
+    } finally {
+      if (was) Object.defineProperty(Object, 'hasOwn', was)
+    }
+  })
 })

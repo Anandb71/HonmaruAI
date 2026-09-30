@@ -39,8 +39,11 @@ const OTHER: Record<string, string> = {
 /// and anything it has no name for ("N", "Enter", "1–9") is left as it is.
 export function formatCombo(combo: string, mac: boolean): string {
   const names = mac ? MAC : OTHER
+  // Not Object.hasOwn: the top bar prints a key on every load, and Safari
+  // before 15.4 has no such function — it would take the whole app down.
+  const named = (part: string) => Object.prototype.hasOwnProperty.call(names, part)
   return combo
     .split(' / ')
-    .map((one) => one.split('+').map((part) => (Object.hasOwn(names, part) ? names[part] : part)).join(mac ? '' : '+'))
+    .map((one) => one.split('+').map((part) => (named(part) ? names[part] : part)).join(mac ? '' : '+'))
     .join(' / ')
 }
