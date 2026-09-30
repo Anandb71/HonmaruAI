@@ -3003,7 +3003,8 @@ await step('threads you are in, a message marked unread, and one forwarded as a 
     const ask = `which supplier? ${Date.now()}`
     await desk.fill('.slk-composer .slk-input', ask)
     await desk.keyboard.press('Enter')
-    await desk.waitForSelector(`.slk-text:has-text("${ask}")`, { timeout: 10000 })
+    // The server's copy, not the one drawn the moment Enter is pressed.
+    await desk.waitForSelector(`.slk-msg:not(.pending):not(.failed) .slk-text:has-text("${ask}")`, { timeout: 10000 })
 
     await kenji.goto(`${WEB}#/list`, { waitUntil: 'load' })
     // Out of whatever conversation the phone was left in, to its list.
@@ -3017,7 +3018,7 @@ await step('threads you are in, a message marked unread, and one forwarded as a 
     await kenji.click('[data-sheet="reply"]')
     await kenji.fill('.slk-composer.thread .slk-input', 'the one from Kyoto')
     await kenji.click('.slk-composer.thread .slk-send[type="submit"]')
-    await kenji.waitForSelector('.slk-composer.thread ~ * .slk-text:has-text("the one from Kyoto"), .slk-text:has-text("the one from Kyoto")', { timeout: 10000 })
+    await kenji.waitForSelector('.slk-msg:not(.pending):not(.failed) .slk-text:has-text("the one from Kyoto")', { timeout: 10000 })
 
     // Threads: the owner's thread, unread, with Kenji's answer in it.
     await desk.waitForSelector('[data-threads] .cl-badge', { timeout: 20000 })
@@ -3513,7 +3514,8 @@ await step('a data rule warns before a message goes, and it goes when the person
       .catch(() => { throw new Error('no warning before a message the rule is about') })
     await w.screenshot({ path: `${SHOTS}/74-data-rule-warning.png` })
     await w.click('[data-dlp-send]')
-    await w.waitForSelector(`.slk-text:has-text("${said}")`, { timeout: 15000 })
+    // Drawn at once while it goes: only the server's copy says it was sent.
+    await w.waitForSelector(`.slk-msg:not(.pending):not(.failed) .slk-text:has-text("${said}")`, { timeout: 15000 })
       .catch(() => { throw new Error('sending anyway did not send it') })
 
     // Provisioning and the SIEM have their places.
