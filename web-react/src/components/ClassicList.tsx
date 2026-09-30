@@ -14,7 +14,8 @@ import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
-import { countNewBelow, focusAfterJump, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow, waitToSay } from '../utils/chatScroll'
+import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow, waitToSay } from '../utils/chatScroll'
+import { JumpToPresent, newBelowLabel } from './JumpToPresent'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
@@ -3482,28 +3483,13 @@ export const ClassicList: React.FC<Props> = ({
           ))}
           {thread.view && aiSteps(thinking[thread.view])}
           {thread.view && agentLines(thread.view, { except: threadOpenParent })}
-          {readingUp && readingUp.view === thread.view && (() => {
-            // Up in the history: the way back down, and what waits there.
-            const n = countNewBelow(said, readingUp.since)
-            return (
-              <div className="slk-present">
-                <button type="button" aria-keyshortcuts="Shift+PageDown" onClick={(e) => goToPresent(focusAfterJump({
-                  held: document.activeElement === e.currentTarget,
-                  detail: e.detail,
-                  pointerType: (e.nativeEvent as Partial<PointerEvent>).pointerType,
-                }))}>
-                  {n > 0 && <b>{n === 1 ? t('1 new message') : t('{n} new messages', { n })}</b>}
-                  <span>{t('Jump to present')}</span>
-                  <Icon name="chevron-down" size={14} />
-                </button>
-              </div>
-            )
-          })()}
+          {/* Up in the history: the way back down, and what waits there. */}
+          {readingUp && readingUp.view === thread.view && <JumpToPresent count={countNewBelow(said, readingUp.since)} onJump={goToPresent} />}
         </div>
         )}
         {thread.view && (
           <div className="sr-only" role="status" aria-live="polite">
-            {heard === 0 ? '' : heard === 1 ? t('1 new message') : t('{n} new messages', { n: heard })}
+            {heard === 0 ? '' : newBelowLabel(heard, t)}
           </div>
         )}
         {thread.view && (() => {
