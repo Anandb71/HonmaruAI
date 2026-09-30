@@ -78,6 +78,7 @@ import { alert } from "./alert.js";
 import { serverText } from "./serverCopy.js";
 import { listCardEvents, listOrgEvents, appendCardEvent, withActorNames } from "./events.js";
 import { listComments, addComment, listReactions, toggleReaction, REACTIONS, MAX_COMMENT_CHARS } from "./threads.js";
+import { useSecretKey } from "./secrets.js";
 import { fetchCollaborators } from "./github.js";
 import { buildOrgGraph, roleName } from "./org.js";
 import { uploadMedia, serveMedia } from "./media.js";
@@ -109,6 +110,7 @@ const MAX_INSTRUCTION_CHARS = 4000;
 
 export { OrgRelay } from "./relay.js";
 export { AgentRunner } from "./agentRunner.js";
+export { WorkspaceDO } from "./workspace/do.js";
 
 /// The language a request was made in, from the header every client sends
 /// without being asked: URLSession fills Accept-Language from the device's
@@ -189,6 +191,7 @@ export default {
   // a card by the time they look. Nothing here bypasses the free-tier meter:
   // the sync loop checks the same allowance a manual sync does.
   async scheduled(event, env, ctx) {
+    useSecretKey(env);
     // Every minute: scheduled messages and Later reminders, which a person
     // set to a minute and would notice fifteen late.
     if (event?.cron === "* * * * *") {
@@ -206,6 +209,9 @@ export default {
     // Phase 1 audit rows, a few workspaces at a time, into per-person
     // encryption. Nothing to do once every row is.
     ctx.waitUntil(migrateLegacyAudit(env).catch((err) => console.error("audit migration failed", err?.message || err)));
+    // Secrets written before sealing, sealed — a batch per table each run.
+    ctx.waitUntil(import("./secrets.js").then(({ sealLegacySecrets }) => sealLegacySecrets(env))
+      .catch((err) => console.error("secret sealing failed", err?.message || err)));
     // Once a day: workspace keys about to expire, told to their owners.
     const at = new Date(event?.scheduledTime || Date.now());
     if (at.getUTCHours() === 0 && at.getUTCMinutes() < 15) {
@@ -215,6 +221,9 @@ export default {
       // What sessions and presence leave behind, swept.
       ctx.waitUntil(import("./sessions.js").then(({ pruneSessionTraces }) => pruneSessionTraces(env.DB, { now: at.getTime() }))
         .catch((err) => console.error("session sweep failed", err?.message || err)));
+      // Caches and meters past the longest anything reads them.
+      ctx.waitUntil(import("./retention.js").then(({ pruneGrowth }) => pruneGrowth(env.DB, { now: at.getTime() }))
+        .catch((err) => console.error("growth pruning failed", err?.message || err)));
     }
     // Once an hour: the hours just gone, sealed into the archive.
     if (at.getUTCMinutes() < 15) {
@@ -241,6 +250,7 @@ export default {
   },
 
   async fetch(request, env, ctx) {
+    useSecretKey(env);
     // Every response carries the id its log line was written under, so a user
     // reporting "it failed" hands over something that finds the line.
     const requestId = crypto.randomUUID();
@@ -282,6 +292,14 @@ async function handle(request, env, url, ctx) {
           "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         },
       });
+    }
+
+    // Conversations from a workspace's own Durable Object (PoC, off unless
+    // WORKSPACE_V2 names the workspace).
+    if (url.pathname.startsWith("/v2/w/")) {
+      const { handleV2 } = await import("./workspace/v2.js");
+      const v2 = await handleV2(request, env, url);
+      if (v2) return v2;
     }
 
     // Single sign-on: discovery, the round trip, and its settings.
