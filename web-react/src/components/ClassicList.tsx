@@ -33,6 +33,7 @@ import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
 import { visibleOrder, step } from '../utils/sidebarOrder'
 import type { SidebarGroup } from '../utils/sidebarOrder'
+import { isMacPlatform, formatCombo } from '../utils/keys'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -218,6 +219,9 @@ const messageIdsOf = (keys: string[]) => keys.filter((k) => k.startsWith('m:')).
 function seenAt(orgId: string, view: string): string {
   try { return localStorage.getItem(seenKey(orgId, view)) || '' } catch { return '' }
 }
+
+/// ⇧Esc on a Mac, Shift+Esc elsewhere, where the list prints a key.
+const isMac = isMacPlatform()
 
 const WIDE = '(min-width: 720px)'
 const isWide = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(WIDE).matches
@@ -838,7 +842,7 @@ export const ClassicList: React.FC<Props> = ({
     if (th.fresh || (mentionsIn[v] || 0) > 0) {
       out.push({ kind: 'item', label: t('Mark as read'), icon: 'check', onSelect: () => markViewRead(v), data: 'mark-read' })
     }
-    if (others > 0) out.push({ kind: 'item', label: t('Mark all as read'), hint: '⇧Esc', onSelect: markEverythingRead, data: 'mark-all-read' })
+    if (others > 0) out.push({ kind: 'item', label: t('Mark all as read'), hint: formatCombo('Shift+Esc', isMac), onSelect: markEverythingRead, data: 'mark-all-read' })
     if (out.length) out.push({ kind: 'sep' })
     if (isChannel || th.kind === 'group') {
       out.push({ kind: 'item', label: isChannel ? t('Channel details') : t('Conversation details'), icon: 'users', data: 'details', submenu: [
