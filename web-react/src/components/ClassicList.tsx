@@ -1618,7 +1618,7 @@ export const ClassicList: React.FC<Props> = ({
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
     if (!res?.ok) { setProblem(data.message || t('That could not become a decision. Try again.')); return }
-    setClip([]); setDraft('')
+    setClip([]); clearDraftOf(channel)
     if (data.message) setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).some((x) => x.id === data.message.id) ? prev[channel] : [...(prev[channel] || []), data.message] }))
     setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
   }
