@@ -28,13 +28,23 @@ export const NotificationsButton: React.FC<Props> = ({ httpBase, sessionToken })
     setSupport(now)
     // The key the click will need, fetched while nobody is waiting on it.
     if (now === 'ready') void prefetchVapidKey(httpBase)
+    // A resync that failed shows the bell again only when this browser really
+    // has no subscription any more — not for being offline, or a Worker
+    // error, while pushes still arrive. The next open tries again.
+    const resync = () => resyncWebPush(httpBase, sessionToken).then(async (ok) => {
+      if (cancelled) return
+      if (ok) { setState('on'); return }
+      if (!(await currentSubscription()) && !cancelled) setState('off')
+    })
     currentSubscription().then((sub) => {
       if (cancelled) return
       setState(sub ? 'on' : 'off')
-      if (sub) void resyncWebPush(httpBase, sessionToken).then((ok) => { if (!cancelled && !ok) setState('off') })
+      // Also when there is none: one the browser dropped while push was on
+      // here is made again (utils/push.ts keeps the key for that).
+      void resync()
     })
     const onWorkerMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'push-resync') void resyncWebPush(httpBase, sessionToken)
+      if (event.data?.type === 'push-resync') void resync()
     }
     const sw = typeof navigator !== 'undefined' && 'serviceWorker' in navigator ? navigator.serviceWorker : null
     sw?.addEventListener('message', onWorkerMessage)
