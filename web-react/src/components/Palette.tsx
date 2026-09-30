@@ -225,7 +225,7 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKey}
-          placeholder={t('Search messages and decisions — from:@name in:#channel — or type where to go…')}
+          placeholder={t('Jump to a conversation, or search messages and decisions — from:@name in:#channel…')}
           aria-label={t('Search or jump to')}
           role="combobox"
           aria-expanded="true"
