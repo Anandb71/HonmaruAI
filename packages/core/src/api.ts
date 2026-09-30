@@ -2,7 +2,7 @@
 // token, JSON both ways, and an error that says what the server said.
 
 import type {
-  Business, HistoryQuery, HistoryResponse, Me, OtpRequest, OtpVerify, PostResponse, SearchResponse, SignedIn, UnreadResponse,
+  Business, DeviceRegistration, HistoryQuery, HistoryResponse, Me, OtpRequest, OtpVerify, PostResponse, SearchResponse, SignedIn, UnreadResponse,
 } from '../../protocol/src/index'
 import { v2Paths } from '../../protocol/src/v2'
 
@@ -57,6 +57,14 @@ export class Api {
   verifyCode(body: OtpVerify) { return this.request<SignedIn>('/auth/otp/verify', { method: 'POST', body }) }
   me() { return this.request<Me>('/me') }
   businesses(orgId: string) { return this.request<{ businesses: Business[] }>('/businesses', { query: { orgId } }) }
+
+  // ---- Push ----
+  /// This phone's native push token, for whoever is signed in. Sent again on
+  /// every launch: Apple and Google reissue tokens, and the server keeps one
+  /// row per token, moved to the newest account that registered it.
+  registerDevice(body: DeviceRegistration) { return this.request<{ ok: true }>('/devices', { method: 'POST', body }) }
+  /// Forget this phone before signing out, while the session still says whose it is.
+  unregisterDevice(deviceToken: string) { return this.request<{ ok: true }>('/devices', { method: 'DELETE', body: { deviceToken } }) }
 
   // ---- Conversations (v2) ----
   history(orgId: string, channel: string, query: HistoryQuery = {}) {
