@@ -240,6 +240,13 @@ export function ChannelDetails({
     countsRef.current?.(data.counts)
   }, [api.httpBase, api.orgId, headers, view, t])
   useEffect(() => { setD(null); void load() }, [load])
+  // Somebody joined or left, or set a status: the people here are read
+  // again, beside the sidebar.
+  useEffect(() => {
+    const on = () => { void load() }
+    window.addEventListener('honmaru:members-changed', on)
+    return () => window.removeEventListener('honmaru:members-changed', on)
+  }, [load])
 
   const toggle = async (id: string, enabled: boolean) => {
     setD((prev) => prev && { ...prev, automations: prev.automations.map((a) => (a.id === id ? { ...a, enabled } : a)) })
