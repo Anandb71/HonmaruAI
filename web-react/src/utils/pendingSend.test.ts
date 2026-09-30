@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, echoOf, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendDeadline, sendTime, tempMessage, tempState } from './pendingSend'
+import { arrive, echoOf, isDoubleSend, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, sendDeadline, sendTime, tempMessage, tempState } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -40,6 +40,23 @@ describe('a message on its way', () => {
     expect(sendTime(undefined, now)).toEqual(now)
     const ahead = [said('a', 'x', { createdAt: '2026-09-30T09:02:00.000Z' }), said('b', 'y', { createdAt: '2026-09-30T09:01:00.000Z' })]
     expect(sendTime(ahead, now).toISOString()).toBe('2026-09-30T09:02:00.001Z')
+  })
+
+  it('is sent once for a second Enter or a double tap, and again when said again on purpose', () => {
+    const recent = new Map<string, number>()
+    const t0 = 1_000_000
+    expect(isDoubleSend(recent, 'b:hotel\n\nok\n', t0)).toBe(false)
+    // The same press, before the box has cleared.
+    expect(isDoubleSend(recent, 'b:hotel\n\nok\n', t0 + 40)).toBe(true)
+    // Other words, or the same words elsewhere, are never held back.
+    expect(isDoubleSend(recent, 'b:hotel\n\nok!\n', t0 + 60)).toBe(false)
+    expect(isDoubleSend(recent, 'b:spa\n\nok\n', t0 + 80)).toBe(false)
+    // "ok" again a moment later — the first may well still be on its way.
+    expect(isDoubleSend(recent, 'b:hotel\n\nok\n', t0 + 1500)).toBe(false)
+    expect(isDoubleSend(recent, 'b:hotel\n\nok\n', t0 + 1520)).toBe(true)
+    // What is long past is not kept.
+    isDoubleSend(recent, 'b:hotel\n\nlater\n', t0 + 60_000)
+    expect([...recent.keys()]).toEqual(['b:hotel\n\nlater\n'])
   })
 
   it('a message from the server is never taken for one of ours', () => {

@@ -70,6 +70,21 @@ export const markFailed = (list: ChannelMessage[], tempId: string, why: string, 
 export const markPending = (list: ChannelMessage[], tempId: string): ChannelMessage[] =>
   list.map((x) => (x.id === tempId ? { ...x, pending: true, failed: undefined, refused: undefined } : x))
 
+/// How soon the same words to the same place again are taken for the same
+/// press, not a second message.
+export const DOUBLE_SEND_MS = 1000
+
+/// A second Enter or a double tap before the box has cleared: the same
+/// words (`key`) to the same place within DOUBLE_SEND_MS of the last time.
+/// Said again after that on purpose — "ok", "+1" — they go again, even with
+/// the first still on its way. A send that goes ahead is noted in `recent`.
+export function isDoubleSend(recent: Map<string, number>, key: string, now = Date.now(), within = DOUBLE_SEND_MS): boolean {
+  for (const [k, at] of recent) if (now - at >= within) recent.delete(k)
+  if (recent.has(key)) return true
+  recent.set(key, now)
+  return false
+}
+
 /// How long a send is given before it is taken for lost: room for a slow
 /// network and for a data rule reading an attached file, and short enough
 /// that what was sent after it in the same conversation is not held up.
