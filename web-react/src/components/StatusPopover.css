@@ -6,7 +6,8 @@
 .status-pop {
   --dlg-bg: #ffffff; --dlg-ink: #202020; --dlg-dim: #646464; --dlg-faint: #838383;
   --dlg-line: #e8e8e8; --dlg-field: #f8f9fa; --dlg-hover: #f2f2f2; --dlg-accent: #6647f0;
-  position: fixed; z-index: 42;
+  /* Over a screen (35) beside the rail, under ⌘K and the shortcuts (40+). */
+  position: fixed; z-index: 38;
   top: calc(52px + env(safe-area-inset-top)); left: 8px; right: 8px;
   max-height: calc(100dvh - 60px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   display: flex; flex-direction: column;
