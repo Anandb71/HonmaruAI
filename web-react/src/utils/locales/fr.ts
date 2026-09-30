@@ -1841,6 +1841,7 @@ const table: Record<string, string> = {
   'Renamed to #{name}': 'Renommé en #{name}',
   'Mark as read': 'Marquer comme lu',
   'Nothing new to mark as read': 'Rien de nouveau à marquer comme lu',
+  'Nothing unread': 'Rien de non lu',
   'Marked {n} conversations as read': '{n} conversations marquées comme lues',
   'Activity marked as read': 'Activité marquée comme lue',
   'archive.lede': 'Il disparaît de la barre latérale de tous. Ses messages, fichiers et décisions sont conservés, et il peut être restauré depuis « Canaux archivés » dans votre profil.',

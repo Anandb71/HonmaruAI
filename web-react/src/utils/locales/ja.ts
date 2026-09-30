@@ -1905,6 +1905,7 @@ const table: Record<string, string> = {
   'Renamed to #{name}': '#{name} に名前を変更しました',
   'Mark as read': '既読にする',
   'Nothing new to mark as read': '既読にする新着はありません',
+  'Nothing unread': '未読はありません',
   'Marked {n} conversations as read': '{n}件の会話を既読にしました',
   'Activity marked as read': 'アクティビティを既読にしました',
   'archive.lede': '全員のサイドバーから消えます。メッセージ・ファイル・決定はそのまま残り、プロフィールの「アーカイブ済みチャンネル」からいつでも元に戻せます。',

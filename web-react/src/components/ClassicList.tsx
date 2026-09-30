@@ -919,7 +919,8 @@ export const ClassicList: React.FC<Props> = ({
 
   // Keys a chat client has: ⌥↑/⌥↓ between conversations in the order the
   // sidebar shows them (a folded group's are out of sight, and skipped),
-  // ⌘⇧A Activity, ⌘⇧D the sidebar.
+  // ⌥⇧↑/⌥⇧↓ between the ones with something new, ⌘⇧A Activity, ⌘⇧D the
+  // sidebar.
   const [sideHidden, setSideHidden] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -929,8 +930,9 @@ export const ClassicList: React.FC<Props> = ({
         e.preventDefault()
         // Under Activity or Later no row is lit: down starts at the top.
         const here = special ? null : current?.key ?? null
-        const next = step(list, here, e.key === 'ArrowDown' ? 1 : -1)
-        if (next && next.key !== here) choose(next.key)
+        const next = step(list, here, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey ? hasNews : undefined)
+        if (!next) setToast(t('Nothing unread'))
+        else if (next.key !== here) choose(next.key)
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault(); openActivity()
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
@@ -1245,9 +1247,14 @@ export const ClassicList: React.FC<Props> = ({
   }
   /// "Mark as read" from the sidebar, without opening it.
   const markViewRead = (v: string) => { readOnServer(v, readHere(v)) }
+  /// A dot or an @ waiting in it.
+  const isFresh = (th: Thread) => Boolean(th.view && (th.fresh || (mentionsIn[th.view] || 0) > 0))
+  /// Where ⌥⇧↑/⌥⇧↓ stop: a dot or an @, or cards waiting on you, which
+  /// reading does not clear.
+  const hasNews = (th: Thread) => th.unread > 0 || isFresh(th)
   /// Everything new, read at once — ⇧Esc, as in Slack: every conversation
   /// with a dot or an @ waiting, and Activity with them.
-  const freshViews = () => everything.filter((th) => th.view && (th.fresh || (mentionsIn[th.view] || 0) > 0)).map((th) => th.view!)
+  const freshViews = () => everything.filter(isFresh).map((th) => th.view!)
   const markEverythingRead = () => {
     const views = freshViews()
     const activityNew = (activityItems || []).some((i) => i.unread)
