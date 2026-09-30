@@ -8,7 +8,8 @@ import { hashForMessage, hashForView } from '../utils/route'
 import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
-import type { DecisionCard, Business, ChannelMessage } from '../types/card'
+import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
+import { isTemp, markFailed, reconcile, tempMessage } from '../utils/pendingSend'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -1090,7 +1091,6 @@ export const ClassicList: React.FC<Props> = ({
   }, [pending, sent, decided])
   const [messages, setMessages] = useState<Record<string, ChannelMessage[]>>({})
   const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
   // Files going up with the next message: the conversation's, and a thread's.
   const uploads = useUploads(api, setProblem)
   const threadUploads = useUploads(api, setProblem)
@@ -1302,10 +1302,19 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:channel-progress', on)
   }, [agentDone])
 
+  /// A message on its way, or one that did not go, by its temporary id:
+  /// what Retry sends again. Its words are in the log with it.
+  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[] }
+  const outbox = useRef(new Map<string, Outgoing>())
+  /// The same words to the same place, already going: a second Enter or a
+  /// double tap before the box has cleared does not send them twice.
+  const going = useRef(new Set<string>())
+  const goingKey = (o: Pick<Outgoing, 'channel' | 'parentId' | 'body' | 'files'>) => [o.channel, o.parentId || '', o.body, o.files.map((f) => f.id).join(',')].join('\n')
+
   const send = async (channel: string, decide: boolean, parentId?: string, sendAt?: string) => {
     let body = (parentId ? threadDraft : draft).trim()
     const up = parentId ? threadUploads : uploads
-    if ((!body && !up.ids.length) || sending) return
+    if (!body && !up.ids.length) return
     if (up.busy) { setProblem(t('Wait for the files to finish uploading.')); return }
     if (sendAt && up.ids.length) { setProblem(t('A scheduled message cannot carry files yet.')); return }
     // A command, not a message: done here, with a note only you see.
@@ -1318,49 +1327,88 @@ export const ClassicList: React.FC<Props> = ({
       else { if (done) clearDraftOf(channel); return }
       if (!body) return
     }
-    setSending(true); setProblem(null)
-    try {
+    const files = up.items.flatMap((i) => (i.state === 'done' && i.file ? [i.file] : []))
+    const key = goingKey({ channel, parentId, body, files })
+    if (going.current.has(key)) return
+    setProblem(null)
+    // Written now, sent later: nothing shows in the conversation until it
+    // goes, so this one still waits for the server's answer.
+    if (sendAt) {
+      going.current.add(key)
       const res = await fetch(`${api.httpBase}/channels/messages`, {
         method: 'POST',
         headers: { ...authHeaders, 'content-type': 'application/json' },
-        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), ...(sendAt ? { sendAt } : {}), ...(up.ids.length ? { files: up.ids } : {}) }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setProblem(refusal(data)); return }
-      if (data.scheduled) {
-        if (parentId) setThreadDraft(''); else clearDraftOf(channel)
-        setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
-        note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
-        return
-      }
-      const msg = data.message as ChannelMessage
-      // Sent: a small confirmation, in a direct conversation — as Slack does.
-      if (channel.startsWith('dm:') || channel.startsWith('ag:')) playSound('sent')
-      up.clear()
-      if (parentId) {
-        setThreadDraft('')
-        setThread((prev) => (prev && prev.parent.id === parentId && !prev.replies.some((x) => x.id === msg.id) ? { ...prev, replies: [...prev.replies, msg] } : prev))
-        // The parent as the server now has it: its count is a fact, not
-        // one more than whatever the live event already made it.
-        const parent = data.parent as ChannelMessage | undefined
-        setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).map((x) => (x.id !== parentId ? x
-          : parent ? { ...x, replyCount: Math.max(parent.replyCount || 0, x.replyCount || 0), lastReplyAt: parent.lastReplyAt || msg.createdAt, replyRefs: parent.replyRefs || x.replyRefs }
-            : { ...x, replyCount: (x.replyCount || 0) + 1, lastReplyAt: msg.createdAt })) }))
-        if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
-        return
-      }
-      clearDraftOf(channel)
-      setMessages((prev) => {
-        const list = prev[channel] || []
-        return list.some((x) => x.id === msg.id) ? prev : { ...prev, [channel]: [...list, msg] }
-      })
-      if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
-    } catch {
-      setProblem(t('That did not send. Try again.'))
-    } finally {
-      setSending(false)
-      if (parentId) threadComposer.current?.focus(); else composer.current?.focus()
+        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), sendAt }),
+      }).catch(() => null)
+      const data = res ? await res.json().catch(() => ({})) : {}
+      going.current.delete(key)
+      if (!res?.ok || !data.scheduled) { setProblem(res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return }
+      if (parentId) setThreadDraft(''); else clearDraftOf(channel)
+      setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
+      note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
+      return
     }
+    // In the conversation at once, marked as on its way, and the box free
+    // for the next line while it goes — the files in it are already up.
+    const temp = tempMessage({ channel, body, parentId, files }, { name: myName || null, ref: myRef || null, avatar: myAvatar })
+    if (parentId) {
+      setThreadDraft('')
+      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: [...prev.replies, temp] } : prev))
+    } else {
+      clearDraftOf(channel)
+      setMessages((prev) => ({ ...prev, [channel]: [...(prev[channel] || []), temp] }))
+    }
+    up.clear()
+    if (parentId) threadComposer.current?.focus(); else composer.current?.focus()
+    const out: Outgoing = { tempId: temp.id, channel, body, decide, parentId, files }
+    outbox.current.set(temp.id, out)
+    await deliver(out)
+  }
+
+  /// Send what shows as on its way: the server's copy takes its place.
+  const deliver = async (out: Outgoing) => {
+    const { tempId, channel, body, decide, parentId, files } = out
+    const key = goingKey(out)
+    going.current.add(key)
+    const res = await fetch(`${api.httpBase}/channels/messages`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), ...(files.length ? { files: files.map((f) => f.id) } : {}) }),
+    }).catch(() => null)
+    const data = res ? await res.json().catch(() => ({})) : {}
+    going.current.delete(key)
+    const msg = res?.ok ? (data.message as ChannelMessage | undefined) : undefined
+    if (!msg?.id) { fail(out, res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return }
+    outbox.current.delete(tempId)
+    // Sent: a small confirmation, in a direct conversation — as Slack does.
+    if (channel.startsWith('dm:') || channel.startsWith('ag:')) playSound('sent')
+    if (parentId) {
+      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: reconcile(prev.replies, tempId, msg) } : prev))
+      // The parent as the server now has it: its count is a fact, not
+      // one more than whatever the live event already made it.
+      const parent = data.parent as ChannelMessage | undefined
+      setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).map((x) => (x.id !== parentId ? x
+        : parent ? { ...x, replyCount: Math.max(parent.replyCount || 0, x.replyCount || 0), lastReplyAt: parent.lastReplyAt || msg.createdAt, replyRefs: parent.replyRefs || x.replyRefs }
+          : { ...x, replyCount: (x.replyCount || 0) + 1, lastReplyAt: msg.createdAt })) }))
+      if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
+      return
+    }
+    setMessages((prev) => ({ ...prev, [channel]: reconcile(prev[channel] || [], tempId, msg) }))
+    if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
+  }
+
+  /// It did not go: it stays where it was, marked, with why. Moved on from
+  /// there since, you are told where you are now as well. A reply whose
+  /// thread has closed has nowhere to stay, so only that is said.
+  const fail = (out: Outgoing, why: string) => {
+    const { tempId, channel, parentId } = out
+    if (parentId) {
+      if (shownNow.current.thread !== parentId) { outbox.current.delete(tempId); setProblem(why); return }
+      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: markFailed(prev.replies, tempId, why) } : prev))
+      return
+    }
+    setMessages((prev) => (prev[channel] ? { ...prev, [channel]: markFailed(prev[channel], tempId, why) } : prev))
+    if (shownNow.current.view !== channel) setProblem(why)
   }
 
   // ---- Time and gathering: drafts, scheduled sends, Later, clips, notes ----
@@ -1670,6 +1718,9 @@ export const ClassicList: React.FC<Props> = ({
   }
   const messagesRef = useRef(messages)
   messagesRef.current = messages
+  /// Where you are now, for a send that answers after you may have moved on.
+  const shownNow = useRef({ view: openView, thread: threadOpenParent })
+  shownNow.current = { view: openView, thread: threadOpenParent }
   const myRef = members.find((m) => m.mine)?.ref
   const nameOfRef = (ref: string) => (ref === myRef ? t('You') : members.find((m) => m.ref === ref)?.name || t('a teammate'))
 
@@ -2405,7 +2456,7 @@ export const ClassicList: React.FC<Props> = ({
   /// What sits under a message's words: its reactions and its thread.
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
-      {!m.deleted && m.kind === 'message' && !m.previewsHidden && (
+      {!m.deleted && m.kind === 'message' && !m.previewsHidden && !isTemp(m) && (
         <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken}
           onHide={m.mine ? () => void act('POST', '/channels/previews', channel, { messageId: m.id, hidden: true }) : undefined} />
       )}
@@ -2466,7 +2517,8 @@ export const ClassicList: React.FC<Props> = ({
       </>
     )
   }
-  const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id) ? undefined : (
+  // Nothing to do to a message only held here: the server has no such id.
+  const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id || isTemp(m)) ? undefined : (
     <MessageActions
       message={m}
       inThread={inThread}
@@ -2487,7 +2539,7 @@ export const ClassicList: React.FC<Props> = ({
   )
 
   /// A long press, on a phone: the same things, in a sheet from the bottom.
-  const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id)
+  const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id || isTemp(m))
     ? undefined
     : () => setSheet({ channel, m, inThread })
   /// A link to one message that opens it for anyone who can read it — the
@@ -2891,7 +2943,6 @@ export const ClassicList: React.FC<Props> = ({
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
               }}
-              disabled={sending}
             />
             {threadMention.menu}
             <div className="slk-composer-bar">
@@ -2899,7 +2950,7 @@ export const ClassicList: React.FC<Props> = ({
               <input ref={threadAttachInput} type="file" multiple hidden onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) threadUploads.add(files, thread.channel) }} />
               <FormatBar target={threadComposer} value={threadDraft} set={setThreadDraft} />
               <span className="slk-composer-hint" />
-              <button type="submit" className="slk-send" disabled={sending || threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
+              <button type="submit" className="slk-send" disabled={threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
                 <Icon name="send" size={16} />
               </button>
             </div>
@@ -3396,10 +3447,11 @@ export const ClassicList: React.FC<Props> = ({
               onClick={mention.track}
               onKeyDown={(e) => {
                 if (mention.onKeyDown(e)) return
-                // ↑ in an empty box edits what you last said, as in Slack.
+                // ↑ in an empty box edits what you last said, as in Slack —
+                // once the server has it; not the one before it meanwhile.
                 if (e.key === 'ArrowUp' && !draft && !e.nativeEvent.isComposing) {
                   const last = [...(messages[thread.view!] || [])].reverse().find((m) => m.mine && m.kind === 'message' && !m.deleted)
-                  if (last) { e.preventDefault(); setEditing({ id: last.id, text: last.body }) }
+                  if (last && !isTemp(last)) { e.preventDefault(); setEditing({ id: last.id, text: last.body }) }
                   return
                 }
                 // Bold, italic, strike, as everywhere.
@@ -3422,7 +3474,6 @@ export const ClassicList: React.FC<Props> = ({
                 // from "@AI" or the ✦ button, never from a key pressed by habit.
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.view!, false) }
               }}
-              disabled={sending}
             />
             {mention.menu}
             <SlashMenu draft={draft} onPick={(name) => { setDraft(`/${name} `); composer.current?.focus() }} />
@@ -3431,14 +3482,14 @@ export const ClassicList: React.FC<Props> = ({
               <input ref={attachInput} type="file" multiple hidden data-attach="1" onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) uploads.add(files, thread.view!) }} />
               <FormatBar target={composer} value={draft} set={setDraft} />
               <span className="slk-composer-hint">{t('Enter to send · @AI to ask · ✦ makes it a decision · / for commands')}</span>
-              <button type="button" className="slk-send ai" disabled={sending || !draft.trim()} onClick={() => void send(thread.view!, true)} aria-label={t('Send as a decision')} title={t('Send as a decision')}>
+              <button type="button" className="slk-send ai" disabled={!draft.trim()} onClick={() => void send(thread.view!, true)} aria-label={t('Send as a decision')} title={t('Send as a decision')}>
                 <Icon name="sparkle" size={15} /><span className="slk-send-label">{t('Send as a decision')}</span>
               </button>
               <span className="slk-send-group">
-                <button type="submit" className="slk-send" disabled={sending || uploads.busy || (!draft.trim() && !uploads.ids.length)} aria-label={t('Send')}>
+                <button type="submit" className="slk-send" disabled={uploads.busy || (!draft.trim() && !uploads.ids.length)} aria-label={t('Send')}>
                   <Icon name="send" size={16} />
                 </button>
-                <button type="button" className="slk-send more" disabled={sending || !draft.trim() || draft.trim().startsWith('/')} onClick={() => setScheduleOpen((o) => !o)} aria-label={t('Schedule message')} title={t('Schedule message')} aria-expanded={scheduleOpen}>
+                <button type="button" className="slk-send more" disabled={!draft.trim() || draft.trim().startsWith('/')} onClick={() => setScheduleOpen((o) => !o)} aria-label={t('Schedule message')} title={t('Schedule message')} aria-expanded={scheduleOpen}>
                   <Icon name="chevron-down" size={14} />
                 </button>
                 {scheduleOpen && <SchedulePicker onPick={(at) => void sendAtTime(thread.view!, at)} onClose={() => setScheduleOpen(false)} />}
