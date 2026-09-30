@@ -69,6 +69,7 @@ export const aad = {
   githubWorkspace: (orgId) => `org_github.token:${orgId}`,
   sessionGithub: (token) => `sessions.github_access_token:${token}`,
   webhook: (id) => `org_webhooks.secret:${id}`,
+  teammate: (orgId, provider, column) => `ai_teammates.${column}:${orgId}:${provider}`,
 };
 
 // Values that mark a session without a GitHub token; not secrets.
@@ -111,6 +112,18 @@ export async function sealLegacySecrets(env, { limit = 200 } = {}) {
     if (NOT_SECRET.has(r.github_access_token)) continue;
     await db.prepare("UPDATE sessions SET github_access_token = ?2 WHERE token = ?1 AND github_access_token = ?3")
       .bind(r.token, await sealField(r.github_access_token, aad.sessionGithub(r.token)), r.github_access_token).run();
+    sealed += 1;
+  }
+
+  const { results: mates = [] } = await db.prepare(
+    `SELECT org_id, provider, api_key, github_token FROM ai_teammates WHERE (${plain("api_key")}) OR (${plain("github_token")}) LIMIT ?1`
+  ).bind(limit).all().catch(() => ({ results: [] }));
+  for (const r of mates) {
+    await db.prepare("UPDATE ai_teammates SET api_key = ?3, github_token = ?4 WHERE org_id = ?1 AND provider = ?2").bind(
+      r.org_id, r.provider,
+      await sealField(r.api_key, aad.teammate(r.org_id, r.provider, "api_key")),
+      await sealField(r.github_token, aad.teammate(r.org_id, r.provider, "github_token")),
+    ).run();
     sealed += 1;
   }
 
