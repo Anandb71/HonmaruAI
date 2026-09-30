@@ -318,6 +318,10 @@
 .classic.slk.slk .slk-text a:hover { text-decoration: underline; }
 .classic.slk.slk .slk-mention { color: var(--slk-accent); background: rgba(29, 155, 209, 0.10); border-radius: 4px; padding: 0 2px; font-weight: 600; }
 .classic.slk.slk .slk-mention.ai { color: #7c3aed; background: rgba(124, 58, 237, 0.12); }
+/* A person's @name opens their profile: a button that still reads as the word. */
+.classic.slk.slk .slk-mention.link { border: none; margin: 0; font: inherit; font-weight: 600; line-height: inherit; cursor: pointer; }
+.classic.slk.slk .slk-mention.link:hover { text-decoration: underline; }
+.classic.slk.slk .slk-mention.link:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 1px; }
 .classic.slk.slk .slk-app-badge {
   font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   padding: 1px 5px; border-radius: 4px; background: var(--slk-field); color: var(--slk-dim);

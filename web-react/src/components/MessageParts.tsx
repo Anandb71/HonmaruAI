@@ -368,9 +368,14 @@ export const FormatBar: React.FC<{ target: React.RefObject<HTMLTextAreaElement>;
   )
 }
 
+/// How an @name is drawn: its class — and, for a person, their ref, which
+/// makes it a button that opens their profile. The conversation listens for
+/// every such button at once (`data-mention-ref`), not with one handler each.
+export type MentionLook = string | { className: string; ref?: string | null }
+
 /// Slack's formatting, read back: *bold*, _italic_, ~strike~, `code`,
 /// ```blocks```, "> " quotes, "- " and "1. " lists — plus links and @names.
-export function renderRich(text: string, mentionClass: (name: string) => string): React.ReactNode {
+export function renderRich(text: string, mentionClass: (name: string) => MentionLook): React.ReactNode {
   const out: React.ReactNode[] = []
   const parts = text.split(/```/)
   parts.forEach((chunk, ci) => {
@@ -433,7 +438,7 @@ export function renderRich(text: string, mentionClass: (name: string) => string)
 
 const JAM_AUDIO = /^https?:\/\/[^\s]+\/channels\/jam\/audio\/[0-9a-f-]{36}$/
 
-function inline(line: string, mentionClass: (name: string) => string): React.ReactNode[] {
+function inline(line: string, mentionClass: (name: string) => MentionLook): React.ReactNode[] {
   const tokens = line.split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;]+|\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g)
   // A line that is nothing but this workspace's emoji draws them large.
   const onlyEmoji = tokens.every((p) => !p || !p.trim() || (CUSTOM_EMOJI.test(p) && Boolean(customEmojiUrl(p))))
@@ -448,7 +453,13 @@ function inline(line: string, mentionClass: (name: string) => string): React.Rea
     // A Jam's recording plays where it was posted.
     if (JAM_AUDIO.test(part)) return <audio key={i} className="slk-jam-audio" controls preload="none" src={part} />
     if (/^https?:\/\//.test(part)) return <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a>
-    if (/^[@＠]/.test(part)) return <span key={i} className={mentionClass(part)}>{part}</span>
+    if (/^[@＠]/.test(part)) {
+      const look = mentionClass(part)
+      const { className, ref } = typeof look === 'string' ? { className: look, ref: null } : look
+      return ref
+        ? <button key={i} type="button" className={`${className} link`} data-mention-ref={ref} aria-haspopup="dialog">{part}</button>
+        : <span key={i} className={className}>{part}</span>
+    }
     if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass)}</b>
     if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{inline(part.slice(1, -1), mentionClass)}</b>
     if (/^_[^_]+_$/.test(part)) return <i key={i}>{inline(part.slice(1, -1), mentionClass)}</i>
