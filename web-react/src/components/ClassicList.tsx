@@ -31,7 +31,7 @@ import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
-import { foldedRows, sectionBadge } from '../utils/sidebarSections'
+import { foldedRows, sectionBadge, readFolds, writeFolds, withSectionFolds } from '../utils/sidebarSections'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -293,10 +293,18 @@ export const ClassicList: React.FC<Props> = ({
   // Your own sidebar: what you starred and the sections you made, kept on
   // the server so the laptop and the phone arrange things alike.
   const [layout, setLayout] = useState<SidebarLayout>({ starred: [], sections: [] })
+  // Which sections are folded: remembered by this browser for the
+  // workspace, and your own sections' on the server with the rest of it.
+  const [folded, setFolded] = useState<Record<string, boolean>>(() => readFolds(api.orgId))
+  useEffect(() => { writeFolds(api.orgId, folded) }, [api.orgId, folded])
   useEffect(() => {
     let ignore = false
     fetch(`${api.httpBase}/channels/sidebar?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
-      .then((r) => (r.ok ? r.json() : null)).then((d) => { if (!ignore && d?.sidebar) setLayout(d.sidebar) }).catch(() => {})
+      .then((r) => (r.ok ? r.json() : null)).then((d) => {
+        if (ignore || !d?.sidebar) return
+        setLayout(d.sidebar)
+        setFolded((prev) => withSectionFolds(prev, d.sidebar.sections || []))
+      }).catch(() => {})
     return () => { ignore = true }
   }, [api.httpBase, api.orgId, authHeaders])
   const saveLayout = (next: SidebarLayout) => {
@@ -340,6 +348,14 @@ export const ClassicList: React.FC<Props> = ({
     const id = Math.random().toString(36).slice(2, 10)
     const sections = layout.sections.map((x) => ({ ...x, views: view ? x.views.filter((v) => v !== view) : x.views }))
     saveLayout({ ...layout, sections: [...sections, { id, name, views: view ? [view] : [] }] })
+  }
+  /// Fold a section, or open it again. One of your own is saved folded on
+  /// the server too, so the phone and the laptop agree.
+  const toggleFold = (id: string) => {
+    const shut = !folded[id]
+    setFolded((p) => ({ ...p, [id]: shut }))
+    const own = layout.sections.find((x) => `sec:${x.id}` === id)
+    if (own) saveLayout({ ...layout, sections: layout.sections.map((x) => (x === own ? { ...x, collapsed: shut } : x)) })
   }
   const [addingSection, setAddingSection] = useState<null | { view?: string }>(null)
   const [sectionName, setSectionName] = useState('')
@@ -731,7 +747,6 @@ export const ClassicList: React.FC<Props> = ({
   }
   const [tick, setTick] = useState(0)
 
-  const [folded, setFolded] = useState<Record<string, boolean>>({})
   /// What a folded section goes by: the mentions waiting, the row open now
   /// (none while Activity or another list is), and what is muted. A
   /// function: `special` is declared further down.
@@ -1023,7 +1038,7 @@ export const ClassicList: React.FC<Props> = ({
     return (
       <section className={`cl-section${shut ? ' folded' : ''}`} data-section={id}>
         <h2>
-          <button className="cl-fold" onClick={() => setFolded((p) => ({ ...p, [id]: !p[id] }))} aria-expanded={!shut}>
+          <button className="cl-fold" onClick={() => toggleFold(id)} aria-expanded={!shut}>
             <span className="cl-caret" aria-hidden="true"><Icon name={shut ? 'chevron-right' : 'chevron-down'} size={12} /></span>
             {label}
             {shut && badge.mentions > 0 && <><span className="cl-badge mention" aria-hidden="true">@{badge.mentions}</span><span className="sr-only">{t('Mentions: {n}', { n: badge.mentions })}</span></>}
