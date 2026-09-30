@@ -215,12 +215,15 @@ export function readUnsent(raw: string | null): Unsent[] {
   }
 }
 
-/// What to keep once this tab's outbox has changed: its messages as they are
-/// now (`now`), and another tab's as that tab left them. `ours` is every
-/// message this tab has held, gone since or not, so one it has sent or
-/// thrown away is not brought back from what another tab wrote before.
+/// What to keep once this tab's outbox (`now`) has changed. `ours` is every
+/// message this tab has sent or done something with, gone since or not:
+/// those are kept as this tab has them now, so one it has sent or thrown
+/// away is not brought back from what another tab wrote before. Any other
+/// is left as it is kept — another tab's, and one this tab only brought
+/// back from before it loaded: gone from what is kept, another tab has sent
+/// it or thrown it away since, and it is not written back.
 export const keptUnsent = (stored: Unsent[], now: Unsent[], ours: Set<string>): Unsent[] =>
-  [...stored.filter((u) => !ours.has(u.said.id)), ...now]
+  [...stored.filter((u) => !ours.has(u.said.id)), ...now.filter((u) => ours.has(u.said.id))]
 
 /// A message kept from before this page loaded, as it comes back: failed —
 /// on its way when the page went, it may or may not have got there — with

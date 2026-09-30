@@ -321,6 +321,19 @@ describe('what did not go, kept in this browser', () => {
     expect(out.map((u) => u.said.id)).toEqual([theirs.said.id, mine.said.id])
   })
 
+  it('leaves one only brought back in this tab as it is kept, until the tab does something with it', () => {
+    const mine = { said: temp('mine', 'm'), decide: false }
+    const back = { said: temp('from before', 'b'), decide: false, failed: 'That did not send. Try again.' }
+    // Every tab brought it back; another sent it or threw it away since: it is not written back.
+    expect(keptUnsent([], [back, mine], new Set([mine.said.id])).map((u) => u.said.id)).toEqual([mine.said.id])
+    // Still kept: it stays as it is kept, not as this tab has it.
+    const edited = { ...back, failed: 'Blocked', refused: true }
+    expect(keptUnsent([edited], [back, mine], new Set([mine.said.id]))).toEqual([edited, mine])
+    // Retried here, it is this tab's: kept as this tab has it now.
+    const going = { said: back.said, decide: false }
+    expect(keptUnsent([back], [going, mine], new Set([mine.said.id, back.said.id]))).toEqual([going, mine])
+  })
+
   it('comes back failed, with why — or the reason it had — and refused stays refused', () => {
     const was = { said: temp('second', 'a', { pending: true }), decide: false }
     expect(unsentAgain(was, 'That did not send. Try again.')).toMatchObject({ id: was.said.id, body: 'second', pending: false, failed: 'That did not send. Try again.' })

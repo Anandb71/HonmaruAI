@@ -1340,17 +1340,22 @@ export const ClassicList: React.FC<Props> = ({
     failed?: string; refused?: boolean; restored?: boolean
   }
   const outbox = useRef(new Map<string, Outgoing>())
-  /// Every message this tab has held in its outbox, gone since or not: what
-  /// it keeps in this browser is only ever these, never another tab's.
+  /// Every message this tab has sent, or done something with — Retry,
+  /// Delete, Edit, or found it got there — gone since or not: what it keeps
+  /// in this browser is only ever these, never another tab's. One kept from
+  /// before this page loaded is not among them until then: every open tab
+  /// brings it back, and one that has not touched it must not write it back
+  /// after another tab has sent it or thrown it away.
   const heldHere = useRef(new Set<string>())
   /// The outbox as it is now, kept in this browser for a reload or the next
-  /// visit, with another tab's messages left as that tab left them.
-  const keepOutbox = () => {
+  /// visit: this tab's messages as they stand, and any other — another
+  /// tab's, or one brought back that this tab has not touched — left as it
+  /// is kept. `tempId`: one this tab does something with now, so its own.
+  const keepOutbox = (tempId?: string) => {
+    if (tempId) heldHere.current.add(tempId)
     const now: Unsent[] = []
-    for (const o of outbox.current.values()) {
-      heldHere.current.add(o.tempId)
+    for (const o of outbox.current.values())
       now.push({ said: o.said, decide: o.decide, ...(o.failed ? { failed: o.failed } : {}), ...(o.refused ? { refused: true } : {}) })
-    }
     const key = outboxKey(api.orgId, userId)
     try {
       const kept = keptUnsent(readUnsent(localStorage.getItem(key)), now, heldHere.current)
@@ -1358,10 +1363,10 @@ export const ClassicList: React.FC<Props> = ({
     } catch { /* not kept: this tab still has them */ }
   }
   /// One kept in this browser from before this page loaded, back in the
-  /// outbox: failed, and not drawn yet.
+  /// outbox: failed, and not drawn yet — nor this tab's (heldHere) until it
+  /// does something with it.
   const restore = (u: Unsent) => {
     if (outbox.current.has(u.said.id)) return
-    heldHere.current.add(u.said.id)
     outbox.current.set(u.said.id, {
       tempId: u.said.id, channel: u.said.channel, body: u.said.body, decide: u.decide, parentId: u.said.parentId || undefined, files: u.said.files || [], said: u.said,
       failed: u.failed || t('That did not send. Try again.'), refused: u.refused, restored: true,
@@ -1395,7 +1400,8 @@ export const ClassicList: React.FC<Props> = ({
       localStorage.removeItem(sharedOutboxKey(api.orgId))
     } catch { /* nothing kept there */ }
     const yours = shared.filter((u) => provenYours(u.said, myRef))
-    for (const u of yours) restore(u)
+    // Taken from a key that is gone now: this tab keeps them, under yours.
+    for (const u of yours) { restore(u); heldHere.current.add(u.said.id) }
     if (yours.length) keepOutbox()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myRef])
@@ -1424,7 +1430,7 @@ export const ClassicList: React.FC<Props> = ({
       if (!here || taken.has(o.tempId)) continue
       if (o.restored) {
         o.restored = false
-        if (!o.refused && wentAfterAll(o.said, fresh)) { outbox.current.delete(o.tempId); settled = true; continue }
+        if (!o.refused && wentAfterAll(o.said, fresh)) { outbox.current.delete(o.tempId); heldHere.current.add(o.tempId); settled = true; continue }
       }
       back.push(o.failed ? unsentAgain(o, o.failed) : { ...o.said, pending: true, failed: undefined, refused: undefined })
     }
@@ -1437,7 +1443,7 @@ export const ClassicList: React.FC<Props> = ({
     const o = outbox.current.get(tempId)
     if (!o || o.going) return
     outbox.current.delete(tempId)
-    keepOutbox()
+    keepOutbox(tempId)
   }
   /// The same words to the same place a moment ago: a second Enter or a
   /// double tap before the box has cleared does not send them twice. Said
@@ -1504,7 +1510,7 @@ export const ClassicList: React.FC<Props> = ({
     const out: Outgoing = { tempId: temp.id, channel, body, decide, parentId, files, said: temp, lateAt: Date.now() + SEND_TIMEOUT }
     outbox.current.set(temp.id, out)
     out.landing = deliver(out)
-    keepOutbox()
+    keepOutbox(temp.id)
     await out.landing
   }
 
@@ -1544,7 +1550,7 @@ export const ClassicList: React.FC<Props> = ({
       return null
     }
     outbox.current.delete(tempId)
-    keepOutbox()
+    keepOutbox(tempId)
     // An edit begun on it while it went carries on, on the server's copy.
     setEditing((e) => (e && e.id === tempId ? { ...e, id: msg.id } : e))
     // Sent: a small confirmation, in a direct conversation — as Slack does.
@@ -1583,7 +1589,7 @@ export const ClassicList: React.FC<Props> = ({
     const { tempId, channel, parentId } = out
     out.failed = why
     out.refused = refused || undefined
-    keepOutbox()
+    keepOutbox(tempId)
     if (parentId) {
       if (shownNow.current.thread !== parentId) { setProblem(why); return }
       setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: markFailed(prev.replies, tempId, why, refused) } : prev))
@@ -1627,7 +1633,7 @@ export const ClassicList: React.FC<Props> = ({
     if (out.parentId) setThread((prev) => (prev && prev.parent.id === out.parentId ? { ...prev, replies: markPending(prev.replies, m.id) } : prev))
     else setMessages((prev) => (prev[out.channel] ? { ...prev, [out.channel]: markPending(prev[out.channel], m.id) } : prev))
     out.landing = deliver(out)
-    keepOutbox()
+    keepOutbox(m.id)
   }
   /// The server's id for one of yours sent from here: waited for while it
   /// is on its way, none when it did not go.
@@ -1640,7 +1646,7 @@ export const ClassicList: React.FC<Props> = ({
   /// One only ever held here, gone from where it was drawn.
   const drop = (tempId: string, channel: string, parentId?: string | null) => {
     outbox.current.delete(tempId)
-    keepOutbox()
+    keepOutbox(tempId)
     if (parentId) setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: prev.replies.filter((x) => x.id !== tempId) } : prev))
     else setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== tempId) } : prev))
   }
