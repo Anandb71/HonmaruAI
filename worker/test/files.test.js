@@ -233,6 +233,19 @@ test("a voice memo is played where it is, under the type the browser gave it", a
   }
 });
 
+test("a signed address asked to download saves the file instead of showing it", async () => {
+  const { file } = await (await upload(mika, "b:cafe", { name: "clip.mp4", type: "video/mp4" })).json();
+  const saved = await call(`${file.url}&download=1`, {});
+  expect(saved.status).toBe(200);
+  expect(saved.headers.get("content-type")).toBe("video/mp4");
+  expect(saved.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''clip.mp4");
+  expect((await call(`${file.url}&download=0`, {})).headers.get("content-disposition")).toMatch(/^inline;/);
+  // The signature is still the whole of who may fetch it.
+  const [path, query] = file.url.split("?");
+  const p = new URLSearchParams(query);
+  expect((await call(`${path}?e=${p.get("e")}&s=${"0".repeat(32)}&download=1`, {})).status).toBe(404);
+});
+
 test("a Range opens nothing a plain request does not, and a download stays one", async () => {
   const html = new TextEncoder().encode("<script>alert(1)</script>");
   const { file } = await (await upload(mika, "b:cafe", { name: "page.html", type: "text/html", bytes: html })).json();

@@ -273,12 +273,15 @@ export async function serveFile(request, env, url) {
   const obj = await getFileObject(env, row.org_id, id, range ? { range } : undefined);
   if (!obj) return new Response("Not found", { status: 404 });
   const shown = SHOWN.has(row.type);
+  // &download=1: saved, not shown, whatever it is — a link across origins
+  // cannot ask for that itself, since the download attribute is ignored.
+  const saving = url.searchParams.get("download") === "1";
   const encoded = encodeURIComponent(row.name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   return new Response(obj.body, {
     status: range ? 206 : 200,
     headers: {
       "content-type": shown ? (row.type === "text/plain" ? "text/plain; charset=utf-8" : row.type) : "application/octet-stream",
-      "content-disposition": `${shown ? "inline" : "attachment"}; filename*=UTF-8''${encoded}`,
+      "content-disposition": `${shown && !saving ? "inline" : "attachment"}; filename*=UTF-8''${encoded}`,
       "content-length": String(range ? range.length : row.size),
       ...(range ? { "content-range": `bytes ${range.offset}-${range.offset + range.length - 1}/${row.size}` } : {}),
       ...guard,
