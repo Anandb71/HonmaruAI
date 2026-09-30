@@ -1,13 +1,14 @@
 import SwiftUI
 
-enum AppTab: Hashable { case home, chat, you }
+enum AppTab: Hashable { case home, dms, activity, you }
 
-/// Home, Chat and Profile are destinations; the round control opens a
-/// request. The bar floats in glass, and on iOS 26 the two shapes melt
-/// together as the system's own controls do.
+/// Slack's four places — Home, DMs, Activity and You — and the round
+/// control that opens a request. The bar floats in glass, and on iOS 26 the
+/// two shapes melt together as the system's own controls do.
 struct AppTabBar: View {
     @Binding var selection: AppTab
-    var chatBadge = 0
+    var dmBadge = 0
+    var activityBadge = 0
     let onCompose: () -> Void
     @Namespace private var pill
 
@@ -16,7 +17,8 @@ struct AppTabBar: View {
             HStack(spacing: 12) {
                 HStack(spacing: 4) {
                     item(.home, icon: "house", label: "Home")
-                    item(.chat, icon: "bubble.left.and.bubble.right", label: "Chat", badge: chatBadge)
+                    item(.dms, icon: "bubble.left.and.bubble.right", label: "DMs", badge: dmBadge)
+                    item(.activity, icon: "bell", label: "Activity", badge: activityBadge)
                     item(.you, icon: "person", label: "You")
                 }
                 .padding(5)
@@ -38,7 +40,7 @@ struct AppTabBar: View {
         return Button { selection = tab; Haptics.light() } label: {
             VStack(spacing: 2) {
                 Image(systemName: on ? "\(icon).fill" : icon).font(.system(size: 19, weight: .medium))
-                Text(label).font(.system(size: 10, weight: .semibold))
+                Text(label).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
             }
             .foregroundStyle(on ? Theme.Colors.textPrimary : Theme.Colors.textTertiary)
             .frame(maxWidth: .infinity, minHeight: 48)
@@ -49,7 +51,7 @@ struct AppTabBar: View {
                 if badge > 0 {
                     Text(badge > 99 ? "99+" : "\(badge)").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
                         .padding(.horizontal, 5).padding(.vertical, 1).background(Theme.Colors.reject, in: Capsule())
-                        .offset(x: -14, y: 2)
+                        .offset(x: -8, y: 2)
                 }
             }
             .contentShape(Capsule())

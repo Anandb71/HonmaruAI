@@ -13,6 +13,8 @@ enum ChatRoute: Hashable {
     case archived
     /// Drafts & sent: what you are still writing, and what you said.
     case sent
+    /// Every message you can read, searched.
+    case search
 }
 
 /// One conversation, the way a chat app on a phone draws it: messages you

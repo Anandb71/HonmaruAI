@@ -213,6 +213,8 @@ final class ChatStore: ObservableObject {
         return a.lastAt > (reads[view] ?? "")
     }
     var unreadInbox: Int { inbox.filter(\.unread).count }
+    /// Direct and group conversations with something new, for the DMs tab.
+    var unreadDMs: Int { (people + groupConversations).filter { isFresh($0.view) }.count }
     func mentions(in view: String) -> Int { inbox.filter { $0.unread && $0.type == "mention" && $0.message.channel == view }.count }
     func nameOf(ref: String) -> String {
         if ref == myRef { return String(localized: "You") }

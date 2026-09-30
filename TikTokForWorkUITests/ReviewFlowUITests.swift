@@ -11,20 +11,28 @@ final class ReviewFlowUITests: XCTestCase {
         let demo = app.buttons["デモを試す"]
         XCTAssertTrue(demo.waitForExistence(timeout: 20))
         demo.tap()
-        let chat = app.buttons["チャット"].firstMatch
-        XCTAssertTrue(chat.waitForExistence(timeout: 15))
-        chat.tap()
-        for title in ["アクティビティ", "スレッド", "後で"] {
-            let button = app.buttons[title].firstMatch
-            XCTAssertTrue(button.waitForExistence(timeout: 5))
-            XCTAssertTrue(button.isHittable)
-            // A normal-size shortcut must not turn into a tall column of
-            // single characters on a small iPhone (Japanese labels are longer).
-            XCTAssertLessThanOrEqual(button.frame.height, 64, title)
-            XCTAssertTrue(app.frame.contains(button.frame), title)
+        // Slack's four places sit in the tab bar, each label on one line.
+        for title in ["ホーム", "DM", "アクティビティ", "あなた"] {
+            let tab = app.buttons[title].firstMatch
+            XCTAssertTrue(tab.waitForExistence(timeout: 15), title)
+            XCTAssertLessThanOrEqual(tab.frame.height, 64, title)
+        }
+        // Home as a list is Slack's sidebar: the cards along the top.
+        let list = app.buttons["リスト"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        list.tap()
+        for title in ["スレッド", "後で"] {
+            let card = app.buttons[title].firstMatch
+            XCTAssertTrue(card.waitForExistence(timeout: 5), title)
+            XCTAssertTrue(card.isHittable, title)
+            // A shortcut must not turn into a tall column of single
+            // characters on a small iPhone (Japanese labels are longer).
+            XCTAssertLessThanOrEqual(card.frame.height, 120, title)
+            XCTAssertGreaterThanOrEqual(card.frame.width, 100, title)
+            XCTAssertTrue(app.frame.contains(card.frame), title)
         }
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        screenshot.name = "Japanese chat shortcuts fit the phone"
+        screenshot.name = "Japanese Slack-style home fits the phone"
         screenshot.lifetime = .keepAlways
         add(screenshot)
         app.buttons["スレッド"].firstMatch.tap()

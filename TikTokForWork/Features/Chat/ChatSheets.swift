@@ -571,3 +571,49 @@ struct ChatSentView: View {
     }
 }
 
+/// Search what was said, on a screen of its own: the field at the top, and
+/// each match opening where it was said.
+struct ChatSearchView: View {
+    @ObservedObject var store: ChatStore
+    @State private var query = ""
+    @State private var results: [ChatMessage] = []
+
+    var body: some View {
+        List {
+            if query.trimmingCharacters(in: .whitespaces).count >= 2 && results.isEmpty {
+                ContentUnavailableView.search(text: query).listRowBackground(Color.clear)
+            }
+            ForEach(results) { m in
+                NavigationLink(value: ChatRoute.conversation(view: m.channel, jump: m.parentId ?? m.id)) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(place(m.channel)).font(.caption.weight(.semibold)).foregroundStyle(Theme.Colors.textSecondary)
+                            Spacer()
+                            Text(m.date, style: .date).font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
+                        }
+                        Text(m.isAI ? String(localized: "Your AI") : (m.mine ? String(localized: "You") : m.authorName ?? "")).font(.subheadline.weight(.semibold))
+                        Text(m.body).font(.subheadline).lineLimit(3)
+                    }.padding(.vertical, 2)
+                }
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle("Search")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search messages"))
+        .task(id: query) {
+            let q = query
+            guard q.trimmingCharacters(in: .whitespaces).count >= 2 else { results = []; return }
+            try? await Task.sleep(for: .milliseconds(280))
+            guard !Task.isCancelled else { return }
+            results = await store.search(q)
+        }
+    }
+
+    private func place(_ view: String) -> String {
+        guard let c = store.conversation(for: view) else { return "" }
+        if c.kind == .agent { return "\(c.agent?.glyph ?? ChatAgent.glyph(nil)) \(c.name)" }
+        return c.kind == .channel ? (c.isPrivate ? "🔒 \(c.name)" : "#\(c.name)") : c.name
+    }
+}
+

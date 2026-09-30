@@ -1,23 +1,88 @@
 import SwiftUI
 
 struct FeedView: View {
+    /// Cards (false) or the Slack-style list (true), switched in the header.
+    @Binding var list: Bool
     var onProfile: () -> Void = {}
-    var onComposeToMember: (String) -> Void = { _ in }
     @EnvironmentObject private var appState: AppState
-    var body: some View { CardHomeContent(service: appState.cardService, onProfile: onProfile, onComposeToMember: onComposeToMember) }
+    var body: some View { CardHomeContent(service: appState.cardService, list: $list, onProfile: onProfile) }
+}
+
+/// Home's header, the same over Cards and the list: the workspace on
+/// Slack's aubergine band (its mark switches workspaces), how you read
+/// Home, search when there is something to search, and you.
+struct HomeHeader: View {
+    @ObservedObject var service: DecisionCardService
+    @Binding var list: Bool
+    var onSearch: (() -> Void)? = nil
+    let onProfile: () -> Void
+    @EnvironmentObject private var appState: AppState
+
+    private var waiting: Int { service.cards(for: appState.currentUser?.id ?? "").filter(\.isPending).count }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                WorkspaceSwitcherButton(size: 36)
+                Text(verbatim: appState.workspaceDisplayName)
+                    .font(.title3.weight(.bold)).foregroundStyle(.white)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let onSearch {
+                    Button(action: onSearch) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                    }.buttonStyle(.plain).accessibilityLabel("Search messages")
+                }
+                Button(action: onProfile) {
+                    RequestAvatar(name: appState.currentUser?.name ?? "?", url: appState.workspaceMembers.first { $0.id == appState.currentUser?.id }?.avatarUrl, size: 32)
+                        .overlay(Circle().stroke(.white.opacity(0.55), lineWidth: 1))
+                        .frame(width: 40, height: 40)
+                }.buttonStyle(.plain).accessibilityLabel("Profile")
+            }
+            HStack(spacing: 0) {
+                segment(on: !list, action: { list = false }) {
+                    HStack(spacing: 6) {
+                        Text("Cards")
+                        if waiting > 0 {
+                            Text(verbatim: "\(waiting)").font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(list ? Color.white : Color(hex: 0x2B154B))
+                                .frame(minWidth: 18, minHeight: 18)
+                                .background(list ? Color.white.opacity(0.25) : Color.white, in: Circle())
+                        }
+                    }
+                }
+                segment(on: list, action: { list = true }) { Text("Classic") }
+            }
+            .padding(3)
+            .background(Color.white.opacity(0.12), in: Capsule())
+        }
+        .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 12)
+        .background(Color(hex: 0x2B154B).ignoresSafeArea(edges: .top))
+    }
+
+    private func segment<L: View>(on: Bool, action: @escaping () -> Void, @ViewBuilder label: () -> L) -> some View {
+        Button { action(); Haptics.light() } label: {
+            label()
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(on ? Color(hex: 0x2B154B) : Color.white.opacity(0.85))
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .background(on ? Color.white : Color.clear, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
 }
 
 private struct CardHomeContent: View {
     @ObservedObject var service: DecisionCardService
+    @Binding var list: Bool
     let onProfile: () -> Void
-    let onComposeToMember: (String) -> Void
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var push: PushService
     @Environment(\.scenePhase) private var scenePhase
-    @State private var classic = false
     @State private var selectedID: String?
-    @State private var search = ""
-    @State private var highPriorityOnly = false
     @State private var detailCard: DecisionCard?
     @State private var noteCard: DecisionCard?
     @State private var noteAction: CardActionKind = .reply
@@ -41,16 +106,11 @@ private struct CardHomeContent: View {
         AppReads.shared.seen(cards, orgId: appState.currentUser?.teamID, base: appState.backendBaseURL)
     }
     private var selectedCard: DecisionCard? { cards.first { $0.id == selectedID } ?? cards.first }
-    private var filtered: [DecisionCard] {
-        cards.filter { card in (!highPriorityOnly || card.priority == .high || card.priority == .urgent) && (search.isEmpty || [card.title, card.summary, card.displayTitle, card.displaySummary, memberName(card.senderUserID)].joined(separator: " ").localizedCaseInsensitiveContains(search)) }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
-            if classic { classicWorkspaceHeader }
-            header
-            if classic { classicList }
-            else if cards.isEmpty { emptyState }
+            HomeHeader(service: service, list: $list, onProfile: onProfile)
+            if cards.isEmpty { emptyState }
             else {
                 TabView(selection: $selectedID) {
                     ForEach(cards) { card in
@@ -167,92 +227,6 @@ private struct CardHomeContent: View {
         }
     }
 
-    private var header: some View {
-        HStack {
-            // The workspace's mark: every other workspace, and adding one.
-            WorkspaceSwitcherButton(size: 34).padding(.trailing, 6)
-            HStack(spacing: 0) {
-                Button { classic = false } label: {
-                    HStack(spacing: 6) {
-                        Text("Cards").font(.system(size: 13, weight: .medium))
-                        Text("\(cards.count)").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.Colors.ctaText)
-                            .frame(minWidth: 20, minHeight: 20).background(Theme.Colors.ctaFill, in: Circle())
-                    }.padding(.horizontal, 10).frame(minHeight: 34)
-                        .background(!classic ? Theme.Colors.background : Color.clear, in: Capsule())
-                }
-                Button { classic = true } label: {
-                    Text("Classic").font(.system(size: 13, weight: .medium)).padding(.horizontal, 12).frame(minHeight: 34)
-                        .foregroundStyle(classic ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
-                        .background(classic ? Theme.Colors.background : Color.clear, in: Capsule())
-                }
-            }.padding(4).background(Theme.Colors.surfaceRaised, in: Capsule()).buttonStyle(.plain)
-            Spacer()
-            if !classic {
-                Button(action: onProfile) {
-                    RequestAvatar(name: appState.currentUser?.name ?? "?", url: appState.workspaceMembers.first { $0.id == appState.currentUser?.id }?.avatarUrl, size: 38)
-                }.buttonStyle(.plain).accessibilityLabel("Profile")
-            }
-        }
-        .foregroundStyle(Theme.Colors.textPrimary)
-        .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 12)
-    }
-
-    private var classicWorkspaceHeader: some View {
-        HStack(spacing: 10) {
-            WorkspaceSwitcherButton(size: 32)
-            Text(appState.workspaceDisplayName)
-                .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-            Button(action: onProfile) {
-                RequestAvatar(name: appState.currentUser?.name ?? "?", url: appState.workspaceMembers.first { $0.id == appState.currentUser?.id }?.avatarUrl, size: 30)
-                    .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1))
-                    .frame(width: 44, height: 44)
-            }.buttonStyle(.plain).accessibilityLabel("Profile")
-        }
-        .padding(.horizontal, 20).padding(.vertical, 6)
-        .background(Color(hex: 0x2B154B))
-        .padding(.bottom, 6)
-    }
-
-    private var classicList: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(Theme.Colors.textSecondary)
-                TextField("Search requests or people", text: $search).font(.subheadline)
-                Button { highPriorityOnly.toggle() } label: { Image(systemName: "slider.horizontal.3") }
-                    .foregroundStyle(highPriorityOnly ? Theme.Colors.accent : Theme.Colors.textSecondary).accessibilityLabel("High priority")
-            }.padding(12).background(Theme.Colors.background, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.Colors.border)).padding(.horizontal, 20)
-            List {
-                Section(appState.isGuest ? String(localized: "Sample requests") : String(localized: "Requests")) {
-                    ForEach(filtered) { card in
-                        Button { detailCard = card } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "number").font(.title3).foregroundStyle(Theme.Colors.accent).frame(width: 36, height: 36).background(Theme.Colors.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(card.displayTitle).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.Colors.textPrimary).lineLimit(1)
-                                    Text(card.displaySummary).font(.caption).foregroundStyle(Theme.Colors.textSecondary).lineLimit(1)
-                                }
-                            }.padding(.vertical, 4)
-                        }
-                    }
-                    if filtered.isEmpty { Text("No matching requests").font(.subheadline).foregroundStyle(Theme.Colors.textSecondary) }
-                }
-                Section("Teammates") {
-                    ForEach(appState.workspaceMembers.filter { $0.id != appState.currentUser?.id }) { member in
-                        Button { onComposeToMember(member.id) } label: {
-                            HStack(spacing: 10) {
-                                RequestAvatar(name: member.name, url: member.avatarUrl, size: 32)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(member.name).font(.subheadline.weight(.medium)).foregroundStyle(Theme.Colors.textPrimary)
-                                    Text(member.role).font(.caption).foregroundStyle(Theme.Colors.textSecondary)
-                                }
-                            }.padding(.vertical, 3)
-                        }
-                    }
-                }
-            }.listStyle(.plain).scrollContentBackground(.hidden)
-        }
-    }
     private var emptyState: some View {
         VStack(spacing: 16) {
             Spacer()
