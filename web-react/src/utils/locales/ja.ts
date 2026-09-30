@@ -1966,6 +1966,11 @@ const table: Record<string, string> = {
   "{name} is on. Write @{handle} in a channel to hand it work.": "{name}をオンにしました。チャンネルで @{handle} と書くと仕事を任せられます。",
   "{n} ACUs": "{n} ACU",
   "{n} tasks": "{n}タスク",
+  'Spoiler': 'ネタバレ',
+  'Original message was deleted': '元のメッセージは削除されました',
+  'In reply to': '返信先:',
+  'Replying to {name}': '{name}に返信',
+  'Cancel reply': '返信をやめる',
 }
 
 export default table

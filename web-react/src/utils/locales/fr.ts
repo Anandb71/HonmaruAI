@@ -1902,6 +1902,11 @@ const table: Record<string, string> = {
   "{name} is on. Write @{handle} in a channel to hand it work.": "{name} est activé. Écrivez @{handle} dans un canal pour lui confier du travail.",
   "{n} ACUs": "{n} ACU",
   "{n} tasks": "{n} tâches",
+  'Spoiler': 'Spoiler',
+  'Original message was deleted': 'Le message d’origine a été supprimé',
+  'In reply to': 'En réponse à',
+  'Replying to {name}': 'Réponse à {name}',
+  'Cancel reply': 'Annuler la réponse',
 }
 
 export default table

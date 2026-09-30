@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getLocale } from '../utils/locale'
 import { useT } from '../utils/i18n'
-import type { ChannelMessage } from '../types/card'
+import type { ChannelMessage, ReplyQuote } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
+import { excerptParts } from '../utils/replies'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
@@ -149,12 +150,15 @@ export const Reactions: React.FC<{
   )
 }
 
-/// Everything you can do to one message, on hover — reactions, a thread,
-/// a pin, and behind ⋯ the rest: edit, delete, copy, make it a decision.
+/// Everything you can do to one message, on hover — reactions, a reply, a
+/// thread, a pin, and behind ⋯ the rest: edit, delete, copy, make it a
+/// decision.
 export const MessageActions: React.FC<{
   message: ChannelMessage
   inThread?: boolean
   onReact: (emoji: string) => void
+  /// Answer it inline, quoted above what you say — Discord's Reply.
+  onQuote?: () => void
   onReply?: () => void
   onPin?: () => void
   onEdit?: () => void
@@ -169,7 +173,7 @@ export const MessageActions: React.FC<{
   onCopyLink?: () => void
   clipped?: boolean
   onOpenChange: (open: boolean) => void
-}> = ({ message, inThread, onReact, onReply, onPin, onEdit, onDelete, onDecide, onLater, onClip, clipped, onOpenChange, onUnread, onForward, onCopyLink }) => {
+}> = ({ message, inThread, onReact, onQuote, onReply, onPin, onEdit, onDelete, onDecide, onLater, onClip, clipped, onOpenChange, onUnread, onForward, onCopyLink }) => {
   const t = useT()
   const [picker, setPicker] = useState(false)
   const [menu, setMenu] = useState(false)
@@ -190,6 +194,9 @@ export const MessageActions: React.FC<{
         <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
       ))}
       <button type="button" className="slk-tool" onClick={() => setPicker((p) => !p)} title={t('Add reaction')} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={16} /></button>
+      {onQuote && (
+        <button type="button" className="slk-tool" onClick={onQuote} title={t('Reply')} aria-label={t('Reply')} data-tool="quote"><Icon name="reply" size={16} /></button>
+      )}
       {onReply && !inThread && (
         <button type="button" className="slk-tool" onClick={onReply} title={t('Reply in thread')} aria-label={t('Reply in thread')}><Icon name="message" size={16} /></button>
       )}
@@ -201,7 +208,8 @@ export const MessageActions: React.FC<{
         {menu && (
           <div className="slk-menu" role="menu">
             {onEdit && <button type="button" role="menuitem" onClick={() => { setMenu(false); onEdit() }}>{t('Edit message')}<kbd>E</kbd></button>}
-            {onReply && !inThread && <button type="button" role="menuitem" onClick={() => { setMenu(false); onReply() }}>{t('Reply in thread')}<kbd>T</kbd></button>}
+            {onQuote && <button type="button" role="menuitem" onClick={() => { setMenu(false); onQuote() }}>{t('Reply')}</button>}
+            {onReply && !inThread &&<button type="button" role="menuitem" onClick={() => { setMenu(false); onReply() }}>{t('Reply in thread')}<kbd>T</kbd></button>}
             {onDecide && <button type="button" role="menuitem" onClick={() => { setMenu(false); onDecide() }}>{t('Make it a decision')}</button>}
             {onPin && !inThread && <button type="button" role="menuitem" onClick={() => { setMenu(false); onPin() }}>{message.pinned ? t('Unpin') : t('Pin to channel')}<kbd>P</kbd></button>}
             {onClip && <button type="button" role="menuitem" onClick={() => { setMenu(false); onClip() }}>{clipped ? t('Remove from clip') : t('Add to clip')}</button>}
@@ -267,6 +275,61 @@ export const CardActions: React.FC<{
       </div>
       {picker && <EmojiPicker onPick={(e) => { setPicker(false); onReact(e) }} onClose={() => setPicker(false)} />}
     </>
+  )
+}
+
+// ---- Inline replies ----
+//
+// Discord's Reply, not a thread: the answer goes in the conversation with a
+// line above it quoting who said what. The quote comes from the Worker
+// (utils/replies.ts says how it is made); these only draw it.
+
+/// A quote's words, a hidden spoiler drawn as a bar that says what it is.
+const QuoteWords: React.FC<{ excerpt: string }> = ({ excerpt }) => {
+  const t = useT()
+  return <>{excerptParts(excerpt).map((p, i) => (p === null
+    ? <span key={i} className="slk-reply-spoiler" role="img" aria-label={t('Spoiler')} />
+    : <React.Fragment key={i}>{p}</React.Fragment>))}</>
+}
+
+/// The line above an inline reply: who it answers and how that began —
+/// pressed, it goes to the original — or only that the original is gone.
+/// `name` is the author as this reader calls them.
+export const ReplyQuoteLine: React.FC<{ quote: ReplyQuote; name: string; onJump: () => void }> = ({ quote, name, onJump }) => {
+  const t = useT()
+  if (quote.deleted) {
+    return (
+      <div className="slk-reply-quote gone" data-reply-to={quote.id}>
+        <Icon name="reply" size={12} />
+        <span className="slk-reply-excerpt">{t('Original message was deleted')}</span>
+      </div>
+    )
+  }
+  return (
+    <button type="button" className="slk-reply-quote" onClick={onJump} title={t('Go to the message')} data-reply-to={quote.id}>
+      <Icon name="reply" size={12} />
+      <span className="sr-only">{t('In reply to')} </span>
+      <b className="slk-reply-who">{name}</b>
+      <span className="slk-reply-excerpt"><QuoteWords excerpt={quote.excerpt} /></span>
+    </button>
+  )
+}
+
+/// Over the composer while a reply is being written: what it answers, and
+/// the × (or Escape) that makes it a plain message again. `textId` names
+/// the words, for the composer to be described by them.
+export const ReplyingBar: React.FC<{ quote: ReplyQuote; name: string; textId: string; onCancel: () => void }> = ({ quote, name, textId, onCancel }) => {
+  const t = useT()
+  return (
+    <div className="slk-replying" data-replying={quote.id}>
+      <Icon name="reply" size={13} />
+      <span className="slk-replying-text" id={textId}>
+        {quote.deleted ? t('Original message was deleted') : <>{t('Replying to {name}', { name })} <span className="slk-replying-excerpt"><QuoteWords excerpt={quote.excerpt} /></span></>}
+      </span>
+      <button type="button" className="slk-replying-cancel" onClick={onCancel} aria-label={t('Cancel reply')} title={`${t('Cancel reply')} (Esc)`}>
+        <Icon name="x" size={13} />
+      </button>
+    </div>
   )
 }
 
