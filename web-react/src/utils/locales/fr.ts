@@ -1241,6 +1241,7 @@ const table: Record<string, string> = {
   'A scheduled message cannot carry files yet.': 'Un message programmé ne peut pas encore contenir de fichiers.',
   'Attach files': 'Joindre des fichiers',
   'Download': 'Télécharger',
+  'Download {name}': 'Télécharger {name}',
   'Open {name}': 'Ouvrir {name}',
   'Up to {n} files in one message.': 'Jusqu’à {n} fichiers par message.',
   'Wait for the files to finish uploading.': 'Attendez la fin de l’envoi des fichiers.',
