@@ -28,7 +28,9 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
   const custom = useCustomEmoji()
   useEffect(() => {
     const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    // Esc closes the picker and nothing under it: not the thread beside the
+    // message (the window's Esc), which a picker opened with + sits over.
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
