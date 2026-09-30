@@ -168,13 +168,24 @@ export function withHeld(list: ChannelMessage[], held: ChannelMessage[]): Channe
   return more.length ? [...list, ...more] : list
 }
 
-// Kept in this browser, per workspace, so that closing the tab or reloading
-// never loses what did not go: each message on its way or failed, as it was
-// drawn, with how it was sent and, when it failed, why.
+// Kept in this browser, per workspace and per person, so that closing the
+// tab or reloading never loses what did not go: each message on its way or
+// failed, as it was drawn, with how it was sent and, when it failed, why.
 
 export type Unsent = { said: ChannelMessage; decide: boolean; failed?: string; refused?: boolean }
 
-export const outboxKey = (orgId: string) => `outbox:${orgId}`
+/// Where one person's outbox in one workspace is kept. Per person as well:
+/// kept per workspace only, whoever signed in to it next in this browser
+/// would have the last person's unsent messages drawn as their own — and
+/// Retry would send them under the new name, a direct message included.
+/// Each part is encoded, so no workspace and person make another pair's
+/// key — and, the ':' in a workspace's id (team:…) encoded, nor the key
+/// the whole workspace's was kept under before (sharedOutboxKey).
+export const outboxKey = (orgId: string, userId: string) => `outbox:${encodeURIComponent(orgId)}:${encodeURIComponent(userId)}`
+
+/// Where the outbox was kept before it was kept per person: anyone who used
+/// the workspace in this browser may have written it.
+export const sharedOutboxKey = (orgId: string) => `outbox:${orgId}`
 
 const isUnsent = (u: unknown): u is Unsent => {
   const said = (u as Unsent | null)?.said

@@ -1348,7 +1348,7 @@ export const ClassicList: React.FC<Props> = ({
       heldHere.current.add(o.tempId)
       now.push({ said: o.said, decide: o.decide, ...(o.failed ? { failed: o.failed } : {}), ...(o.refused ? { refused: true } : {}) })
     }
-    const key = outboxKey(api.orgId)
+    const key = outboxKey(api.orgId, userId)
     try {
       const kept = keptUnsent(readUnsent(localStorage.getItem(key)), now, heldHere.current)
       if (kept.length) localStorage.setItem(key, JSON.stringify(kept)); else localStorage.removeItem(key)
@@ -1356,9 +1356,11 @@ export const ClassicList: React.FC<Props> = ({
   }
   // What did not go before this page loaded: back in the outbox, failed,
   // drawn where it was sent once that conversation or thread is loaded.
+  // Only yours — kept under your own key, not the workspace's, so what
+  // someone else signed in here left unsent is never drawn as yours.
   useEffect(() => {
     let kept: Unsent[] = []
-    try { kept = readUnsent(localStorage.getItem(outboxKey(api.orgId))) } catch { /* nothing kept */ }
+    try { kept = readUnsent(localStorage.getItem(outboxKey(api.orgId, userId))) } catch { /* nothing kept */ }
     for (const u of kept) {
       if (outbox.current.has(u.said.id)) continue
       heldHere.current.add(u.said.id)
@@ -1368,7 +1370,7 @@ export const ClassicList: React.FC<Props> = ({
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.orgId])
+  }, [api.orgId, userId])
   // Leaving while something is still on its way: asked first, as it may not
   // get there. What did not go is kept for next time, so is not asked about.
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptUnsent, markFailed, markPending, outboxKey, readUnsent, reconcile, refusedOutright, sendDeadline, sendTime, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from './pendingSend'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptUnsent, markFailed, markPending, outboxKey, readUnsent, reconcile, refusedOutright, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -277,7 +277,19 @@ describe('what did not go, kept in this browser', () => {
     expect(readUnsent('not json')).toEqual([])
     expect(readUnsent('{"said":1}')).toEqual([])
     expect(readUnsent(JSON.stringify([kept, null, 3, { said: { ...kept.said, id: 'real-1' } }, { said: { id: 'tmp-x' } }]))).toEqual([kept])
-    expect(outboxKey('team:x')).toBe('outbox:team:x')
+  })
+
+  it('is kept per person as well as per workspace', () => {
+    expect(outboxKey('team:x', 'aiko')).toBe('outbox:team%3Ax:aiko')
+    expect(outboxKey('team:x', 'aiko')).not.toBe(outboxKey('team:x', 'toru'))
+    expect(outboxKey('team:x', 'aiko')).not.toBe(outboxKey('team:y', 'aiko'))
+    // No workspace and person make another pair's key.
+    expect(outboxKey('team', 'x:aiko')).not.toBe(outboxKey('team:x', 'aiko'))
+    // Nor the key the whole workspace's was kept under before.
+    expect(sharedOutboxKey('team:x')).toBe('outbox:team:x')
+    for (const org of ['team:x', 'personal:ab12', 'acme/hotel']) expect(outboxKey(org, 'aiko')).not.toBe(sharedOutboxKey(org))
+    // Every one of them is what signing out clears.
+    expect(outboxKey('team:x', 'aiko').startsWith('outbox:')).toBe(true)
   })
 
   it('keeps another tab’s as it left them, and this tab’s as they are now', () => {
