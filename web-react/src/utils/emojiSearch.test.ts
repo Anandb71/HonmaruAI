@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { EMOJI } from './emojiData'
+import { EMOJI, EMOJI_GROUPS } from './emojiData'
 import type { EmojiEntry } from './emojiData'
-import { searchEmoji, bestName, pushRecent, readRecent, rememberEmoji, quickReactions, isEmojiOnly, gridStep, canReact, loadEmojiData, QUICK_REACTIONS } from './emojiSearch'
+import { searchEmoji, searchCustomEmoji, bestName, pushRecent, readRecent, rememberEmoji, quickReactions, isEmojiOnly, gridStep, canReact, loadEmojiData, pickerSections, QUICK_REACTIONS } from './emojiSearch'
+import type { PickerSection } from './emojiSearch'
 
 const entry = (e: string, ...n: string[]): EmojiEntry => ({ e, n, g: 'Symbols' })
 
@@ -117,6 +118,38 @@ describe('a line of nothing but emoji', () => {
     expect(isEmojiOnly('*👍*')).toBe(false)
     expect(isEmojiOnly('👍!')).toBe(false)
     expect(isEmojiOnly('`👍`')).toBe(false)
+  })
+})
+
+describe('what the picker shows', () => {
+  const custom = [
+    { name: 'shogun_party', url: 'u1', by: null, createdAt: '' },
+    { name: 'party_parrot', url: 'u2', by: null, createdAt: '' },
+  ]
+  const labels = (s: PickerSection[]) => s.map((x) => `${x.label}:${x.cells.length}`)
+
+  it('offers the workspace’s emoji, the usual ones for someone new, then every group once loaded', () => {
+    expect(labels(pickerSections('', custom, [], null))).toEqual(['This workspace:2', 'Frequently used:12'])
+    const all = pickerSections('', custom, [], EMOJI)
+    expect(all.map((s) => s.label)).toEqual(['This workspace', 'Frequently used', ...EMOJI_GROUPS])
+    expect(all.slice(2).reduce((n, s) => n + s.cells.length, 0)).toBe(EMOJI.length)
+    expect(all[1].cells[0]).toEqual({ emoji: '👍', name: '+1' })
+  })
+
+  it('puts what you used lately in place of the usual ones, skipping another workspace’s emoji', () => {
+    const [, lately] = pickerSections('', custom, ['🔥', ':elsewhere:', ':shogun_party:'], EMOJI)
+    expect(lately.label).toBe('Recently used')
+    expect(lately.cells).toEqual([{ emoji: '🔥', name: 'fire' }, { emoji: ':shogun_party:', name: 'shogun_party', url: 'u1' }])
+  })
+
+  it('searches as one grid, the workspace’s own first', () => {
+    const [found, ...rest] = pickerSections('party', custom, [], EMOJI)
+    expect(rest).toEqual([])
+    expect(found.label).toBe('Search results')
+    expect(found.cells.slice(0, 3).map((c) => c.emoji)).toEqual([':party_parrot:', ':shogun_party:', '🥳'])
+    expect(found.cells[2].name).toBe('party')
+    expect(pickerSections('zzzzqq', custom, [], EMOJI)[0].cells).toEqual([])
+    expect(searchCustomEmoji(custom, ':shogun_party:').map((c) => c.name)).toEqual(['shogun_party'])
   })
 })
 

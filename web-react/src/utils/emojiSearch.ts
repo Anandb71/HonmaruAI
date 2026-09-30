@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import type { EmojiEntry } from './emojiData'
-import { CUSTOM_EMOJI, useCustomEmoji } from './customEmoji'
+import { CUSTOM_EMOJI, useCustomEmoji, type CustomEmoji } from './customEmoji'
 
 // Finding an emoji: by name in the picker and after a ':', the ones you
 // used last, and whether a line is nothing but emoji. The list itself
@@ -32,19 +32,30 @@ function rank(name: string, query: string): number {
   return name === query ? 0 : name.startsWith(query) ? 1 : name.includes(query) ? 2 : 3
 }
 
-/// The emoji whose names answer a query: a name that is the query first,
-/// then names that start with it, then names that hold it; within each, in
-/// the list's own order, which puts the common ones first. The character
-/// itself, pasted in, finds itself.
-export function searchEmoji(data: EmojiEntry[], q: string, limit = 48): EmojiEntry[] {
+/// Whatever has names, ranked against a query: a name that is the query
+/// first, then names that start with it, then names that hold it; within
+/// each, in the list's own order. `self` is what the thing is when pasted
+/// in whole, which finds it too.
+function byNames<T>(list: T[], names: (x: T) => string[], self: (x: T) => string, q: string, limit: number): T[] {
   const query = normalize(q)
   if (!query) return []
-  const tiers: EmojiEntry[][] = [[], [], []]
-  for (const entry of data) {
-    const best = entry.e === q.trim() ? 0 : Math.min(...entry.n.map((n) => rank(n, query)))
-    if (best < 3) tiers[best].push(entry)
+  const tiers: T[][] = [[], [], []]
+  for (const x of list) {
+    const best = self(x) === q.trim() ? 0 : Math.min(...names(x).map((n) => rank(n, query)))
+    if (best < 3) tiers[best].push(x)
   }
   return tiers.flat().slice(0, limit)
+}
+
+/// The emoji whose names answer a query, the common ones first within a
+/// rank since the list is in that order.
+export function searchEmoji(data: EmojiEntry[], q: string, limit = 48): EmojiEntry[] {
+  return byNames(data, (x) => x.n, (x) => x.e, q, limit)
+}
+
+/// The same for this workspace's own emoji.
+export function searchCustomEmoji(list: CustomEmoji[], q: string, limit = 48): CustomEmoji[] {
+  return byNames(list, (c) => [c.name], (c) => `:${c.name}:`, q, limit)
 }
 
 /// The name to show beside an emoji a query found: the one that answered
@@ -177,6 +188,52 @@ export function isEmojiOnly(line: string, known: (token: string) => boolean = ()
   })
   const left = rest.replace(PICTURE, () => { pictures += 1; return '' }).replace(GLUE, '')
   return !left && pictures > 0
+}
+
+// ---- The picker ----
+
+/// What the picker offered before it knew anything: shown under "Frequently
+/// used" until you have reacted with something yourself.
+export const FREQUENT_EMOJI = ['👍', '✅', '👀', '🙌', '🎉', '🙏', '❤️', '😂', '🔥', '💯', '👏', '🚀']
+
+/// One button in the picker: what it sends, the name it goes by, and for a
+/// workspace's own emoji its picture.
+export interface PickerCell { emoji: string; name: string; url?: string }
+/// A labelled grid of them. `label` is the English key, translated where it
+/// is drawn; `workspace` is the one with the link to add more.
+export interface PickerSection { label: string; cells: PickerCell[]; workspace?: boolean }
+
+/// The picker's contents. Searching, one flat grid: this workspace's emoji
+/// that match first, then the rest. Otherwise this workspace's emoji, the
+/// ones used lately (or the usual ones, for someone new), and every group
+/// of the list once it is here — in its own order, so its groups need not
+/// be imported to be named.
+export function pickerSections(query: string, custom: CustomEmoji[], recent: string[], data: EmojiEntry[] | null): PickerSection[] {
+  const own = (c: CustomEmoji): PickerCell => ({ emoji: `:${c.name}:`, name: c.name, url: c.url })
+  if (normalize(query)) {
+    const found = [...searchCustomEmoji(custom, query).map(own), ...searchEmoji(data || [], query).map((x) => ({ emoji: x.e, name: bestName(x, query) }))]
+    return [{ label: 'Search results', cells: found }]
+  }
+  const shortcode = new Map((data || []).map((x) => [x.e, x.n[0]]))
+  const plain = (e: string): PickerCell => ({ emoji: e, name: shortcode.get(e) || '' })
+  const byName = new Map(custom.map((c) => [`:${c.name}:`, c]))
+  const lately = recent.flatMap((e) => {
+    if (!CUSTOM_EMOJI.test(e)) return [plain(e)]
+    const c = byName.get(e)
+    return c ? [own(c)] : []
+  })
+  const groups: PickerSection[] = []
+  for (const x of data || []) {
+    const last = groups[groups.length - 1]
+    const cell = { emoji: x.e, name: x.n[0] }
+    if (last && last.label === x.g) last.cells.push(cell)
+    else groups.push({ label: x.g, cells: [cell] })
+  }
+  return [
+    { label: 'This workspace', cells: custom.map(own), workspace: true },
+    lately.length ? { label: 'Recently used', cells: lately } : { label: 'Frequently used', cells: FREQUENT_EMOJI.map(plain) },
+    ...groups,
+  ]
 }
 
 // ---- The picker's grid, by keyboard ----
