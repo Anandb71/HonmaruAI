@@ -897,7 +897,9 @@ export async function handleChannels(request, env, url, { route, after }) {
     const view = viewOf(resolved.key, who.user.login, members);
     if (request.method === "GET") {
       const before = url.searchParams.get("before") || undefined;
-      return json({ messages: await listMessages(env.DB, orgId, resolved, who.user.login, view, members, { before }) });
+      // `{ messages, more }`: `more` says whether older messages are there
+      // to page back to, so a client need not guess it from the count.
+      return json(await listMessages(env.DB, orgId, resolved, who.user.login, view, members, { before }));
     }
     const parentId = typeof body.parentId === "string" && body.parentId ? body.parentId : null;
     // The workspace's data rules read it before it is kept, sent now or later.
