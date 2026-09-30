@@ -186,9 +186,9 @@ describe('a message that did not go', () => {
   it('is refused outright when the server read it and said no, not when it could not answer', () => {
     // A data rule blocked it, or warned and "send it anyway" was declined;
     // the thread has gone; no right to post there.
-    for (const status of [400, 401, 403, 404, 409, 413, 422]) expect(refusedOutright(status)).toBe(true)
+    for (const status of [400, 403, 404, 409, 413, 422]) expect(refusedOutright(status)).toBe(true)
     // Too slow, too many, or the server fell over: worth sending again.
-    for (const status of [408, 429, 500, 502, 503, 504]) expect(refusedOutright(status)).toBe(false)
+    for (const status of [401, 408, 429, 500, 502, 503, 504]) expect(refusedOutright(status)).toBe(false)
     expect(refusedOutright(201)).toBe(false)
   })
 })

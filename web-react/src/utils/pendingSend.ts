@@ -120,10 +120,11 @@ export function sendDeadline(ctrl: AbortController, ms = SEND_TIMEOUT, paused: (
 /// An answer that sending the same words again would only meet again: the
 /// server read them and said no — a data rule (422, or 409 once "send it
 /// anyway" was declined), a thread that has gone (400, 404), no right to
-/// post there (403). Not a request that took too long (408) or too many at
-/// once (429): those, like a dropped connection or a server that fell over,
-/// Retry can get past.
-export const refusedOutright = (status: number) => status >= 400 && status < 500 && status !== 408 && status !== 429
+/// post there (403). Not a request that took too long (408), too many at
+/// once (429), or a sign-in that ran out (401: signing in again is the
+/// answer, and then the same words go): those, like a dropped connection or
+/// a server that fell over, Retry can get past.
+export const refusedOutright = (status: number) => status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429
 
 const words = (s: string) => s.replace(/\r\n/g, '\n').trim()
 const fileIds = (m: ChannelMessage) => (m.files || []).map((f) => f.id).sort().join(',')
