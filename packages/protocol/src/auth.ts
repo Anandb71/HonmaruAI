@@ -7,8 +7,10 @@ export interface SignedIn { token: string; userId: string; login: string; orgId:
 /// Sign in with Apple (POST /auth/apple): Apple's identity token, and the
 /// nonce whose SHA-256 (hex) the app gave Apple — the token carries the hash,
 /// only the app knows what it was made from. `name` is what Apple hands the
-/// app the first time only; used when the account is new.
-export interface AppleSignIn { identityToken: string; nonce: string; name?: string; inviteCode?: string; locale?: string }
+/// app the first time only; used when the account is new. `authorizationCode`
+/// is Apple's short-lived code from the same sign-in: the Worker trades it for
+/// a refresh token so that deleting the account can revoke the authorization.
+export interface AppleSignIn { identityToken: string; nonce: string; name?: string; inviteCode?: string; locale?: string; authorizationCode?: string }
 
 /// Redeeming an invitation (POST /invites/accept). 202 when an admin must approve.
 export interface InviteAccepted { orgId: string; joined?: boolean; pending?: boolean; role?: string; message?: string }

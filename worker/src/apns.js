@@ -27,7 +27,7 @@ function base64urlJSON(object) {
 // The .p8 Apple hands out is PKCS#8 PEM. Stored as a Worker secret it usually
 // arrives with literal "\n" rather than newlines, because that is what survives
 // a shell, so both spellings are accepted.
-function derFromPEM(pem) {
+export function derFromPEM(pem) {
   const body = String(pem)
     .replace(/\\n/g, "\n")
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
