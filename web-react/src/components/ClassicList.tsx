@@ -99,6 +99,13 @@ interface Props {
   /// Every conversation that can be opened, with what is unread in each,
   /// for ⌘K to jump to by name. Told again whenever the sidebar changes.
   onPlaces?: (places: Place[]) => void
+  /// Your status, from the You tab along a phone's bottom — the only
+  /// avatar a phone shows in the list, where the shell's top-bar avatar and
+  /// its tab bar are hidden. Given the tab, for the popover to sit above
+  /// and hand focus back to; the popover leads on to the You screen.
+  onStatus?: (tab: HTMLButtonElement) => void
+  /// That popover is open now, for the tab to say so.
+  statusOpen?: boolean
 }
 
 /// One conversation in the sidebar: a channel (a business), a person, or an app.
@@ -236,7 +243,7 @@ function when(iso?: string): string {
 export const ClassicList: React.FC<Props> = ({
   userId, orgName, pending, sent, decided, businesses, presence,
   onOpen, onNudge, onDecide, api, onSearch, onCompose, onTellAI, onDeleteCard, onViewChange, onOpenRecord, onImmersive, renderCard, onWorkspace, workspaceMenu,
-  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, onPlaces,
+  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, onPlaces, onStatus, statusOpen,
 }) => {
   const t = useT()
   // Cozy or compact, as chosen on You: the stylesheet does the rest.
@@ -368,7 +375,8 @@ export const ClassicList: React.FC<Props> = ({
     window.addEventListener('honmaru:agents-changed', on)
     return () => window.removeEventListener('honmaru:agents-changed', on)
   }, [api.httpBase, api.orgId, authHeaders])
-  // Somebody joined or left: the people in the sidebar are read again too.
+  // Somebody joined or left, or you set your status: the people in the
+  // sidebar are read again too.
   useEffect(() => {
     const on = () => setChannelsTick((n) => n + 1)
     window.addEventListener('honmaru:members-changed', on)
@@ -929,13 +937,26 @@ export const ClassicList: React.FC<Props> = ({
 
   // A teammate's profile, beside the conversation.
   const [profile, setProfile] = useState<null | { ref: string; data?: { name: string; handle: string | null; title: string; timezone: string | null; status: Member['status']; awayUntil: string | null; joinedAt: string; mine: boolean; stats: { waiting: number; decided90d: number; medianMinutes: number | null } } }>(null)
-  const openProfile = async (ref: string) => {
-    setDetailId(null); setThread(null)
-    setProfile({ ref })
+  const readProfile = useCallback(async (ref: string) => {
     const res = await fetch(`${api.httpBase}/channels/member?orgId=${encodeURIComponent(api.orgId)}&ref=${encodeURIComponent(ref)}`, { headers: authHeaders }).catch(() => null)
     const d = res?.ok ? await res.json().catch(() => null) : null
     if (d?.member) setProfile((prev) => (prev && prev.ref === ref ? { ref, data: d.member } : prev))
+  }, [api.httpBase, api.orgId, authHeaders])
+  const openProfile = async (ref: string) => {
+    setDetailId(null); setThread(null)
+    setProfile({ ref })
+    await readProfile(ref)
   }
+  // A status set — yours, from your avatar — or somebody joining or
+  // leaving: the profile open beside the conversation is read again, as
+  // the sidebar is.
+  const profileRef = profile?.ref
+  useEffect(() => {
+    if (!profileRef) return
+    const on = () => { void readProfile(profileRef) }
+    window.addEventListener('honmaru:members-changed', on)
+    return () => window.removeEventListener('honmaru:members-changed', on)
+  }, [profileRef, readProfile])
 
   // Keys a chat client has: ⌥↑/⌥↓ between conversations, ⌘⇧A Activity,
   // ⌘⇧D the sidebar.
@@ -3771,7 +3792,13 @@ export const ClassicList: React.FC<Props> = ({
           <button type="button" className={tabOn('later') ? 'on' : ''} aria-current={tabOn('later') ? 'page' : undefined} onClick={openLater} data-phone-tab="later">
             <Icon name="bookmark" size={22} /><span>{t('Later')}</span>
           </button>
-          <button type="button" onClick={() => onOpenScreen?.('profile')} data-phone-tab="you">
+          <button
+            type="button"
+            onClick={(e) => (onStatus ? onStatus(e.currentTarget) : onOpenScreen?.('profile'))}
+            aria-haspopup={onStatus ? 'dialog' : undefined}
+            aria-expanded={onStatus ? Boolean(statusOpen) : undefined}
+            data-phone-tab="you"
+          >
             <Avatar name={myName || '?'} url={myAvatar} size={24} round /><span>{t('You')}</span>
           </button>
         </nav>
