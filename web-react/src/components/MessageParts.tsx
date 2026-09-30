@@ -270,6 +270,30 @@ export const CardActions: React.FC<{
   )
 }
 
+/// Under one of yours the server does not have yet: that it is on its way
+/// (said, not shown — it is drawn dimmed), or why it did not go, with Retry
+/// and Delete. Either button goes once pressed; pressed from the keyboard,
+/// `refocus` says where focus goes instead of nowhere.
+export const UnsentNote: React.FC<{
+  message: ChannelMessage
+  onRetry: () => void
+  onDelete: () => void
+  refocus?: () => void
+}> = ({ message, onRetry, onDelete, refocus }) => {
+  const t = useT()
+  const pressed = (act: () => void) => (e: React.MouseEvent) => { act(); if (e.detail === 0) refocus?.() }
+  if (message.failed) {
+    return (
+      <div className="slk-unsent" role="alert" data-unsent={message.id}>
+        <span className="slk-unsent-why">{message.failed}</span>
+        <button type="button" className="slk-unsent-act" onClick={pressed(onRetry)} data-unsent-retry="1"><Icon name="refresh" size={12} />{t('Retry')}</button>
+        <button type="button" className="slk-unsent-act" onClick={pressed(onDelete)} data-unsent-delete="1"><Icon name="trash" size={12} />{t('Delete')}</button>
+      </div>
+    )
+  }
+  return message.pending ? <span className="sr-only">{t('Sending…')}</span> : null
+}
+
 /// Wrap what is selected in a textarea with a mark — the composer's B, I,
 /// S and code — or put the mark at the caret when nothing is.
 export function wrapSelection(el: HTMLTextAreaElement | null, value: string, set: (v: string) => void, before: string, after = before) {

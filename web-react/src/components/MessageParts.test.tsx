@@ -99,3 +99,28 @@ describe('who reacted', () => {
     expect(reactorNames(many, 'en', more)).toBe('P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, and 3 others')
   })
 })
+
+// Under a message of yours the server does not have yet.
+describe('the note under a message on its way', () => {
+  const said = { id: 'tmp-1', channel: 'b:hotel', kind: 'message' as const, body: 'Rooms are ready', authorName: 'Aiko', authorRef: 'm-aiko', mine: true, cardId: null, createdAt: '2026-09-30T09:00:00.000Z' }
+  const note = async (extra: object) => {
+    const { UnsentNote } = await import('./MessageParts')
+    return renderToStaticMarkup(<UnsentNote message={{ ...said, ...extra }} onRetry={() => {}} onDelete={() => {}} />)
+  }
+
+  it('says why it did not go, as an alert, with Retry and Delete', async () => {
+    const html = await note({ failed: 'That did not send. Try again.' })
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('That did not send. Try again.')
+    expect(html).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-retry="1">.*Retry<\/button>/)
+    expect(html).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-delete="1">.*Delete<\/button>/)
+  })
+
+  it('only tells a screen reader it is on its way — it is drawn dimmed', async () => {
+    expect(await note({ pending: true })).toBe('<span class="sr-only">Sending…</span>')
+  })
+
+  it('is nothing under a message the server has', async () => {
+    expect(await note({ id: '0f9c-uuid' })).toBe('')
+  })
+})

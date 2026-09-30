@@ -21,7 +21,7 @@ import type { AgentFace } from '../utils/mentions'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, UnsentNote } from './MessageParts'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
 import type { DetailsTab, JournalCite } from './ChannelPanes'
 import { JamCall } from '../utils/jam'
@@ -2515,25 +2515,13 @@ export const ClassicList: React.FC<Props> = ({
     return <Avatar key={r} className="slk-face" name={mine ? (myName || t('You')) : nameOfRef(r)} url={mine ? myAvatar : memberByRef(r)?.avatarUrl} size={20} />
   }
 
-  /// Under one of yours the server does not have yet: that it is on its way
-  /// (said, not shown — it is drawn dimmed), or why it did not go and what
-  /// to do about it. Either button goes once pressed; pressed from the
-  /// keyboard, focus goes back to the box it was written in.
-  const unsentLine = (m: ChannelMessage) => {
-    const refocus = (e: React.MouseEvent) => { if (e.detail === 0) (m.parentId ? threadComposer : composer).current?.focus() }
-    return m.failed ? (
-      <div className="slk-unsent" role="alert" data-unsent={m.id}>
-        <span className="slk-unsent-why">{m.failed}</span>
-        <button type="button" className="slk-unsent-act" onClick={(e) => { retry(m); refocus(e) }} data-unsent-retry="1"><Icon name="refresh" size={12} />{t('Retry')}</button>
-        <button type="button" className="slk-unsent-act" onClick={(e) => { discard(m); refocus(e) }} data-unsent-delete="1"><Icon name="trash" size={12} />{t('Delete')}</button>
-      </div>
-    ) : m.pending ? <span className="sr-only">{t('Sending…')}</span> : null
-  }
-
-  /// What sits under a message's words: its reactions and its thread.
+  /// What sits under a message's words: its reactions and its thread — or,
+  /// one of yours the server does not have yet, that it is on its way or
+  /// why it did not go (from the keyboard, back to the box it came from).
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
-      {unsentLine(m)}
+      <UnsentNote message={m} onRetry={() => retry(m)} onDelete={() => discard(m)}
+        refocus={() => (m.parentId ? threadComposer : composer).current?.focus()} />
       {!m.deleted && m.kind === 'message' && !m.previewsHidden && !isTemp(m) && (
         <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken}
           onHide={m.mine ? () => void act('POST', '/channels/previews', channel, { messageId: m.id, hidden: true }) : undefined} />
