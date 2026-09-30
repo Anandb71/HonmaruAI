@@ -126,6 +126,7 @@ struct ChatHomeView: View {
                 case .threads: ChatThreadsView(store: store)
                 case .agents: AgentsView(store: store).environmentObject(appState)
                 case .archived: ChatArchivedChannelsView(store: store)
+                case .sent: ChatSentView(store: store)
                 }
             }
             .alert("New channel", isPresented: $creating) {
@@ -202,6 +203,7 @@ struct ChatHomeView: View {
         shortcut("Activity", icon: "bell", badge: store.unreadInbox, route: .activity)
         shortcut("Threads", icon: "bubble.left.and.bubble.right", badge: store.unreadThreads, route: .threads)
         shortcut("Later", icon: "bookmark", badge: store.saved.count, route: .later)
+        shortcut("Drafts & sent", icon: "paperplane", badge: 0, route: .sent)
     }
 
     private func shortcut(_ title: LocalizedStringKey, icon: String, badge: Int, route: ChatRoute) -> some View {

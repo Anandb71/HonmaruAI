@@ -1968,6 +1968,21 @@ await step('right-clicking a channel in the sidebar offers what a desktop chat a
     await d.goto(`${WEB}/#/list`, { waitUntil: 'load' })
     await d.waitForSelector(rowOf('Old launch'), { timeout: 15000 })
       .catch(() => { throw new Error('a restored channel did not come back to the sidebar') })
+    // Drafts & sent: a message left half-written waits there, and what was
+    // said earlier is listed under Sent.
+    await d.click(`${rowOf('Old launch')} .cl-open`)
+    await d.fill('.slk-input', 'Half-written note about the launch')
+    await d.click('[data-sent="1"]')
+    await d.waitForSelector('[data-draft="Old launch"]:has-text("Half-written note")', { timeout: 5000 })
+      .catch(() => { throw new Error('the unsent message is not under Drafts') })
+    await d.click('[data-sent-tab="sent"]')
+    await d.waitForSelector('[data-sent-message]:has-text("Check-in opens")', { timeout: 10000 })
+      .catch(() => { throw new Error('a message sent earlier is not under Sent') })
+    await d.screenshot({ path: `${SHOTS}/39e-drafts-sent.png` })
+    await d.click('[data-sent-tab="drafts"]')
+    await d.click('[data-draft="Old launch"] [data-draft-discard]')
+    await d.waitForSelector('[data-draft="Old launch"]', { state: 'detached', timeout: 5000 })
+      .catch(() => { throw new Error('Discard left the draft in place') })
     // Escape closes the menu.
     await menu('Front desk')
     await d.keyboard.press('Escape')

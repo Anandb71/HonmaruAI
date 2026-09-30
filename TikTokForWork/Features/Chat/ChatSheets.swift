@@ -494,3 +494,80 @@ struct ChatArchivedChannelsView: View {
         return d.formatted(date: .abbreviated, time: .omitted)
     }
 }
+
+/// Drafts & sent: what you started writing and left, each in the
+/// conversation it waits in, and what you said, newest first.
+struct ChatSentView: View {
+    @ObservedObject var store: ChatStore
+    @State private var tab = 0
+    @State private var sent: [ChatMessage] = []
+    @State private var loaded = false
+    @State private var drafts: [ChatStore.Draft] = []
+
+    var body: some View {
+        List {
+            Picker("", selection: $tab) {
+                Text("Drafts").tag(0)
+                Text("Sent").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .listRowSeparator(.hidden)
+            if tab == 0 {
+                if drafts.isEmpty {
+                    ContentUnavailableView("No drafts", systemImage: "square.and.pencil", description: Text("A message you start and leave unsent waits here, in the conversation it was for."))
+                        .listRowBackground(Color.clear)
+                }
+                ForEach(drafts) { d in
+                    NavigationLink(value: ChatRoute.conversation(view: d.conversation.view, jump: nil)) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(verbatim: Self.place(d.conversation)).font(.caption).foregroundStyle(.secondary)
+                            Text(verbatim: d.text).font(.subheadline).lineLimit(3)
+                        }.padding(.vertical, 4)
+                    }
+                    .swipeActions {
+                        Button(role: .destructive) {
+                            store.setDraft(d.conversation.view, "")
+                            drafts = store.drafts
+                        } label: { Label("Discard", systemImage: "trash") }
+                    }
+                }
+            } else {
+                if loaded && sent.isEmpty {
+                    ContentUnavailableView("Nothing sent yet", systemImage: "paperplane", description: Text("What you say in a channel, a DM or a thread is listed here."))
+                        .listRowBackground(Color.clear)
+                }
+                ForEach(sent) { m in
+                    NavigationLink(value: ChatRoute.conversation(view: m.channel, jump: m.parentId ?? m.id)) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(verbatim: store.conversation(for: m.channel).map(Self.place) ?? "").font(.caption).foregroundStyle(.secondary)
+                                if m.parentId != nil { Text("in a thread").font(.caption).foregroundStyle(.secondary) }
+                                Spacer()
+                                if let at = ChatDates.parse(m.createdAt) {
+                                    Text(at.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Text(verbatim: m.body).font(.subheadline).lineLimit(3)
+                        }.padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle("Drafts & sent")
+        .refreshable { await load() }
+        .task { await load() }
+        .onAppear { drafts = store.drafts }
+    }
+
+    private func load() async {
+        drafts = store.drafts
+        sent = await store.loadSent()
+        loaded = true
+    }
+
+    private static func place(_ c: ChatConversation) -> String {
+        c.kind == .channel && !c.isPrivate ? "#\(c.name)" : c.name
+    }
+}
+

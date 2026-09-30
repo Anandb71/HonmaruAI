@@ -1917,6 +1917,15 @@ const table: Record<string, string> = {
   'Restore': '元に戻す',
   'Restoring…': '戻しています…',
   'Restored #{name}': '#{name} を元に戻しました',
+  'Drafts & sent': '下書きと送信済み',
+  'What you started writing and left, and what you said, newest first.': '書きかけのメッセージと、送ったメッセージ（新しい順）。',
+  'Drafts': '下書き',
+  'Sent': '送信済み',
+  'No drafts': '下書きはありません',
+  'A message you start and leave unsent waits here, in the conversation it was for.': '書きかけのまま送らなかったメッセージは、ここに会話ごとに残ります。',
+  'What you say in a channel, a DM or a thread is listed here.': 'チャンネル・DM・スレッドで送ったメッセージがここに並びます。',
+  'in a thread': 'スレッド内',
+  'Discard': '破棄',
 }
 
 export default table
