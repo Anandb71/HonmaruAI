@@ -12,8 +12,8 @@
 // translate here, and nothing to fetch. Show it, and when it is tapped,
 // bring the feed to the front on the card it names.
 
-const SHELL = 'honmaru-shell-v2'
-const PRECACHE = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg']
+const SHELL = 'honmaru-shell-v3'
+const PRECACHE = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/badge-96.png']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -69,42 +69,129 @@ self.addEventListener('fetch', (event) => {
   )
 })
 
+// Raster images: Chrome does not reliably draw an SVG notification icon, and
+// Android's status-bar badge must be a monochrome PNG (only its alpha is
+// used). Firefox ignores `badge`, and draws the icon.
+const ICON = '/icon-192.png'
+const BADGE = '/badge-96.png'
+
+/// What a push says, turned into what the notification shows. Pure, so the
+/// shape is tested rather than hoped for (sw.test.ts loads this file).
+function notificationFor(data) {
+  const tag = data.tag || data.cardId || 'honmaru'
+  const at = Date.parse(data.at || '')
+  return {
+    title: data.title || 'Honmaru AI',
+    options: {
+      body: data.body || '',
+      tag,
+      // A second message in a conversation replaces the first (one entry per
+      // conversation, as Discord and Slack do) — and must still make a sound
+      // and show, or every message after the first arrives in silence.
+      // `renotify` without a tag throws in Chrome; the tag is always set.
+      renotify: data.kind === 'nudged' || data.kind === 'message',
+      timestamp: Number.isFinite(at) ? at : Date.now(),
+      data: {
+        cardId: data.cardId || null,
+        messageId: data.messageId || null,
+        orgId: data.orgId || null,
+        channel: data.channel || null,
+        url: data.url || null,
+        kind: data.kind || null,
+      },
+      icon: ICON,
+      badge: BADGE,
+    },
+  }
+}
+
+/// The open tab may have shown this very message or card already, the moment
+/// its socket heard it (utils/notifications.ts, same tag). Then the push
+/// replaces it without a second sound. A push must still show something —
+/// `userVisibleOnly` — so it is replaced, never skipped.
+function alreadyShown(existing, data) {
+  return existing.some((n) => {
+    const d = n.data || {}
+    return (data.messageId && d.messageId === data.messageId) || (data.cardId && d.cardId === data.cardId && data.kind === d.kind)
+  })
+}
+
+async function showPush(data) {
+  const { title, options } = notificationFor(data)
+  if (options.renotify) {
+    const existing = await self.registration.getNotifications({ tag: options.tag }).catch(() => [])
+    if (alreadyShown(existing, data)) options.renotify = false
+  }
+  return self.registration.showNotification(title, options)
+}
+
 self.addEventListener('push', (event) => {
   let data = {}
   try { data = event.data ? event.data.json() : {} } catch { data = { title: event.data && event.data.text() } }
-  const title = data.title || 'Honmaru AI'
-  const options = {
-    body: data.body || '',
-    tag: data.tag || data.cardId || 'honmaru',
-    renotify: Boolean(data.kind === 'nudged'),
-    data: { cardId: data.cardId || null, messageId: data.messageId || null, url: data.url || null, kind: data.kind || null },
-    icon: '/icon.svg',
-    badge: '/icon.svg',
-  }
-  const work = [self.registration.showNotification(title, options)]
+  data = data || {}
+  const work = [showPush(data)]
   if (typeof data.badge === 'number' && 'setAppBadge' in navigator) {
-    work.push(data.badge > 0 ? navigator.setAppBadge(data.badge) : navigator.clearAppBadge())
+    work.push((data.badge > 0 ? navigator.setAppBadge(data.badge) : navigator.clearAppBadge()).catch(() => {}))
   }
   event.waitUntil(Promise.all(work))
 })
 
+/// Where a tapped notification leads, as this app's address: the card, or
+/// the message in its own workspace (`#/m/<id>/<orgId>` switches to it).
+function hashFor(data) {
+  if (data.cardId) return '#/feed/' + encodeURIComponent(data.cardId)
+  if (data.messageId) return '#/m/' + encodeURIComponent(data.messageId) + (data.orgId ? '/' + encodeURIComponent(data.orgId) : '')
+  return ''
+}
+
+/// Which open window to bring forward: the one in front, else one that can
+/// be seen, else any window of the app itself — never privacy.html or a
+/// support page, which cannot open a card.
+function pickWindow(windows, scope) {
+  const app = windows.filter((c) => {
+    try {
+      const path = new URL(c.url).pathname.replace(/\/index\.html$/, '/')
+      return c.url.startsWith(scope) && !/\.html?$/.test(path)
+    } catch { return false }
+  })
+  return app.find((c) => c.focused) || app.find((c) => c.visibilityState === 'visible') || app[0] || null
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const cardId = event.notification.data && event.notification.data.cardId
-  const messageId = event.notification.data && event.notification.data.messageId
-  const target = new URL(self.registration.scope)
-  // The card's (or the message's) own address, so a fresh tab opens on it.
-  if (cardId) target.hash = '#/feed/' + encodeURIComponent(cardId)
-  else if (messageId) target.hash = '#/m/' + encodeURIComponent(messageId)
+  const data = event.notification.data || {}
+  const hash = hashFor(data)
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
-      for (const client of windows) {
-        if ('focus' in client) {
-          client.postMessage(messageId && !cardId ? { type: 'open-message', messageId } : { type: 'open-card', cardId })
-          return client.focus()
-        }
+      const client = pickWindow(windows, self.registration.scope)
+      if (!client) {
+        const target = new URL(self.registration.scope)
+        target.hash = hash
+        return self.clients.openWindow(target.toString())
       }
-      return self.clients.openWindow(target.toString())
+      // The open app goes there itself (Dashboard listens), rather than a
+      // second tab opening beside it.
+      client.postMessage(data.messageId && !data.cardId
+        ? { type: 'open-message', messageId: data.messageId, orgId: data.orgId || null, hash }
+        : { type: 'open-card', cardId: data.cardId || null, orgId: data.orgId || null, hash })
+      return 'focus' in client ? client.focus() : undefined
     })
   )
+})
+
+// The browser replaced this subscription (Firefox does when it rotates its
+// push service keys; any browser may when one expires). Make a new one with
+// the same key at once, so pushes keep arriving, and ask any open page to
+// hand it to the Worker — the page has the session; this worker does not.
+// A page opened later does the same on its own (utils/push.ts resyncWebPush).
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    const old = event.oldSubscription
+    const key = old && old.options && old.options.applicationServerKey
+    if (!event.newSubscription && key) {
+      await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }).catch(() => null)
+    }
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of windows) client.postMessage({ type: 'push-resync' })
+  })())
 })
