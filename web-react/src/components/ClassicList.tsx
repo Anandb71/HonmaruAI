@@ -1231,16 +1231,33 @@ export const ClassicList: React.FC<Props> = ({
     if (activityNew) markAllActivityRead()
     setToast(views.length ? t('Marked {n} conversations as read', { n: views.length }) : t('Activity marked as read'))
   }
+  /// The server's half of a read, sent a moment after this device's. Once
+  /// this device has stored a conversation read, the server hears it too —
+  /// scrolling up in that moment, or more arriving, does not take it back
+  /// (more arriving moves it on to now). Another conversation, leaving, or
+  /// marking it unread meanwhile does.
+  const serverRead = useRef<{ view: string; now: string; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const dropServerRead = () => {
+    if (serverRead.current) clearTimeout(serverRead.current.timer)
+    serverRead.current = null
+  }
   // Read as Discord reads it: on opening, and then as things arrive only
   // while you are at the bottom to see them. Scrolled up in the history, it
   // stays unread until you come back down.
   useEffect(() => {
     if (!view || heldUnread.current === view || !atBottom) return
     const now = readHere(view)
-    const id = setTimeout(() => readOnServer(view, now), 600)
-    return () => clearTimeout(id)
+    if (serverRead.current?.view === view) { serverRead.current.now = now; return }
+    dropServerRead()
+    const timer = setTimeout(() => {
+      const due = serverRead.current
+      serverRead.current = null
+      if (due && heldUnread.current !== due.view) readOnServer(due.view, due.now)
+    }, 600)
+    serverRead.current = { view, now, timer }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, api.orgId, messages[view || '']?.length, atBottom])
+  useEffect(() => dropServerRead, [view, api.orgId])
   // The composer grows with what is written, up to a point.
   useEffect(() => {
     const el = composer.current
