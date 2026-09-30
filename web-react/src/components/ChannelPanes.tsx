@@ -230,12 +230,21 @@ export function ChannelDetails({
     void load()
   }
 
-  const load = useCallback(async () => {
+  // Only the last read asked for is drawn: one for the conversation the
+  // panel showed before, or overtaken by a newer one, answers into nothing.
+  const asked = useRef(0)
+  const load = useCallback(async (quiet = false) => {
+    const mine = ++asked.current
     const q = new URLSearchParams({ orgId: api.orgId, channel: view })
     const res = await fetch(`${api.httpBase}/channels/details?${q}`, { headers }).catch(() => null)
     const data = res?.ok ? await res.json().catch(() => null) : null
-    if (!data) { setProblem(t('The details did not load. Try again.')); return }
-    setProblem(null)
+    if (mine !== asked.current) return
+    // Read again in the background, it leaves the words under the header
+    // alone — a save that did not happen is still said — and says nothing
+    // when it fails, over details already shown.
+    const failed = t('The details did not load. Try again.')
+    if (!data) { if (!quiet) setProblem(failed); return }
+    setProblem((p) => (quiet && p !== failed ? p : null))
     setD(data)
     countsRef.current?.(data.counts)
   }, [api.httpBase, api.orgId, headers, view, t])
@@ -243,7 +252,7 @@ export function ChannelDetails({
   // Somebody joined or left, or set a status: the people here are read
   // again, beside the sidebar.
   useEffect(() => {
-    const on = () => { void load() }
+    const on = () => { void load(true) }
     window.addEventListener('honmaru:members-changed', on)
     return () => window.removeEventListener('honmaru:members-changed', on)
   }, [load])
