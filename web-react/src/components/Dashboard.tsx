@@ -192,10 +192,12 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   useEffect(() => {
     const view = route.openView
     if (!view) return
+    // In another workspace: switched to first, below, once they are known.
+    if (route.openOrg && route.openOrg !== orgId) return
     try { localStorage.setItem('mode', 'classic'); sessionStorage.setItem('list.openView', view) } catch {}
     window.dispatchEvent(new CustomEvent('honmaru:open-view', { detail: view }))
     navigate(hashForMode('classic'), true)
-  }, [route.openView, navigate])
+  }, [route.openView, route.openOrg, orgId, navigate])
   // A `?card=` link from before the hash routes: turned into one, once.
   useEffect(() => {
     try {
@@ -447,6 +449,23 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     const known = new Set(businesses.map((b) => b.slug))
     if (Object.values(state.cardsById || {}).some((c) => c.business && !known.has(c.business))) loadBusinesses()
   }, [state, businesses, loadBusinesses])
+  // A link to a conversation in another of your workspaces: go there, and
+  // the list opens it once that workspace has loaded. One you are not in
+  // opens nothing: a `b:general` here is not the one the link meant.
+  useEffect(() => {
+    const view = route.openView
+    const org = route.openOrg
+    if (!view || !org || org === orgId) return
+    if (!workspaces.length) return
+    if (workspaces.some((w) => w.id === org)) {
+      try { localStorage.setItem('mode', 'classic'); sessionStorage.setItem('list.openView', view) } catch {}
+      navigate(hashForMode('classic'), true)
+      onSwitchOrg(org)
+      return
+    }
+    navigate(hashForMode('classic'), true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.openView, route.openOrg, workspaces.length, orgId, navigate])
   // A link to a message: the list opens where it is, then the address goes
   // back to the list's own, so a reload does not jump again.
   useEffect(() => {

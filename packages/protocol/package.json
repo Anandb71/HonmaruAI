@@ -1,0 +1,9 @@
+{
+  "name": "@honmaru/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The API's shapes, shared by the Worker and every client.",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}

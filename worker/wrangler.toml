@@ -23,9 +23,20 @@ class_name = "AgentRunner"
 tag = "v1"
 new_sqlite_classes = ["OrgRelay"]
 
+# One workspace's conversations in SQLite of its own
+# (docs/architecture/discord-model-platform-plan.md). Reached only through
+# /v2, which is off unless WORKSPACE_V2 names the workspace.
+[[durable_objects.bindings]]
+name = "WORKSPACE"
+class_name = "WorkspaceDO"
+
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["AgentRunner"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["WorkspaceDO"]
 
 [[d1_databases]]
 binding = "DB"
@@ -67,6 +78,16 @@ class_name = "OrgRelay"
 [[env.staging.durable_objects.bindings]]
 name = "AGENT_RUNNER"
 class_name = "AgentRunner"
+
+[[env.staging.durable_objects.bindings]]
+name = "WORKSPACE"
+class_name = "WorkspaceDO"
+
+# Staging tries conversations from each workspace's own Durable Object, and
+# writes every message there as well as to D1 (src/store/mirror.js).
+[env.staging.vars]
+WORKSPACE_V2 = "*"
+WORKSPACE_DUAL = "*"
 
 [[env.staging.d1_databases]]
 binding = "DB"

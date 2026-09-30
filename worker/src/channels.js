@@ -7,6 +7,7 @@ import { filesFor, toFile } from "./files.js";
 import { accessFor, mayRead, membersOf, isGroupKey, hasGuests, publicAudience } from "./access.js";
 import { parseKeywords, keywordHit } from "./quiet.js";
 import { messageLanguage } from "./translate.js";
+import { mirrorIds } from "./store/mirror.js";
 
 // Channels you can talk in.
 //
@@ -291,6 +292,7 @@ export async function editMessage(db, { orgId, id, authorLogin, body }) {
   await keepIfHeld(db, orgId, row, "edit");
   await db.prepare("UPDATE channel_messages SET body = ?3, edited_at = ?4 WHERE org_id = ?1 AND id = ?2")
     .bind(orgId, id, text, new Date().toISOString()).run();
+  await mirrorIds(db, orgId, [id]);
   return { row: await getMessage(db, orgId, id) };
 }
 
@@ -318,6 +320,7 @@ export async function deleteMessage(db, { orgId, id, authorLogin, withThread = f
       .bind(orgId, mid, now),
     db.prepare("DELETE FROM message_reactions WHERE org_id = ?1 AND message_id = ?2").bind(orgId, mid),
   ]));
+  await mirrorIds(db, orgId, gone);
   return { row: await getMessage(db, orgId, id), replies: gone.slice(1) };
 }
 
@@ -395,6 +398,7 @@ export async function postMessage(db, { orgId, key, authorLogin, body, kind = "m
     )
     .bind(id, orgId, key, authorLogin, kind, text, cardId, now, parentId)
     .run();
+  await mirrorIds(db, orgId, [id]);
   return { row: await getMessage(db, orgId, id) };
 }
 

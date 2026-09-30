@@ -2,6 +2,7 @@ import { routeInstruction } from "./routing.js";
 import { toolManifest } from "./agui/tools.js";
 import { signup, login, createInvite, acceptInvite, isGitHubSession, inviteLink, peekInvite } from "./auth.js";
 import { requestCode, verifyCode } from "./otp.js";
+import { handleWellKnown } from "./wellKnown.js";
 import {
   createSession, getSession, upsertUser, upsertMembership, upsertAgent, isMember, listOrgNodes,
   getConnectorConfig, setConnectorConfig, rememberPullWorkspace, ingestWorkspaceOf, createOAuthState, consumeOAuthState,
@@ -25,6 +26,7 @@ import { deleteAccount, exportAccount } from "./account.js";
 import { listMembers, listMembersForClient, removeMember, listInvites, revokeInvite, membershipIsOurs, returnOrphanedCards, changeRole, memberRef } from "./team.js";
 import { authorizeOrgAccess } from "./membership.js";
 import { isConfigured, isDeviceToken } from "./apns.js";
+import { isFcmToken, isFcmConfigured } from "./fcm.js";
 import { isWebPushConfigured, parseSubscription } from "./webpush.js";
 import { isMailConfigured, sendMail } from "./mailer.js";
 import { SUPPORTED_LOCALES, composeInviteEmail, t } from "./notifyCopy.js";
@@ -79,6 +81,8 @@ import { alert } from "./alert.js";
 import { serverText } from "./serverCopy.js";
 import { listCardEvents, listOrgEvents, appendCardEvent, withActorNames } from "./events.js";
 import { listComments, addComment, listReactions, toggleReaction, REACTIONS, MAX_COMMENT_CHARS } from "./threads.js";
+import { useSecretKey } from "./secrets.js";
+import { useMirrorEnv } from "./store/mirror.js";
 import { fetchCollaborators } from "./github.js";
 import { buildOrgGraph, roleName } from "./org.js";
 import { uploadMedia, serveMedia } from "./media.js";
@@ -110,6 +114,7 @@ const MAX_INSTRUCTION_CHARS = 4000;
 
 export { OrgRelay } from "./relay.js";
 export { AgentRunner } from "./agentRunner.js";
+export { WorkspaceDO } from "./workspace/do.js";
 
 /// The language a request was made in, from the header every client sends
 /// without being asked: URLSession fills Accept-Language from the device's
@@ -190,6 +195,8 @@ export default {
   // a card by the time they look. Nothing here bypasses the free-tier meter:
   // the sync loop checks the same allowance a manual sync does.
   async scheduled(event, env, ctx) {
+    useSecretKey(env);
+    useMirrorEnv(env);
     // Every minute: scheduled messages and Later reminders, which a person
     // set to a minute and would notice fifteen late.
     if (event?.cron === "* * * * *") {
@@ -209,6 +216,9 @@ export default {
     // Phase 1 audit rows, a few workspaces at a time, into per-person
     // encryption. Nothing to do once every row is.
     ctx.waitUntil(migrateLegacyAudit(env).catch((err) => console.error("audit migration failed", err?.message || err)));
+    // Secrets written before sealing, sealed — a batch per table each run.
+    ctx.waitUntil(import("./secrets.js").then(({ sealLegacySecrets }) => sealLegacySecrets(env))
+      .catch((err) => console.error("secret sealing failed", err?.message || err)));
     // Once a day: workspace keys about to expire, told to their owners.
     const at = new Date(event?.scheduledTime || Date.now());
     if (at.getUTCHours() === 0 && at.getUTCMinutes() < 15) {
@@ -218,6 +228,12 @@ export default {
       // What sessions and presence leave behind, swept.
       ctx.waitUntil(import("./sessions.js").then(({ pruneSessionTraces }) => pruneSessionTraces(env.DB, { now: at.getTime() }))
         .catch((err) => console.error("session sweep failed", err?.message || err)));
+      // Dual-writing workspaces: their Durable Object made to match D1.
+      ctx.waitUntil(import("./store/mirror.js").then(({ reconcileAll }) => reconcileAll(env))
+        .catch((err) => console.error("reconcile failed", err?.message || err)));
+      // Caches and meters past the longest anything reads them.
+      ctx.waitUntil(import("./retention.js").then(({ pruneGrowth }) => pruneGrowth(env.DB, { now: at.getTime() }))
+        .catch((err) => console.error("growth pruning failed", err?.message || err)));
     }
     // Once an hour: the hours just gone, sealed into the archive.
     if (at.getUTCMinutes() < 15) {
@@ -244,6 +260,8 @@ export default {
   },
 
   async fetch(request, env, ctx) {
+    useSecretKey(env);
+    useMirrorEnv(env);
     // Every response carries the id its log line was written under, so a user
     // reporting "it failed" hands over something that finds the line.
     const requestId = crypto.randomUUID();
@@ -285,6 +303,20 @@ async function handle(request, env, url, ctx) {
           "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         },
       });
+    }
+
+    // What lets the phone apps open links to the web app (src/wellKnown.js).
+    if (url.pathname.startsWith("/.well-known/")) {
+      const known = handleWellKnown(request, env, url);
+      if (known) return known;
+    }
+
+    // Conversations from a workspace's own Durable Object (PoC, off unless
+    // WORKSPACE_V2 names the workspace).
+    if (url.pathname.startsWith("/v2/w/")) {
+      const { handleV2 } = await import("./workspace/v2.js");
+      const v2 = await handleV2(request, env, url);
+      if (v2) return v2;
     }
 
     // Single sign-on: discovery, the round trip, and its settings.
@@ -417,6 +449,25 @@ async function handle(request, env, url, ctx) {
       });
       if (result.error) return json({ message: result.error }, result.status || 400);
       await signedIn(env, request, result.token, result.userId, "email_code");
+      return json(result);
+    }
+
+    // Sign in with Apple, from the phone app (src/apple.js). Same budget as
+    // the other ways of trading a credential for a session.
+    if (url.pathname === "/auth/apple" && request.method === "POST") {
+      const limited = await enforce(env, request, "oauth/token");
+      if (limited) return limited;
+      const body = await request.json().catch(() => ({}));
+      const { signInWithApple } = await import("./apple.js");
+      const result = await signInWithApple(env, {
+        identityToken: body.identityToken,
+        nonce: body.nonce,
+        name: body.name,
+        inviteCode: typeof body.inviteCode === "string" ? body.inviteCode : undefined,
+        locale: body.locale || localeFromRequest(request),
+      });
+      if (result.error) return json({ message: result.error }, result.status || 400);
+      await signedIn(env, request, result.token, result.userId, "apple");
       return json(result);
     }
 
@@ -842,6 +893,8 @@ async function handle(request, env, url, ctx) {
             ? env.OPENROUTER_MODEL || "inclusionai/ling-3.0-flash:free"
             : "fallback",
         push: isConfigured(env),
+        // Android phones (FCM), beside iPhones (`push`, APNs).
+        fcm: isFcmConfigured(env),
         webPush: isWebPushConfigured(env),
         email: isMailConfigured(env),
         // Invite links and notification links need the web's own address.
@@ -1586,16 +1639,26 @@ async function handle(request, env, url, ctx) {
       return json({ ok: true });
     }
     // Registered after the user grants permission, and re-registered on every
-    // launch — APNs reissues tokens, and a stale one is a silent no-op.
+    // launch — APNs and FCM both reissue tokens, and a stale one is a silent
+    // no-op. `platform` says which service the token is for: "ios" (APNs, and
+    // what an older iPhone app means by saying nothing) or "android" (FCM).
     if (url.pathname === "/devices" && request.method === "POST") {
       const session = await getSession(env.DB, request.headers.get("x-session-token"));
       if (!session) return json({ message: "invalid session" }, 401);
       const body = await request.json().catch(() => ({}));
       if (!body.deviceToken) return json({ message: "deviceToken is required" }, 400);
-      // Shape-checked here rather than trusted: this string ends up in the path
-      // of a request to Apple, signed with our provider token.
-      if (!isDeviceToken(body.deviceToken)) {
+      const platform = body.platform === undefined || body.platform === null ? "ios" : body.platform;
+      if (platform !== "ios" && platform !== "android") {
+        return json({ message: "platform is ios or android." }, 400);
+      }
+      // Shape-checked here rather than trusted: an iPhone's token ends up in
+      // the path of a request to Apple, signed with our provider token, and an
+      // Android one in a message sent as our Firebase project.
+      if (platform === "ios" && !isDeviceToken(body.deviceToken)) {
         return json({ message: "That is not an APNs device token." }, 400);
+      }
+      if (platform === "android" && !isFcmToken(body.deviceToken)) {
+        return json({ message: "That is not an FCM registration token." }, 400);
       }
       const user = await getUserByGithubId(env.DB, session.github_id);
       if (!user?.login) return json({ message: "unknown user" }, 409);
@@ -1604,6 +1667,7 @@ async function handle(request, env, url, ctx) {
         githubId: session.github_id,
         login: user.login,
         environment: body.environment,
+        platform,
       });
       return json({ ok: true });
     }

@@ -1,0 +1,17 @@
+{
+  "name": "@honmaru/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "What every client shares: the API client, sync, and the rules for text. No UI.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^5.0.2"
+  }
+}

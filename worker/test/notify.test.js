@@ -166,7 +166,7 @@ test("someone with no device and no browser is emailed, in their language, once"
     localized: { ja: { title: "ベンダー契約の承認", summary: "3年契約、自動更新。" } },
   };
   const result = await notifyCard(mail(), { card, kind: "created", excludeLogin: "alice" });
-  expect(result.channels).toEqual({ apns: 0, webpush: 0, email: 1 });
+  expect(result.channels).toEqual({ apns: 0, fcm: 0, webpush: 0, email: 1 });
   expect(mailed.to).toEqual(["kenji@example.com"]);
   expect(mailed.subject).toBe("[Honmaru] ベンダー契約の承認");
   expect(mailed.text).toContain("3年契約、自動更新。");
@@ -184,7 +184,7 @@ test("email is the floor, not a duplicate: a delivered push means no mail", asyn
     card: { id: "c-both", recipientUserID: "alice", senderUserID: "taro", status: "pending", title: "Ship it" },
     kind: "created", excludeLogin: "taro",
   });
-  expect(result.channels).toEqual({ apns: 1, webpush: 0, email: 0 });
+  expect(result.channels).toEqual({ apns: 1, fcm: 0, webpush: 0, email: 0 });
 });
 
 test("someone who turned email off is not emailed", async () => {

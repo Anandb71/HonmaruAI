@@ -127,12 +127,12 @@ test("unsending a message takes its files; an upload never sent is swept after a
   const { message } = await (await say(mika, "b:cafe", "here", [file.id])).json();
   await call("/channels/messages", { method: "DELETE", headers: auth(mika, { "content-type": "application/json" }), body: JSON.stringify({ orgId: ORG, channel: "b:cafe", messageId: message.id }) });
   expect((await call(file.url, {})).status).toBe(404);
-  expect(await env.MEDIA.get(`file-${file.id}`)).toBeNull();
+  expect(await env.MEDIA.get(`org/${encodeURIComponent(ORG)}/files/${file.id}`)).toBeNull();
 
   const { file: orphan } = await (await upload(mika, "b:cafe")).json();
   expect(await sweepUnsent(env)).toBe(0);
   expect(await sweepUnsent(env, Date.now() + 2 * 86400000)).toBe(1);
-  expect(await env.MEDIA.get(`file-${orphan.id}`)).toBeNull();
+  expect(await env.MEDIA.get(`org/${encodeURIComponent(ORG)}/files/${orphan.id}`)).toBeNull();
 });
 
 test("too big is refused before it is stored", async () => {
@@ -140,4 +140,18 @@ test("too big is refused before it is stored", async () => {
     method: "POST", headers: auth(mika, { "content-type": "application/octet-stream", "content-length": String(30 * 1024 * 1024) }), body: new Uint8Array(4),
   });
   expect(res.status).toBe(413);
+});
+
+test("bytes are kept under the workspace, and files stored before that still open", async () => {
+  const { file } = await (await upload(mika, "b:cafe")).json();
+  const key = `org/${encodeURIComponent(ORG)}/files/${file.id}`;
+  const obj = await env.MEDIA.get(key);
+  expect(obj).not.toBeNull();
+  expect(await env.MEDIA.get(`file-${file.id}`)).toBeNull();
+
+  // As a file uploaded before the prefix: only the old key has the bytes.
+  await env.MEDIA.put(`file-${file.id}`, await obj.arrayBuffer());
+  await env.MEDIA.delete(key);
+  expect((await call(file.url, {})).status).toBe(200);
+  await say(mika, "b:cafe", "old one", [file.id]);
 });

@@ -69,7 +69,7 @@ function json(body, status = 200) {
   });
 }
 
-async function caller(env, request, orgId) {
+export async function caller(env, request, orgId) {
   const session = await getSession(env.DB, request.headers.get("x-session-token"));
   if (!session) return { denied: json({ message: "Please sign in." }, 401) };
   if (!orgId || typeof orgId !== "string") return { denied: json({ message: "orgId is required" }, 400) };
@@ -81,7 +81,7 @@ async function caller(env, request, orgId) {
 }
 
 /// The caller, the channel they named, and how they see it — or why not.
-async function inChannel(env, request, { orgId, channel }) {
+export async function inChannel(env, request, { orgId, channel }) {
   const who = await caller(env, request, orgId);
   if (who.denied) return who;
   const members = await listMembers(env.DB, orgId, who.session.github_id);

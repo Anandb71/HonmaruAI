@@ -162,6 +162,32 @@ npx wrangler secret put VAPID_SUBJECT        # mailto:you@example.com（プッ�
 
 ---
 
+## 2b. Android アプリ（Expo）：FCM サービスアカウント（任意・10 分）
+
+`apps/mobile` の Android 版に通知を届けるためのもの。入れなければ Android の
+端末は黙って飛ばされるだけで、iPhone・Web・メールには影響しない。
+
+1. [Firebase コンソール](https://console.firebase.google.com) でプロジェクトを作り、
+   Android アプリを追加する（パッケージ名は `apps/mobile/app.json` の
+   `android.package`。いまは `com.honmaru.ai.poc`）
+2. そこで出る `google-services.json` はアプリ側に渡す（Worker ではない）。
+   EAS ならファイル型の環境変数 `GOOGLE_SERVICES_JSON` に、手元なら
+   `apps/mobile/google-services.json` に置く（git には入らない）
+3. プロジェクトの設定 → サービスアカウント → 「新しい秘密鍵を生成」で JSON が
+   1 つ落ちてくる。それを丸ごと Worker に入れる：
+
+```bash
+cd worker
+npx wrangler secret put FCM_SERVICE_ACCOUNT < ~/Downloads/<project>-firebase-adminsdk-xxxxx.json
+```
+
+ファイルをそのまま流し込むので、改行の崩れを気にしなくてよい（base64 にした
+JSON でも受け付ける）。Worker はこの鍵で自分で署名してアクセストークンを取り、
+FCM HTTP v1 に送る。入れたら JSON ファイルは消す。鍵を失効させたら新しいものを
+入れ直すだけでよい。
+
+---
+
 ## 3. メール：Resend
 
 送信は Resend 一本。**API キー 1 本だけで、ドメインも DNS レコードも要らない。**
@@ -364,6 +390,42 @@ Settings → Environment variables → **Preview** に
 プレースホルダのままだと Deploy Worker は staging を出さずに止まります
 （「Staging has no database yet」）。
 
+## 4.7 スマホアプリ（Expo）：リンクと Sign in with Apple（任意・10 分）
+
+`https://app.honmaruai.com/c/<チャンネル>?org=<orgId>` と `/join/<招待コード>` を
+iPhone / Android で開くとアプリ（`apps/mobile`）が開くようにする設定と、
+アプリの「Sign in with Apple」（`POST /auth/apple`）の設定。どれも Worker の
+変数で、秘密ではないので `[vars]` でも `secret put` でもよい。
+
+| 変数 | 値 | 無いと |
+|------|----|--------|
+| `APPLE_TEAM_ID` | Apple Developer の Team ID（10 文字、例 `ABCDE12345`）。**TODO: まだリポジトリに無い**（`project.yml` の `DEVELOPMENT_TEAM` も空）。developer.apple.com → Membership details で確認 | `/.well-known/apple-app-site-association` が 404。iPhone でリンクがアプリで開かない |
+| `ANDROID_CERT_SHA256` | アプリ署名証明書の SHA-256 指紋。カンマ区切りで複数可（EAS のキーと Play App Signing のキーの両方など）。`AA:BB:…` 形式でもコロン無しの 64 桁でもよい | `/.well-known/assetlinks.json` が 404。Android でリンクがアプリで開かない |
+| `APPLE_CLIENT_IDS` | Apple の ID トークンの `aud` として受け付けるもの、カンマ区切り。既定 `com.honmaru.ai,com.honmaru.ai.poc` | 既定のまま動く。Web で Sign in with Apple をするなら Services ID を足す |
+
+```bash
+cd worker
+npx wrangler@4 secret put APPLE_TEAM_ID          # 例: ABCDE12345
+npx wrangler@4 secret put ANDROID_CERT_SHA256    # eas credentials -p android の SHA256 Fingerprint
+# 任意
+npx wrangler@4 secret put APPLE_CLIENT_IDS       # 例: com.honmaru.ai,com.honmaru.ai.poc
+```
+
+2 つのファイルは Worker が変数から作り、Web（Pages）の
+`web-react/functions/.well-known/[file].ts` が同じパスで Worker に聞いて返す
+（リダイレクト無し、`application/json`）。Pages 側で別の Worker を向けるときは
+Pages の環境変数 `API_HOST`（ホスト名だけ）。確認：
+
+```bash
+curl -si https://app.honmaruai.com/.well-known/apple-app-site-association | head -3
+curl -si https://app.honmaruai.com/.well-known/assetlinks.json | head -3
+```
+
+Apple Developer 側でやること：App ID `com.honmaru.ai` と `com.honmaru.ai.poc` に
+**Sign in with Apple** と **Associated Domains** の capability を付ける（EAS Build は
+`app.json` の `usesAppleSignIn` / `associatedDomains` から自動で付ける）。
+iOS は AASA をインストール時に取りに行くので、変数を入れたあとに入れ直す。
+
 ## 5. 確認
 
 ```bash
@@ -377,6 +439,7 @@ curl -s https://tiktokforwork.torubj0904.workers.dev/health
 - `webPush: true` … VAPID 3 つが入っている
 - `email: true` … `RESEND_API_KEY` が入っている
 - `push` は iOS の APNs。Apple 側の作業が別途要る（`docs/push-notifications.md`）。当面 false でよい
+- `fcm: true` … `FCM_SERVICE_ACCOUNT` が入っている（Android アプリ。2b）
 - `aiRouting: true` … `OPENAI_API_KEY` が入っている（翻訳と事業の振り分けもこれを使う）
 
 Web を開いて右上のベルを押し、ブラウザの許可を出す。別のアカウントから
