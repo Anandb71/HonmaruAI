@@ -146,19 +146,35 @@ export async function claimable(db, { orgId, key, login, ids }) {
   return row?.n || 0;
 }
 
+// Where a file's bytes live: under its workspace, so a workspace's files can
+// be listed, exported, moved or removed by prefix. Files stored before that
+// are at `file-<id>` and are still read from there.
+export const fileKey = (orgId, id) => `org/${encodeURIComponent(orgId)}/files/${id}`;
+const legacyFileKey = (id) => `file-${id}`;
+
+export async function getFileObject(env, orgId, id) {
+  if (!env.MEDIA) return null;
+  return (await env.MEDIA.get(fileKey(orgId, id))) || env.MEDIA.get(legacyFileKey(id));
+}
+
+export async function deleteFileObject(env, orgId, id) {
+  if (!env.MEDIA) return;
+  await Promise.all([fileKey(orgId, id), legacyFileKey(id)].map((k) => env.MEDIA.delete(k).catch(() => {})));
+}
+
 /// A message unsent: its files go with it, bytes and all.
 export async function dropFiles(env, orgId, messageId) {
   const { results } = await env.DB.prepare("SELECT id FROM message_files WHERE org_id = ?1 AND message_id = ?2").bind(orgId, messageId).all();
-  for (const r of results || []) await env.MEDIA?.delete(`file-${r.id}`).catch(() => {});
+  for (const r of results || []) await deleteFileObject(env, orgId, r.id);
   await env.DB.prepare("DELETE FROM message_files WHERE org_id = ?1 AND message_id = ?2").bind(orgId, messageId).run();
 }
 
 /// Uploads nobody sent within a day, swept by the cron.
 export async function sweepUnsent(env, now = Date.now()) {
   const cutoff = new Date(now - 86400000).toISOString();
-  const { results } = await env.DB.prepare("SELECT id FROM message_files WHERE message_id IS NULL AND created_at < ?1 LIMIT 200").bind(cutoff).all();
+  const { results } = await env.DB.prepare("SELECT id, org_id FROM message_files WHERE message_id IS NULL AND created_at < ?1 LIMIT 200").bind(cutoff).all();
   for (const r of results || []) {
-    await env.MEDIA?.delete(`file-${r.id}`).catch(() => {});
+    await deleteFileObject(env, r.org_id, r.id);
     await env.DB.prepare("DELETE FROM message_files WHERE id = ?1").bind(r.id).run();
   }
   return (results || []).length;
@@ -185,7 +201,7 @@ export async function uploadFile(request, env, url, { orgId, resolved, login }) 
   const name = cleanName(url.searchParams.get("name"));
   const dim = (k) => { const n = Number(url.searchParams.get(k)); return Number.isInteger(n) && n > 0 && n < 100000 ? n : null; };
   const picture = isPicture(type);
-  await env.MEDIA.put(`file-${id}`, bytes, { httpMetadata: { contentType: type } });
+  await env.MEDIA.put(fileKey(orgId, id), bytes, { httpMetadata: { contentType: type } });
   await env.DB
     .prepare(`INSERT INTO message_files (id, org_id, channel, message_id, uploader, name, type, size, width, height, created_at)
               VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`)
@@ -207,7 +223,7 @@ export async function serveFile(request, env, url) {
     return new Response("Not found", { status: 404 });
   }
   const row = await env.DB.prepare("SELECT * FROM message_files WHERE id = ?1").bind(id).first();
-  const obj = row && env.MEDIA ? await env.MEDIA.get(`file-${id}`) : null;
+  const obj = row ? await getFileObject(env, row.org_id, id) : null;
   if (!obj) return new Response("Not found", { status: 404 });
   const shown = SHOWN.has(row.type);
   const encoded = encodeURIComponent(row.name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);

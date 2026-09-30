@@ -1,3 +1,4 @@
+import { openSessionToken, sealSessionToken } from "./secrets.js";
 // Loads the legacy store shape { [recipientUserID]: card[] } for one org,
 // so the copied adapter.js functions can operate on it unchanged.
 export async function loadStore(db, orgId) {
@@ -138,7 +139,7 @@ export async function createSession(db, githubId, accessToken, meta = {}) {
       `INSERT INTO sessions (token, github_id, github_access_token, created_at, expires_at, client, user_agent, place, last_seen_at)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?4)`
     )
-    .bind(token, githubId, accessToken, now.toISOString(), expires.toISOString(), meta.client || null, meta.userAgent || null, meta.place || null)
+    .bind(token, githubId, await sealSessionToken(token, accessToken), now.toISOString(), expires.toISOString(), meta.client || null, meta.userAgent || null, meta.place || null)
     .run();
   return token;
 }
@@ -158,7 +159,8 @@ export async function getSession(db, token) {
       "SELECT token, github_id, github_access_token, created_at, expires_at, last_seen_at, client, reauth_at, auth_method, longest_idle_ms, sso_org_id, sso_connection_id FROM sessions WHERE token = ?1"
     )
     .bind(token)
-    .first();
+    .first()
+    .then(openSessionToken);
   if (!row) return null;
   const now = new Date();
   // A NULL expiry is a session minted before expiry existed — still valid, so

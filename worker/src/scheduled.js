@@ -13,6 +13,7 @@ import { safe } from "./log.js";
 import { runDueRoutines } from "./routines.js";
 import { remindDailyDrafts, moveDailyToDailyChannel } from "./dailyReport.js";
 import { runProposals, isProposalTick } from "./proposals.js";
+import { openSessionToken } from "./secrets.js";
 
 // "Your AI triaged three decisions overnight" cannot be true if the AI only
 // runs while you are looking at it. Until this existed, a connector sync
@@ -56,7 +57,7 @@ export async function candidates(db) {
   // team became ordinary. One extra read per user, at most fifty a run.
   const withOrg = await Promise.all(
     (results || []).map(async (row) => ({
-      ...row,
+      ...(await openSessionToken(row)),
       org_id: await ingestWorkspaceOf(db, row.github_id),
     }))
   );

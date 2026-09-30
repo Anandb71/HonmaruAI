@@ -29,6 +29,7 @@ import { isGuest, isPersonal } from "./access.js";
 import { learnFromDecision } from "./memory.js";
 import { settleProposal } from "./proposals.js";
 import { JAM_TYPES, JAM_SIGNAL_BUDGET, handleJamMessage, leaveJam, jamStatesFor } from "./jam.js";
+import { useSecretKey } from "./secrets.js";
 
 /// Said to a client that tries to put an unposted daily report away.
 const DRAFT_MUST_POST = "This daily report is a draft: check it and post it to finish it.";
@@ -47,6 +48,7 @@ const MAX_JOINS_PER_SOCKET = 5;
 
 export class OrgRelay {
   constructor(state, env) {
+    useSecretKey(env);
     this.state = state;
     this.env = env;
     this.db = env.DB;
