@@ -7,15 +7,15 @@ import { useT } from '../utils/i18n'
 // and stops it at the month's limit. Nothing secret ever comes back from the
 // Worker: only whether it is set.
 
-type Provider = 'claude' | 'devin' | 'cursor'
-const PROVIDERS: Provider[] = ['claude', 'devin', 'cursor']
+type Provider = 'claude' | 'devin' | 'cursor' | 'codex'
+const PROVIDERS: Provider[] = ['claude', 'devin', 'cursor', 'codex']
 
 interface Tool { name: string; secretName: string; host: string; secretValue?: string }
 interface Teammate {
   provider: Provider; name: string; handle: string; emoji: string; company: string; keyHint: string; keySource: string
   models: string[]; freeModel: boolean; unit: 'usd' | 'acu' | 'task'
-  needs: { githubToken: boolean; tools: boolean; account: boolean; repos: boolean }
-  enabled: boolean; hasApiKey: boolean; hasGithubToken: boolean; account: string
+  needs: { apiKey: boolean; githubToken: boolean; tools: boolean; account: boolean; repos: boolean }
+  enabled: boolean; hasKey: boolean; hasApiKey: boolean; hasGithubToken: boolean; account: string
   repos: string[]; model: string; instructions: string; channels: string[] | null
   monthlyLimit: number | null; spentThisMonth: number; tools: Tool[]; ready: boolean
 }
@@ -106,7 +106,7 @@ export const AiTeammates: React.FC<{ httpBase: string; orgId: string; sessionTok
   if (!tm || !draft) return <section className="studio-page" data-studio-page="teammates"><h1 className="studio-title">{t('AI teammates')}</h1><p className="row-sub">{t('Loading…')}</p></section>
 
   const off = !canEdit || busy
-  const statusOf = (mate: Teammate) => (mate.enabled ? t('On') : mate.hasApiKey ? t('Off') : t('Not set up'))
+  const statusOf = (mate: Teammate) => (mate.enabled ? t('On') : mate.hasKey ? t('Off') : t('Not set up'))
   const unitLabel = tm.unit === 'usd' ? t('Monthly limit (USD)') : tm.unit === 'acu' ? t('Monthly limit (ACUs)') : t('Monthly limit (tasks)')
 
   return (
@@ -136,11 +136,17 @@ export const AiTeammates: React.FC<{ httpBase: string; orgId: string; sessionTok
       {error && <p className="form-error" role="alert">{error}</p>}
 
       <form className="teammate-form" data-teammate-form={tm.provider} onSubmit={(e) => { e.preventDefault(); void save() }}>
-        <div className="studio-section-head"><div><h2>{t('{company} account', { company: tm.company })}</h2><p>{t('Make an API key in {source}, ideally for an account made for {name} here, so its use is billed and limited on its own.', { source: tm.provider === 'claude' ? t('the Claude Console') : tm.provider === 'devin' ? t('Devin’s settings, as a service user') : t('the Cursor dashboard'), name: tm.name })}</p></div></div>
-        <label className="teammate-field">
-          <span>{t('API key')}</span>
-          <input className="rules-number wide" type="password" autoComplete="off" disabled={off} value={draft.apiKey} placeholder={tm.hasApiKey ? t('Saved. Paste a new one to replace it.') : tm.keyHint} onChange={(e) => set({ apiKey: e.target.value })} data-teammate-key />
-        </label>
+        {tm.needs.apiKey ? (
+          <>
+          <div className="studio-section-head"><div><h2>{t('{company} account', { company: tm.company })}</h2><p>{t('Make an API key in {source}, ideally for an account made for {name} here, so its use is billed and limited on its own.', { source: tm.provider === 'claude' ? t('the Claude Console') : tm.provider === 'devin' ? t('Devin’s settings, as a service user') : t('the Cursor dashboard'), name: tm.name })}</p></div></div>
+          <label className="teammate-field">
+            <span>{t('API key')}</span>
+            <input className="rules-number wide" type="password" autoComplete="off" disabled={off} value={draft.apiKey} placeholder={tm.hasApiKey ? t('Saved. Paste a new one to replace it.') : tm.keyHint} onChange={(e) => set({ apiKey: e.target.value })} data-teammate-key />
+          </label>
+          </>
+        ) : (
+          <div className="studio-section-head"><div><h2>{t('How Codex is reached')}</h2><p>{t('Codex has no API to hand work to, so HonmaruAI asks it on GitHub: each request opens a draft pull request in the first repository below and writes @codex there, and Codex’s replies come back to the thread. Connect that repository to Codex in ChatGPT and turn on Codex for it first; Codex runs on your ChatGPT plan.')}</p></div></div>
+        )}
         {tm.needs.account && (
           <label className="teammate-field">
             <span>{t('Devin organization ID')}</span>
@@ -165,7 +171,9 @@ export const AiTeammates: React.FC<{ httpBase: string; orgId: string; sessionTok
         <label className="teammate-field">
           <span>{unitLabel}</span>
           <input className="rules-number" type="number" min={1} step={1} disabled={off} value={draft.limit} placeholder={t('None')} onChange={(e) => set({ limit: e.target.value })} data-teammate-limit />
-          <small>{tm.unit === 'task'
+          <small>{tm.provider === 'codex'
+            ? t('Codex runs on your ChatGPT plan, so its limit here is a number of tasks: each request and follow-up is one.')
+            : tm.unit === 'task'
             ? t('Cursor reports tokens, not cost, so its limit is a number of tasks: each request and follow-up is one.')
             : t('When the month’s use reaches it, {name} says so instead of starting work. Each task is also capped at what is left.', { name: tm.name })}</small>
         </label>
@@ -175,7 +183,9 @@ export const AiTeammates: React.FC<{ httpBase: string; orgId: string; sessionTok
         </label>
 
         <div className="studio-section-head"><div><h2>{t('Code')}</h2><p>{tm.needs.githubToken
-          ? t('The repositories Claude may clone and open pull requests on, and a GitHub token that can reach them. It never pushes to the default branch.')
+          ? (tm.needs.apiKey
+            ? t('The repositories Claude may clone and open pull requests on, and a GitHub token that can reach them. It never pushes to the default branch.')
+            : t('The repository Codex works in (the first one listed), and a GitHub token that can push to it and open pull requests.'))
           : t('The repositories {name} works on. Connect them to your {company} account first.', { name: tm.name, company: tm.company })}</p></div></div>
         {tm.needs.githubToken && (
           <label className="teammate-field">
@@ -227,7 +237,7 @@ export const AiTeammates: React.FC<{ httpBase: string; orgId: string; sessionTok
               <button type="submit" className="studio-btn" disabled={busy} data-teammate-save>{busy ? t('Saving…') : t('Save')}</button>
               {tm.enabled
                 ? <button type="button" className="studio-btn" disabled={busy} data-teammate-off onClick={() => void save(false)}>{t('Turn off')}</button>
-                : <button type="button" className="studio-btn primary" disabled={busy || (!tm.hasApiKey && !draft.apiKey.trim())} data-teammate-on onClick={() => void save(true)}>{t('Save and turn on')}</button>}
+                : <button type="button" className="studio-btn primary" disabled={busy || (!tm.hasKey && !(tm.needs.apiKey ? draft.apiKey : draft.githubToken).trim())} data-teammate-on onClick={() => void save(true)}>{t('Save and turn on')}</button>}
             </div>
           )
           : <p className="form-note">{t('An admin of this workspace can change these.')}</p>}

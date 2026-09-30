@@ -22,6 +22,7 @@ const get = (path, token) => call(path, { headers: headers(token) });
 const q = (o) => new URLSearchParams(o).toString();
 const devin = () => fetchMock.get("https://api.devin.ai");
 const cursor = () => fetchMock.get("https://api.cursor.com");
+const github = () => fetchMock.get("https://api.github.com");
 const thread = async (token, messageId) => (await (await get(`/channels/thread?${q({ orgId: ORG, channel: "b:cafe", messageId })}`, token)).json()).replies;
 const teammate = async (provider) => (await (await get(`/teammates?${q({ orgId: ORG, provider })}`, toru)).json()).teammate;
 
@@ -161,4 +162,69 @@ test("a bad Cursor or Devin key is said plainly", async () => {
   devin().intercept({ path: "/v3/organizations/org-nope/sessions?first=1", method: "GET" }).reply(404, { detail: "Not found" });
   const d = await send("PUT", "/teammates", toru, { orgId: ORG, provider: "devin", enabled: true, apiKey: "cog_x", account: "org-nope" });
   expect((await d.json()).message).toBe("Devin did not find that organization ID.");
+});
+
+test("Codex: through GitHub, @codex opens a draft pull request, asks Codex there, and brings its reply back", async () => {
+  // No key of its own: a GitHub token that can push to the repository.
+  const bare = await send("PUT", "/teammates", toru, { orgId: ORG, provider: "codex", enabled: true, repos: ["acme/app"] });
+  expect((await bare.json()).message).toBe("Add a GitHub token that can push to the repository Codex works in.");
+  github().intercept({ path: "/user", method: "GET" }).reply(200, { login: "toru-bot" });
+  github().intercept({ path: "/repos/acme/app", method: "GET" }).reply(200, { default_branch: "main", permissions: { push: false } });
+  const readOnly = await send("PUT", "/teammates", toru, { orgId: ORG, provider: "codex", enabled: true, githubToken: "ghp_ro", repos: ["acme/app"] });
+  expect((await readOnly.json()).message).toBe("That GitHub token cannot push to acme/app.");
+  github().intercept({ path: "/user", method: "GET", headers: { authorization: "Bearer ghp_codex" } }).reply(200, { login: "toru-bot" });
+  github().intercept({ path: "/repos/acme/app", method: "GET" }).reply(200, { default_branch: "main", permissions: { push: true } });
+  const res = await send("PUT", "/teammates", toru, { orgId: ORG, provider: "codex", enabled: true, githubToken: "ghp_codex", repos: ["acme/app"] });
+  expect(res.status).toBe(200);
+  const set = (await res.json()).teammate;
+  expect(set).toMatchObject({ enabled: true, unit: "task", handle: "codex", hasKey: true, needs: { apiKey: false, githubToken: true } });
+  expect(JSON.stringify(set)).not.toContain("ghp_codex");
+
+  // @codex: an empty commit on a codex/ branch, a draft pull request, and
+  // the task as an @codex comment on it.
+  let pr = null; let asked = null; let ref = null;
+  github().intercept({ path: "/repos/acme/app/git/ref/heads/main", method: "GET" }).reply(200, { object: { sha: "base1" } });
+  github().intercept({ path: "/repos/acme/app/git/commits/base1", method: "GET" }).reply(200, { sha: "base1", tree: { sha: "tree1" } });
+  github().intercept({ path: "/repos/acme/app/git/commits", method: "POST" }).reply(201, (opts) => { expect(JSON.parse(opts.body)).toMatchObject({ tree: "tree1", parents: ["base1"] }); return { sha: "empty1" }; });
+  github().intercept({ path: "/repos/acme/app/git/refs", method: "POST" }).reply(201, (opts) => { ref = JSON.parse(opts.body); return { ref: ref.ref }; });
+  github().intercept({ path: "/repos/acme/app/pulls", method: "POST" }).reply(201, (opts) => { pr = JSON.parse(opts.body); return { number: 42 }; });
+  github().intercept({ path: "/repos/acme/app/issues/42/comments", method: "POST" }).reply(201, (opts) => { asked = JSON.parse(opts.body); return { id: 1000 }; });
+  // The first look: only what was there before.
+  github().intercept({ path: "/repos/acme/app/issues/42/comments?per_page=100&page=1", method: "GET" }).reply(200, [
+    { id: 1000, user: { login: "toru-bot" }, body: "@codex ..." },
+  ]);
+  const posted = (await (await send("POST", "/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "@codex the login page 404s" }, { TEAMMATE_WATCH_MS: "0" })).json()).message;
+  expect(ref.ref).toMatch(/^refs\/heads\/codex\/honmaru-/);
+  expect(ref.sha).toBe("empty1");
+  expect(pr).toMatchObject({ base: "main", draft: true, head: ref.ref.replace("refs/heads/", "") });
+  expect(asked.body.startsWith("@codex ")).toBe(true);
+  expect(asked.body).toContain("the login page 404s");
+  expect((await thread(mika, posted.id)).map((m) => m.body)).toEqual(["On it. I'll answer here when I'm done."]);
+
+  // Codex answers on the pull request; the cron brings it back once.
+  github().intercept({ path: "/repos/acme/app/issues/42/comments?per_page=100&page=1", method: "GET" }).reply(200, [
+    { id: 1000, user: { login: "toru-bot" }, body: "@codex ..." },
+    { id: 1001, user: { login: "someone" }, body: "+1" },
+    { id: 1002, user: { login: "chatgpt-codex-connector[bot]" }, body: "Fixed the redirect and pushed to this pull request." },
+  ]);
+  await watchTeammateRuns(env);
+  await watchTeammateRuns(env);
+  expect((await thread(mika, posted.id)).map((m) => m.body)).toEqual([
+    "On it. I'll answer here when I'm done.",
+    "Fixed the redirect and pushed to this pull request.\n\nhttps://github.com/acme/app/pull/42",
+  ]);
+  expect((await teammate("codex")).spentThisMonth).toBe(1);
+
+  // A follow-up is another @codex comment; only what came after it is posted.
+  let again = null;
+  github().intercept({ path: "/repos/acme/app/issues/42/comments", method: "POST" }).reply(201, (opts) => { again = JSON.parse(opts.body); return { id: 1003 }; });
+  github().intercept({ path: "/repos/acme/app/issues/42/comments?per_page=100&page=1", method: "GET" }).reply(200, [
+    { id: 1002, user: { login: "chatgpt-codex-connector[bot]" }, body: "Fixed the redirect and pushed to this pull request." },
+    { id: 1003, user: { login: "toru-bot" }, body: "@codex Mika: add a test" },
+    { id: 1004, user: { login: "chatgpt-codex-connector[bot]" }, body: "Added a test in https://github.com/acme/app/pull/42." },
+  ]);
+  await send("POST", "/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "@codex add a test", parentId: posted.id });
+  expect(again).toEqual({ body: "@codex Mika: add a test" });
+  expect((await thread(mika, posted.id)).map((m) => m.body).slice(-2)).toEqual(["Picking this up where we left off.", "Added a test in https://github.com/acme/app/pull/42."]);
+  expect((await teammate("codex")).spentThisMonth).toBe(2);
 });
