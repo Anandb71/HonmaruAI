@@ -245,7 +245,7 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
   const placeMark = (p: Place) => {
     const mentions = p.mentions || 0
     const unread = p.unread || 0
-    if (mentions > 0) return <span className="palette-badge mention"><span aria-hidden="true">@{mentions}</span><span className="sr-only">{t('{n} mentions of you', { n: mentions })}</span></span>
+    if (mentions > 0) return <span className="palette-badge mention"><span aria-hidden="true">@{mentions}</span><span className="sr-only">{mentions === 1 ? t('1 mention of you') : t('{n} mentions of you', { n: mentions })}</span></span>
     if (unread > 0) return <span className="palette-badge"><span aria-hidden="true">{unread}</span><span className="sr-only">{t('{n} waiting on you', { n: unread })}</span></span>
     if (p.fresh) return <span className="palette-fresh"><span className="sr-only">{t('New messages')}</span></span>
     return null

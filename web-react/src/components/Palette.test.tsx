@@ -43,6 +43,11 @@ describe('Palette, with nothing typed', () => {
     expect(row('g:abc')).toContain('<span class="palette-fresh"><span class="sr-only">New messages</span></span>')
   })
 
+  it('says one mention as one', () => {
+    const out = html({ places: [{ view: 'dm:r1', kind: 'person', name: 'Kenji Tanaka', mentions: 1 }] })
+    expect(out).toContain('<span aria-hidden="true">@1</span><span class="sr-only">1 mention of you</span>')
+  })
+
   it('knows the channels before the list has ever been drawn', () => {
     const out = html({ businesses: [{ slug: 'front-desk', name: 'Front desk' }, { slug: 'ops', name: 'Ops' }], recent: ['b:ops'] })
     expect(rows(out)).toEqual(['b:ops'])

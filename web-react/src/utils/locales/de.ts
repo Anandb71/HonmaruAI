@@ -716,6 +716,7 @@ const table: Record<string, string> = {
   'Replied in a thread in {where}': 'Hat in einem Thread in {where} geantwortet',
   'Jump to a conversation, or search messages and decisions — from:@name in:#channel…': 'Zu einer Unterhaltung springen oder Nachrichten und Entscheidungen suchen (from:@Name in:#Kanal) …',
   '{n} mentions of you': 'Du wurdest {n}-mal erwähnt',
+  '1 mention of you': 'Du wurdest einmal erwähnt',
   'Add reaction': 'Reaktion hinzufügen',
   'React with {emoji}': 'Mit {emoji} reagieren',
   'Unpin': 'Lösen',
