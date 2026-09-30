@@ -30,6 +30,23 @@ describe('mentionsMe', () => {
     expect(mentionsMe(from('no mention at all'), reader)).toBe(false)
   })
 
+  // Two Kenjis: "@" writes each by the whole name ("@KenjiMori"), and a bare
+  // "@Kenji" typed by hand reaches whichever the list has first — in the
+  // Worker too, which is who it notifies. So it calls you only if that is you.
+  it('is you by a shared first name only when you are the first with it', () => {
+    const kenjis = [
+      { ref: 'u2', name: 'Kenji Sato' },
+      { ref: 'u4', name: 'Kenji Mori', mine: true },
+    ]
+    expect(mentionsMe(from('@Kenji can you look?', 'u9'), { people: kenjis })).toBe(false)
+    expect(namesMe('@Kenji', kenjis)).toBe(false)
+    expect(mentionsMe(from('@KenjiMori can you look?', 'u9'), { people: kenjis })).toBe(true)
+    expect(namesMe('@KenjiMori', kenjis)).toBe(true)
+    const meFirst = [...kenjis].reverse()
+    expect(mentionsMe(from('@Kenji can you look?', 'u9'), { people: meFirst })).toBe(true)
+    expect(namesMe('@Kenji', meFirst)).toBe(true)
+  })
+
   it('is you through a group you are in, not one you are not', () => {
     expect(mentionsMe(from('@design review please'), reader)).toBe(true)
     expect(mentionsMe(from('@Design review please'), reader)).toBe(true)
