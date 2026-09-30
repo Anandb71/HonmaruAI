@@ -79,13 +79,14 @@ export const ProfileCard: React.FC<Props> = ({ person, online, anchor, onMessage
     return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', again); document.removeEventListener('scroll', again, true) }
   }, [measure])
 
-  // Focus comes into the card, so a screen reader says whose it is and Tab
-  // reaches its buttons; Escape takes it back to what opened it. A click
-  // elsewhere closes it and leaves focus where that click put it. Escape is
-  // caught on the way down, before the conversation's own Escape (which
-  // closes the thread) hears it.
+  // Focus comes into the card once it is placed (hidden, it cannot take
+  // it), so a screen reader says whose it is and Tab reaches its buttons;
+  // Escape takes it back to what opened it. A click elsewhere closes it and
+  // leaves focus where that click put it. Escape is caught on the way down,
+  // before the conversation's own Escape (which closes the thread) hears it.
+  const placed = place !== null
+  useEffect(() => { if (placed) box.current?.focus({ preventScroll: true }) }, [placed])
   useEffect(() => {
-    box.current?.focus({ preventScroll: true })
     const away = (e: PointerEvent) => {
       const target = e.target as Node
       if (box.current?.contains(target) || anchor?.contains(target)) return
