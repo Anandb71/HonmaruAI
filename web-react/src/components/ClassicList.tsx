@@ -2374,7 +2374,8 @@ export const ClassicList: React.FC<Props> = ({
 
   /// One block of a conversation: a gutter, a name and a time — or, joined
   /// to the one before, just the words — then what was said. Somebody
-  /// else's face and name open their card.
+  /// else's face and name open their card, and their face says whether
+  /// they are here. (Yours says nothing: the relay never tells you of you.)
   const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void }, body: React.ReactNode) => (
     <article key={key} id={opts.msgId ? `msg-${opts.msgId}` : undefined} tabIndex={opts.msgId ? -1 : undefined}
       {...(!wide ? longPress(opts.onHold) : {})}
@@ -2385,6 +2386,7 @@ export const ClassicList: React.FC<Props> = ({
             <button type="button" className="slk-face-button" aria-label={t('Profile of {name}', { name: opts.name })} aria-haspopup="dialog"
               onClick={(e) => openPopout(opts.authorRef!, e.currentTarget)}>
               {avatarFor(opts.app, opts.face || { name: opts.name })}
+              <span className={`cl-presence${isOnline(memberByRef(opts.authorRef), onlineKeys) ? ' on' : ''}`} aria-hidden="true" />
             </button>
           )
           : avatarFor(opts.app, opts.face || { name: opts.name })}
