@@ -9,7 +9,8 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, markFailed, markPending, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, tempMessage, tempState } from '../utils/pendingSend'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptUnsent, markFailed, markPending, outboxKey, readUnsent, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from '../utils/pendingSend'
+import type { Unsent } from '../utils/pendingSend'
 import { askingAboutData } from '../utils/authGuard'
 import { draftToClear, withoutDraft } from '../utils/drafts'
 import { getLocale } from '../utils/locale'
@@ -1126,8 +1127,10 @@ export const ClassicList: React.FC<Props> = ({
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return
-        // What is still on its way, or did not go, is only here: kept.
-        setMessages((prev) => ({ ...prev, [channel]: keepTemps(data.messages || [], prev[channel]) }))
+        // What is still on its way, or did not go, is only here: kept —
+        // and what did not go before this page loaded, back where it was.
+        const back = heldFor(channel, undefined, data.messages || [])
+        setMessages((prev) => ({ ...prev, [channel]: withHeld(keepTemps(data.messages || [], prev[channel]), back) }))
         setMore((prev) => ({ ...prev, [channel]: (data.messages || []).length >= PAGE }))
         maybeNewEmoji((data.messages || []).map((m: ChannelMessage) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
       })
@@ -1252,6 +1255,8 @@ export const ClassicList: React.FC<Props> = ({
           if (m.deleted) return { ...prev, replies: prev.replies.filter((x) => x.id !== m.id) }
           const held = echoOf(prev.replies, msg)
           if (held) drawnAs.current.set(m.id, held.id)
+          // One that looked failed got there: not kept to send again.
+          if (held?.failed) queueMicrotask(() => settle(held.id))
           return { ...prev, replies: arrive(prev.replies, msg) }
         })
         if (m.kind === 'ai') setThinking((prev) => ({ ...prev, [m.channel]: false }))
@@ -1271,6 +1276,7 @@ export const ClassicList: React.FC<Props> = ({
         // the copy on its way rather than showing twice.
         const held = echoOf(list, msg)
         if (held) drawnAs.current.set(m.id, held.id)
+        if (held?.failed) queueMicrotask(() => settle(held.id))
         return { ...prev, [m.channel]: arrive(list, msg) }
       })
       setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
@@ -1321,9 +1327,88 @@ export const ClassicList: React.FC<Props> = ({
   /// on it waits for. Its words are in the log with it. `abort` gives up on
   /// it while it goes — Delete, offered once it is still going at `lateAt`.
   /// `going`: in line or sent, with no answer yet, so a Retry pressed twice
-  /// sends it once.
-  type Outgoing = { tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; landing?: Promise<ChannelMessage | null>; abort?: () => void; lateAt?: number; going?: boolean }
+  /// sends it once. `said` is how it was first drawn, and `failed` and
+  /// `refused` how it stands: kept in this browser (keepOutbox) so that a
+  /// reload or a closed tab does not lose it. `restored`: kept from before
+  /// this page loaded, and not drawn yet.
+  type Outgoing = {
+    tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; said: ChannelMessage
+    landing?: Promise<ChannelMessage | null>; abort?: () => void; lateAt?: number; going?: boolean
+    failed?: string; refused?: boolean; restored?: boolean
+  }
   const outbox = useRef(new Map<string, Outgoing>())
+  /// Every message this tab has held in its outbox, gone since or not: what
+  /// it keeps in this browser is only ever these, never another tab's.
+  const heldHere = useRef(new Set<string>())
+  /// The outbox as it is now, kept in this browser for a reload or the next
+  /// visit, with another tab's messages left as that tab left them.
+  const keepOutbox = () => {
+    const now: Unsent[] = []
+    for (const o of outbox.current.values()) {
+      heldHere.current.add(o.tempId)
+      now.push({ said: o.said, decide: o.decide, ...(o.failed ? { failed: o.failed } : {}), ...(o.refused ? { refused: true } : {}) })
+    }
+    const key = outboxKey(api.orgId)
+    try {
+      const kept = keptUnsent(readUnsent(localStorage.getItem(key)), now, heldHere.current)
+      if (kept.length) localStorage.setItem(key, JSON.stringify(kept)); else localStorage.removeItem(key)
+    } catch { /* not kept: this tab still has them */ }
+  }
+  // What did not go before this page loaded: back in the outbox, failed,
+  // drawn where it was sent once that conversation or thread is loaded.
+  useEffect(() => {
+    let kept: Unsent[] = []
+    try { kept = readUnsent(localStorage.getItem(outboxKey(api.orgId))) } catch { /* nothing kept */ }
+    for (const u of kept) {
+      if (outbox.current.has(u.said.id)) continue
+      heldHere.current.add(u.said.id)
+      outbox.current.set(u.said.id, {
+        tempId: u.said.id, channel: u.said.channel, body: u.said.body, decide: u.decide, parentId: u.said.parentId || undefined, files: u.said.files || [], said: u.said,
+        failed: u.failed || t('That did not send. Try again.'), refused: u.refused, restored: true,
+      })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api.orgId])
+  // Leaving while something is still on its way: asked first, as it may not
+  // get there. What did not go is kept for next time, so is not asked about.
+  useEffect(() => {
+    const leaving = (e: BeforeUnloadEvent) => {
+      if (![...outbox.current.values()].some((o) => o.going)) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', leaving)
+    return () => window.removeEventListener('beforeunload', leaving)
+  }, [])
+  /// Ours for one conversation (`parentId` unset) or one thread, as they are
+  /// to be drawn: on their way or failed as they stand. One kept from before
+  /// this page loaded is let go instead when `fresh`, what the server has
+  /// there, shows it got there after all; one the socket's copy has already
+  /// taken the place of is drawn as that.
+  const heldFor = (channel: string, parentId: string | undefined, fresh: ChannelMessage[]): ChannelMessage[] => {
+    const back: ChannelMessage[] = []
+    const taken = new Set(drawnAs.current.values())
+    let settled = false
+    for (const o of [...outbox.current.values()]) {
+      const here = parentId ? o.parentId === parentId : !o.parentId && o.channel === channel
+      if (!here || taken.has(o.tempId)) continue
+      if (o.restored) {
+        o.restored = false
+        if (!o.refused && wentAfterAll(o.said, fresh)) { outbox.current.delete(o.tempId); settled = true; continue }
+      }
+      back.push(o.failed ? unsentAgain(o, o.failed) : { ...o.said, pending: true, failed: undefined, refused: undefined })
+    }
+    if (settled) keepOutbox()
+    return back
+  }
+  /// One that looked failed but got there: the socket's copy has taken its
+  /// place, so it is no longer kept to be sent again.
+  const settle = (tempId: string) => {
+    const o = outbox.current.get(tempId)
+    if (!o || o.going) return
+    outbox.current.delete(tempId)
+    keepOutbox()
+  }
   /// The same words to the same place a moment ago: a second Enter or a
   /// double tap before the box has cleared does not send them twice. Said
   /// again on purpose, they go again (isDoubleSend).
@@ -1386,9 +1471,10 @@ export const ClassicList: React.FC<Props> = ({
     }
     up.clear()
     if (parentId) threadComposer.current?.focus(); else composer.current?.focus()
-    const out: Outgoing = { tempId: temp.id, channel, body, decide, parentId, files, lateAt: Date.now() + SEND_TIMEOUT }
+    const out: Outgoing = { tempId: temp.id, channel, body, decide, parentId, files, said: temp, lateAt: Date.now() + SEND_TIMEOUT }
     outbox.current.set(temp.id, out)
     out.landing = deliver(out)
+    keepOutbox()
     await out.landing
   }
 
@@ -1428,6 +1514,7 @@ export const ClassicList: React.FC<Props> = ({
       return null
     }
     outbox.current.delete(tempId)
+    keepOutbox()
     // An edit begun on it while it went carries on, on the server's copy.
     setEditing((e) => (e && e.id === tempId ? { ...e, id: msg.id } : e))
     // Sent: a small confirmation, in a direct conversation — as Slack does.
@@ -1459,12 +1546,16 @@ export const ClassicList: React.FC<Props> = ({
 
   /// It did not go: it stays where it was, marked, with why. Moved on from
   /// there since, you are told where you are now as well. A reply whose
-  /// thread has closed has nowhere to stay, so only that is said. `refused`:
-  /// the server said no to the words, so it waits to be edited, not retried.
+  /// thread has closed is kept, and is back in the thread when it is opened
+  /// again. `refused`: the server said no to the words, so it waits to be
+  /// edited, not retried.
   const fail = (out: Outgoing, why: string, refused = false) => {
     const { tempId, channel, parentId } = out
+    out.failed = why
+    out.refused = refused || undefined
+    keepOutbox()
     if (parentId) {
-      if (shownNow.current.thread !== parentId) { outbox.current.delete(tempId); setProblem(why); return }
+      if (shownNow.current.thread !== parentId) { setProblem(why); return }
       setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: markFailed(prev.replies, tempId, why, refused) } : prev))
       return
     }
@@ -1497,13 +1588,16 @@ export const ClassicList: React.FC<Props> = ({
   /// Retry: the same words, files and thread, on their way again from
   /// where they are.
   const retry = (m: ChannelMessage) => {
-    const out: Outgoing = outbox.current.get(m.id) || { tempId: m.id, channel: m.channel, body: m.body, decide: false, parentId: m.parentId || undefined, files: m.files || [] }
+    const out: Outgoing = outbox.current.get(m.id) || { tempId: m.id, channel: m.channel, body: m.body, decide: false, parentId: m.parentId || undefined, files: m.files || [], said: m }
     if (out.going) return
     out.lateAt = Date.now() + SEND_TIMEOUT
+    out.failed = undefined
+    out.refused = undefined
     outbox.current.set(m.id, out)
     if (out.parentId) setThread((prev) => (prev && prev.parent.id === out.parentId ? { ...prev, replies: markPending(prev.replies, m.id) } : prev))
     else setMessages((prev) => (prev[out.channel] ? { ...prev, [out.channel]: markPending(prev[out.channel], m.id) } : prev))
     out.landing = deliver(out)
+    keepOutbox()
   }
   /// The server's id for one of yours sent from here: waited for while it
   /// is on its way, none when it did not go.
@@ -1516,6 +1610,7 @@ export const ClassicList: React.FC<Props> = ({
   /// One only ever held here, gone from where it was drawn.
   const drop = (tempId: string, channel: string, parentId?: string | null) => {
     outbox.current.delete(tempId)
+    keepOutbox()
     if (parentId) setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: prev.replies.filter((x) => x.id !== tempId) } : prev))
     else setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== tempId) } : prev))
   }
@@ -1913,7 +2008,10 @@ export const ClassicList: React.FC<Props> = ({
     setThreadDraft('')
     const res = await fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(m.id)}`, { headers: authHeaders }).catch(() => null)
     const data = res?.ok ? await res.json().catch(() => null) : null
-    if (data) setThread((prev) => (prev && prev.parent.id === m.id ? { channel, parent: data.parent, replies: keepTemps(data.replies || [], prev.replies) } : prev))
+    // Replies of yours still on their way, or that did not go — sent while
+    // it was open before, or before this page loaded — back in it.
+    const back = data ? heldFor(channel, m.id, data.replies || []) : []
+    if (data) setThread((prev) => (prev && prev.parent.id === m.id ? { channel, parent: data.parent, replies: withHeld(keepTemps(data.replies || [], prev.replies), back) } : prev))
     requestAnimationFrame(() => threadComposer.current?.focus())
     markThreadRead(channel, m.id)
   }
@@ -1931,7 +2029,8 @@ export const ClassicList: React.FC<Props> = ({
     if (!data?.parent) { setThread(null); return }
     threadInActivity.current = true
     setThreadDraft('')
-    setThread((prev) => ({ channel, parent: data.parent, replies: keepTemps(data.replies || [], prev && prev.parent.id === parentId ? prev.replies : undefined) }))
+    const back = heldFor(channel, parentId, data.replies || [])
+    setThread((prev) => ({ channel, parent: data.parent, replies: withHeld(keepTemps(data.replies || [], prev && prev.parent.id === parentId ? prev.replies : undefined), back) }))
     markThreadRead(channel, parentId)
     requestAnimationFrame(() => {
       const id = focusId === parentId ? `thread-${focusId}` : focusId
