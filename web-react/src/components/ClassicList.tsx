@@ -517,15 +517,17 @@ export const ClassicList: React.FC<Props> = ({
       .map((th) => ({ ...th, unread: th.cards.filter((c) => isUnread(c) && (c.createdAt || '') > readAt(th.key)).length }))
 
     // Conversations with the team's agents: each one you have talked to,
-    // the one you just started, newest first.
+    // the one you just started, and one you starred or put in a section
+    // before anything was said — newest first.
+    const placed = new Set([...layout.starred, ...layout.sections.flatMap((x) => x.views)])
     const agentConvos = agents
-      .filter((a) => activity[`ag:${a.id}`] || startedAgents.includes(a.id))
+      .filter((a) => activity[`ag:${a.id}`] || startedAgents.includes(a.id) || placed.has(`ag:${a.id}`))
       .map((a) => withTalk(build('agent', `agent:${a.id}`, a.name, { view: `ag:${a.id}`, agent: a }, [], true)!))
       .sort((a, b) => latestOf(b).localeCompare(latestOf(a)) || a.name.localeCompare(b.name))
 
     return { channels, people, apps, agentConvos }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending, sent, decided, businesses, userId, locale, members, hashes, activity, seenTick, serverReads, prefs, groups, agents, startedAgents])
+  }, [pending, sent, decided, businesses, userId, locale, members, hashes, activity, seenTick, serverReads, prefs, groups, agents, startedAgents, layout])
 
   const everything = useMemo(() => [...channels, ...people, ...agentConvos, ...apps], [channels, people, agentConvos, apps])
 
