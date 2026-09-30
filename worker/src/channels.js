@@ -167,8 +167,70 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     ...(row.previews_hidden ? { previewsHidden: true } : {}),
     reactions: deleted ? [] : reactions,
     files: deleted ? [] : (extra.files || []),
+    // An inline reply carries the message it answers, as that is now.
+    ...(!deleted && row.reply_to_id ? { replyTo: quoteOf(row, extra.original || null, members) } : {}),
     ...(agent ? { agent: { id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji || null, avatarUrl: agent.avatar_url || agent.avatarUrl || null } } : {}),
   };
+}
+
+/// What a spoiler hides in a quote: one bar, the same whatever it said, so
+/// not even its length shows.
+export const SPOILER_MASK = "████";
+const QUOTE_CHARS = 120;
+
+/// The first words of a message, as a reply quotes them: on one line, each
+/// ||spoiler|| hidden before anything is cut (so half of one never shows),
+/// and bars inside `code` left as code — they open no spoiler. A file is
+/// named when there are no words. At most `max` characters, with an
+/// ellipsis when cut.
+export function replyExcerpt(body, fileName = null, max = QUOTE_CHARS) {
+  const flat = String(body || "").replace(/\u0000/g, "").replace(/\s+/g, " ").trim();
+  const code = [];
+  const held = flat.replace(/```[\s\S]*?```|`[^`]*`/g, (c) => `\u0000${code.push(c) - 1}\u0000`);
+  const text = held.replace(/\|\|[\s\S]+?\|\|/g, SPOILER_MASK).replace(/\u0000(\d+)\u0000/g, (_, i) => code[Number(i)])
+    || (fileName ? `📎 ${fileName}` : "");
+  const chars = Array.from(text);
+  return chars.length > max ? `${chars.slice(0, max - 1).join("").trimEnd()}…` : text;
+}
+
+/// What a reply shows of the message it answers: who said it and how it
+/// starts, or only that it is gone. `original` is that message as it is
+/// now, null when there is none; one from another conversation is never
+/// shown, whatever the id says.
+export function quoteOf(row, original, members) {
+  const id = row.reply_to_id;
+  if (!original || original.deleted_at || original.channel !== row.channel) {
+    return { id, kind: null, authorName: null, authorRef: null, excerpt: "", deleted: true };
+  }
+  const author = original.kind === "ai" ? null : members.find((m) => m.login === original.author_login);
+  return {
+    id,
+    kind: original.kind,
+    authorName: original.kind === "ai" ? null : (author?.name || original.author_name || null),
+    authorRef: author?.ref || null,
+    excerpt: replyExcerpt(original.body, original.file_name),
+    deleted: false,
+  };
+}
+
+/// The messages these rows reply to, as they are now, by id: one query for
+/// a page (in chunks D1's bound-parameter limit allows), none when nothing
+/// in it is a reply.
+async function originalsOf(db, orgId, rows) {
+  const ids = [...new Set(rows.map((r) => r.reply_to_id).filter(Boolean))];
+  const out = new Map();
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    const { results } = await db.prepare(
+      `SELECT m.id, m.channel, m.kind, m.body, m.author_login, m.deleted_at,
+              COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name,
+              (SELECT f.name FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id ORDER BY f.created_at LIMIT 1) AS file_name
+         FROM channel_messages m LEFT JOIN users u ON u.login = m.author_login
+        WHERE m.org_id = ?1 AND m.id IN (${chunk.map((_, j) => `?${j + 2}`).join(", ")})`
+    ).bind(orgId, ...chunk).all();
+    for (const r of results || []) out.set(r.id, r);
+  }
+  return out;
 }
 
 /// The agents that wrote any of these rows, by id — the deleted too, so
@@ -219,13 +281,13 @@ export async function hydrate(db, orgId, rows) {
 /// Rows to messages, with their threads, reactions and files — each file
 /// with an address signed for whoever is being shown it.
 export async function present(db, orgId, rows, viewerLogin, view, members) {
-  const [extras, files, agents] = await Promise.all([hydrate(db, orgId, rows), filesFor(db, orgId, rows.map((r) => r.id)), agentsOf(db, orgId, rows)]);
+  const [extras, files, agents, originals] = await Promise.all([hydrate(db, orgId, rows), filesFor(db, orgId, rows.map((r) => r.id)), agentsOf(db, orgId, rows), originalsOf(db, orgId, rows)]);
   const now = Date.now();
   return Promise.all(rows.map(async (r) => {
     const x = extras.get(r.id) || {};
     const replyRefs = (x.replyLogins || []).map((l) => (l === "ai" || String(l).startsWith("agent:") ? l : members.find((m) => m.login === l)?.ref)).filter(Boolean).slice(0, 5);
     const own = await Promise.all((files.get(r.id) || []).map((f) => toFile(db, f, now)));
-    return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null });
+    return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null, original: originals.get(r.reply_to_id) || null });
   }));
 }
 
