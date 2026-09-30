@@ -18,13 +18,15 @@ const now = () => new Date().toISOString();
 
 /// A relay that only records what it would send, for the checks that
 /// something is never sent: awaited to the end, nothing is left in flight.
-function recorder(sockets = []) {
+/// Everybody has a socket open, and a stranger one that never joined.
+function recorder(orgId = ORG) {
   const sent = [];
+  const socket = (login, authed = true) => ({ login, deserializeAttachment: () => ({ orgId, userId: login, authed }) });
+  const sockets = [socket("toru"), socket("mika"), socket("kenji"), socket(null, false)];
   return {
     sent,
     db: env.DB,
     state: { getWebSockets: () => sockets },
-    sendTo: (orgId, login, obj) => sent.push({ to: login, value: obj.value }),
     constructor: { deliver: (ws, text) => sent.push({ to: ws.login, value: JSON.parse(text).value }) },
   };
 }
@@ -117,12 +119,19 @@ test("a guest hears typing only in the channels they were let into", async () =>
   await upsertMembership(env.DB, GUESTS, "3003", "guest");
   await env.DB.prepare("INSERT OR IGNORE INTO conversation_members (org_id, channel, login, added_at) VALUES (?1, 'b:launch', 'kenji', ?2)").bind(GUESTS, now()).run();
 
-  const r = recorder();
+  const r = recorder(GUESTS);
   await handleTyping(r, as("toru", "3001", GUESTS), "typing", { channel: "b:general" });
   expect(r.sent.map((s) => s.to)).toEqual(["mika"]);
   r.sent.length = 0;
   await handleTyping(r, as("toru", "3001", GUESTS), "typing", { channel: "b:launch" });
   expect(r.sent.map((s) => s.to).sort()).toEqual(["kenji", "mika"]);
+});
+
+test("a public channel's typing goes to everyone who joined but the typist, never to a socket that did not", async () => {
+  const r = recorder();
+  await handleTyping(r, as("toru", "3001"), "typing", { channel: "b:general", parentId: "m-1" });
+  expect(r.sent.map((s) => s.to)).toEqual(["mika", "kenji"]);
+  expect(r.sent[0].value).toMatchObject({ channel: "b:general", parentId: "m-1", who: { name: "Toru" } });
 });
 
 test("a thread named wrongly is dropped, not turned into the conversation", async () => {
