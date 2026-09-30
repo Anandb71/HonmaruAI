@@ -31,6 +31,7 @@ import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
+import { visibleOrder, step } from '../utils/sidebarOrder'
 import type { SidebarGroup } from '../utils/sidebarOrder'
 import './ClassicList.css'
 
@@ -916,18 +917,20 @@ export const ClassicList: React.FC<Props> = ({
     if (d?.member) setProfile((prev) => (prev && prev.ref === ref ? { ref, data: d.member } : prev))
   }
 
-  // Keys a chat client has: ⌥↑/⌥↓ between conversations, ⌘⇧A Activity,
-  // ⌘⇧D the sidebar.
+  // Keys a chat client has: ⌥↑/⌥↓ between conversations in the order the
+  // sidebar shows them (a folded group's are out of sight, and skipped),
+  // ⌘⇧A Activity, ⌘⇧D the sidebar.
   const [sideHidden, setSideHidden] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        const list = [...channels, ...people, ...agentConvos, ...apps]
+      if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        const list = visibleOrder(sidebarGroups, folded)
         if (!list.length) return
         e.preventDefault()
-        const i = list.findIndex((x) => x.key === current?.key)
-        const next = list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]
-        if (next) choose(next.key)
+        // Under Activity or Later no row is lit: down starts at the top.
+        const here = special ? null : current?.key ?? null
+        const next = step(list, here, e.key === 'ArrowDown' ? 1 : -1)
+        if (next && next.key !== here) choose(next.key)
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault(); openActivity()
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
