@@ -3019,7 +3019,7 @@ export const ClassicList: React.FC<Props> = ({
           <div className="slk-thread-log">
             {[thread.parent, ...thread.replies].map((m, i) => (
               <React.Fragment key={keyOf(m)}>
-                {block(m.id, {
+                {block(keyOf(m), {
                   joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
                   name: whoSaid(m),
                   face: m.kind !== 'ai' ? faceOfMessage(m) : null,
