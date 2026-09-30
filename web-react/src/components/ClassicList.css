@@ -774,6 +774,55 @@
 .classic.slk.slk .slk-profile-stats dt { font-size: 11px; color: var(--slk-dim); }
 .classic.slk.slk .slk-profile-stats dd { margin: 2px 0 0; font-size: 18px; font-weight: 800; color: var(--slk-ink); }
 .classic.slk.slk .slk-profile-actions { display: flex; gap: 8px; }
+
+/* A teammate's card, popped out beside a face, a name or an @mention: a
+   band of their colour, their photo with the presence dot cut out of the
+   card, then who they are and the two ways on. Placed by utils/people's
+   placeCard; the offset it opens from depends on which side it took. */
+.classic.slk.slk .slk-popout {
+  position: fixed; z-index: 80; width: 300px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px);
+  box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--slk-card); color: var(--slk-ink);
+  border: 1px solid var(--slk-line); border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .18), 0 2px 6px rgba(0, 0, 0, .08);
+  transform-origin: top left;
+  animation: slk-popout-in 140ms cubic-bezier(.2, .8, .2, 1);
+}
+.classic.slk.slk .slk-popout.left { transform-origin: top right; }
+.classic.slk.slk .slk-popout.up { transform-origin: bottom left; }
+.classic.slk.slk .slk-popout.left.up { transform-origin: bottom right; }
+.classic.slk.slk .slk-popout:focus { outline: none; }
+.classic.slk.slk .slk-popout:focus-visible { box-shadow: 0 0 0 2px var(--slk-accent), 0 16px 40px rgba(0, 0, 0, .18); }
+@keyframes slk-popout-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .classic.slk.slk .slk-popout { animation: none; } }
+.classic.slk.slk .slk-popout-banner { height: 56px; opacity: .85; }
+.classic.slk.slk .slk-popout-face {
+  position: relative; width: 72px; height: 72px; margin: -36px 0 0 16px;
+  border-radius: 16px; box-shadow: 0 0 0 4px var(--slk-card); background: var(--slk-card);
+}
+.classic.slk.slk .slk-popout-face .cl-presence {
+  width: 18px; height: 18px; right: -4px; bottom: -4px; border-width: 3px;
+  background: var(--slk-card); border-color: var(--slk-dim); box-shadow: 0 0 0 3px var(--slk-card);
+}
+.classic.slk.slk .slk-popout-face .cl-presence.on { background: var(--slk-green); border-color: var(--slk-green); }
+.classic.slk.slk .slk-popout-body { padding: 10px 16px 16px; }
+.classic.slk.slk .slk-popout-name { margin: 0; font-size: 19px; font-weight: 800; line-height: 1.25; color: var(--slk-ink); overflow-wrap: anywhere; }
+.classic.slk.slk .slk-popout-body p { margin: 3px 0 0; font-size: 13.5px; line-height: 1.4; color: var(--slk-dim); overflow-wrap: anywhere; }
+.classic.slk.slk .slk-popout-body .slk-popout-handle { color: var(--slk-ink); }
+.classic.slk.slk .slk-popout-body .slk-popout-status {
+  display: flex; align-items: baseline; gap: 6px; margin-top: 10px; padding: 8px 10px;
+  border-radius: 8px; background: var(--slk-field); color: var(--slk-ink);
+}
+.classic.slk.slk .slk-popout-emoji { flex: none; }
+.classic.slk.slk .slk-popout-body .slk-popout-away { color: var(--slk-amber); font-weight: 600; }
+.classic.slk.slk .slk-popout-body .slk-popout-local { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
+.classic.slk.slk .slk-popout-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--slk-line); }
+.classic.slk.slk .slk-popout-actions button { flex: 1 1 auto; height: 32px; }
+.classic.slk.slk .slk-popout-actions button:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .classic.slk.slk .slk-popout { box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .04); }
+}
+:root[data-theme="dark"] .classic.slk.slk .slk-popout { box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .04); }
 @media (min-width: 720px) {
   .classic.slk.slk.side-hidden .slk-side { display: none; }
 }
