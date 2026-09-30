@@ -145,8 +145,10 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     id: row.id,
     channel: view,
     kind: row.kind,
-    // A deleted message keeps its place (its thread hangs off it) and
-    // loses its words.
+    // A deleted message loses its words. A page of history leaves it out;
+    // it comes only as the head of a thread opened by its link (listThread
+    // fetches it by id), and in what the unsend sends out to take it off
+    // the screens it is on.
     body: deleted ? "" : row.body,
     // The language it is written in, for a reader in another to ask for it
     // translated (translate.js). Null when there is nothing to translate.
