@@ -3,6 +3,10 @@
 // In keep.text, *asterisks* mark the words painted violet.
 window.I18N = {
   "en": {
+    "motion.scroll": "Scroll to discover",
+    "motion.demo": "Try the handoff",
+    "motion.preview": "Interactive demo",
+
     "meta.title": "Honmaru AI — Decisions, not messages.",
     "meta.desc": "Your AI talks to their AI. You just swipe. An AI-native decision feed for teams.",
     "a11y.skip": "Skip to content",
@@ -25,7 +29,7 @@ window.I18N = {
     "nav.features": "Features",
     "nav.privacy": "Security",
     "nav.cta": "Try free",
-    "hero.title": "Decisions,<br>not <s>messages</s>.",
+    "hero.title": "Less noise.<br>More <em>momentum.</em>",
     "hero.sub": "Your AI talks to their AI. You just swipe the one card that needs you.",
     "c1.t": "Already there.",
     "c1.d": "Overnight, your AI read everything — and kept only what needs you.",
@@ -155,6 +159,10 @@ window.I18N = {
     "href.ios": "https://apps.apple.com/app/id6799302006"
   },
   "ja": {
+    "motion.scroll": "スクロールして体験する",
+    "motion.demo": "ひと言から、仕事が動き出す。",
+    "motion.preview": "インタラクティブデモ",
+
     "meta.title": "Honmaru AI — メッセージより、意思決定を。",
     "meta.desc": "あなたのAIが、相手のAIと話す。あなたはスワイプするだけ。チームのための、AIネイティブな意思決定フィード。",
     "a11y.skip": "本文へ移動",
@@ -177,7 +185,7 @@ window.I18N = {
     "nav.features": "機能",
     "nav.privacy": "セキュリティ",
     "nav.cta": "無料で試す",
-    "hero.title": "<s>メッセージ</s>より、<br>意思決定を。",
+    "hero.title": "あなたは、<br><em>決めるだけ。</em>",
     "hero.sub": "AIとAIが話す。あなたは、自分が決めるべき一枚をスワイプするだけ。",
     "c1.t": "もう、届いている。",
     "c1.d": "あなたのAIが夜のうちにすべてに目を通し、あなたが決めるべきことだけを残しました。",
@@ -307,6 +315,10 @@ window.I18N = {
     "href.ios": "https://apps.apple.com/jp/app/honmaruai/id6799302006"
   },
   "es": {
+    "motion.scroll": "Desliza para descubrir",
+    "motion.demo": "Prueba el relevo",
+    "motion.preview": "Demo interactiva",
+
     "meta.title": "Honmaru AI — Decisiones, no mensajes.",
     "meta.desc": "Tu IA habla con su IA. Tú solo deslizas. Un feed de decisiones con IA para equipos.",
     "a11y.skip": "Ir al contenido",
@@ -329,7 +341,7 @@ window.I18N = {
     "nav.features": "Funciones",
     "nav.privacy": "Seguridad",
     "nav.cta": "Probar gratis",
-    "hero.title": "Decisiones,<br>no <s>mensajes</s>.",
+    "hero.title": "Menos ruido.<br>Más <em>impulso.</em>",
     "hero.sub": "Tu IA habla con su IA. Tú solo deslizas la tarjeta que te necesita.",
     "c1.t": "Ya está ahí.",
     "c1.d": "Esta noche tu IA lo leyó todo, y se quedó solo con lo que te necesita.",
@@ -459,6 +471,10 @@ window.I18N = {
     "href.ios": "https://apps.apple.com/app/id6799302006"
   },
   "fr": {
+    "motion.scroll": "Défiler pour découvrir",
+    "motion.demo": "Essayez le relais",
+    "motion.preview": "Démo interactive",
+
     "meta.title": "Honmaru AI — Des décisions, pas des messages.",
     "meta.desc": "Votre IA parle à leur IA. Vous n’avez qu’à balayer. Le fil de décisions IA pour les équipes.",
     "a11y.skip": "Aller au contenu",
@@ -481,7 +497,7 @@ window.I18N = {
     "nav.features": "Fonctionnalités",
     "nav.privacy": "Sécurité",
     "nav.cta": "Essai gratuit",
-    "hero.title": "Des décisions,<br>pas des <s>messages</s>.",
+    "hero.title": "Moins de bruit.<br>Plus d’<em>élan.</em>",
     "hero.sub": "Votre IA parle à leur IA. Vous balayez seulement la carte qui a besoin de vous.",
     "c1.t": "Déjà là.",
     "c1.d": "Cette nuit, votre IA a tout lu — et n’a gardé que ce qui a besoin de vous.",
@@ -611,6 +627,10 @@ window.I18N = {
     "href.ios": "https://apps.apple.com/app/id6799302006"
   },
   "de": {
+    "motion.scroll": "Scrollen und entdecken",
+    "motion.demo": "Übergabe ausprobieren",
+    "motion.preview": "Interaktive Demo",
+
     "meta.title": "Honmaru AI — Entscheidungen statt Nachrichten.",
     "meta.desc": "Deine KI spricht mit ihrer KI. Du wischst nur. Der KI-native Entscheidungs-Feed für Teams.",
     "a11y.skip": "Zum Inhalt",
@@ -633,7 +653,7 @@ window.I18N = {
     "nav.features": "Funktionen",
     "nav.privacy": "Sicherheit",
     "nav.cta": "Gratis testen",
-    "hero.title": "Entscheidungen<br>statt <s>Nachrichten</s>.",
+    "hero.title": "Weniger Lärm.<br>Mehr <em>Fortschritt.</em>",
     "hero.sub": "Deine KI spricht mit ihrer KI. Du wischst nur die eine Karte, die dich braucht.",
     "c1.t": "Schon da.",
     "c1.d": "Über Nacht hat deine KI alles gelesen — und nur behalten, was dich braucht.",

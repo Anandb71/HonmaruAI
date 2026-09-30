@@ -126,3 +126,12 @@ It uses the same two secrets as Deploy Web. For the DNS records to be added
 automatically, the API token also needs *Zone → DNS → Edit* on the domain's
 zone; certificates for the domain are issued by Pages within minutes of the
 records existing, and the next run (or a manual one) switches the page over.
+
+## Motion redesign (September 2026)
+
+The hero now uses a layered architectural portal, a tilted product device and
+subtle pointer depth. Scroll straightens the device and runs the decision
+sequence; the four chapter buttons also seek to fully visible moments. Feature
+sections alternate large tinted illustrations. Reduced motion uses a static
+hero and reveals the complete keep explanation. See
+`docs/lp-redesign/2026-09-30/README.md` for review iterations and verification.

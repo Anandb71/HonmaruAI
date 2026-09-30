@@ -72,8 +72,11 @@
 <main id="main">
 
   <!-- ============ 01 STAGE: hero, then the pinned phone story ============ -->
-  <section class="stage" id="top">
+  <section class="stage" id="top"><span id="story-start" class="story-anchor"></span>
     <div class="stage-sticky">
+      <div class="stage-scenery" aria-hidden="true"><div class="portal"><i></i><i></i><i></i><i></i></div><span class="hero-wordmark">Honmaru</span></div>
+      <div class="ambient-card ambient-one" aria-hidden="true"><span class="ambient-dot"></span><span data-i18n="ph.triage"></span></div>
+      <div class="ambient-card ambient-two" aria-hidden="true"><span class="ambient-check">✓</span><span data-i18n="gh.l.approved"></span><span class="ambient-line"></span></div>
       <canvas class="rings" id="rings" aria-hidden="true"></canvas>
 
       <div class="hero-text" id="hero-text">
@@ -97,12 +100,13 @@
         </ul>
       </div>
 
+      <a class="scroll-cue" href="#story-start"><span data-i18n="motion.scroll">Scroll to discover</span><span aria-hidden="true">↓</span></a>
       <div class="story" id="story">
-        <ol class="rail" id="rail" aria-hidden="true">
-          <li><span class="n">01</span><span class="l" data-i18n="rail.1">Triage</span><i></i></li>
-          <li><span class="n">02</span><span class="l" data-i18n="rail.2">Decide</span><i></i></li>
-          <li><span class="n">03</span><span class="l" data-i18n="rail.3">Record</span><i></i></li>
-          <li><span class="n">04</span><span class="l" data-i18n="rail.4">Next</span><i></i></li>
+        <ol class="rail" id="rail">
+          <li><button type="button" class="story-step" data-step="0"><span class="n">01</span><span class="l" data-i18n="rail.1">Triage</span><i></i></button></li>
+          <li><button type="button" class="story-step" data-step="1"><span class="n">02</span><span class="l" data-i18n="rail.2">Decide</span><i></i></button></li>
+          <li><button type="button" class="story-step" data-step="2"><span class="n">03</span><span class="l" data-i18n="rail.3">Record</span><i></i></button></li>
+          <li><button type="button" class="story-step" data-step="3"><span class="n">04</span><span class="l" data-i18n="rail.4">Next</span><i></i></button></li>
         </ol>
         <ol class="captions" id="captions">
           <li class="caption"><h2 data-i18n="c1.t">Already there.</h2><p data-i18n="c1.d">Overnight, your AI read everything — and kept only what needs you.</p></li>
@@ -222,7 +226,7 @@
         <p class="lead" data-i18n="how.sub">Your AI reads the org graph — who owns what, who can approve — and hands your intent to the right person’s AI. It arrives as a card, not a message.</p>
       </header>
 
-      <div class="console reveal">
+      <div class="console reveal"><div class="console-bar"><span class="console-dots" aria-hidden="true">● ● ●</span><span data-i18n="motion.demo">Try the handoff</span><span class="demo-label" data-i18n="motion.preview">Interactive demo</span></div>
         <div class="flow" id="flow" aria-hidden="true">
           <div class="flow-line"><span class="flow-fill" id="flow-fill"></span><span class="flow-dot" id="flow-dot"></span></div>
           <div class="flow-node"><span class="fn you">★</span><span class="fl" data-i18n="how.you">You</span></div>
@@ -320,6 +324,7 @@
   <!-- ============ 05 THE GATE: access ============ -->
   <section class="section gate" id="gate">
     <div class="wrap">
+      <div class="gate-emblem" aria-hidden="true"><span>✦</span></div>
       <header class="head reveal">
         <p class="label"><span class="idx">05</span><span data-i18n="pv.kicker">Security &amp; access</span></p>
         <h2 class="title" data-i18n-html="pv.title">One gate<br>into the keep.</h2>
