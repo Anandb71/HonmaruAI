@@ -511,6 +511,7 @@ const table: Record<string, string> = {
   'Nothing for you yet': 'まだ何もありません',
   'When somebody writes @ your name, or replies in a thread you are part of, it shows up here.': '誰かが @あなた と書いたり、参加しているスレッドに返信するとここに表示されます。',
   'Mentioned you in {where}': '{where} であなたをメンション',
+  'Mentions you': 'あなたをメンション',
   'Replied in a thread in {where}': '{where} のスレッドで返信',
   'Search messages and decisions — from:@name in:#channel — or type where to go…': 'メッセージと決定を検索（from:@名前 in:#チャンネル）、または移動先を入力…',
   'Add reaction': 'リアクションを追加',

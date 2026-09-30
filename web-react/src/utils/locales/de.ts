@@ -723,6 +723,7 @@ const table: Record<string, string> = {
   'Nothing for you yet': 'Noch nichts für dich',
   'When somebody writes @ your name, or replies in a thread you are part of, it shows up here.': 'Wenn jemand @ deinen Namen schreibt oder in deinem Thread antwortet, erscheint es hier.',
   'Mentioned you in {where}': 'Hat dich in {where} erwähnt',
+  'Mentions you': 'Erwähnt dich',
   'Replied in a thread in {where}': 'Hat in einem Thread in {where} geantwortet',
   'Search messages and decisions — from:@name in:#channel — or type where to go…': 'Nachrichten und Entscheidungen suchen (from:@Name in:#Kanal) oder Ziel eingeben …',
   'Add reaction': 'Reaktion hinzufügen',

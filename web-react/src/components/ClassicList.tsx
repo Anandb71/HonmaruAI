@@ -17,6 +17,7 @@ import { useBackStack } from '../utils/backStack'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
+import { meReader } from '../utils/mentionsMe'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { DailyReportDraft } from './DailyReport'
@@ -2191,6 +2192,11 @@ export const ClassicList: React.FC<Props> = ({
   // @names that reach somebody light up as they are typed.
   const draftHl = useMentionHighlight(composer, draft, withAI)
   const threadHl = useMentionHighlight(threadComposer, threadDraft, withAI)
+  // Whether a message calls you and whether an @name is yours, asked of
+  // every message each time the conversation is drawn — every keystroke in
+  // the composer — so each answer is kept until the team or its groups
+  // change.
+  const readsMe = useMemo(() => meReader({ people: mentionable, groups: userGroups }), [mentionable, userGroups])
 
   // The newest message in view when a conversation opens, as in any chat —
   // and kept in view while what is above it settles: the conversation drawn
@@ -2348,10 +2354,12 @@ export const ClassicList: React.FC<Props> = ({
 
   /// One block of a conversation: a gutter, a name and a time — or, joined
   /// to the one before, just the words — then what was said.
-  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void }, body: React.ReactNode) => (
+  /// One that calls you (`mentionsMe`) is tinted and barred, to be found in
+  /// a busy channel, and says so to a screen reader, which sees no tint.
+  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; mentionsMe?: boolean }, body: React.ReactNode) => (
     <article key={key} id={opts.msgId ? `msg-${opts.msgId}` : undefined} tabIndex={opts.msgId ? -1 : undefined}
       {...(!wide ? longPress(opts.onHold) : {})}
-      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
+      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.mentionsMe ? ' mentions-me' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
       <div className="slk-gutter" aria-hidden="true">
         {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span> : avatarFor(opts.app, opts.face || { name: opts.name })}
       </div>
@@ -2367,6 +2375,7 @@ export const ClassicList: React.FC<Props> = ({
             <time className="slk-time" dateTime={opts.at}>{clock(opts.at)}</time>
           </div>
         )}
+        {opts.mentionsMe && <span className="sr-only slk-calls-me">{t('Mentions you')}</span>}
         {body}
       </div>
       {opts.tools && <div className="slk-tools">{opts.tools}</div>}
@@ -2383,8 +2392,13 @@ export const ClassicList: React.FC<Props> = ({
     if (!kind) return ''
     if (kind === 'ai') return 'slk-mention ai'
     if (kind === 'agent' || agentHandles.has(part.replace(/^[@＠]/, '').replace(/[にへ]$/, '').normalize('NFKC').toLowerCase())) return 'slk-mention agent'
+    // Your own name, stronger than anyone else's.
+    if (kind === 'person' && readsMe.namesMe(part)) return 'slk-mention me'
     return `slk-mention${kind === 'group' ? ' group' : ''}`
   })
+  /// Whether a message calls you (utils/mentionsMe.ts): read from what was
+  /// written, not a translation of it; an unsent one calls nobody.
+  const callsMe = (m: ChannelMessage) => !m.deleted && readsMe.mentionsMe(m)
 
   /// One face beside "3 replies": the AI's mark, an agent's emoji, your own
   /// photo, or a teammate's.
@@ -2848,7 +2862,7 @@ export const ClassicList: React.FC<Props> = ({
                   joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
                   name: whoSaid(m),
                   face: m.kind !== 'ai' ? faceOfMessage(m) : null,
-                  msgId: i === 0 ? `thread-${m.id}` : m.id,
+                  msgId: i === 0 ? `thread-${m.id}` : m.id, mentionsMe: callsMe(m),
                   tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true),
                 }, (
                   <>
@@ -3002,7 +3016,7 @@ export const ClassicList: React.FC<Props> = ({
         }
         if (m.kind === 'ai') {
           const card = m.cardId ? cardsById.get(m.cardId) : undefined
-          out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m) },
+          out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m) },
             <>
               <div className="slk-text">{rich(shownBody(m).text)}</div>
               {translationNote(m)}
@@ -3017,7 +3031,7 @@ export const ClassicList: React.FC<Props> = ({
           const name = whoSaid(m)
           out.push(block(m.id, {
             joined: joined && !m.pinned, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
-            tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m),
+            mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m),
           }, (
             <>
               {words(thread.view!, m)}

@@ -598,10 +598,14 @@
 
 .classic.slk.slk .slk-edited { font-size: 12px; color: var(--slk-faint); }
 .classic.slk.slk .slk-deleted { color: var(--slk-faint); font-style: italic; }
-.classic.slk.slk .slk-msg.pinned { background: rgba(232, 145, 45, .08); }
+.classic.slk.slk .slk-msg.pinned { --slk-rest-bg: rgba(232, 145, 45, .08); background: var(--slk-rest-bg); }
 .classic.slk.slk .slk-pin-mark { font-size: 12px; color: var(--slk-dim); margin-bottom: 2px; }
+/* The message a link or a search took you to lights up, then fades to the
+   colour the row has of its own (--slk-rest-bg, a pinned one's amber) —
+   not to nothing and a jump back to it. Only the colour moves, so a
+   message that calls you keeps its bar and glow all through. */
 .classic.slk.slk .slk-msg.flash { animation: slk-flash 1.6s ease-out; }
-@keyframes slk-flash { 0%, 30% { background: rgba(232, 145, 45, .35); } 100% { background: transparent; } }
+@keyframes slk-flash { 0%, 30% { background-color: rgba(232, 145, 45, .35); } 100% { background-color: var(--slk-rest-bg, transparent); } }
 .classic.slk.slk .slk-msg.editing { background: rgba(232, 145, 45, .10); }
 .classic.slk.slk .slk-edit { margin-top: 4px; border: 1px solid var(--slk-dim); border-radius: 8px; background: var(--slk-bg); overflow: hidden; }
 .classic.slk.slk .slk-edit .slk-input { width: 100%; box-sizing: border-box; }
@@ -1392,6 +1396,51 @@
 .classic.slk.slk .mention-hl.m-agent { color: var(--slk-agent); background: color-mix(in srgb, var(--slk-agent) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--slk-agent) 16%, transparent); }
 .classic.slk.slk .slk-mention.group { color: #0f7b6c; background: rgba(15, 123, 108, 0.12); }
 .classic.slk.slk .mention-hl.m-group { color: #0f7b6c; background: rgba(15, 123, 108, 0.14); box-shadow: 0 0 0 1px rgba(15, 123, 108, 0.14); }
+
+/* A message that calls you — your @name, a group you are in, @channel or
+   @here — gets a bar down its left edge and a warm glow fading out from
+   it, the way Discord marks one, so it is found in a busy channel. Warm to
+   read apart from the blue of links and other people's names; faint, so a
+   channel that calls you often is not a wall of it. The bar is a border on
+   a layer of its own: nothing shifts, and it stays when forced colours
+   take the tint away.
+   It is the one mark @channel, @here and a group get (only your own @name
+   has a chip), so it holds 3:1 against every row it sits on, hovered or
+   pinned: a darker gold in light, where a bright one fades into white. */
+.classic.slk.slk {
+  --slk-me-bg: rgba(242, 176, 20, .12); --slk-me-bg-hover: rgba(242, 176, 20, .18);
+  --slk-me-bar: #b07800; --slk-me-ink: #7a4f00; --slk-me-chip: rgba(242, 176, 20, .26);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .classic.slk.slk {
+    --slk-me-bg: rgba(240, 178, 50, .10); --slk-me-bg-hover: rgba(240, 178, 50, .15);
+    --slk-me-bar: #f0b232; --slk-me-ink: #f8d27a; --slk-me-chip: rgba(240, 178, 50, .22);
+  }
+}
+:root[data-theme="dark"] .classic.slk.slk {
+  --slk-me-bg: rgba(240, 178, 50, .10); --slk-me-bg-hover: rgba(240, 178, 50, .15);
+  --slk-me-bar: #f0b232; --slk-me-ink: #f8d27a; --slk-me-chip: rgba(240, 178, 50, .22);
+}
+/* Not to be taken for a pinned message: that one, and one you are
+   editing, is a flat amber wash over the whole row, a pinned one with its
+   "Pinned" line above the words. This is the bar and a glow that fades
+   from it, laid as a background image, so it goes over whatever colour the
+   row already has instead of taking its place. A pinned message that calls
+   you shows both: the pin's wash and its line, with the bar and the glow
+   on top. (Editing never meets it: you only edit your own, and your own
+   never calls you.) */
+.classic.slk.slk .slk-msg.mentions-me { background-image: linear-gradient(90deg, var(--slk-me-bg), transparent 75%); }
+.classic.slk.slk .slk-msg.mentions-me:hover { background-image: linear-gradient(90deg, var(--slk-me-bg-hover), transparent 75%); }
+.classic.slk.slk .slk-msg.mentions-me::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0;
+  border-left: 2px solid var(--slk-me-bar); pointer-events: none;
+}
+/* What a screen reader hears in place of all that. It is text in the
+   message, so selecting the message and copying it would bring "Mentions
+   you" along with the words: it cannot be selected. */
+.classic.slk.slk .slk-calls-me { -webkit-user-select: none; user-select: none; }
+/* Your own @name among the others: the same warmth, stronger. */
+.classic.slk.slk .slk-mention.me { color: var(--slk-me-ink); background: var(--slk-me-chip); font-weight: 700; }
 
 /* A message shown in the reader's language, and the way back to its own. */
 .classic.slk.slk .slk-translated { display: inline-block; margin-top: 2px; padding: 0; border: none; background: none; font: inherit; font-size: 11.5px; color: var(--slk-dim); cursor: pointer; }
