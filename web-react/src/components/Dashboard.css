@@ -239,16 +239,31 @@
 .create-empty { color: #838383; font-size: 13px; margin-top: 8px; width: 100%; }
 
 @media (prefers-color-scheme: dark) {
-  .hist-draft-text { background: #222222; color: #f2f2f2; }
-  .context-input { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
-  .create-decision button.mic { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
-  .hist-draft-text:focus { background: #1a1a1a; }
-  .hist-send { background: #f2f2f2; color: #1a1a1a; }
-  .brand, .topbar-right button, .sheet-title, .sheet-title .close { color: #f2f2f2; }
-  .topbar-right button { background: rgba(15,15,15,0.7); border-color: #2a2a2a; }
-  .sheet, .toast { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
-  .create-decision textarea { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .hist-draft-text { background: #222222; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .context-input { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .create-decision button.mic { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .hist-draft-text:focus { background: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .hist-send { background: #f2f2f2; color: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .brand,
+  :where(:root:not([data-theme="light"])) .topbar-right button,
+  :where(:root:not([data-theme="light"])) .sheet-title,
+  :where(:root:not([data-theme="light"])) .sheet-title .close { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .topbar-right button { background: rgba(15,15,15,0.7); border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .sheet, :where(:root:not([data-theme="light"])) .toast { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .create-decision textarea { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
 }
+:where(:root[data-theme="dark"]) .hist-draft-text { background: #222222; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .context-input { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .create-decision button.mic { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .hist-draft-text:focus { background: #1a1a1a; }
+:where(:root[data-theme="dark"]) .hist-send { background: #f2f2f2; color: #1a1a1a; }
+:where(:root[data-theme="dark"]) .brand,
+:where(:root[data-theme="dark"]) .topbar-right button,
+:where(:root[data-theme="dark"]) .sheet-title,
+:where(:root[data-theme="dark"]) .sheet-title .close { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .topbar-right button { background: rgba(15,15,15,0.7); border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .sheet, :where(:root[data-theme="dark"]) .toast { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .create-decision textarea { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
 
 /* You and the record. */
 .record-button {
@@ -288,11 +303,31 @@
 .debug-log { position: fixed; left: 8px; bottom: 8px; width: 320px; max-height: 40vh; overflow: auto; background: rgba(255,255,255,0.92); border: 1px solid #e8e8e8; border-radius: 10px; padding: 8px; font-size: 11px; z-index: 40; }
 
 @media (prefers-color-scheme: dark) {
-  .you-select, .you-row input, .you-row button, .record-copy { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
-  .record-section h3, .record-title, .record-open li, .record-context h3, .record-decisions-title, .record-md { color: #f2f2f2; }
-  .record-md a, .linkish { color: #b4a1ff; }
-  .record-decided li { border-top-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .you-select,
+  :where(:root:not([data-theme="light"])) .you-row input,
+  :where(:root:not([data-theme="light"])) .you-row button,
+  :where(:root:not([data-theme="light"])) .record-copy { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .record-section h3,
+  :where(:root:not([data-theme="light"])) .record-title,
+  :where(:root:not([data-theme="light"])) .record-open li,
+  :where(:root:not([data-theme="light"])) .record-context h3,
+  :where(:root:not([data-theme="light"])) .record-decisions-title,
+  :where(:root:not([data-theme="light"])) .record-md { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .record-md a, :where(:root:not([data-theme="light"])) .linkish { color: #b4a1ff; }
+  :where(:root:not([data-theme="light"])) .record-decided li { border-top-color: #2a2a2a; }
 }
+:where(:root[data-theme="dark"]) .you-select,
+:where(:root[data-theme="dark"]) .you-row input,
+:where(:root[data-theme="dark"]) .you-row button,
+:where(:root[data-theme="dark"]) .record-copy { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .record-section h3,
+:where(:root[data-theme="dark"]) .record-title,
+:where(:root[data-theme="dark"]) .record-open li,
+:where(:root[data-theme="dark"]) .record-context h3,
+:where(:root[data-theme="dark"]) .record-decisions-title,
+:where(:root[data-theme="dark"]) .record-md { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .record-md a, :where(:root[data-theme="dark"]) .linkish { color: #b4a1ff; }
+:where(:root[data-theme="dark"]) .record-decided li { border-top-color: #2a2a2a; }
 
 /* Cards / Classic, top left, as the design has it. */
 .mode-switch {
@@ -476,14 +511,21 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .mode-switch { background: #1a1a1a; }
-  .mode-switch button.on { background: #2e2e2e; color: #f2f2f2; }
-  .mode-count { background: #f2f2f2; color: #0f0f0f; }
-  .tabbar { background: rgba(15,15,15,0.9); border-top-color: #2a2a2a; }
-  .fab-face { background: #1a1a1a; color: #f2f2f2; }
-  .tab.on { color: #f2f2f2; }
-  .tab.compose { background: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .mode-switch { background: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .mode-switch button.on { background: #2e2e2e; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .mode-count { background: #f2f2f2; color: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .tabbar { background: rgba(15,15,15,0.9); border-top-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .fab-face { background: #1a1a1a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .tab.on { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .tab.compose { background: #f2f2f2; }
 }
+:where(:root[data-theme="dark"]) .mode-switch { background: #1a1a1a; }
+:where(:root[data-theme="dark"]) .mode-switch button.on { background: #2e2e2e; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .mode-count { background: #f2f2f2; color: #0f0f0f; }
+:where(:root[data-theme="dark"]) .tabbar { background: rgba(15,15,15,0.9); border-top-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .fab-face { background: #1a1a1a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .tab.on { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .tab.compose { background: #f2f2f2; }
 
 /* Where the connection stands, when it is not simply fine. */
 .link-state {
@@ -543,13 +585,19 @@
 .crash-detail pre { white-space: pre-wrap; font-size: 11px; max-height: 30vh; overflow: auto; }
 
 @media (prefers-color-scheme: dark) {
-  .link-state { background: rgba(15,15,15,0.7); border-color: #2a2a2a; color: #a3a3a3; }
-  .toast.undo { background: #f2f2f2; color: #0f0f0f; border-color: #f2f2f2; }
-  .undo-button { background: #0f0f0f; color: #f2f2f2; }
-  .hist-row { border-bottom-color: #2a2a2a; }
-  .hist-row.open { background: #1a1a1a; }
-  .hist-summary { color: #c4c4c4; }
+  :where(:root:not([data-theme="light"])) .link-state { background: rgba(15,15,15,0.7); border-color: #2a2a2a; color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .toast.undo { background: #f2f2f2; color: #0f0f0f; border-color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .undo-button { background: #0f0f0f; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .hist-row { border-bottom-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .hist-row.open { background: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .hist-summary { color: #c4c4c4; }
 }
+:where(:root[data-theme="dark"]) .link-state { background: rgba(15,15,15,0.7); border-color: #2a2a2a; color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .toast.undo { background: #f2f2f2; color: #0f0f0f; border-color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .undo-button { background: #0f0f0f; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .hist-row { border-bottom-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .hist-row.open { background: #1a1a1a; }
+:where(:root[data-theme="dark"]) .hist-summary { color: #c4c4c4; }
 
 /* The laptop workbench: the inbox beside the card. Rendered only at and above
    1024px (utils/route.ts draws the same line the stylesheet does). */
@@ -622,18 +670,31 @@
 .inbox-meta { font-size: 12px; color: #646464; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inbox-when { flex: none; font-size: 11.5px; color: #838383; margin-top: 2px; }
 @media (prefers-color-scheme: dark) {
-  .workbench .decide.decline::before, .slk-pane .decide.decline::before { background: #2a2a2a; color: #a3a3a3; }
-  .workbench .decide.approve::before, .slk-pane .decide.approve::before { background: rgba(0,0,0,.12); color: #0f0f0f; }
-  .inbox { border-right-color: #2a2a2a; }
-  .inbox-search input { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
-  .inbox-row:hover { background: #1a1a1a; }
-  .inbox-row.on { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
-  .inbox-title { color: #f2f2f2; }
-  .inbox-today { color: #f2f2f2; }
-  .inbox-chips .chip { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
-  .inbox-chips .chip.on { background: #f2f2f2; color: #1a1a1a; border-color: #f2f2f2; }
-  .inbox-meta { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .workbench .decide.decline::before,
+  :where(:root:not([data-theme="light"])) .slk-pane .decide.decline::before { background: #2a2a2a; color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .workbench .decide.approve::before,
+  :where(:root:not([data-theme="light"])) .slk-pane .decide.approve::before { background: rgba(0,0,0,.12); color: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .inbox { border-right-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .inbox-search input { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .inbox-row:hover { background: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .inbox-row.on { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
+  :where(:root:not([data-theme="light"])) .inbox-title { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .inbox-today { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .inbox-chips .chip { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .inbox-chips .chip.on { background: #f2f2f2; color: #1a1a1a; border-color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .inbox-meta { color: #a3a3a3; }
 }
+:where(:root[data-theme="dark"]) .workbench .decide.decline::before, :where(:root[data-theme="dark"]) .slk-pane .decide.decline::before { background: #2a2a2a; color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .workbench .decide.approve::before, :where(:root[data-theme="dark"]) .slk-pane .decide.approve::before { background: rgba(0,0,0,.12); color: #0f0f0f; }
+:where(:root[data-theme="dark"]) .inbox { border-right-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .inbox-search input { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .inbox-row:hover { background: #1a1a1a; }
+:where(:root[data-theme="dark"]) .inbox-row.on { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
+:where(:root[data-theme="dark"]) .inbox-title { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .inbox-today { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .inbox-chips .chip { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .inbox-chips .chip.on { background: #f2f2f2; color: #1a1a1a; border-color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .inbox-meta { color: #a3a3a3; }
 
 /* ⌘K */
 .palette-scrim { z-index: 40; }
@@ -655,12 +716,17 @@
 .palette-foot { padding: 6px 14px 8px; font-size: 11px; color: #838383; border-top: 1px solid #e8e8e8; }
 .topbar-right .palette-button { display: grid; place-items: center; }
 @media (prefers-color-scheme: dark) {
-  .palette { background: #1a1a1a; border-color: #2a2a2a; }
-  .palette-input { color: #f2f2f2; border-bottom-color: #2a2a2a; }
-  .palette-item { color: #f2f2f2; }
-  .palette-item.on { background: #26233a; }
-  .palette-foot { border-top-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .palette { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .palette-input { color: #f2f2f2; border-bottom-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .palette-item { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .palette-item.on { background: #26233a; }
+  :where(:root:not([data-theme="light"])) .palette-foot { border-top-color: #2a2a2a; }
 }
+:where(:root[data-theme="dark"]) .palette { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .palette-input { color: #f2f2f2; border-bottom-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .palette-item { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .palette-item.on { background: #26233a; }
+:where(:root[data-theme="dark"]) .palette-foot { border-top-color: #2a2a2a; }
 
 .key-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .key-row .key-input { flex: 1; min-width: 0; }
@@ -669,8 +735,9 @@
 @media (prefers-color-scheme: dark) {
   /* The count on the Cards tab: a dark pill on a dark pill said nothing —
      the active tab's own rule outranked the dark one. */
-  .mode-switch .mode-count, .mode-switch button.on .mode-count { background: #f2f2f2; color: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .mode-switch .mode-count, :where(:root:not([data-theme="light"])) .mode-switch button.on .mode-count { background: #f2f2f2; color: #1a1a1a; }
 }
+:where(:root[data-theme="dark"]) .mode-switch .mode-count, :where(:root[data-theme="dark"]) .mode-switch button.on .mode-count { background: #f2f2f2; color: #1a1a1a; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .workbench .card.swipeable {
     box-shadow: 0 10px 0 -5px #0f0f0f, 0 10px 0 -4px #2a2a2a, 0 20px 0 -10px #0f0f0f, 0 20px 0 -9px #222;
@@ -688,11 +755,15 @@
 .palette-filter-hint { margin-left: auto; font-size: 11px; color: #9a9a9a; }
 @media (max-width: 600px) { .palette-filter-hint { display: none; } }
 @media (prefers-color-scheme: dark) {
-  .palette-filters { border-bottom-color: #2a2a2a; }
-  .palette-filter { border-color: #333; color: #c8c8c8; }
-  .palette-filter:hover { background: #222; }
-  .palette-filter.on { background: #26233a; color: #b7a6ff; border-color: #6647f0; }
+  :where(:root:not([data-theme="light"])) .palette-filters { border-bottom-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .palette-filter { border-color: #333; color: #c8c8c8; }
+  :where(:root:not([data-theme="light"])) .palette-filter:hover { background: #222; }
+  :where(:root:not([data-theme="light"])) .palette-filter.on { background: #26233a; color: #b7a6ff; border-color: #6647f0; }
 }
+:where(:root[data-theme="dark"]) .palette-filters { border-bottom-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .palette-filter { border-color: #333; color: #c8c8c8; }
+:where(:root[data-theme="dark"]) .palette-filter:hover { background: #222; }
+:where(:root[data-theme="dark"]) .palette-filter.on { background: #26233a; color: #b7a6ff; border-color: #6647f0; }
 
 /* Channels nobody talks in, offered for archiving on the profile. */
 .tidy-list { list-style: none; margin: 0 0 12px; padding: 0; }
