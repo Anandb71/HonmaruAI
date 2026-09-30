@@ -45,9 +45,11 @@ describe('rankPlaces', () => {
     expect(views(rankPlaces([ch('devops', { mentions: 5 }), ch('ops')], 'ops', []))[0]).toBe('b:ops')
   })
 
-  it('looks only at channels after #, and only at people, groups and agents after @', () => {
+  it('looks only at channels after #, and only at people and agents after @', () => {
     expect(views(rankPlaces(team, '#gen', []))).toEqual(['b:general'])
-    expect(views(rankPlaces(team, '@gen', []))).toEqual(['dm:r2', 'g:abc'])
+    // A group DM has no @handle: "Kenji Tanaka, Genevieve Roy" is not @gen.
+    expect(views(rankPlaces(team, '@gen', []))).toEqual(['dm:r2'])
+    expect(views(rankPlaces(team, '@', [])).sort()).toEqual(['ag:7', 'dm:r1', 'dm:r2'])
     // Typed on a Japanese keyboard, the full-width marks mean the same.
     expect(views(rankPlaces(team, '＃ｇｅｎ', []))).toEqual(['b:general'])
   })

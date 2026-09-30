@@ -150,13 +150,13 @@ export function emptyQueryPlaces(places: Place[], recent: string[], limit = 8): 
 /// handle starting with it, then a word in it starting with it, then
 /// containing it, then its letters in order. A tie goes to what calls for
 /// you, then to where you were most recently. A leading # looks only at
-/// channels, a leading @ only at people, groups and agents — and either on
-/// its own lists them all.
+/// channels, a leading @ only at people and agents — what has an @handle
+/// to type; a group DM has none — and either on its own lists them all.
 export function rankPlaces(places: Place[], query: string, recent: string[], limit = 8): Place[] {
   let q = fold(query.trim())
   let pool = places
   if (q.startsWith('#')) { pool = places.filter((p) => p.kind === 'channel'); q = q.slice(1).trim() }
-  else if (q.startsWith('@')) { pool = places.filter((p) => p.kind !== 'channel'); q = q.slice(1).trim() }
+  else if (q.startsWith('@')) { pool = places.filter((p) => p.kind === 'person' || p.kind === 'agent'); q = q.slice(1).trim() }
   else if (!q) return emptyQueryPlaces(places, recent, limit)
   if (!q) {
     const first = emptyQueryPlaces(pool, recent, limit)
