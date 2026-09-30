@@ -133,9 +133,12 @@ const clip = (text, n) => {
 
 /// What a message says, as a lock screen may show it: one line, and a
 /// ||spoiler|| never given away: its writer hid it until clicked.
-const SPOILER = /\|\|[^|\n]+\|\|/g;
-export const pushPreview = (text, n = 180) => clip(String(text || "").replace(SPOILER, "▇▇▇"), n);
-const spoilers = (text) => (String(text || "").match(SPOILER) || []).length;
+// A ||spoiler|| — or an inline code span, matched first so the `||` of
+// `a || b` never pairs with a real spoiler's bars. A spoiler may hold code.
+const SPOILER = /`[^`\n]+`|\|\|(?:`[^`\n]+`|[^|\n])+?\|\|/g;
+const isSpoiler = (match) => match[0] !== "`";
+export const pushPreview = (text, n = 180) => clip(String(text || "").replace(SPOILER, (m) => (isSpoiler(m) ? "▇▇▇" : m)), n);
+const spoilers = (text) => (String(text || "").match(SPOILER) || []).filter(isSpoiler).length;
 
 /// The words a push shows: the reader's translation, unless it lost a
 /// ||spoiler|| mark on the way (a model may drop the bars or write them

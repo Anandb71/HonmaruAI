@@ -110,6 +110,15 @@ test("a lock screen never gives a spoiler away, and a push stays one short line"
   expect(pushPreview("")).toBe("");
 });
 
+test("the || of inline code never pairs with a real spoiler's bars", () => {
+  expect(pushPreview("use `a || b` to check; the answer is ||42||")).toBe("use `a || b` to check; the answer is ▇▇▇");
+  expect(pushPreview("||x `a || b` y||")).toBe("▇▇▇");
+  // A translation that moved the code in front of the spoiler keeps it hidden.
+  const written = "the answer is ||42|| — use `a || b` to check";
+  const moved = "`a || b` で確認して、答えは ||42|| です";
+  expect(pushPreview(pushWords(written, moved))).toBe("`a || b` で確認して、答えは ▇▇▇ です");
+});
+
 test("a translation that lost a spoiler's bars is not what a lock screen shows", () => {
   const written = "the killer is ||the butler||";
   // Kept the marks: the reader's language.
