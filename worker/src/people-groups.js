@@ -104,7 +104,10 @@ export async function deleteGroup(db, orgId, { handle: raw, login, isAdmin }) {
 
 // ---- The sidebar ----
 
-const cleanView = (v) => (typeof v === "string" && /^(b|dm|g):[^\s]{1,200}$/.test(v) ? v : null);
+/// A conversation as the sidebar names it. A conversation with an agent is
+/// `ag:<id>`, the id alone as resolveChannel reads it — never the
+/// `ag:<id>|<login>` it is stored under.
+const cleanView = (v) => (typeof v === "string" && (/^(b|dm|g):[^\s]{1,200}$/.test(v) || /^ag:[\w-]{1,80}$/.test(v)) ? v : null);
 
 /// A sidebar as stored: starred views, then sections of your own, each a
 /// name and the views in it. Anything malformed is dropped, not refused.

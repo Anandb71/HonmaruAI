@@ -68,6 +68,21 @@ test("a sidebar is one person's own, and keeps only what makes sense", async () 
   expect((await (await call(`/channels/sidebar?${q({ orgId: ORG })}`, mika)).json()).sidebar).toEqual({ starred: [], sections: [], order: [] });
 });
 
+test("a conversation with an agent can be starred and put in a section, and only as ag:<id>", async () => {
+  const agent = "ag:6f1c2d3e-0a4b-4c5d-8e9f-a0b1c2d3e4f5";
+  const put = async (sidebar) => (await (await call("/channels/sidebar", toru, { method: "PUT", body: { orgId: ORG, sidebar } })).json()).sidebar;
+  const saved = await put({
+    starred: [agent, "ag:x|toru", "ag:", "ag:../b:cafe"],
+    sections: [{ id: "s1", name: "Helpers", views: ["ag:hayao", "ag:hayao|mika"], collapsed: true }],
+  });
+  expect(saved.starred).toEqual([agent]);
+  expect(saved.sections).toEqual([{ id: "s1", name: "Helpers", views: ["ag:hayao"], collapsed: true }]);
+  // Kept, and read back the same.
+  const read = (await (await call(`/channels/sidebar?${q({ orgId: ORG })}`, toru)).json()).sidebar;
+  expect(read.starred).toEqual([agent]);
+  expect(read.sections[0]).toMatchObject({ views: ["ag:hayao"], collapsed: true });
+});
+
 test("the order you dragged your channels into is kept, and an app that does not know about it cannot lose it", async () => {
   const put = async (sidebar) => (await (await call("/channels/sidebar", toru, { method: "PUT", body: { orgId: ORG, sidebar } })).json()).sidebar;
   expect((await put({ starred: [], sections: [], order: ["b:roastery", "b:cafe", "b:cafe", "nope"] })).order).toEqual(["b:roastery", "b:cafe"]);
