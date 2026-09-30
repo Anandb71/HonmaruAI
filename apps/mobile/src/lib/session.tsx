@@ -19,7 +19,8 @@ interface SessionValue {
   token: string | null
   me: Me | null
   orgId: string | null
-  signIn: (token: string) => Promise<void>
+  /// `orgId`: where to land — the workspace an invitation just let them into.
+  signIn: (token: string, orgId?: string | null) => Promise<void>
   signOut: () => Promise<void>
   chooseOrg: (orgId: string) => Promise<void>
 }
@@ -58,7 +59,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value: SessionValue = {
     ready, api, token, me, orgId,
-    signIn: async (next) => { await SecureStore.setItemAsync(TOKEN_KEY, next); await load(next) },
+    signIn: async (next, landIn) => {
+      await SecureStore.setItemAsync(TOKEN_KEY, next)
+      if (landIn) await SecureStore.setItemAsync(ORG_KEY, landIn)
+      await load(next)
+    },
     signOut: async () => {
       await SecureStore.deleteItemAsync(TOKEN_KEY)
       await SecureStore.deleteItemAsync(ORG_KEY)

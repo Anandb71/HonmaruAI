@@ -121,7 +121,7 @@ async function importJwk(jwk, alg) {
 /// Check an ID token: its signature against the provider's keys (fetched
 /// again once when the key is not known — keys rotate), then every claim.
 /// A JWT from the provider whose signature holds, as its claims.
-async function signedClaims(token, discovery) {
+export async function signedClaims(token, discovery) {
   const jwt = decodeJwt(token);
   const alg = jwt.header.alg;
   if (alg !== "RS256" && alg !== "ES256") throw new Error(`The ID token is signed with ${alg || "nothing"}, which is not accepted.`);

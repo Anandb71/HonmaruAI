@@ -100,3 +100,5 @@ CREATE TABLE IF NOT EXISTS session_workspaces (token TEXT NOT NULL, org_id TEXT 
 CREATE INDEX IF NOT EXISTS idx_session_workspaces_org ON session_workspaces(org_id);
 CREATE TABLE IF NOT EXISTS workspace_activity (org_id TEXT NOT NULL, login TEXT NOT NULL, last_active_at TEXT NOT NULL, client TEXT, PRIMARY KEY (org_id, login));
 CREATE INDEX IF NOT EXISTS idx_workspace_activity_seen ON workspace_activity(org_id, last_active_at);
+CREATE TABLE IF NOT EXISTS apple_identities (subject TEXT PRIMARY KEY, user_github_id TEXT NOT NULL, email TEXT, created_at TEXT NOT NULL, last_login_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_apple_identities_user ON apple_identities(user_github_id);

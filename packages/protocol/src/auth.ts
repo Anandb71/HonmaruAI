@@ -2,7 +2,16 @@
 
 export interface OtpRequest { email: string; locale?: string }
 export interface OtpVerify { email: string; code: string; name?: string; inviteCode?: string; locale?: string }
-export interface SignedIn { token: string; userId: string; login: string; orgId: string | null; inviteError?: string }
+export interface SignedIn { token: string; userId: string; login: string; orgId: string | null; created?: boolean; inviteError?: string }
+
+/// Sign in with Apple (POST /auth/apple): Apple's identity token, and the
+/// nonce whose SHA-256 (hex) the app gave Apple — the token carries the hash,
+/// only the app knows what it was made from. `name` is what Apple hands the
+/// app the first time only; used when the account is new.
+export interface AppleSignIn { identityToken: string; nonce: string; name?: string; inviteCode?: string; locale?: string }
+
+/// Redeeming an invitation (POST /invites/accept). 202 when an admin must approve.
+export interface InviteAccepted { orgId: string; joined?: boolean; pending?: boolean; role?: string; message?: string }
 
 export interface Me {
   login: string

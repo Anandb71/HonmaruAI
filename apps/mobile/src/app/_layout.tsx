@@ -15,6 +15,8 @@ function Screens() {
       <Stack.Protected guard={!token}>
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
       </Stack.Protected>
+      {/* An invitation link, signed in or not (it sends you to sign in). */}
+      <Stack.Screen name="join/[code]" options={{ title: 'Join' }} />
     </Stack>
   )
 }

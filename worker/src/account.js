@@ -211,6 +211,7 @@ export async function deleteAccount(db, githubId, login) {
 
   for (const sql of [
     "DELETE FROM sessions WHERE github_id = ?1",
+    "DELETE FROM apple_identities WHERE user_github_id = ?1",
     "DELETE FROM memberships WHERE user_github_id = ?1",
     "DELETE FROM agents WHERE user_github_id = ?1",
     "DELETE FROM connector_config WHERE user_github_id = ?1",
