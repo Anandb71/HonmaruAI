@@ -11,11 +11,13 @@ import { getMessage, resolveChannel, viewOf } from "./channels.js";
 import { listMembers } from "./team.js";
 import { agentsHere, agentsCalled, listAgents } from "./customAgents.js";
 import { runAgents } from "./channelRoutes.js";
+import { useSecretKey } from "./secrets.js";
 
 const MAX_JOBS = 50;
 
 export class AgentRunner {
   constructor(state, env) {
+    useSecretKey(env);
     this.state = state;
     this.env = env;
   }

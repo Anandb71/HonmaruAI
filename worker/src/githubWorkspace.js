@@ -14,6 +14,7 @@
 // never comes back out.
 
 import { executeTool, createConnectLink, listConnectedAccounts, createManagedAuthConfig } from "./composio.js";
+import { aad, openField, sealField } from "./secrets.js";
 
 const GH = "https://api.github.com";
 const REPO_SHAPE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -35,7 +36,7 @@ export async function getWorkspaceGitHub(db, orgId) {
     .catch(() => null);
   if (!row?.repo) return null;
   return {
-    repo: row.repo, token: row.token || null, composioUser: row.composio_user || null,
+    repo: row.repo, token: (await openField(row.token, aad.githubWorkspace(orgId))) || null, composioUser: row.composio_user || null,
     connectedBy: row.connected_by || null, updatedAt: row.updated_at || null,
   };
 }
@@ -190,7 +191,7 @@ export async function connectWorkspaceGitHub(env, { orgId, repo, token, byGithub
        ON CONFLICT(org_id) DO UPDATE SET repo = excluded.repo, token = excluded.token, composio_user = NULL,
          connected_by = excluded.connected_by, updated_at = excluded.updated_at`
     )
-    .bind(orgId, checked.repo, token.trim(), String(byGithubId), new Date().toISOString())
+    .bind(orgId, checked.repo, await sealField(token.trim(), aad.githubWorkspace(orgId)), String(byGithubId), new Date().toISOString())
     .run();
   return { ok: true, repo: checked.repo, url: checked.url };
 }

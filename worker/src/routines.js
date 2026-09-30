@@ -20,6 +20,7 @@ import { displayName } from "./notifyCopy.js";
 import { recentBusinessTalk, postMessage, MAX_MESSAGE_CHARS } from "./channels.js";
 import { broadcastStored } from "./channelRoutes.js";
 import { draftDailyReport, DAILY_KINDS, expireOlderDrafts, announceClosed } from "./dailyReport.js";
+import { openSessionToken } from "./secrets.js";
 
 // Routines: work the AI does on a schedule, delivered as a card.
 //
@@ -408,6 +409,7 @@ async function sessionFor(db, githubId) {
     )
     .bind(String(githubId), new Date().toISOString())
     .first()
+    .then(openSessionToken)
     .catch(() => null);
 }
 

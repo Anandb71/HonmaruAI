@@ -189,6 +189,11 @@ user/<userId>/avatar                  user-level (global) blobs
 audit/<orgId>/YYYY/MM/DD/HH.jsonl.gz  (unchanged, AUDIT_ARCHIVE bucket)
 ```
 
+Status: message files and compliance exports are written under `org/<orgId>/`
+(`worker/src/files.js` `fileKey`); files stored before are still read from `file-<id>`.
+Emoji, icons, avatars and Jam recordings keep their stored keys until the workspace
+move.
+
 Lifecycle rules: exports 7 days; backups 90 days (Infrequent Access after 30);
 archives follow workspace retention.
 
@@ -290,12 +295,12 @@ schema change. Until a workspace hits the trigger, everything lives in one DO.
 | Table | Policy | Tier |
 | --- | --- | --- |
 | channel_messages | Workspace retention setting (default: keep). > 12 months → archive to R2, keep a stub row for threads/links | hot → cold |
-| card_events | 180 days hot, then archive | hot → cold |
+| card_events | Kept: the record of who decided what (account deletion anonymizes, never deletes). Archived to cold only with the workspace move | hot → cold (M4) |
 | cards | Never deleted automatically (business records); closed > 12 months archived | hot → cold |
-| ai_calls | 90 days; aggregated into `ai_usage` first | delete |
-| message_translations | 30 days, cache keyed by content hash | delete |
-| channel_journal | 90 days | delete |
-| ai_suggestions | 30 days after resolved / dismissed | delete |
+| ai_calls | 400 days (spend charts read ≤ 90) — `worker/src/retention.js` | delete |
+| message_translations | 60 days; a cache checked against the source hash | delete |
+| channel_journal | 365 days of daily summaries | delete |
+| ai_suggestions | 7 days (fresh for 6 hours) | delete |
 | push_queue | 1 day (unchanged) → replaced by Queues | — |
 | activity_reads | 35 days (unchanged) | delete |
 | webhook_deliveries | last 50 per webhook (unchanged) | delete |
@@ -330,6 +335,9 @@ global cron.
   the column name and orgId as associated data. Existing `seal` helpers (already
   used for SSO secrets and audit stream secrets) are generalized.
 - Key rotation: new writes use the new key version; a background job re-seals.
+- Implemented in `worker/src/secrets.js` (`DATA_KEY`, generated once by the deploy
+  workflow). Rows written before it are read as they are and sealed by the
+  15-minute cron.
 - Access tokens and refresh tokens are stored as hashes only.
 
 ### 8.3 Data residency
@@ -494,6 +502,17 @@ Backfill one real staging workspace from D1.
 | PITR restore drill | < 15 min |
 | Isolation test | Requests with another workspace's `orgId` → 403 for every endpoint |
 
+**Status (implemented, off in production):** `worker/src/workspace/do.js`
+(`WorkspaceDO`: messages with a seq per channel, coalesced read positions,
+FTS5 trigram search for English and Japanese, idempotent backfill, paged
+checksum) and `worker/src/workspace/v2.js` (`/v2/w/<orgId>/…`, the same
+`inChannel` / `caller` checks as the D1 routes). Enabled by `WORKSPACE_V2`
+(`*` on staging and in tests, unset in production). Measured in tests: **5 rows
+written per message** including the search index (target ≤ 6, asserted in
+`worker/test/workspace-v2.test.js`). Latency and sustained-write numbers come from
+`worker/scripts/poc-load.mjs` against a deployed Worker. Not yet built:
+outbox → Queues, RelayDO shards, the deploy/resume drill.
+
 ### PoC-B: shared client core + Expo app
 
 Scope: monorepo move (`apps/web`, `apps/worker`), `packages/protocol` +
@@ -509,6 +528,18 @@ channel.
 | Chat scroll (5,000 messages) | 60 fps, no blank cells > 1 frame on a low-end Android (Galaxy A14 class) |
 | Push | Delivered and grouped per `orgId|channel` on both platforms; cleared on read elsewhere |
 | Build | EAS / CI builds for iOS and Android from a clean checkout |
+
+**Status (built):** `packages/protocol` (the `/v2` and sign-in shapes),
+`packages/core` (`Api`, `ChannelSync` with open / older pages / catch-up after
+the last seq / optimistic send, and the @mention rules — moved out of the web,
+which now imports them), and `apps/mobile` (Expo SDK 57, Expo Router, sign-in by
+emailed code, channel list with unread counts, a channel on FlashList v2). The
+repository root is an npm workspace for `apps/*` and `packages/*`. `web-react/`
+and `worker/` keep their own installs until they move under `apps/` (pnpm and
+Turborepo come with that move). CI job "Shared core and mobile" runs the core
+tests, both typechecks, and bundles the app for iOS and Android. Still to
+measure on devices: cold start and scroll frame rate. Still to build: push, links,
+Sign in with Apple.
 
 ### Go / no-go
 

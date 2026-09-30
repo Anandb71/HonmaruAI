@@ -24,6 +24,8 @@ on:
     branches: [main]
     paths:
       - "web-react/**"
+      # The web imports what every client shares (packages/core).
+      - "packages/**"
       - ".github/workflows/deploy-web.yml"
       - ".github/scripts/attach-pages-domain.sh"
   workflow_dispatch:

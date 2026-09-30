@@ -12,6 +12,7 @@
 import { providerConfig } from "./provider.js";
 import { jevConfig } from "./jev.js";
 import { PRICES } from "./ledger.js";
+import { aad, openField, sealField } from "./secrets.js";
 
 /// The models a workspace may pick, with what they cost per million tokens
 /// (in, out) — the same table the ledger prices calls from.
@@ -30,9 +31,9 @@ export async function loadAISettings(db, orgId) {
   if (!row) return {};
   return {
     model: row.model || null,
-    openaiKey: row.openai_key || null,
-    typesafeKey: row.typesafe_key || null,
-    geminiKey: row.gemini_key || null,
+    openaiKey: (await openField(row.openai_key, aad.aiKey(orgId, "openai_key"))) || null,
+    typesafeKey: (await openField(row.typesafe_key, aad.aiKey(orgId, "typesafe_key"))) || null,
+    geminiKey: (await openField(row.gemini_key, aad.aiKey(orgId, "gemini_key"))) || null,
     updatedBy: row.updated_by || null,
     updatedAt: row.updated_at || null,
   };
@@ -77,7 +78,11 @@ export async function saveAISettings(db, orgId, { model, openaiKey, typesafeKey,
        ON CONFLICT(org_id) DO UPDATE SET model = excluded.model, openai_key = excluded.openai_key,
          typesafe_key = excluded.typesafe_key, gemini_key = excluded.gemini_key, updated_by = excluded.updated_by, updated_at = excluded.updated_at`
     )
-    .bind(orgId, nextModel, nextOpenai, nextTypesafe, nextGemini, String(byGithubId), new Date().toISOString())
+    .bind(
+      orgId, nextModel,
+      await sealField(nextOpenai, aad.aiKey(orgId, "openai_key")),
+      await sealField(nextTypesafe, aad.aiKey(orgId, "typesafe_key")),
+      await sealField(nextGemini, aad.aiKey(orgId, "gemini_key")), String(byGithubId), new Date().toISOString())
     .run();
   return { ok: true };
 }

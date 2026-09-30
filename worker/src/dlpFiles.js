@@ -12,6 +12,7 @@
 
 import { pdfContents } from "./pdfText.js";
 import { OCR_TYPES, pictureReader } from "./ocr.js";
+import { getFileObject } from "./files.js";
 
 const TEXT_TYPES = /^(text\/|application\/(json|xml|x-yaml|yaml|csv|x-ndjson|javascript|x-sh|sql))/;
 const TEXT_NAMES = /\.(txt|md|markdown|csv|tsv|json|ndjson|xml|ya?ml|log|ini|conf|env|sql|sh|py|js|ts|tsx|jsx|rb|go|java|kt|swift|c|h|cpp|cs|php|html?|css)$/i;
@@ -151,7 +152,7 @@ export async function attachedTexts(env, { orgId, key, login, ids, githubId = nu
   const out = [];
   for (const f of files) {
     if (!readerFor(f.type, f.name) && !(readPictures && OCR_TYPES.test(f.type || ""))) continue;
-    const obj = await env.MEDIA.get(`file-${f.id}`).catch(() => null);
+    const obj = await getFileObject(env, orgId, f.id).catch(() => null);
     if (!obj) continue;
     const text = await fileText(await obj.arrayBuffer(), f, { readPictures });
     if (text) out.push({ name: f.name, text });

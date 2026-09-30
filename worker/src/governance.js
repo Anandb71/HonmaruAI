@@ -14,6 +14,7 @@ import { allowed } from "./permissions.js";
 import { getSession, getUserByGithubId } from "./db.js";
 import { ipAllowed, parseCidr } from "./orgKeys.js";
 import { listMembers } from "./team.js";
+import { deleteFileObject } from "./files.js";
 
 const DAY = 86_400_000;
 export const RETENTION_CHOICES = [null, 1, 7, 30, 90, 180, 365, 730, 1825, 3650];
@@ -178,7 +179,7 @@ export async function pruneMessages(env, { now = Date.now(), orgLimit = 50 } = {
         const ids = doomed.slice(i, i + 50);
         const marks = ids.map((_, j) => `?${j + 2}`).join(", ");
         const { results: files } = await env.DB.prepare(`SELECT id FROM message_files WHERE org_id = ?1 AND message_id IN (${marks})`).bind(orgId, ...ids).all();
-        for (const f of files || []) await env.MEDIA?.delete(`file-${f.id}`).catch(() => {});
+        for (const f of files || []) await deleteFileObject(env, orgId, f.id);
         await env.DB.batch([
           env.DB.prepare(`DELETE FROM message_reactions WHERE org_id = ?1 AND message_id IN (${marks})`).bind(orgId, ...ids),
           env.DB.prepare(`DELETE FROM message_files WHERE org_id = ?1 AND message_id IN (${marks})`).bind(orgId, ...ids),
@@ -196,7 +197,7 @@ export async function pruneMessages(env, { now = Date.now(), orgLimit = 50 } = {
       ).bind(orgId, cutoff, PRUNE_BATCH).all();
       for (const f of results || []) {
         if (heldBy(holds, { login: f.uploader, channel: f.channel })) continue;
-        await env.MEDIA?.delete(`file-${f.id}`).catch(() => {});
+        await deleteFileObject(env, orgId, f.id);
         await env.DB.prepare("DELETE FROM message_files WHERE org_id = ?1 AND id = ?2").bind(orgId, f.id).run();
         files += 1;
       }
@@ -246,7 +247,7 @@ export async function runExport(env, { orgId, id, from, to, logins = null, chann
   }
   const text = lines.join("\n") + (lines.length ? "\n" : "");
   const gz = await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
-  const key = `compliance-export-${id}`;
+  const key = `org/${encodeURIComponent(orgId)}/exports/${id}.jsonl.gz`;
   await env.MEDIA.put(key, gz, { httpMetadata: { contentType: "application/gzip" } });
   return { key, messages: rows.length, earlier: (history || []).length, files: fileCount, truncated: rows.length >= MAX_EXPORT_MESSAGES };
 }
