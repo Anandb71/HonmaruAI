@@ -179,7 +179,10 @@ export interface ChannelMessage {
   createdAt: string
   /// Changed after it was sent, and when.
   editedAt?: string | null
-  /// Unsent. Kept only while a thread hangs off it; the words are gone.
+  /// Unsent; the words are gone. A page of history leaves it out, thread
+  /// and all; one comes to take away a message already shown, or as the
+  /// head of a thread opened by its link, which reads "This message was
+  /// deleted." above no replies.
   deleted?: boolean
   /// A reply in the thread under this message.
   parentId?: string | null

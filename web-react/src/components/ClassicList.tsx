@@ -32,6 +32,7 @@ import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } 
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, rememberLevel, startRing, stopRing } from '../utils/sound'
 import { closeMessageNotifications } from '../utils/notifications'
+import { hasOlder } from '../utils/historyPage'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -1109,7 +1110,8 @@ export const ClassicList: React.FC<Props> = ({
   const composer = useRef<HTMLTextAreaElement>(null)
   const view = current?.view
   useEffect(() => { onViewChange?.(current?.view || null, current?.name || null) }, [current?.view, current?.name, onViewChange])
-  // Whether there is more above what is loaded, per conversation.
+  // Whether there is more above what is loaded, per conversation: the
+  // Worker's `more`, or, from one that does not say, a full page of PAGE.
   const [more, setMore] = useState<Record<string, boolean>>({})
   const PAGE = 150
   const loadMessages = useCallback((channel: string) => {
@@ -1118,7 +1120,7 @@ export const ClassicList: React.FC<Props> = ({
       .then((data) => {
         if (!data) return
         setMessages((prev) => ({ ...prev, [channel]: data.messages || [] }))
-        setMore((prev) => ({ ...prev, [channel]: (data.messages || []).length >= PAGE }))
+        setMore((prev) => ({ ...prev, [channel]: hasOlder(data, PAGE) }))
         maybeNewEmoji((data.messages || []).map((m: ChannelMessage) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
       })
       .catch(() => { /* the decisions still show */ })
@@ -1141,7 +1143,7 @@ export const ClassicList: React.FC<Props> = ({
         const known = new Set(cur.map((m) => m.id))
         return { ...prev, [channel]: [...older.filter((m) => !known.has(m.id)), ...cur] }
       })
-      setMore((prev) => ({ ...prev, [channel]: older.length >= PAGE }))
+      setMore((prev) => ({ ...prev, [channel]: hasOlder(data, PAGE) }))
     } catch { /* try again on the next scroll */ } finally {
       loadingOlder.current = false
     }
@@ -2001,7 +2003,7 @@ export const ClassicList: React.FC<Props> = ({
       const got = (data.messages || []) as ChannelMessage[]
       const known = new Set(list.map((m) => m.id))
       list = [...got.filter((m) => !known.has(m.id)), ...list]
-      older = got.length >= PAGE
+      older = hasOlder(data, PAGE)
     }
     const merged = list
     setMessages((prev) => ({ ...prev, [channel]: merged }))
