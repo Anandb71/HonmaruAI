@@ -1971,6 +1971,10 @@ const table: Record<string, string> = {
   'In reply to': '返信先:',
   'Replying to {name}': '{name}に返信',
   'Cancel reply': '返信をやめる',
+  'The message you were replying to is gone. Send again to post this on its own.': '返信先のメッセージは削除されました。もう一度送ると、返信ではない通常のメッセージとして投稿されます。',
+  'A scheduled message cannot be a reply yet.': '予約送信はまだ返信にできません。',
+  'Could not find the original message.': '元のメッセージが見つかりませんでした。',
+  'replied to you': 'があなたに返信',
 }
 
 export default table

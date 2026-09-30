@@ -1907,6 +1907,10 @@ const table: Record<string, string> = {
   'In reply to': 'En réponse à',
   'Replying to {name}': 'Réponse à {name}',
   'Cancel reply': 'Annuler la réponse',
+  'The message you were replying to is gone. Send again to post this on its own.': 'Le message auquel vous répondiez a été supprimé. Envoyez à nouveau pour le publier seul.',
+  'A scheduled message cannot be a reply yet.': 'Un message programmé ne peut pas encore être une réponse.',
+  'Could not find the original message.': 'Impossible de trouver le message d’origine.',
+  'replied to you': 'vous a répondu',
 }
 
 export default table
