@@ -75,7 +75,9 @@ export function bestName(entry: EmojiEntry, q: string): string {
 
 let data: EmojiEntry[] | null = null
 let loading: Promise<EmojiEntry[] | null> | null = null
+let failed = false
 const dataListeners = new Set<() => void>()
+const emitData = () => { for (const l of dataListeners) l() }
 
 /// Fetch the list (its own chunk). A failed fetch — offline, or a deploy
 /// that replaced the chunk — is tried again the next time it is asked for.
@@ -83,14 +85,27 @@ export function loadEmojiData(): Promise<EmojiEntry[] | null> {
   if (data) return Promise.resolve(data)
   if (!loading) {
     loading = import('./emojiData')
-      .then((m) => { data = m.EMOJI; for (const l of dataListeners) l(); return data })
-      .catch(() => { loading = null; return null })
+      .then((m) => { data = m.EMOJI; emitData(); return data })
+      .catch(() => { loading = null; failed = true; emitData(); return null })
+    // Asked for again after it failed: on its way once more.
+    if (failed) { failed = false; emitData() }
   }
   return loading
 }
 
 const subscribeData = (fn: () => void) => { dataListeners.add(fn); return () => { dataListeners.delete(fn) } }
 const dataSnapshot = () => data
+
+/// Where the list is: here, on its way (or not asked for yet), or not
+/// fetched — so a picker can say which, rather than look as if the dozen
+/// emoji it has without the list were all there are.
+export type EmojiDataState = 'ready' | 'loading' | 'failed'
+export function emojiDataState(): EmojiDataState {
+  return data ? 'ready' : failed ? 'failed' : 'loading'
+}
+export function useEmojiDataState(): EmojiDataState {
+  return useSyncExternalStore(subscribeData, emojiDataState, emojiDataState)
+}
 
 /// The list, or null until it is here. `wanted` false waits without asking,
 /// so a box that has not seen a ':' yet costs nothing.
