@@ -104,7 +104,10 @@ export async function deleteGroup(db, orgId, { handle: raw, login, isAdmin }) {
 
 // ---- The sidebar ----
 
-const cleanView = (v) => (typeof v === "string" && /^(b|dm|g):[^\s]{1,200}$/.test(v) ? v : null);
+/// A conversation as the sidebar names it. A conversation with an agent is
+/// `ag:<id>`, the id alone as resolveChannel reads it — never the
+/// `ag:<id>|<login>` it is stored under.
+const cleanView = (v) => (typeof v === "string" && (/^(b|dm|g):[^\s]{1,200}$/.test(v) || /^ag:[\w-]{1,80}$/.test(v)) ? v : null);
 
 /// A sidebar as stored: starred views, then sections of your own, each a
 /// name and the views in it. Anything malformed is dropped, not refused.
@@ -134,12 +137,39 @@ export async function getSidebar(db, orgId, login) {
 
 export async function saveSidebar(db, orgId, login, input) {
   // A client that does not know about the order (an older app) keeps the
-  // one another device set.
-  const kept = input && typeof input === "object" && !("order" in input) ? (await getSidebar(db, orgId, login)).order : null;
-  const clean = cleanSidebar(kept ? { ...input, order: kept } : input);
+  // one another device set; one that does not know about folding (the iOS
+  // app) keeps each of your sections folded as another device left it.
+  const given = input && typeof input === "object" ? input : null;
+  const noFlag = (s) => s && typeof s === "object" && !("collapsed" in s);
+  const before = given && (!("order" in given) || (Array.isArray(given.sections) && given.sections.some(noFlag)))
+    ? await getSidebar(db, orgId, login) : null;
+  const wasFolded = new Set((before?.sections || []).filter((s) => s.collapsed).map((s) => s.id));
+  const merged = given && before ? {
+    ...given,
+    ...(!("order" in given) ? { order: before.order } : {}),
+    ...(Array.isArray(given.sections) ? { sections: given.sections.map((s) => (noFlag(s) && wasFolded.has(s.id) ? { ...s, collapsed: true } : s)) } : {}),
+  } : input;
+  const clean = cleanSidebar(merged);
   await db.prepare(
     `INSERT INTO sidebar_prefs (org_id, login, data, updated_at) VALUES (?1, ?2, ?3, ?4)
      ON CONFLICT (org_id, login) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
   ).bind(orgId, login, JSON.stringify(clean), new Date().toISOString()).run();
   return clean;
+}
+
+/// One of your sections folded, or opened again: that flag and nothing
+/// else. A fold is a casual click, often in a window open since the
+/// morning, and must not put the stars and sections back as that window
+/// remembers them. One statement, so a star saved at the same moment is not
+/// written over either. Null when you have no such section.
+export async function foldSection(db, orgId, login, id, collapsed) {
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,40}$/.test(id)) return null;
+  const here = "FROM json_each(sidebar_prefs.data, '$.sections') j WHERE json_extract(j.value, '$.id') = ?3";
+  await db.prepare(
+    `UPDATE sidebar_prefs
+     SET data = json_set(data, '$.sections[' || (SELECT j.key ${here} LIMIT 1) || '].collapsed', json(?4)), updated_at = ?5
+     WHERE org_id = ?1 AND login = ?2 AND EXISTS (SELECT 1 ${here})`
+  ).bind(orgId, login, id, collapsed ? "true" : "false", new Date().toISOString()).run();
+  const now = await getSidebar(db, orgId, login);
+  return now.sections.some((s) => s.id === id) ? now : null;
 }

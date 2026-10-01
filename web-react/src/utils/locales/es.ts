@@ -1900,6 +1900,7 @@ const table: Record<string, string> = {
   "{name} is on. Write @{handle} in a channel to hand it work.": "{name} está activado. Escribe @{handle} en un canal para encargarle trabajo.",
   "{n} ACUs": "{n} ACU",
   "{n} tasks": "{n} tareas",
+  "Mentions: {n}": "Menciones: {n}",
   "How Codex is reached": "Cómo se llega a Codex",
   "Codex has no API to hand work to, so HonmaruAI asks it on GitHub: each request opens a draft pull request in the first repository below and writes @codex there, and Codex’s replies come back to the thread. Connect that repository to Codex in ChatGPT and turn on Codex for it first; Codex runs on your ChatGPT plan.": "Codex no tiene una API para encargarle trabajo, así que HonmaruAI se lo pide en GitHub: cada petición abre un pull request en borrador en el primer repositorio de abajo y escribe @codex allí, y las respuestas de Codex vuelven al hilo. Conecta antes ese repositorio a Codex en ChatGPT y activa Codex para él; Codex funciona con tu plan de ChatGPT.",
   "The repository Codex works in (the first one listed), and a GitHub token that can push to it and open pull requests.": "El repositorio en el que trabaja Codex (el primero de la lista) y un token de GitHub que pueda hacer push en él y abrir pull requests.",

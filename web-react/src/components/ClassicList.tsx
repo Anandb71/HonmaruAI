@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { awaitsPost } from '../utils/automation'
 import { hashForMessage, hashForView } from '../utils/route'
 import { RowMenu } from './RowMenu'
+import { SidebarSection } from './SidebarSection'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage } from '../types/card'
@@ -32,6 +33,7 @@ import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } 
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
 import { hasOlder } from '../utils/historyPage'
+import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold, unplacedAgents } from '../utils/sidebarSections'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -293,13 +295,26 @@ export const ClassicList: React.FC<Props> = ({
   // Your own sidebar: what you starred and the sections you made, kept on
   // the server so the laptop and the phone arrange things alike.
   const [layout, setLayout] = useState<SidebarLayout>({ starred: [], sections: [] })
+  // Which sections are folded: remembered by this browser for the
+  // workspace, and your own sections' on the server with the rest of it.
+  const [folded, setFolded] = useState<Record<string, boolean>>(() => readFolds(api.orgId))
+  useEffect(() => { writeFolds(api.orgId, folded) }, [api.orgId, folded])
   useEffect(() => {
     let ignore = false
     fetch(`${api.httpBase}/channels/sidebar?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
-      .then((r) => (r.ok ? r.json() : null)).then((d) => { if (!ignore && d?.sidebar) setLayout(d.sidebar) }).catch(() => {})
+      .then((r) => (r.ok ? r.json() : null)).then((d) => {
+        if (ignore || !d?.sidebar) return
+        setLayout(d.sidebar)
+        setFolded((prev) => withSectionFolds(prev, d.sidebar.sections || []))
+      }).catch(() => {})
     return () => { ignore = true }
   }, [api.httpBase, api.orgId, authHeaders])
   const saveLayout = (next: SidebarLayout) => {
+    // An agent nothing has been said to yet is listed only for being
+    // starred or in a section. Unstarred, or put back where it was, it
+    // stays listed among the agents: open, it must not vanish from under you.
+    const freed = unplacedAgents(layout, next)
+    if (freed.length) setStartedAgents((prev) => [...prev, ...freed.filter((id) => !prev.includes(id))])
     setLayout(next)
     void fetch(`${api.httpBase}/channels/sidebar`, {
       method: 'PUT', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, sidebar: next }),
@@ -340,6 +355,22 @@ export const ClassicList: React.FC<Props> = ({
     const id = Math.random().toString(36).slice(2, 10)
     const sections = layout.sections.map((x) => ({ ...x, views: view ? x.views.filter((v) => v !== view) : x.views }))
     saveLayout({ ...layout, sections: [...sections, { id, name, views: view ? [view] : [] }] })
+  }
+  /// Fold a section, or open it again. One of your own is saved folded on
+  /// the server too, so the phone and the laptop agree — that flag and
+  /// nothing else. A fold is a casual click, and this window may have been
+  /// open since the morning: it must not save the stars and sections as it
+  /// remembers them over what another window or the phone did since.
+  const toggleFold = (id: string) => {
+    const shut = !folded[id]
+    setFolded((p) => ({ ...p, [id]: shut }))
+    const own = layout.sections.find((x) => `sec:${x.id}` === id)
+    if (!own) return
+    // Here too, so the next star or move says the fold as it now is.
+    setLayout((now) => ({ ...now, sections: withFold(now.sections, own.id, shut) }))
+    void fetch(`${api.httpBase}/channels/sidebar/fold`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, id: own.id, collapsed: shut }),
+    }).catch(() => {})
   }
   const [addingSection, setAddingSection] = useState<null | { view?: string }>(null)
   const [sectionName, setSectionName] = useState('')
@@ -501,17 +532,38 @@ export const ClassicList: React.FC<Props> = ({
       .map((th) => ({ ...th, unread: th.cards.filter((c) => isUnread(c) && (c.createdAt || '') > readAt(th.key)).length }))
 
     // Conversations with the team's agents: each one you have talked to,
-    // the one you just started, newest first.
+    // the one you just started, and one you starred or put in a section
+    // before anything was said — newest first.
+    const placed = new Set([...layout.starred, ...layout.sections.flatMap((x) => x.views)])
     const agentConvos = agents
-      .filter((a) => activity[`ag:${a.id}`] || startedAgents.includes(a.id))
+      .filter((a) => activity[`ag:${a.id}`] || startedAgents.includes(a.id) || placed.has(`ag:${a.id}`))
       .map((a) => withTalk(build('agent', `agent:${a.id}`, a.name, { view: `ag:${a.id}`, agent: a }, [], true)!))
       .sort((a, b) => latestOf(b).localeCompare(latestOf(a)) || a.name.localeCompare(b.name))
 
     return { channels, people, apps, agentConvos }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending, sent, decided, businesses, userId, locale, members, hashes, activity, seenTick, serverReads, prefs, groups, agents, startedAgents])
+  }, [pending, sent, decided, businesses, userId, locale, members, hashes, activity, seenTick, serverReads, prefs, groups, agents, startedAgents, layout])
 
   const everything = useMemo(() => [...channels, ...people, ...agentConvos, ...apps], [channels, people, agentConvos, apps])
+
+  // The sidebar's lists, top to bottom: starred first, then your sections,
+  // then the rest where they always were — what the starred and your
+  // sections hold leaves the defaults. Drawn from here, and walked by
+  // ⌥↑/⌥↓ in the same order.
+  const byView = (v: string) => everything.find((x) => x.view === v)
+  const starredRows = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
+  const ownSections = layout.sections.map((x) => ({ ...x, threads: x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)) }))
+  const channelRows = inYourOrder(channels.filter(unplaced))
+  const peopleRows = people.filter(unplaced)
+  const agentRows = agentConvos.filter(unplaced)
+  const sideLists = [
+    { id: 'starred', threads: starredRows },
+    ...ownSections.map((x) => ({ id: `sec:${x.id}`, threads: x.threads })),
+    { id: 'channels', threads: channelRows },
+    { id: 'people', threads: peopleRows },
+    ...(agents.length > 0 ? [{ id: 'agents', threads: agentRows }] : []),
+    { id: 'apps', threads: apps },
+  ]
 
   // Which conversation is open. On a laptop one always is — the first with
   // something waiting on you, else the first there is — the way a chat
@@ -731,7 +783,10 @@ export const ClassicList: React.FC<Props> = ({
   }
   const [tick, setTick] = useState(0)
 
-  const [folded, setFolded] = useState<Record<string, boolean>>({})
+  /// What a folded section goes by: the mentions waiting, the row open now
+  /// (none while Activity or another list is), and what is muted. A
+  /// function: `special` is declared further down.
+  const foldContext = () => ({ mentions: mentionsIn, currentKey: special ? null : current?.key ?? null, prefs })
   // Making a channel, renaming one: the box, its text, and what went wrong.
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
@@ -909,12 +964,12 @@ export const ClassicList: React.FC<Props> = ({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        const list = [...channels, ...people, ...agentConvos, ...apps]
-        if (!list.length) return
+        // The rows as the sidebar shows them, in its order: never one a
+        // folded section hides.
+        const next = stepRow(visibleRows(sideLists, folded, foldContext()), current?.key, e.key === 'ArrowDown')
+        if (!next) return
         e.preventDefault()
-        const i = list.findIndex((x) => x.key === current?.key)
-        const next = list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]
-        if (next) choose(next.key)
+        choose(next.key)
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault(); openActivity()
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
@@ -1012,21 +1067,14 @@ export const ClassicList: React.FC<Props> = ({
     const views = threads.map((th) => th.view).filter((v): v is string => Boolean(v))
     const place = reorder ? (to: { view: string; after: boolean }, from: string) => { if (views.includes(from)) reorder(moved(views, from, to)) } : undefined
     const shut = Boolean(folded[id])
-    const unread = threads.reduce((n, th) => n + th.unread, 0)
+    // Folded, it still shows the one open and what calls for you, as a chat
+    // client's collapsed category does; the header counts what that is.
+    const context = foldContext()
+    const shown = shut ? foldedRows(threads, context) : threads
+    const badge = sectionBadge(shown, mentionsIn, context.currentKey)
     return (
-      <section className={`cl-section${shut ? ' folded' : ''}`}>
-        <h2>
-          <button className="cl-fold" onClick={() => setFolded((p) => ({ ...p, [id]: !p[id] }))} aria-expanded={!shut}>
-            <span className="cl-caret" aria-hidden="true"><Icon name={shut ? 'chevron-right' : 'chevron-down'} size={12} /></span>
-            {label}
-            {shut && unread > 0 && <span className="cl-badge">{unread}</span>}
-          </button>
-          {action}
-        </h2>
-        {!shut && threads.length === 0 && <p className="cl-empty">{empty}</p>}
-        {!shut && threads.length > 0 && <ul>{threads.map((th) => row(th, place))}</ul>}
-        {!shut && below}
-      </section>
+      <SidebarSection key={id} id={id} label={label} shut={shut} onFold={() => toggleFold(id)} badge={badge}
+        rows={shown.map((th) => row(th, place))} empty={empty} action={action} below={below} />
     )
   }
 
@@ -3654,27 +3702,18 @@ export const ClassicList: React.FC<Props> = ({
               </button>
             </li>
           </ul>
-          {(() => {
-            // Starred first, then your sections; what they hold leaves the defaults.
-            const byView = (v: string) => everything.find((x) => x.view === v)
-            const starred = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
-            return (
-              <>
-                {starred.length > 0 && section('starred', t('Starred'), starred, '', undefined, undefined, (views) => saveLayout({ ...layout, starred: views }))}
-                {layout.sections.map((x) => section(`sec:${x.id}`, x.name, x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)), t('Move a conversation here from its header.'), (
-                  <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
-                    <Icon name="x" size={12} />
-                  </button>
-                ), undefined, (views) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) })))}
-              </>
-            )
-          })()}
-          {section('channels', t('Channels'), inYourOrder(channels.filter(unplaced)), t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm,
+          {starredRows.length > 0 && section('starred', t('Starred'), starredRows, '', undefined, undefined, (views) => saveLayout({ ...layout, starred: views }))}
+          {ownSections.map((x) => section(`sec:${x.id}`, x.name, x.threads, t('Move a conversation here from its header.'), (
+            <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
+              <Icon name="x" size={12} />
+            </button>
+          ), undefined, (views) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) })))}
+          {section('channels', t('Channels'), channelRows, t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm,
             // Drag to reorder: the channels shown here in their new order,
             // then any placed elsewhere, as they were.
             (views) => saveLayout({ ...layout, order: [...views, ...inYourOrder(channels).map((th) => th.view!).filter((v) => v && !views.includes(v))] }))}
-          {section('people', t('Direct messages'), people.filter(unplaced), t('Nobody has sent you a decision yet.'))}
-          {agents.length > 0 && section('agents', t('Agents'), agentConvos.filter(unplaced), t('Talk to one of your team’s agents: it answers you here.'), addAgent, agentPicker)}
+          {section('people', t('Direct messages'), peopleRows, t('Nobody has sent you a decision yet.'))}
+          {agents.length > 0 && section('agents', t('Agents'), agentRows, t('Talk to one of your team’s agents: it answers you here.'), addAgent, agentPicker)}
           <button type="button" className="cl-add-section" onClick={() => { setSectionName(''); setAddingSection({}) }} data-add-section="1">
             <Icon name="plus" size={13} /> {t('Add a section')}
           </button>

@@ -1967,6 +1967,7 @@ const table: Record<string, string> = {
   "{name} is on. Write @{handle} in a channel to hand it work.": "{name}をオンにしました。チャンネルで @{handle} と書くと仕事を任せられます。",
   "{n} ACUs": "{n} ACU",
   "{n} tasks": "{n}タスク",
+  "Mentions: {n}": "メンション: {n}件",
   "How Codex is reached": "Codexへのつなぎ方",
   "Codex has no API to hand work to, so HonmaruAI asks it on GitHub: each request opens a draft pull request in the first repository below and writes @codex there, and Codex’s replies come back to the thread. Connect that repository to Codex in ChatGPT and turn on Codex for it first; Codex runs on your ChatGPT plan.": "Codexには仕事を渡すAPIがないため、HonmaruAIはGitHub上で依頼します。依頼ごとに下のリストの最初のリポジトリに下書きプルリクエストを作って @codex と書き込み、Codexの返信をスレッドに戻します。先にChatGPTでそのリポジトリをCodexに接続し、Codexを有効にしてください。Codexの利用はあなたのChatGPTプランで行われます。",
   "The repository Codex works in (the first one listed), and a GitHub token that can push to it and open pull requests.": "Codexが作業するリポジトリ（リストの最初のもの）と、そこにプッシュしてプルリクエストを作れるGitHubトークン。",
