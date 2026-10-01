@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { visibleOrder, step } from './sidebarOrder'
+import { visibleOrder, step, foldedHome } from './sidebarOrder'
 
 const row = (key: string, unread = false) => ({ key, unread })
 const keys = (list: Array<{ key: string }>) => list.map((x) => x.key)
@@ -31,6 +31,28 @@ describe('the sidebar as the eye reads it', () => {
   it('is empty with nothing to show', () => {
     expect(visibleOrder([], {})).toEqual([])
     expect(visibleOrder(groups, { starred: true, 'sec:ops': true, channels: true, people: true, apps: true })).toEqual([])
+  })
+})
+
+describe('the folded group a conversation hides in', () => {
+  it('is the group that holds it, when that one is folded', () => {
+    expect(foldedHome(groups, { channels: true }, 'b:hotel')).toBe('channels')
+  })
+  it('is none when its group is open', () => {
+    expect(foldedHome(groups, {}, 'b:hotel')).toBeNull()
+    expect(foldedHome(groups, { people: true }, 'b:hotel')).toBeNull()
+    expect(foldedHome(groups, { channels: false }, 'b:hotel')).toBeNull()
+  })
+  it('is none when it shows in another group that is open', () => {
+    const twice = [{ id: 'sec:a', items: [row('b:x'), row('b:y')] }, { id: 'sec:b', items: [row('b:y'), row('b:z')] }]
+    expect(foldedHome(twice, { 'sec:a': true }, 'b:y')).toBeNull()
+    expect(foldedHome(twice, { 'sec:b': true }, 'b:y')).toBeNull()
+    // Folded in both: the first is the one to open.
+    expect(foldedHome(twice, { 'sec:a': true, 'sec:b': true }, 'b:y')).toBe('sec:a')
+  })
+  it('is none for a conversation no group holds', () => {
+    expect(foldedHome(groups, { channels: true }, 'b:gone')).toBeNull()
+    expect(foldedHome([], {}, 'b:hotel')).toBeNull()
   })
 })
 

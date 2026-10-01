@@ -29,6 +29,19 @@ export function visibleOrder<T extends { key: string }>(groups: readonly Sidebar
   return out
 }
 
+/// The folded group to open so that the conversation `key` shows: the first
+/// one that holds it. Null when it already shows in a group that is open, or
+/// no group holds it — there is nothing to unfold.
+export function foldedHome<T extends { key: string }>(groups: readonly SidebarGroup<T>[], folded: Readonly<Record<string, boolean>>, key: string): string | null {
+  let first: string | null = null
+  for (const g of groups) {
+    if (!g.items.some((item) => item.key === key)) continue
+    if (!folded[g.id]) return null
+    if (first === null) first = g.id
+  }
+  return first
+}
+
 /// The next (dir 1) or previous (dir -1) one after `currentKey` that `pred`
 /// takes, going round past either end. The current one is looked at last,
 /// so it comes back only when nothing else matches; null when nothing in the
