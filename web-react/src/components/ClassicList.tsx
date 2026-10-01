@@ -924,10 +924,10 @@ export const ClassicList: React.FC<Props> = ({
   // from: what the member list knows at once, their clock once the same read
   // the pane makes is back. Over the conversation, so a thread open beside
   // it stays open. The same face or name again closes it.
-  const [popout, setPopout] = useState<null | { ref: string; anchor: HTMLElement; data?: ProfileData }>(null)
-  const openPopout = (ref: string, anchor: HTMLElement) => {
+  const [popout, setPopout] = useState<null | { ref: string; anchor: HTMLElement; name?: string; data?: ProfileData }>(null)
+  const openPopout = (ref: string, anchor: HTMLElement, name?: string) => {
     if (popout && popout.ref === ref && popout.anchor === anchor) { setPopout(null); return }
-    setPopout({ ref, anchor })
+    setPopout({ ref, anchor, name })
     void readProfile(ref).then((data) => { if (data) setPopout((prev) => (prev && prev.ref === ref && prev.anchor === anchor ? { ...prev, data } : prev)) })
   }
   /// Every @mention of a person presses like a button (MessageParts); this
@@ -941,7 +941,7 @@ export const ClassicList: React.FC<Props> = ({
     const picked = window.getSelection()
     if (picked && !picked.isCollapsed && picked.containsNode(el, true)) return
     e.preventDefault()
-    openPopout(el.dataset.mentionRef, el)
+    openPopout(el.dataset.mentionRef, el, el.textContent?.trim())
   }
   /// The same from the keyboard: Enter or Space on a mention that holds
   /// focus, as on any button. (Space would otherwise scroll the page.)
@@ -950,7 +950,7 @@ export const ClassicList: React.FC<Props> = ({
     const el = e.target as HTMLElement
     if (!el.dataset?.mentionRef) return
     e.preventDefault()
-    if (!e.repeat) openPopout(el.dataset.mentionRef, el)
+    if (!e.repeat) openPopout(el.dataset.mentionRef, el, el.textContent?.trim())
   }
 
   // Keys a chat client has: ⌥↑/⌥↓ between conversations, ⌘⇧A Activity,
@@ -2413,7 +2413,7 @@ export const ClassicList: React.FC<Props> = ({
         {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span>
           : opts.authorRef ? (
             <button type="button" className="slk-face-button" aria-label={t('Profile of {name}', { name: opts.name })} aria-haspopup="dialog"
-              onClick={(e) => openPopout(opts.authorRef!, e.currentTarget)}>
+              onClick={(e) => openPopout(opts.authorRef!, e.currentTarget, opts.name)}>
               {avatarFor(opts.app, opts.face || { name: opts.name })}
               <span className={`cl-presence${isOnline(memberByRef(opts.authorRef), onlineKeys) ? ' on' : ''}`} aria-hidden="true" />
             </button>
@@ -2425,7 +2425,7 @@ export const ClassicList: React.FC<Props> = ({
         {!opts.joined && (
           <div className="slk-meta">
             {opts.authorRef
-              ? <button type="button" className="slk-author link" aria-haspopup="dialog" onClick={(e) => openPopout(opts.authorRef!, e.currentTarget)}>{opts.name}</button>
+              ? <button type="button" className="slk-author link" aria-haspopup="dialog" onClick={(e) => openPopout(opts.authorRef!, e.currentTarget, opts.name)}>{opts.name}</button>
               : <span className="slk-author">{opts.name}</span>}
             {opts.badge && <span className={`slk-app-badge${opts.face?.emoji ? ' agent' : ''}`}>{opts.badge}</span>}
             {opts.to && <span className="slk-to">→ {opts.to}</span>}
@@ -4073,7 +4073,7 @@ export const ClassicList: React.FC<Props> = ({
         return (
           <ProfileCard
             person={{
-              ref: popout.ref, name: d?.name || m?.name || t('a teammate'), avatarUrl: m?.avatarUrl,
+              ref: popout.ref, name: d?.name || m?.name || popout.name || t('a teammate'), avatarUrl: m?.avatarUrl,
               handle: d ? d.handle : m?.handle, title: d?.title || m?.title, status: d ? d.status : m?.status,
               awayUntil: d ? d.awayUntil : m?.awayUntil, timezone: d?.timezone, mine,
             }}
