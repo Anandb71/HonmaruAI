@@ -79,14 +79,36 @@ let failed = false
 const dataListeners = new Set<() => void>()
 const emitData = () => { for (const l of dataListeners) l() }
 
+// The chunk's address, once a fetch of it has failed, and how often it has
+// been asked for since. Chromium keeps a failed import() and gives every
+// later one for the same address that failure again, back online or not;
+// its error names the address, and with a query on the end it is a new one.
+// A browser whose error names nothing (Safari) is asked for the plain one.
+let lost: string | null = null
+let tries = 0
+/// The address in an import() error, when it is one of this site's own.
+export function lostChunk(err: unknown, origin: string): string | null {
+  const at = /https?:\/\/\S+/.exec(err instanceof Error ? err.message : '')
+  return at && origin && at[0].startsWith(`${origin}/`) ? at[0] : null
+}
+function importList(): Promise<{ EMOJI: EmojiEntry[] }> {
+  if (!lost) return import('./emojiData')
+  tries += 1
+  return import(/* @vite-ignore */ `${lost}${lost.includes('?') ? '&' : '?'}again=${tries}`) as Promise<{ EMOJI: EmojiEntry[] }>
+}
+
 /// Fetch the list (its own chunk). A failed fetch — offline, or a deploy
 /// that replaced the chunk — is tried again the next time it is asked for.
 export function loadEmojiData(): Promise<EmojiEntry[] | null> {
   if (data) return Promise.resolve(data)
   if (!loading) {
-    loading = import('./emojiData')
+    loading = importList()
       .then((m) => { data = m.EMOJI; emitData(); return data })
-      .catch(() => { loading = null; failed = true; emitData(); return null })
+      .catch((err: unknown) => {
+        lost = lost || lostChunk(err, typeof location === 'undefined' ? '' : location.origin)
+        loading = null; failed = true; emitData()
+        return null
+      })
     // Asked for again after it failed: on its way once more.
     if (failed) { failed = false; emitData() }
   }

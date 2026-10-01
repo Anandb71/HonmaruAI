@@ -15,4 +15,18 @@ describe('the emoji list, when it does not load', () => {
     expect((await again)!.length).toBeGreaterThan(380)
     expect(emojiDataState()).toBe('ready')
   })
+
+  it('reads the chunk’s address from the error, to ask for it by a new one', async () => {
+    const { lostChunk } = await import('./emojiSearch')
+    const site = 'https://app.example'
+    const chunk = `${site}/assets/emojiData-9f2c.js`
+    expect(lostChunk(new TypeError(`Failed to fetch dynamically imported module: ${chunk}`), site)).toBe(chunk)
+    expect(lostChunk(new TypeError(`error loading dynamically imported module: ${chunk}`), site)).toBe(chunk)
+    // No address in it, somebody else's address, or nowhere to compare it with.
+    expect(lostChunk(new TypeError('Importing a module script failed.'), site)).toBeNull()
+    expect(lostChunk(new Error('see https://elsewhere.example/docs'), site)).toBeNull()
+    expect(lostChunk(new Error(`failed: https://app.example.evil.test/x.js`), site)).toBeNull()
+    expect(lostChunk(new TypeError(`Failed to fetch dynamically imported module: ${chunk}`), '')).toBeNull()
+    expect(lostChunk('offline', site)).toBeNull()
+  })
 })
