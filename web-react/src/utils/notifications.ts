@@ -1,6 +1,7 @@
 import { t } from './i18n'
 import { getLocale, primary } from './locale'
 import { isQuiet } from './quiet'
+import { desktop } from './desktop'
 
 // The tab's own notifications, for while the app is open but not in front:
 // a decision for you, a direct message, an @mention. Web Push (utils/push.ts)
@@ -193,11 +194,13 @@ interface Shown { tag: string; body: string; data: Record<string, unknown>; reno
 /// with a click that brings this tab forward.
 function show(title: string, { tag, body, data, renotify = false, timestamp = Date.now() }: Shown): void {
   const options = { body, tag, data, icon: ICON, badge: BADGE, renotify, timestamp } as NotificationOptions
+  const app = desktop()
   const direct = () => {
     try {
       const n = new Notification(title, options)
       n.onclick = () => {
-        try { window.focus() } catch { /* not ours to focus */ }
+        // In the desktop app the window may be in the tray: ask the app.
+        try { if (app) app.show(); else window.focus() } catch { /* not ours to focus */ }
         n.close()
         const hash = typeof data.hash === 'string' ? data.hash : ''
         if (hash && typeof location !== 'undefined') location.hash = hash
@@ -207,7 +210,9 @@ function show(title: string, { tag, body, data, renotify = false, timestamp = Da
     }
   }
   const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined
-  if (!sw) { direct(); return }
+  // The desktop app shows a page's own notification natively, with a click
+  // this page hears; one shown by a service worker would have neither.
+  if (!sw || app) { direct(); return }
   sw.getRegistration('/')
     .then((reg) => (reg ? reg.showNotification(title, options) : direct()))
     .catch(direct)
