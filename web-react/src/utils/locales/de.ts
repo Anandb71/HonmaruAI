@@ -735,6 +735,7 @@ const table: Record<string, string> = {
   'Recently used': 'Zuletzt verwendet',
   'Search emoji': 'Emoji suchen',
   'Search results': 'Suchergebnisse',
+  'The emoji list did not load.': 'Die Emoji-Liste wurde nicht geladen.',
   'Smileys & people': 'Smileys & Personen',
   'Animals & nature': 'Tiere & Natur',
   'Food & drink': 'Essen & Trinken',

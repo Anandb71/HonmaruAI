@@ -523,6 +523,7 @@ const table: Record<string, string> = {
   'Recently used': '最近使ったもの',
   'Search emoji': '絵文字を検索',
   'Search results': '検索結果',
+  'The emoji list did not load.': '絵文字の一覧を読み込めませんでした。',
   'Smileys & people': 'スマイリーと人',
   'Animals & nature': '動物と自然',
   'Food & drink': '食べ物と飲み物',
