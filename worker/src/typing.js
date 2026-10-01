@@ -1,6 +1,5 @@
 import { listMembers } from "./team.js";
 import { resolveChannel, viewOf } from "./channels.js";
-import { audienceOf } from "./access.js";
 import { custom as customEvent } from "./agui/events.js";
 import { safe } from "./log.js";
 
@@ -9,10 +8,12 @@ import { safe } from "./log.js";
 // stored. A browser says so every few seconds while its person types and
 // once more when they stop, and a line nobody refreshes goes by itself.
 //
-// Who hears it is decided the way a Jam's news is (jam.js): the channel as
-// the typist named it, resolved against what they may read, then everyone
-// who can read it, each told under the name they give it. Never the typist
-// themselves: none of their own tabs needs telling.
+// Who hears it is decided the way a message's readers are (channelRoutes.js):
+// the channel as the typist named it, resolved against what they may read,
+// then the people it was resolved to, each told under the name they give it.
+// Nobody is looked up a second time: a query that failed there would call a
+// private channel public, and this runs every few seconds for everyone
+// typing. Never the typist themselves: none of their own tabs needs telling.
 
 export const TYPING_TYPES = new Set(["typing", "typing_stop"]);
 /// A browser says it at most every three seconds per box and stops when it
@@ -42,10 +43,10 @@ export async function handleTyping(relay, att, type, payload) {
       channel: view, parentId, who: { ref: me.ref, name: me.name },
       ...(type === "typing_stop" ? { stop: true } : {}),
     });
-    // Everyone who can read it, each under their name for it — or null for a
-    // public channel in a workspace without guests: everyone here but a
-    // guest, as the room's own events go.
-    const logins = await audienceOf(relay.db, orgId, resolved.key);
+    // Everyone who can read it, each under their name for it, as it was
+    // resolved — or null for a public channel in a workspace without guests:
+    // everyone here but a guest, as the room's own events go.
+    const logins = resolved.logins || null;
     const views = logins && new Map();
     for (const login of logins || []) {
       const view = viewOf(resolved.key, login, members);
