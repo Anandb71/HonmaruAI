@@ -1966,6 +1966,7 @@ const table: Record<string, string> = {
   "{name} is on. Write @{handle} in a channel to hand it work.": "{name}をオンにしました。チャンネルで @{handle} と書くと仕事を任せられます。",
   "{n} ACUs": "{n} ACU",
   "{n} tasks": "{n}タスク",
+  "Spoiler, press to reveal": "ネタバレ。押すと表示します",
 }
 
 export default table

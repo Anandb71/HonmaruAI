@@ -446,18 +446,19 @@ export function renderRich(text: string, mentionClass: (name: string) => string)
 /// Discord's ||spoiler||: hidden under a bar until clicked (or Enter/Space),
 /// then it stays shown. Screen readers are told it is hidden, not the text.
 const Spoiler: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const t = useT()
   const [shown, setShown] = useState(false)
   if (shown) return <span className="slk-spoiler shown">{children}</span>
   const reveal = (e: React.SyntheticEvent) => { e.preventDefault(); e.stopPropagation(); setShown(true) }
   return (
-    <span className="slk-spoiler" role="button" tabIndex={0} aria-label="Spoiler, press to reveal"
+    <span className="slk-spoiler" role="button" tabIndex={0} aria-label={t('Spoiler, press to reveal')}
       onClick={reveal} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') reveal(e) }}>
       <span aria-hidden="true">{children}</span>
     </span>
   )
 }
 
-const JAM_AUDIO =/^https?:\/\/[^\s]+\/channels\/jam\/audio\/[0-9a-f-]{36}$/
+const JAM_AUDIO = /^https?:\/\/[^\s]+\/channels\/jam\/audio\/[0-9a-f-]{36}$/
 
 function inline(line: string, mentionClass: (name: string) => string): React.ReactNode[] {
   // Doubled marks (Discord's ||spoiler||, __underline__, ~~strike~~) come
