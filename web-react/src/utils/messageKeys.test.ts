@@ -74,6 +74,13 @@ describe('keys on a message', () => {
     expect(messageKeyAction(key('Escape', { shiftKey: true }), mine)).toBeNull()
   })
 
+  it('does a thing once for a key held down, and keeps walking with the arrows', () => {
+    for (const k of ['Escape', 'e', 't', 'p', '+', 'Backspace', 'Delete']) expect(messageKeyAction(key(k, { repeat: true }), mine)).toBeNull()
+    expect(messageKeyAction(key('Backspace', { shiftKey: true, repeat: true }), mine)).toBeNull()
+    expect(messageKeyAction(key('ArrowUp', { repeat: true }), mine)).toBe('prev')
+    expect(messageKeyAction(key('ArrowDown', { repeat: true }), null)).toBe('next')
+  })
+
   it('ignores every other key', () => {
     for (const k of ['a', 'Enter', ' ', 'Tab', '=', 'x']) expect(messageKeyAction(key(k), mine)).toBeNull()
   })

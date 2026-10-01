@@ -16,6 +16,8 @@ export interface KeyLike {
   shiftKey?: boolean
   isComposing?: boolean
   keyCode?: number
+  /// The key is held down and this is it again, not a fresh press.
+  repeat?: boolean
 }
 
 /// As much of a message as decides what a key may do to it.
@@ -39,6 +41,9 @@ export function messageKeyAction(ev: KeyLike, m: KeyedMessage | null, inThread =
   // ⇧ with an arrow selects text, and ⇧Esc marks everything read.
   if (ev.key === 'ArrowUp') return ev.shiftKey ? null : 'prev'
   if (ev.key === 'ArrowDown') return ev.shiftKey ? null : 'next'
+  // A key held down walks the log, and does nothing else twice: ⇧⌫ held a
+  // moment too long would delete the next message too, and P pin, unpin.
+  if (ev.repeat) return null
   if (ev.key === 'Escape') return ev.shiftKey ? null : 'composer'
   // An unsent message has nothing left to do to it.
   if (!m || m.deleted) return null
