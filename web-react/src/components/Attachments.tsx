@@ -206,6 +206,13 @@ const FileCard: React.FC<{ file: FileRef; href: string }> = ({ file, href }) => 
   </a>
 )
 
+/// What a player says went wrong, as the browser numbers it (MediaError):
+/// the connection went while it was playing, the bytes would not decode, or
+/// nothing at the address is a thing this browser plays.
+const DROPPED = 2
+const UNREADABLE = 3
+const UNPLAYABLE = 4
+
 /// A video or a song, played where it is with the browser's own controls,
 /// and under it its name and a way to save it. A video is drawn at the
 /// shape it was measured at, so the list does not move when it loads; a
@@ -217,11 +224,32 @@ const FileCard: React.FC<{ file: FileRef; href: string }> = ({ file, href }) => 
 /// the player, that would stop what is playing and take it back to the
 /// start, though the old address is good for a day yet. The new one is
 /// taken up only when the old one fails.
+///
+/// A connection that drops is not a file that cannot be played. The player
+/// stays, as one that loads nothing until it is played again (asked for at
+/// once, with no connection, the browser would call the file unplayable),
+/// and then goes on from where it had got to.
 const Player: React.FC<{ file: FileRef; kind: 'video' | 'audio'; src: string }> = ({ file, kind, src }) => {
   const t = useT()
   const [broken, setBroken] = useState(false)
   const [from, setFrom] = useState(src)
-  const failed = () => { if (src !== from) setFrom(src); else setBroken(true) }
+  /// How many times the connection has gone from under it.
+  const [drops, setDrops] = useState(0)
+  /// Where it had got to when it stopped, in seconds.
+  const reached = useRef(0)
+  const failed = (e: React.SyntheticEvent<HTMLMediaElement>) => {
+    const code = e.currentTarget.error?.code
+    if (e.currentTarget.currentTime > 0) reached.current = e.currentTarget.currentTime
+    // A browser says a connection dropped only of what it had begun to
+    // play, so after one, "unplayable" means the address was not reached.
+    if (code === DROPPED || (code === UNPLAYABLE && drops > 0)) { setFrom(src); setDrops(drops + 1) }
+    else if (src !== from) setFrom(src)
+    else if (code === UNREADABLE || code === UNPLAYABLE) setBroken(true)
+  }
+  const resume = (e: React.SyntheticEvent<HTMLMediaElement>) => {
+    if (reached.current > 0) e.currentTarget.currentTime = reached.current
+    reached.current = 0
+  }
   if (broken) return <FileCard file={file} href={downloadUrl(src)} />
   const about = (
     <figcaption className="att-media-about">
@@ -237,7 +265,7 @@ const Player: React.FC<{ file: FileRef; kind: 'video' | 'audio'; src: string }> 
     const box = videoBox(file.width, file.height)
     return (
       <figure className="att-media video" style={{ width: `min(100%, ${box.width}px)` }} data-file={file.name}>
-        <video src={from} controls preload="metadata" playsInline aria-label={file.name} style={{ aspectRatio: String(box.ratio) }} onError={failed} />
+        <video key={drops} src={from} controls preload={drops ? 'none' : 'metadata'} playsInline aria-label={file.name} style={{ aspectRatio: String(box.ratio) }} onError={failed} onLoadedMetadata={resume} />
         {about}
       </figure>
     )
@@ -245,7 +273,7 @@ const Player: React.FC<{ file: FileRef; kind: 'video' | 'audio'; src: string }> 
   return (
     <figure className="att-media audio" data-file={file.name}>
       {about}
-      <audio src={from} controls preload="none" aria-label={file.name} onError={failed} />
+      <audio key={drops} src={from} controls preload="none" aria-label={file.name} onError={failed} onLoadedMetadata={resume} />
     </figure>
   )
 }
