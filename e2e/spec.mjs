@@ -3457,7 +3457,7 @@ await step('an owner makes a workspace key; the admin API reads the team with it
   }
 })
 
-await step('an admin finds Claude, Devin and Cursor under AI teammates in the studio, with nothing set up until a key is pasted', async () => {
+await step('an admin finds Claude, Devin, Cursor and Codex under AI teammates in the studio, with nothing set up until a key is pasted', async () => {
   const ctx = await browser.newContext({ storageState: await phone.storageState(), viewport: { width: 1280, height: 820 } })
   const w = await ctx.newPage()
   try {
@@ -3482,6 +3482,14 @@ await step('an admin finds Claude, Devin and Cursor under AI teammates in the st
     await w.click('[data-teammate="cursor"]')
     await w.waitForSelector('[data-teammate-form="cursor"] input[data-teammate-model]', { timeout: 5000 })
       .catch(() => { throw new Error('choosing Cursor did not offer a model ID') })
+    // Codex has no key of its own: a GitHub token turns it on.
+    await w.click('[data-teammate="codex"]')
+    await w.waitForSelector('[data-teammate-form="codex"] [data-teammate-github]', { timeout: 5000 })
+      .catch(() => { throw new Error('choosing Codex did not ask for a GitHub token') })
+    if (await w.$('[data-teammate-form="codex"] [data-teammate-key]')) throw new Error('Codex asked for an API key')
+    if (!(await w.$('[data-teammate-on][disabled]'))) throw new Error('Codex could be turned on without a GitHub token')
+    await w.fill('[data-teammate-github]', 'ghp_e2e')
+    if (await w.$('[data-teammate-on][disabled]')) throw new Error('a GitHub token did not let Codex be turned on')
   } finally {
     await ctx.close()
   }

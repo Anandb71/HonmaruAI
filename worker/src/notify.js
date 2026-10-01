@@ -115,7 +115,7 @@ export async function notifyCard(env, { card, kind = "created", excludeLogin, ba
       ...(orgId ? { orgId } : {}),
     };
     for (const device of devices.filter(isIPhone)) {
-      const result = await sendPush(env, { deviceToken: device.device_token, payload, collapseId });
+      const result = await sendPush(env, { deviceToken: device.device_token, device, payload, collapseId });
       if (result.ok) {
         channels.apns += 1;
       } else if (isDeadToken(result)) {
