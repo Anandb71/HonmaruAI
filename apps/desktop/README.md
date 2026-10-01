@@ -21,7 +21,9 @@ npm install
 npm start                 # against https://app.honmaruai.com
 npm run dev               # against the web dev server on http://localhost:3000
 npm test                  # the rules: links, navigation, the CSP, the count, window placement, crashes
-npm run dist              # installers in dist/ (unsigned for now)
+npm run dist:dir          # an unpacked, unsigned app in dist/, to try locally
+npm run dist              # signed installers in dist/ (refuses without signing)
+npm run release           # the same, uploaded to a draft GitHub release
 ```
 
 While developing (`npm start`, `npm run dev`), `HONMARU_APP_URL` or
@@ -78,11 +80,39 @@ The rules live in pure modules (`src/links.js`, `src/config.js`,
 `src/csp.js`, `src/badge.js`, `src/windowState.js`, `src/crashes.js`), each
 with its tests in `test/`. `src/main.js` only wires them to Electron.
 
+## Releasing
+
+`npm run dist` and `npm run release` first run `scripts/signing.mjs`, which
+refuses to build installers that would not be signed, and says what is
+missing. They build for the platform they run on:
+
+| Platform | Needs |
+|---|---|
+| macOS | A Developer ID Application certificate (`CSC_LINK` + `CSC_KEY_PASSWORD`, or `CSC_NAME` from the keychain) and notarization (`APPLE_API_KEY` + `APPLE_API_KEY_ID` + `APPLE_API_ISSUER`, or `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID`). |
+| Windows | A code-signing certificate (`WIN_CSC_LINK` or `CSC_LINK`, + `CSC_KEY_PASSWORD`). Azure Trusted Signing needs `win.azureSignOptions` in `electron-builder.yml` and a matching check in `scripts/signing.mjs` first. |
+| Linux | Nothing: an AppImage is not code-signed. |
+
+`npm run release` also needs `GH_TOKEN` (a token that can create releases on
+Torutesu/HonmaruAI). It uploads the installers and the update feed
+(`latest*.yml`) to a draft release; publishing the draft is what offers the
+update.
+
+**Updates.** An app built by `dist` or `release` (and only those: they mark
+its `package.json` with `honmaruUpdates`) checks the repository's GitHub
+releases with `electron-updater` at start and every six hours, downloads a
+newer version in the background — verified against the release's sha512 and,
+on Windows and macOS, against the running app's signature — and installs it
+on the next quit, or right away if the person picks "Restart now". `npm start`
+and `dist:dir` builds never check. electron-updater takes the newest published
+release of the repository, so desktop releases have to be the newest ones
+there, or move to a repository of their own.
+
 ## Not yet
 
-- Code signing and notarization (Apple Developer ID, Azure Trusted Signing)
-  and auto-update (`electron-updater`) need the certificates and a release
-  feed.
+- Signing in CI: the workflow that runs `npm run release` on macOS and
+  Windows runners with the certificates as secrets.
+- macOS entitlements for the microphone and camera under the hardened
+  runtime (Jam), with their usage descriptions, to verify on a signed build.
 - The web app does not yet know it is running in the desktop app. Once it
   reads `window.honmaruDesktop`, it will hide the Web Push bell (there is no
   push service inside Electron, and the tray keeps the socket open instead)

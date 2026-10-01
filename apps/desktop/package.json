@@ -10,12 +10,16 @@
     "start": "electron .",
     "dev": "electron . --app-url=http://localhost:3000",
     "test": "vitest run",
-    "dist": "electron-builder",
-    "dist:dir": "electron-builder --dir"
+    "dist": "node scripts/signing.mjs && electron-builder --publish never -c.extraMetadata.honmaruUpdates=true",
+    "dist:dir": "electron-builder --dir",
+    "release": "node scripts/signing.mjs && electron-builder --publish always -c.extraMetadata.honmaruUpdates=true"
   },
   "devDependencies": {
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

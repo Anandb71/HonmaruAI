@@ -53,3 +53,12 @@ export function apiOriginsFrom(env = {}, { packaged = true } = {}) {
 export function allowedOrigins(appUrl, env = {}, { packaged = true } = {}) {
   return [...new Set([trustedOrigin(appUrl, { packaged }), ...apiOriginsFrom(env, { packaged }), ...SIGN_IN_ORIGINS].filter(Boolean))]
 }
+
+/// Whether this build checks for updates: only an installed app built by
+/// `npm run dist` or `npm run release`, which refuse to build unless signing
+/// is configured (scripts/signing.mjs) and then mark the app's package.json
+/// with `honmaruUpdates`. `npm start` and `npm run dist:dir` never check.
+export function updatesEnabled({ packaged = false, metadata = {} } = {}) {
+  const flag = metadata?.honmaruUpdates
+  return packaged === true && (flag === true || flag === 'true')
+}

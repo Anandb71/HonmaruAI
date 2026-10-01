@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { appUrlFrom, allowedOrigins, apiOriginsFrom, trustedOrigin, DEFAULT_APP_URL, DEFAULT_API_ORIGINS } from '../src/config.js'
+import { appUrlFrom, allowedOrigins, apiOriginsFrom, trustedOrigin, updatesEnabled, DEFAULT_APP_URL, DEFAULT_API_ORIGINS } from '../src/config.js'
 
 const dev = { packaged: false }
 
@@ -41,5 +41,16 @@ describe('what the desktop app loads', () => {
     expect(apiOriginsFrom({ HONMARU_API_ORIGINS: 'http://localhost:8787' }, dev)).toEqual([...DEFAULT_API_ORIGINS, 'http://localhost:8787'])
     expect(allowedOrigins('http://localhost:3000/', {}, dev)).toEqual(['http://localhost:3000', ...DEFAULT_API_ORIGINS, 'https://github.com'])
     expect(allowedOrigins(DEFAULT_APP_URL, { HONMARU_API_ORIGINS: 'https://x.example' })).toEqual(['https://app.honmaruai.com', ...DEFAULT_API_ORIGINS, 'https://github.com'])
+  })
+})
+
+describe('checking for updates', () => {
+  it('happens only in an installed app built by the signed release scripts', () => {
+    expect(updatesEnabled({ packaged: true, metadata: { honmaruUpdates: true } })).toBe(true)
+    expect(updatesEnabled({ packaged: true, metadata: { honmaruUpdates: 'true' } })).toBe(true)
+    expect(updatesEnabled({ packaged: false, metadata: { honmaruUpdates: true } })).toBe(false)
+    expect(updatesEnabled({ packaged: true, metadata: {} })).toBe(false)
+    expect(updatesEnabled({ packaged: true, metadata: null })).toBe(false)
+    expect(updatesEnabled()).toBe(false)
   })
 })

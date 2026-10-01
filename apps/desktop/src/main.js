@@ -10,14 +10,16 @@
 // other link sent to the browser.
 
 import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, powerMonitor, screen, session, shell } from 'electron'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { allowedOrigins, apiOriginsFrom, appUrlFrom } from './config.js'
+import { allowedOrigins, apiOriginsFrom, appUrlFrom, updatesEnabled } from './config.js'
 import { buildCsp, withCsp } from './csp.js'
 import { PROTOCOL, deepLinkToHash, deepLinkToUrl, isSafeExternal, linkFromArgv, navigationDecision, windowTitle } from './links.js'
 import { countFromTitle, shouldAttract, trayTooltip } from './badge.js'
 import { fitBounds, loadWindowState, saveWindowState, MIN_SIZE } from './windowState.js'
 import { crashVerdict } from './crashes.js'
+import { startUpdates } from './updates.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const asset = (name) => path.join(here, '..', 'assets', name)
@@ -293,6 +295,16 @@ function createWindow() {
   void win.loadURL(first || APP_URL)
 }
 
+/// Updates to the shell, in an installed app built by the signed release
+/// scripts only (src/updates.js). They mark the packaged package.json.
+function checkForUpdates() {
+  let metadata = {}
+  try { metadata = JSON.parse(readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8')) } catch { /* no marker, no updates */ }
+  if (!updatesEnabled({ packaged: PACKAGED, metadata })) return
+  startUpdates({ appName: APP_NAME, getWindow: () => win, beforeRestart: () => { quitting = true } })
+    .catch((error) => console.warn('Updates are off:', error?.message || error))
+}
+
 function createTray() {
   // The menu bar on a Mac has the dock instead; a tray icon there is noise.
   if (process.platform === 'darwin') return
@@ -368,5 +380,6 @@ if (!app.requestSingleInstanceLock()) {
     createMenu()
     createWindow()
     createTray()
+    checkForUpdates()
   })
 }
