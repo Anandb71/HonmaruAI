@@ -3,15 +3,15 @@ import { Avatar, tintFor } from './Avatar'
 import { Icon } from './Icon'
 import { useT } from '../utils/i18n'
 import { getLocale } from '../utils/locale'
-import { statusShown, awayShown, localTime, placeCard } from '../utils/people'
+import { statusShown, awayShown, localTime, placeCard, tabLeaves } from '../utils/people'
 import type { PersonStatus, Placement } from '../utils/people'
 
 /// A teammate's card, as a chat client pops it out beside a face, a name or
 /// an @mention: their photo and whether they are here, who they are, what
 /// they are up to, their clock, and the two ways on — write to them, or read
 /// the whole profile. It opens over the conversation and closes the way a
-/// popover does (Escape, a click elsewhere, focus moving away), so a thread
-/// open beside the conversation stays open.
+/// popover does (Escape, a click elsewhere, Tab past its buttons, focus
+/// moving away), so a thread open beside the conversation stays open.
 
 /// What the card shows: the member list's view at once, what the profile
 /// read adds (their timezone) once it has it.
@@ -39,6 +39,9 @@ interface Props {
   /// The time it is, pinned by a test; otherwise the card keeps its own.
   now?: number
 }
+
+/// What Tab stops at inside the card.
+const STOPS = 'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
 
 const same = (a: Placement | null, b: Placement) => Boolean(a && a.left === b.left && a.top === b.top && a.side === b.side && a.up === b.up)
 
@@ -118,6 +121,21 @@ export const ProfileCard: React.FC<Props> = ({ person, online, anchor, onMessage
     }
   }, [anchor])
 
+  // Tab walks the card's buttons and then leaves it. The card is drawn last
+  // in the page, so what follows it there (the top bar — or, on a phone with
+  // the bars hidden, nothing in the page at all) and what precedes it (the
+  // composer) are nowhere near what it opened from. Leaving it either way
+  // closes it and puts focus back on that face, name or @mention, and the
+  // next Tab goes on from there.
+  const onTab = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return
+    const el = e.currentTarget
+    if (!tabLeaves<Element>(Array.from(el.querySelectorAll(STOPS)), el, document.activeElement, e.shiftKey)) return
+    e.preventDefault()
+    if (anchor?.isConnected) anchor.focus({ preventScroll: true })
+    onClose()
+  }
+
   const status = statusShown(person.status, at)
   const away = awayShown(person.awayUntil, at)
   const local = localTime(person.timezone, at, locale)
@@ -133,7 +151,8 @@ export const ProfileCard: React.FC<Props> = ({ person, online, anchor, onMessage
       tabIndex={-1}
       data-popout={person.ref}
       style={place ? { left: place.left, top: place.top } : { left: 0, top: 0, visibility: 'hidden' }}
-      // Tabbing out of it is leaving it.
+      onKeyDown={onTab}
+      // Focus moved out of it some other way is leaving it too.
       onBlur={(e) => { const to = e.relatedTarget as Node | null; if (to && !e.currentTarget.contains(to) && to !== anchor) onClose() }}
     >
       <div className="slk-popout-banner" style={{ background: tint }} aria-hidden="true" />
