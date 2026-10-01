@@ -3380,7 +3380,6 @@ export const ClassicList: React.FC<Props> = ({
           {thread.view && agentLines(thread.view, { except: threadOpenParent })}
         </div>
         )}
-        {thread.view && <TypingLine names={typingHere(thread.view, null)} />}
         {thread.view && (() => {
           const here = scheduled.filter((x) => x.channel === thread.view)
           return (
@@ -3420,6 +3419,8 @@ export const ClassicList: React.FC<Props> = ({
             <DailyReportDraft card={card} api={api} inChannel />
           </div>
         ))}
+        {/* Right above the box, under whatever else sits between it and the log. */}
+        {thread.view && <TypingLine names={typingHere(thread.view, null)} />}
         {thread.view ? (
           <form className="slk-composer" onSubmit={(e) => { e.preventDefault(); void send(thread.view!, false) }}>
             <PendingUploads items={uploads.items} onRemove={uploads.remove} />

@@ -380,6 +380,9 @@
    is the space that was there. */
 .classic.slk.slk .slk-typing-people { position: relative; flex: none; height: 18px; margin: 0 16px; }
 .classic.slk.slk .slk-log.with-typing { padding-bottom: 0; }
+/* What is clipped, scheduled or drafted sits between the two, and keeps the
+   log's distance from the newest message. */
+.classic.slk.slk .slk-log.with-typing + :not(.slk-typing-people) { margin-top: 12px; }
 .classic.slk.slk .slk-typing-now {
   position: absolute; left: 6px; bottom: 2px; max-width: calc(100% - 12px); box-sizing: border-box;
   display: inline-flex; align-items: center; gap: 6px;
