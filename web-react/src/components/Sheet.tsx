@@ -18,13 +18,19 @@ import './Sheet.css'
 export const Sheet: React.FC<{ label: string; onClose: () => void; children: React.ReactNode; className?: string }> = ({ label, onClose, children, className }) => {
   const box = useRef<HTMLDivElement>(null)
   const startY = useRef<number | null>(null)
+  // Whoever opens a sheet hands it a new onClose with every render of its
+  // own. Kept here, so the effect below runs once and not with each of them.
+  const close = useRef(onClose)
+  close.current = onClose
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current() }
     document.addEventListener('keydown', key)
-    // The first control, so a keyboard or a screen reader lands in it.
-    requestAnimationFrame(() => box.current?.querySelector<HTMLElement>('button, input')?.focus({ preventScroll: true }))
-    return () => document.removeEventListener('keydown', key)
-  }, [onClose])
+    // The first control, so a keyboard or a screen reader lands in it — once,
+    // as the sheet opens. Placed again on a later render, it took the caret
+    // out of a search box somebody was typing in.
+    const frame = requestAnimationFrame(() => box.current?.querySelector<HTMLElement>('button, input')?.focus({ preventScroll: true }))
+    return () => { document.removeEventListener('keydown', key); cancelAnimationFrame(frame) }
+  }, [])
   return createPortal(
     <div className="msheet-scrim" onClick={onClose}>
       <div
