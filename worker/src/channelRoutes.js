@@ -929,6 +929,9 @@ export async function handleChannels(request, env, url, { route, after }) {
       return json(await listMessages(env.DB, orgId, resolved, who.user.login, view, members, { before }));
     }
     const parentId = typeof body.parentId === "string" && body.parentId ? body.parentId : null;
+    // An inline reply: the message it answers (postMessage checks it is here).
+    const replyTo = typeof body.replyTo === "string" && body.replyTo ? body.replyTo : null;
+    if (replyTo && body.sendAt) return json({ message: "A scheduled message cannot be a reply yet." }, 400);
     // The workspace's data rules read it before it is kept, sent now or later.
     const attached = Array.isArray(body.files) && body.files.length
       ? await attachedTexts(env, { orgId, key: resolved.key, login: who.user.login, ids: body.files, githubId: who.session.github_id }).catch(() => [])
@@ -944,8 +947,8 @@ export async function handleChannels(request, env, url, { route, after }) {
     // Files uploaded for this message come with it — yours, uploaded here.
     const fileIds = Array.isArray(body.files) ? body.files : [];
     const withFiles = fileIds.length > 0 && (await claimable(env.DB, { orgId, key: resolved.key, login: who.user.login, ids: fileIds })) > 0;
-    const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: who.user.login, body: typeof body.body === "string" ? body.body : "", parentId, withFiles });
-    if (out.error) return json({ message: out.error }, 400);
+    const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: who.user.login, body: typeof body.body === "string" ? body.body : "", parentId, replyTo, withFiles });
+    if (out.error) return json({ message: out.error, ...(out.code ? { code: out.code } : {}) }, 400);
     if (withFiles) await attachFiles(env.DB, { orgId, key: resolved.key, login: who.user.login, messageId: out.row.id, ids: fileIds });
     // A message to an agent is the agent's to do: it never becomes a card
     // for a person, whatever else it says.

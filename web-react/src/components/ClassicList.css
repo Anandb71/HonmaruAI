@@ -1569,3 +1569,45 @@
 .classic.slk.slk .row-menu-more { flex: none; opacity: .7; display: inline-grid; }
 .classic.slk.slk .row-menu-sep { height: 1px; background: var(--slk-line); margin: 6px 0; }
 .classic.slk.slk .row-menu-head { padding: 4px 16px 4px 36px; font-size: 12.5px; color: var(--slk-dim); }
+
+/* ---- Inline replies: Discord's Reply, not a thread ---- */
+/* The line above a reply, where a pin's mark sits: an arrow, who, and how
+   it began, on one line and quieter than the message — the whole of it a
+   way to the original. */
+.classic.slk.slk .slk-reply-quote {
+  display: flex; align-items: center; gap: 6px; width: fit-content; max-width: 100%; min-width: 0;
+  margin: 0 0 2px; padding: 1px 6px 1px 2px; border: none; border-radius: 6px;
+  background: none; font: inherit; font-size: 13px; line-height: 1.4; color: var(--slk-dim);
+  text-align: left; cursor: pointer;
+}
+.classic.slk.slk .slk-reply-quote > svg { flex: none; color: var(--slk-faint); }
+.classic.slk.slk .slk-reply-quote:hover { background: var(--slk-hover); color: var(--slk-ink); }
+.classic.slk.slk .slk-reply-quote:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 1px; }
+.classic.slk.slk .slk-reply-who { flex: none; font-weight: 700; color: var(--slk-ink); }
+.classic.slk.slk .slk-reply-excerpt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.classic.slk.slk .slk-reply-quote.gone { cursor: default; font-style: italic; color: var(--slk-faint); }
+.classic.slk.slk .slk-reply-quote.gone:hover { background: none; color: var(--slk-faint); }
+/* A hidden spoiler: a bar, the same length whatever it hides. */
+.classic.slk.slk .slk-reply-spoiler {
+  display: inline-block; width: 3em; height: .9em; vertical-align: -1px;
+  border-radius: 3px; background: var(--slk-dim);
+}
+/* Over the composer while a reply is written: what it answers, and the ×. */
+.classic.slk.slk .slk-replying {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 6px 5px 12px; border-bottom: 1px solid var(--slk-line); border-radius: 9px 9px 0 0;
+  background: var(--slk-field); color: var(--slk-dim); font-size: 13px;
+}
+.classic.slk.slk .slk-replying > svg { flex: none; }
+.classic.slk.slk .slk-replying-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.classic.slk.slk .slk-replying-excerpt { color: var(--slk-faint); }
+.classic.slk.slk .slk-replying-cancel {
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px;
+  border: none; border-radius: 6px; background: none; color: var(--slk-dim); cursor: pointer;
+}
+.classic.slk.slk .slk-replying-cancel:hover { background: var(--slk-hover); color: var(--slk-ink); }
+.classic.slk.slk .slk-replying-cancel:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 1px; }
+@media (hover: none) {
+  /* A finger needs more than a mouse does. */
+  .classic.slk.slk .slk-replying-cancel { width: 36px; height: 36px; }
+}

@@ -64,6 +64,8 @@ export const MessageSheet: React.FC<{
   inThread?: boolean
   onClose: () => void
   onReact: (emoji: string) => void
+  /// Answer it inline, quoted above what you say.
+  onQuote?: () => void
   onReply?: () => void
   onPin?: () => void
   onEdit?: () => void
@@ -73,7 +75,7 @@ export const MessageSheet: React.FC<{
   onCopyLink?: () => void
   onUnread?: () => void
   onForward?: () => void
-}> = ({ message, inThread, onClose, onReact, onReply, onPin, onEdit, onDelete, onDecide, onLater, onCopyLink, onUnread, onForward }) => {
+}> = ({ message, inThread, onClose, onReact, onQuote, onReply, onPin, onEdit, onDelete, onDecide, onLater, onCopyLink, onUnread, onForward }) => {
   const t = useT()
   const [picker, setPicker] = React.useState(false)
   const run = (fn?: () => void) => () => { onClose(); fn?.() }
@@ -88,6 +90,7 @@ export const MessageSheet: React.FC<{
       </div>
       {picker && <div className="msheet-picker"><EmojiPicker onPick={(e) => { onReact(e); onClose() }} onClose={() => setPicker(false)} /></div>}
       <div className="msheet-rows">
+        {onQuote && <SheetRow icon="reply" label={t('Reply')} onClick={run(onQuote)} data="quote" />}
         {onReply && !inThread && <SheetRow icon="message" label={t('Reply in thread')} onClick={run(onReply)} data="reply" />}
         {message.body && <SheetRow icon="copy" label={t('Copy text')} onClick={run(() => { void navigator.clipboard?.writeText(message.body) })} data="copy" />}
         {onCopyLink && <SheetRow icon="link" label={t('Copy link')} onClick={run(onCopyLink)} data="link" />}

@@ -114,3 +114,5 @@ CREATE INDEX IF NOT EXISTS idx_apple_identities_user ON apple_identities(user_gi
    account can revoke the person's Sign in with Apple authorization. */
 ALTER TABLE apple_identities ADD COLUMN refresh_token TEXT;
 ALTER TABLE apple_identities ADD COLUMN client_id TEXT;
+/* An inline reply: the message it answers (schema.sql says why). */
+ALTER TABLE channel_messages ADD COLUMN reply_to_id TEXT;

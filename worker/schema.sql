@@ -568,7 +568,11 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   pinned_at     TEXT,
   pinned_by     TEXT,
   /* The author took the link cards off this message. */
-  previews_hidden INTEGER NOT NULL DEFAULT 0
+  previews_hidden INTEGER NOT NULL DEFAULT 0,
+  /* An inline reply, as Discord has: the message this one answers, in the
+     same conversation. Its words are looked up when read, never copied, so
+     an edit or an unsend shows in the quote too. */
+  reply_to_id   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_channel_messages ON channel_messages(org_id, channel, created_at);
 

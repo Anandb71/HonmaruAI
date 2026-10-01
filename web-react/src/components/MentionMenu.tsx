@@ -148,10 +148,16 @@ export function useMentionMenu(
 /// that names nobody stays plain — the difference is the point. The layer
 /// copies the box's place and size, and scrolls with it; it changes no
 /// metrics (no weight, no padding), so the letters line up.
+///
+/// `layout` is whatever sits above the box in its composer — a "Replying
+/// to" bar, files waiting to go — as one value: when it changes the box
+/// has moved without its text or its size changing, and the layer is put
+/// where the box now is before the screen is drawn.
 export function useMentionHighlight(
   box: React.RefObject<HTMLTextAreaElement | null>,
   text: string,
   members: Mentionable[],
+  layout: string | number | boolean | null = null,
 ): { layer: React.ReactNode; active: boolean } {
   const parts = useMemo(() => mentionSegments(text, members), [text, members])
   const active = parts.some((p) => p.mention && p.kind)
@@ -178,8 +184,12 @@ export function useMentionHighlight(
     el.addEventListener('scroll', sync)
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null
     ro?.observe(el)
+    // The composer the box is placed in, too: anything else that comes or
+    // goes inside it (a picture's preview loading, say) moves the box, and
+    // changes the composer's size when it does.
+    if (el.offsetParent) ro?.observe(el.offsetParent)
     return () => { el.removeEventListener('scroll', sync); ro?.disconnect() }
-  }, [box, active, text])
+  }, [box, active, text, layout])
   // A new place (the room for the scrollbar above) re-lays the layer out
   // after sync set its scroll, which could not reach that far yet.
   useLayoutEffect(() => {

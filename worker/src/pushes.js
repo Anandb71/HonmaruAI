@@ -70,9 +70,11 @@ export async function isActive(db, orgId, login, now = Date.now()) {
 }
 
 /// Who a message is for, and why: everyone in a DM or group, whoever it
-/// names, and whoever wrote in the thread it replies to. Never its author;
-/// never somebody who muted the conversation, and in one set to mentions
-/// only, only for a mention or a DM.
+/// names, whoever wrote the message it answers inline, and whoever wrote in
+/// the thread it replies to. Never its author; never somebody who is not in
+/// the workspace any more (`members` is everyone who is); never somebody
+/// who muted the conversation, and in one set to mentions only, only for a
+/// mention, an inline reply to them, or a DM.
 export async function recipientsOf(db, orgId, row, members) {
   // An agent's answer reaches whoever called it the way a teammate's reply
   // would: through the thread it answers in.
@@ -89,6 +91,14 @@ export async function recipientsOf(db, orgId, row, members) {
   for (const m of resolveMentions(row.body || "", members, { online })) add(m.login, "mention");
   // Words they asked to hear about, said anywhere they can read.
   for (const k of await keywordsIn(db, orgId)) if (keywordHit(row.body, k.keywords)) add(k.login, "keyword");
+  // Answered inline: Discord pings whoever is replied to, and so does this —
+  // as a mention would, before "thread" can claim them.
+  if (row.reply_to_id) {
+    const original = await db.prepare(
+      "SELECT author_login FROM channel_messages WHERE org_id = ?1 AND id = ?2 AND channel = ?3 AND deleted_at IS NULL"
+    ).bind(orgId, row.reply_to_id, key).first();
+    if (original) add(original.author_login, "reply");
+  }
   if (row.parent_id) {
     const { results } = await db.prepare(
       `SELECT DISTINCT author_login FROM channel_messages
@@ -96,6 +106,11 @@ export async function recipientsOf(db, orgId, row, members) {
     ).bind(orgId, row.parent_id).all();
     for (const r of results || []) add(r.author_login, "thread");
   }
+  // What somebody wrote stays when they leave, and can still be answered
+  // or have its thread carried on; what is said after they left is not
+  // theirs to be told.
+  const here = new Set((members || []).map((m) => m.login));
+  for (const login of [...out.keys()]) if (!here.has(login)) out.delete(login);
   // A closed conversation's words go only to the people in it.
   const audience = await audienceOf(db, orgId, key);
   if (audience) for (const login of [...out.keys()]) if (!audience.includes(login)) out.delete(login);
@@ -178,6 +193,9 @@ export async function sendDuePushes(env, now = Date.now()) {
       }
       if (!membersOf.has(job.org_id)) membersOf.set(job.org_id, await listMembers(db, job.org_id, null));
       const members = membersOf.get(job.org_id);
+      // Out of the workspace in the minute since it was queued: a channel's
+      // key is the same for everyone, so nothing below would stop it.
+      if (!members.some((m) => m.login === job.login)) { skipped += 1; continue; }
       const view = viewOf(msg.channel, job.login, members);
       if (!view) { skipped += 1; continue; }
       const where = msg.channel.startsWith("b:")

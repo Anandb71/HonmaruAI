@@ -146,3 +146,39 @@ describe('the typing line', () => {
     expect(renderToStaticMarkup(<TypingLine names={[]} />)).toBe('<div class="slk-typing-people"><span class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span></div>')
   })
 })
+
+describe('an inline reply', () => {
+  const quote = { id: 'm1', kind: 'message' as const, authorName: 'Mika', authorRef: 'r-mika', excerpt: 'the code is ████ ok', deleted: false }
+
+  it('quotes who it answers above its words, a hidden spoiler as a named bar, and goes to the original', async () => {
+    const { ReplyQuoteLine } = await import('./MessageParts')
+    const out = renderToStaticMarkup(<ReplyQuoteLine quote={quote} name="Mika" onJump={() => {}} />)
+    expect(out).toMatch(/^<button type="button" class="slk-reply-quote" title="Go to the message" data-reply-to="m1">/)
+    expect(out).toContain('<span class="sr-only">In reply to </span><b class="slk-reply-who">Mika</b>')
+    expect(out).toContain('the code is <span class="slk-reply-spoiler" role="img" aria-label="Spoiler"></span> ok')
+    expect(out).not.toContain('████')
+  })
+
+  it('says only that the original is gone, with nothing to press', async () => {
+    const { ReplyQuoteLine } = await import('./MessageParts')
+    const out = renderToStaticMarkup(<ReplyQuoteLine quote={{ ...quote, deleted: true, kind: null, authorName: null, authorRef: null, excerpt: '' }} name="" onJump={() => {}} />)
+    expect(out).toContain('class="slk-reply-quote gone"')
+    expect(out).toContain('Original message was deleted')
+    expect(out).not.toContain('<button')
+  })
+
+  it('shows what is being answered over the composer, with a way out', async () => {
+    const { ReplyingBar } = await import('./MessageParts')
+    const out = renderToStaticMarkup(<ReplyingBar quote={quote} name="Mika" textId="replying-text" onCancel={() => {}} />)
+    expect(out).toContain('<span class="slk-replying-text" id="replying-text">Replying to Mika <span class="slk-replying-excerpt">the code is ')
+    expect(out).toContain('aria-label="Cancel reply"')
+  })
+
+  it('is offered in the hover bar wherever the list asks for it', async () => {
+    const { MessageActions } = await import('./MessageParts')
+    const m = { id: 'm1', channel: 'b:cafe', kind: 'message' as const, body: 'hi', authorName: 'Mika', authorRef: 'r-mika', mine: false, cardId: null, createdAt: '' }
+    const bar = renderToStaticMarkup(<MessageActions message={m} onReact={() => {}} onQuote={() => {}} onOpenChange={() => {}} />)
+    expect(bar).toContain('aria-label="Reply" data-tool="quote"')
+    expect(renderToStaticMarkup(<MessageActions message={m} onReact={() => {}} onOpenChange={() => {}} />)).not.toContain('data-tool="quote"')
+  })
+})

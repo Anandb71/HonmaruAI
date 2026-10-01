@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { SidebarSection } from './SidebarSection'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
-import type { DecisionCard, Business, ChannelMessage } from '../types/card'
+import type { DecisionCard, Business, ChannelMessage, ReplyQuote } from '../types/card'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -22,9 +22,10 @@ import { meReader } from '../utils/mentionsMe'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, TypingLine } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, TypingLine, ReplyQuoteLine, ReplyingBar } from './MessageParts'
 import { heard, said, expire, nextExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
 import type { Typist, TypingEvent, Outgoing, Place, Signal } from '../utils/typing'
+import { quoteOf, refreshQuotes } from '../utils/replies'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
 import type { DetailsTab, JournalCite } from './ChannelPanes'
 import { JamCall } from '../utils/jam'
@@ -1142,6 +1143,9 @@ export const ClassicList: React.FC<Props> = ({
   const [messages, setMessages] = useState<Record<string, ChannelMessage[]>>({})
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  // An inline reply being written (Discord's Reply, not a thread): the
+  // message the next one answers, in the conversation it was started in.
+  const [replyingTo, setReplyingTo] = useState<{ view: string; quote: ReplyQuote } | null>(null)
   // Files going up with the next message: the conversation's, and a thread's.
   const uploads = useUploads(api, setProblem)
   const threadUploads = useUploads(api, setProblem)
@@ -1307,10 +1311,13 @@ export const ClassicList: React.FC<Props> = ({
         if (!list) return prev
         const has = list.some((x) => x.id === m.id)
         isNew = !has
-        // Deleted is gone — its thread with it — never a "was deleted" line.
-        if (m.deleted) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
-        return { ...prev, [m.channel]: has ? list.map((x) => (x.id === m.id ? msg : x)) : [...list, msg] }
+        // Deleted is gone — its thread with it — never a "was deleted" line;
+        // a reply quoting it says so instead, and one quoting an edit
+        // quotes the new words.
+        if (m.deleted) return { ...prev, [m.channel]: refreshQuotes(list.filter((x) => x.id !== m.id), msg) }
+        return { ...prev, [m.channel]: refreshQuotes(has ? list.map((x) => (x.id === m.id ? msg : x)) : [...list, msg], msg) }
       })
+      setReplyingTo((prev) => (prev?.quote.id === m.id ? { ...prev, quote: quoteOf(msg) } : prev))
       setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
       if (!m.deleted && !m.editedAt && (isNew || !messagesRef.current[m.channel])) {
         setActivity((prev) => ({ ...prev, [m.channel]: { channel: m.channel, lastAt: m.createdAt, preview: m.body.slice(0, 120), lastBy: mine ? 'me' : m.authorName, last: msg } }))
@@ -1370,14 +1377,19 @@ export const ClassicList: React.FC<Props> = ({
       else { if (done) setDraft(''); return }
       if (!body) return
     }
+    // The conversation's own box answers the message it is replying to.
+    const replyTo = !parentId && replyingTo?.view === channel ? replyingTo.quote.id : null
     setSending(true); setProblem(null)
     try {
       const res = await fetch(`${api.httpBase}/channels/messages`, {
         method: 'POST',
         headers: { ...authHeaders, 'content-type': 'application/json' },
-        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), ...(sendAt ? { sendAt } : {}), ...(up.ids.length ? { files: up.ids } : {}) }),
+        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), ...(replyTo ? { replyTo } : {}), ...(sendAt ? { sendAt } : {}), ...(up.ids.length ? { files: up.ids } : {}) }),
       })
       const data = await res.json().catch(() => ({}))
+      // Unsent while this was being written: the words stay in the box, to
+      // go as a plain message if they are sent again.
+      if (!res.ok && data.code === 'reply_gone') { setReplyingTo(null); setProblem(t('The message you were replying to is gone. Send again to post this on its own.')); return }
       if (!res.ok) { setProblem(refusal(data)); return }
       // Sent, or set for later: the box empties, and nobody is typing in it.
       stoppedTyping({ channel, parentId: parentId || null })
@@ -1404,6 +1416,7 @@ export const ClassicList: React.FC<Props> = ({
         return
       }
       setDraft('')
+      if (replyTo) setReplyingTo((prev) => (prev?.quote.id === replyTo ? null : prev))
       setMessages((prev) => {
         const list = prev[channel] || []
         return list.some((x) => x.id === msg.id) ? prev : { ...prev, [channel]: [...list, msg] }
@@ -1552,6 +1565,8 @@ export const ClassicList: React.FC<Props> = ({
   const sendAtTime = async (channel: string, at: string, text?: string) => {
     const body = (text ?? draft).trim()
     if (!body) return
+    // Said, not dropped: a scheduled message would go without its quote.
+    if (replyingTo?.view === channel) { setProblem(t('A scheduled message cannot be a reply yet.')); return }
     const res = await fetch(`${api.httpBase}/channels/messages`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, channel, body, sendAt: at }),
@@ -1772,9 +1787,10 @@ export const ClassicList: React.FC<Props> = ({
     }
     setMessages((prev) => {
       const list = prev[channel] || []
-      if (msg.deleted && !msg.replyCount) return { ...prev, [channel]: list.filter((x) => x.id !== msg.id) }
-      return { ...prev, [channel]: list.map((x) => (x.id === msg.id ? msg : x)) }
+      if (msg.deleted && !msg.replyCount) return { ...prev, [channel]: refreshQuotes(list.filter((x) => x.id !== msg.id), msg) }
+      return { ...prev, [channel]: refreshQuotes(list.map((x) => (x.id === msg.id ? msg : x)), msg) }
     })
+    setReplyingTo((prev) => (prev?.quote.id === msg.id ? { ...prev, quote: quoteOf(msg) } : prev))
     setThread((prev) => (prev && prev.parent.id === msg.id ? { ...prev, parent: msg } : prev))
     setPins((prev) => (prev ? (msg.pinned ? (prev.some((x) => x.id === msg.id) ? prev.map((x) => (x.id === msg.id ? msg : x)) : [msg, ...prev]) : prev.filter((x) => x.id !== msg.id)) : prev))
   }
@@ -1912,7 +1928,7 @@ export const ClassicList: React.FC<Props> = ({
   }
   // Leaving a conversation closes what was open on it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); uploads.clear() }, [current?.key])
+  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); setReplyingTo(null); uploads.clear() }, [current?.key])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { threadUploads.clear() }, [thread?.parent.id])
   useEffect(() => {
@@ -1933,12 +1949,14 @@ export const ClassicList: React.FC<Props> = ({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.view, messages[current?.view || '']?.length, tick])
-  // Somebody named you, or answered in your thread: the inbox refreshes.
+  // Somebody named you, answered in your thread, or replied to you: the
+  // inbox refreshes.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null
     const on = (e: Event) => {
       const m = (e as CustomEvent<ChannelMessage>).detail
-      if (!m || m.mine || (!m.parentId && !/[@＠]/.test(m.body || ''))) return
+      const toMe = Boolean(m?.replyTo?.authorRef && m.replyTo.authorRef === membersRef.current.find((x) => x.mine)?.ref)
+      if (!m || m.mine || (!m.parentId && !toMe && !/[@＠]/.test(m.body || ''))) return
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => { void loadActivity(); if (m.parentId) void loadThreads() }, 800)
     }
@@ -2082,13 +2100,14 @@ export const ClassicList: React.FC<Props> = ({
   }, [view, api.httpBase, api.orgId, authHeaders])
   /// A journal line's citation: the message, in its conversation — loading
   /// back to it when it is further up than what is loaded — or its thread.
-  const goToCite = async (channel: string, cite: JournalCite) => {
+  /// Whether the message was found.
+  const goToCite = async (channel: string, cite: JournalCite): Promise<boolean> => {
     if (cite.parentId) {
       const list = messagesRef.current[channel] || []
       const parent = list.find((m) => m.id === cite.parentId) || ({ id: cite.parentId, channel, kind: 'message', body: '', authorName: null, authorRef: null, mine: false, cardId: null, createdAt: '' } as ChannelMessage)
       setSide(null)
       void openThread(channel, parent)
-      return
+      return true
     }
     let list = messagesRef.current[channel] || []
     let older = more[channel]
@@ -2105,6 +2124,14 @@ export const ClassicList: React.FC<Props> = ({
     setMessages((prev) => ({ ...prev, [channel]: merged }))
     setMore((prev) => ({ ...prev, [channel]: Boolean(older) }))
     setTimeout(() => jumpTo(cite.id), 80)
+    return list.some((m) => m.id === cite.id)
+  }
+  /// An inline reply's quote, pressed: to the original where it is on
+  /// screen, loading back to it when it is further up — and a word, not
+  /// nothing, when it cannot be found.
+  const goToQuoted = async (channel: string, id: string) => {
+    if (document.getElementById(`msg-${id}`)) { jumpTo(id); return }
+    if (!(await goToCite(channel, { id, parentId: null, at: '' }))) setToast(t('Could not find the original message.'))
   }
 
   // ---- Jam ----
@@ -2281,9 +2308,11 @@ export const ClassicList: React.FC<Props> = ({
   }, [mentionable, userGroups, agents, current, businesses, onlineKeys, t])
   const mention = useMentionMenu(composer, draft, setDraft, withAI)
   const threadMention = useMentionMenu(threadComposer, threadDraft, setThreadDraft, withAI)
-  // @names that reach somebody light up as they are typed.
-  const draftHl = useMentionHighlight(composer, draft, withAI)
-  const threadHl = useMentionHighlight(threadComposer, threadDraft, withAI)
+  // @names that reach somebody light up as they are typed. What sits over
+  // the box — the "Replying to" bar, files waiting to go — moves it when it
+  // comes or goes, and the colour moves with it.
+  const draftHl = useMentionHighlight(composer, draft, withAI, `${replyingTo?.quote.id || ''}|${uploads.items.length}`)
+  const threadHl = useMentionHighlight(threadComposer, threadDraft, withAI, threadUploads.items.length)
   // Whether a message calls you and whether an @name is yours, asked of
   // every message each time the conversation is drawn — every keystroke in
   // the composer — so each answer is kept until the team or its groups
@@ -2355,6 +2384,18 @@ export const ClassicList: React.FC<Props> = ({
   const whoSaid = (m: ChannelMessage) => (m.kind === 'ai' ? t('Your AI')
     : m.kind === 'agent' ? (m.agent?.name || m.authorName || t('Agent'))
     : m.mine ? t('You') : (m.authorName || t('a teammate')))
+  /// Who an inline reply answers, as this reader calls them: your AI, you
+  /// by your own name (Discord's way), a teammate or an agent by theirs.
+  const quoteName = (q: ReplyQuote) => (q.kind === 'ai' ? t('Your AI')
+    : q.authorRef && q.authorRef === myRef ? (myName || t('You'))
+    : (q.authorName || t('a teammate')))
+  /// Reply, pressed: the bar over the composer, and the caret in the box.
+  /// An edit open on another message stays open — its words live nowhere
+  /// else, and answering one message is no reason to lose them.
+  const startReply = (channel: string, m: ChannelMessage) => {
+    setReplyingTo({ view: channel, quote: quoteOf(m) })
+    requestAnimationFrame(() => composer.current?.focus())
+  }
   /// The face beside a message: yours, or whoever wrote it.
   const faceOfMessage = (m: ChannelMessage): Face => (m.kind === 'agent'
     ? { name: whoSaid(m), emoji: m.agent?.emoji || '🤖', picture: m.agent?.avatarUrl || null }
@@ -2448,7 +2489,9 @@ export const ClassicList: React.FC<Props> = ({
   /// to the one before, just the words — then what was said.
   /// One that calls you (`mentionsMe`) is tinted and barred, to be found in
   /// a busy channel, and says so to a screen reader, which sees no tint.
-  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; mentionsMe?: boolean }, body: React.ReactNode) => (
+  /// `quote`: the line an inline reply shows above its author, as a pin's
+  /// mark sits there.
+  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; mentionsMe?: boolean; quote?: React.ReactNode }, body: React.ReactNode) => (
     <article key={key} id={opts.msgId ? `msg-${opts.msgId}` : undefined} tabIndex={opts.msgId ? -1 : undefined}
       {...(!wide ? longPress(opts.onHold) : {})}
       className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.mentionsMe ? ' mentions-me' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
@@ -2457,6 +2500,7 @@ export const ClassicList: React.FC<Props> = ({
       </div>
       <div className="slk-body">
         {opts.pinned && <div className="slk-pin-mark"><Icon name="pin" size={12} /> {t('Pinned')}</div>}
+        {opts.quote}
         {!opts.joined && (
           <div className="slk-meta">
             {opts.authorRef
@@ -2573,6 +2617,7 @@ export const ClassicList: React.FC<Props> = ({
       message={m}
       inThread={inThread}
       onReact={(e) => react(channel, m, e)}
+      onQuote={inThread ? undefined : () => startReply(channel, m)}
       onReply={() => void openThread(channel, m)}
       onPin={() => togglePin(channel, m)}
       onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
@@ -2818,7 +2863,8 @@ export const ClassicList: React.FC<Props> = ({
     const isChannel = (v: string) => everything.find((x) => x.view === v)?.kind === 'channel'
     const keyOf = activityKey
     const whoOf = (i: ActivityItem) => (i.type === 'reaction' ? (i.by || t('a teammate')) : i.message.kind === 'ai' ? t('Your AI') : (i.message.authorName || t('a teammate')))
-    const verb = (i: ActivityItem) => (i.type === 'reaction' ? t('reacted') : i.type === 'reply' ? t('replied in a thread') : i.type === 'keyword' ? t('said “{word}”', { word: i.keyword || '' }) : t('mentioned you'))
+    // A reply is in a thread, or inline to what you wrote.
+    const verb = (i: ActivityItem) => (i.type === 'reaction' ? t('reacted') : i.type === 'reply' ? (i.message.parentId ? t('replied in a thread') : t('replied to you')) : i.type === 'keyword' ? t('said “{word}”', { word: i.keyword || '' }) : t('mentioned you'))
     const items = (activityItems || []).filter((i) => activityTab === 'all' || i.unread || unreadShown.has(keyOf(i)))
     const picked = (activityItems || []).find((i) => keyOf(i) === activityPick) || null
     const open = (i: ActivityItem) => {
@@ -3123,9 +3169,12 @@ export const ClassicList: React.FC<Props> = ({
           const whoKey = `msg:${m.authorRef || m.authorName}`
           const joined = prevWho === whoKey && at - prevAt < 5 * 60000
           const name = whoSaid(m)
+          // A reply always shows whose it is, under the line it quotes.
+          const quote = m.replyTo && !m.deleted ? m.replyTo : null
           out.push(block(m.id, {
-            joined: joined && !m.pinned, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
+            joined: joined && !m.pinned && !quote, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
             mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m),
+            quote: quote && <ReplyQuoteLine quote={quote} name={quoteName(quote)} onJump={() => void goToQuoted(thread.view!, quote.id)} />,
           }, (
             <>
               {words(thread.view!, m)}
@@ -3144,6 +3193,8 @@ export const ClassicList: React.FC<Props> = ({
       : thread.kind === 'agent'
         ? t('Message {name}', { name: thread.name })
         : t('Message {name} — @AI to ask the AI', { name: thread.name })
+    // The message the box is answering, when a reply was started here.
+    const replying = replyingTo && replyingTo.view === thread.view ? replyingTo.quote : null
     return (
       <>
         <header className="slk-head">
@@ -3486,6 +3537,7 @@ export const ClassicList: React.FC<Props> = ({
         {thread.view && <TypingLine names={typingHere(thread.view, null)} />}
         {thread.view ? (
           <form className="slk-composer" onSubmit={(e) => { e.preventDefault(); void send(thread.view!, false) }}>
+            {replying && <ReplyingBar quote={replying} name={quoteName(replying)} textId="slk-replying-text" onCancel={() => { setReplyingTo(null); composer.current?.focus() }} />}
             <PendingUploads items={uploads.items} onRemove={uploads.remove} />
             {draftHl.layer}
             <textarea
@@ -3497,12 +3549,15 @@ export const ClassicList: React.FC<Props> = ({
               maxLength={4000}
               placeholder={placeholder}
               aria-label={placeholder}
+              aria-describedby={replying ? 'slk-replying-text' : undefined}
               onChange={(e) => { setDraft(e.target.value); mention.track(); typed({ channel: thread.view!, parentId: null }, e.target.value) }}
               onBlur={() => stoppedTyping({ channel: thread.view!, parentId: null })}
               onKeyUp={mention.track}
               onClick={mention.track}
               onKeyDown={(e) => {
                 if (mention.onKeyDown(e)) return
+                // Escape takes the reply back, and leaves the words.
+                if (e.key === 'Escape' && replying && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); setReplyingTo(null); return }
                 // ↑ in an empty box edits what you last said, as in Slack.
                 if (e.key === 'ArrowUp' && !draft && !e.nativeEvent.isComposing) {
                   const last = [...(messages[thread.view!] || [])].reverse().find((m) => m.mine && m.kind === 'message' && !m.deleted)
@@ -3837,6 +3892,7 @@ export const ClassicList: React.FC<Props> = ({
             inThread={inThread}
             onClose={() => setSheet(null)}
             onReact={(e) => react(channel, m, e)}
+            onQuote={inThread ? undefined : () => startReply(channel, m)}
             onReply={() => void openThread(channel, m)}
             onPin={() => togglePin(channel, m)}
             onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
