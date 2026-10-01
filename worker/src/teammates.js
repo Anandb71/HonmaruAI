@@ -5,7 +5,7 @@ import { aad, openField, sealField } from "./secrets.js";
 // AI teammates: coding agents working in the workspace's channels the way
 // Claude Tag works in Slack. An admin sets one up once, with an API key from
 // an account made for it; anyone then writes "@claude" (or "@devin",
-// "@cursor") in a channel and it takes the thread as its task, works in a
+// "@cursor", "@codex") in a channel and it takes the thread as its task, works in a
 // sandbox of its own on the team's repositories, and answers in the thread.
 // Each is billed by its own company, to the workspace's own account; what it
 // uses is counted here and capped by the month.
@@ -40,6 +40,16 @@ export const PROVIDERS = {
     unit: "task", minLeft: 100, defaultLimit: 20000,
     reposRequired: true,
   },
+  codex: {
+    name: "Codex", handle: "codex", emoji: "🧩", company: "OpenAI",
+    keyHint: "", keySource: "",
+    models: [], defaultModel: null,
+    // Codex runs on the team's ChatGPT plan; what is counted here is tasks.
+    unit: "task", minLeft: 100, defaultLimit: 20000,
+    // No key of its own: it is reached through GitHub, with a token that
+    // may push to the repository Codex is connected to.
+    keyless: true, githubToken: true, reposRequired: true,
+  },
 };
 
 const ENV_NAME = /^[A-Z][A-Z0-9_]{1,63}$/;
@@ -69,6 +79,9 @@ export async function loadTeammate(db, orgId, provider) {
   };
 }
 
+/// Whether it has what it signs in with: its key, or for Codex, GitHub's.
+export const canSignIn = (t) => Boolean(t && (PROVIDERS[t.provider]?.keyless ? t.githubToken : t.apiKey));
+
 /// What it has used this month (UTC), in hundredths of its unit: every run's.
 export async function spentThisMonth(db, orgId, provider, now = new Date()) {
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
@@ -83,7 +96,8 @@ export function toClientTeammate(t, provider, spentCents = 0) {
   return {
     provider, name: p.name, handle: p.handle, emoji: p.emoji, company: p.company, keyHint: p.keyHint, keySource: p.keySource,
     models: p.models, freeModel: Boolean(p.freeModel), unit: p.unit,
-    needs: { githubToken: Boolean(p.githubToken), tools: Boolean(p.tools), account: Boolean(p.account), repos: Boolean(p.reposRequired) },
+    needs: { apiKey: !p.keyless, githubToken: Boolean(p.githubToken), tools: Boolean(p.tools), account: Boolean(p.account), repos: Boolean(p.reposRequired) },
+    hasKey: Boolean(p.keyless ? t?.githubToken : t?.apiKey),
     enabled: Boolean(t?.enabled), hasApiKey: Boolean(t?.apiKey), hasGithubToken: Boolean(t?.githubToken),
     account: t?.remote?.account || "",
     repos: t?.repos || [], model: t?.model || p.defaultModel || "", instructions: t?.instructions || "",
@@ -100,7 +114,7 @@ export function toClientTeammate(t, provider, spentCents = 0) {
 function cleanInput(input, current, provider) {
   const p = PROVIDERS[provider];
   const out = {};
-  if (typeof input.apiKey === "string") out.apiKey = input.apiKey.trim() || null;
+  if (!p.keyless && typeof input.apiKey === "string") out.apiKey = input.apiKey.trim() || null;
   if (p.githubToken && typeof input.githubToken === "string") out.githubToken = input.githubToken.trim() || null;
   if (p.account && typeof input.account === "string") {
     const account = input.account.trim();
@@ -423,7 +437,95 @@ const cursor = {
   },
 };
 
-const ADAPTERS = { claude, devin, cursor };
+
+// ---- Codex: through GitHub -------------------------------------------------
+// Codex has no API of its own to hand work to; it answers "@codex" in a pull
+// request's comments. So each thread gets a draft pull request of its own in
+// the team's repository (an empty commit on a codex/ branch), the task goes
+// in as an "@codex" comment, and Codex's replies there come back into the
+// thread. A follow-up is another "@codex" comment on the same pull request.
+
+const GITHUB = "https://api.github.com";
+
+async function gh(t, path, { method = "GET", body } = {}) {
+  const res = await fetch(`${GITHUB}${path}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${t.githubToken}`, accept: "application/vnd.github+json", "user-agent": "HonmaruAI",
+      "x-github-api-version": "2022-11-28", ...(body ? { "content-type": "application/json" } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new ServiceError(res.status, String(data?.message || `HTTP ${res.status}`));
+  return data;
+}
+
+const codexRepo = (t) => t.repos[0];
+const codexPr = (run) => { const m = String(run.remote_id).match(/^(.+)#(\d+)$/); return m ? { repo: m[1], number: Number(m[2]) } : null; };
+const mention = (text) => `@codex ${text}`;
+
+const codex = {
+  async provision(t) {
+    if (!(t.repos || []).length) throw new ServiceError(400, "Add the repository Codex works in.", "repos");
+    try {
+      const me = await gh(t, "/user");
+      const repo = await gh(t, `/repos/${codexRepo(t)}`);
+      if (repo?.permissions && !repo.permissions.push) throw new ServiceError(400, `That GitHub token cannot push to ${codexRepo(t)}.`);
+      return { remote: { login: me?.login || null, defaultBranch: repo?.default_branch || "main" }, tools: [] };
+    } catch (err) {
+      if (err?.status === 401) throw new ServiceError(400, "GitHub did not accept that token.");
+      if (err?.status === 403 || err?.status === 404) throw new ServiceError(400, `That GitHub token cannot reach ${codexRepo(t)}.`);
+      throw err;
+    }
+  },
+  async start(t, { task, title }) {
+    const repo = codexRepo(t);
+    const base = t.remote?.defaultBranch || (await gh(t, `/repos/${repo}`)).default_branch;
+    const head = await gh(t, `/repos/${repo}/git/ref/heads/${encodeURIComponent(base)}`);
+    const parent = await gh(t, `/repos/${repo}/git/commits/${head.object.sha}`);
+    const commit = await gh(t, `/repos/${repo}/git/commits`, { method: "POST", body: { message: `Codex task: ${title}`.slice(0, 200), tree: parent.tree.sha, parents: [head.object.sha] } });
+    const branch = `codex/honmaru-${crypto.randomUUID().slice(0, 8)}`;
+    await gh(t, `/repos/${repo}/git/refs`, { method: "POST", body: { ref: `refs/heads/${branch}`, sha: commit.sha } });
+    const pr = { title: `Codex: ${title}`.slice(0, 250), head: branch, base, body: `Asked from HonmaruAI. Codex works here; its replies go back to the thread.\n\n${task}`.slice(0, 60000) };
+    let made;
+    try {
+      made = await gh(t, `/repos/${repo}/pulls`, { method: "POST", body: { ...pr, draft: true } });
+    } catch (err) {
+      // Draft pull requests are not on every plan: an ordinary one, then.
+      if (err?.status !== 422) throw err;
+      made = await gh(t, `/repos/${repo}/pulls`, { method: "POST", body: pr });
+    }
+    const said = await gh(t, `/repos/${repo}/issues/${made.number}/comments`, { method: "POST", body: { body: mention(`${briefing(t)}\n\n${task}`).slice(0, 60000) } });
+    return { remoteId: `${repo}#${made.number}`, turn: String(said.id), tasks: 1 };
+  },
+  async send(t, run, text) {
+    const pr = codexPr(run);
+    const said = await gh(t, `/repos/${pr.repo}/issues/${pr.number}/comments`, { method: "POST", body: { body: mention(text) } });
+    return { turn: String(said.id), tasks: 1 };
+  },
+  async read(t, run) {
+    const pr = codexPr(run);
+    if (!pr) return { texts: [], stop: "terminated", last: null, error: "no pull request", costCents: null };
+    const after = Number(run.remote_turn || 0);
+    const texts = [];
+    for (let page = 1; page <= 5; page++) {
+      const comments = await gh(t, `/repos/${pr.repo}/issues/${pr.number}/comments?per_page=100&page=${page}`);
+      for (const c of comments || []) {
+        const login = String(c?.user?.login || "");
+        if (Number(c.id) <= after || login === t.remote?.login || !/codex/i.test(login)) continue;
+        if (String(c.body || "").trim()) texts.push(String(c.body).trim());
+      }
+      if (!Array.isArray(comments) || comments.length < 100) break;
+    }
+    if (!texts.length) return { texts, stop: null, last: null, error: null, costCents: null };
+    const link = `https://github.com/${pr.repo}/pull/${pr.number}`;
+    if (!texts.join("\n").includes(link)) texts.push(link);
+    return { texts, stop: "end_turn", last: null, error: null, costCents: null };
+  },
+};
+
+const ADAPTERS = { claude, devin, cursor, codex };
 
 /// The one custom agent that answers to @claude (or @devin, @cursor) here,
 /// made or hidden.
@@ -465,7 +567,7 @@ export async function saveTeammate(env, orgId, provider, input, { login, workspa
     ...Object.fromEntries(Object.entries(out).filter(([k]) => k !== "tools" && k !== "account")),
   };
   if (out.account !== undefined) next.remote = { ...next.remote, account: out.account };
-  if (p.githubToken && next.repos.length && !next.githubToken) return { error: `Add a GitHub token so ${p.name} can reach the repositories.` };
+  if (p.githubToken && !p.keyless && next.repos.length && !next.githubToken) return { error: `Add a GitHub token so ${p.name} can reach the repositories.` };
   let toolChanges = { kept: next.tools, written: [], removed: [] };
   if (out.tools) {
     const keep = new Set(out.tools.map((t) => t.secretName));
@@ -476,7 +578,7 @@ export async function saveTeammate(env, orgId, provider, input, { login, workspa
     };
   }
   if (next.enabled) {
-    if (!next.apiKey) return { error: `Paste an API key from ${p.keySource} first.` };
+    if (p.keyless ? !next.githubToken : !next.apiKey) return { error: p.keyless ? `Add a GitHub token that can push to the repository ${p.name} works in.` : `Paste an API key from ${p.keySource} first.` };
     try {
       const made = await ADAPTERS[provider].provision(next, { workspaceName, toolChanges });
       next.remote = { ...next.remote, ...made.remote };
