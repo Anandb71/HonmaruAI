@@ -176,6 +176,9 @@ export async function sendDuePushes(env, now = Date.now()) {
       }
       if (!membersOf.has(job.org_id)) membersOf.set(job.org_id, await listMembers(db, job.org_id, null));
       const members = membersOf.get(job.org_id);
+      // Out of the workspace in the minute since it was queued: a channel's
+      // key is the same for everyone, so nothing below would stop it.
+      if (!members.some((m) => m.login === job.login)) { skipped += 1; continue; }
       const view = viewOf(msg.channel, job.login, members);
       if (!view) { skipped += 1; continue; }
       const where = msg.channel.startsWith("b:")
