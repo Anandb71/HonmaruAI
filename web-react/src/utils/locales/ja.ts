@@ -936,6 +936,7 @@ const table: Record<string, string> = {
   'Routing failed': '振り分けに失敗しました',
   'This browser cannot receive push notifications here.': 'このブラウザではプッシュ通知を受け取れません。',
   'This browser cannot receive them.': 'このブラウザでは受け取れません。',
+  "The desktop app tells you while it is running. It stays in the tray when you close its window.": "デスクトップアプリは起動中に通知します。ウィンドウを閉じてもトレイに残ります。",
   'Could not turn notifications on. Try again in a moment.': '通知をオンにできませんでした。しばらくして試してください。',
   'Notifications are still off. You can turn them on whenever you like.': '通知はまだオフです。いつでもオンにできます。',
   'That did not work. Try again in a moment.': 'うまくいきませんでした。しばらくして試してください。',

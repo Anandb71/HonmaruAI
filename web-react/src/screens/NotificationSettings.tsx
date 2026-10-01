@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { enableWebPush, disableWebPush, pushSupport, currentSubscription, prefetchVapidKey } from '../utils/push'
+import { desktop } from '../utils/desktop'
 import { useT } from '../utils/i18n'
 import { Icon } from '../components/Icon'
 import { setQuietState, DEFAULT_SCHEDULE, tomorrowAt, type NotifySchedule } from '../utils/quiet'
@@ -35,6 +36,7 @@ export const NotificationSettings: React.FC<Props> = ({ httpBase, sessionToken, 
   const [error, setError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const support = pushSupport()
+  const inDesktop = Boolean(desktop())
 
   useEffect(() => {
     fetch(`${httpBase}/me`, { headers: { 'x-session-token': sessionToken } })
@@ -94,7 +96,9 @@ export const NotificationSettings: React.FC<Props> = ({ httpBase, sessionToken, 
             <span className="row-main">
               {t('Push notifications')}
               <span className="row-sub">
-                {support === 'needs-install'
+                {inDesktop
+                  ? t('The desktop app tells you while it is running. It stays in the tray when you close its window.')
+                  : support === 'needs-install'
                   ? t('On iPhone, add this to your home screen first — Safari only allows notifications for an installed web app.')
                   : support === 'unsupported'
                     ? t('This browser cannot receive them.')
@@ -103,14 +107,14 @@ export const NotificationSettings: React.FC<Props> = ({ httpBase, sessionToken, 
                       : t('A decision that needs you arrives even when this tab is closed.')}
               </span>
             </span>
-            <button
+            {!inDesktop && <button
               className="switch"
               role="switch"
               aria-checked={pushOn}
               aria-label={t('Push notifications')}
               disabled={busy || support !== 'ready'}
               onClick={togglePush}
-            />
+            />}
           </div>
         </div>
 

@@ -1059,6 +1059,7 @@ const table: Record<string, string> = {
   'This browser cannot receive push notifications here.':
     'Dieser Browser kann hier keine Push-Mitteilungen empfangen.',
   'This browser cannot receive them.': 'Dieser Browser kann sie nicht empfangen.',
+  "The desktop app tells you while it is running. It stays in the tray when you close its window.": "Die Desktop-App benachrichtigt Sie, solange sie läuft. Sie bleibt im Infobereich, wenn Sie das Fenster schließen.",
   'Could not turn notifications on. Try again in a moment.':
     'Mitteilungen ließen sich nicht aktivieren. Gleich noch einmal versuchen.',
   'Notifications are still off. You can turn them on whenever you like.': 'Benachrichtigungen sind noch aus. Sie können sie jederzeit einschalten.',
