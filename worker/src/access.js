@@ -56,9 +56,11 @@ export async function isGuest(db, orgId, githubId) {
 }
 
 /// Whether the workspace has any guest at all — when it has none, a public
-/// channel is simply everybody's and costs nothing to check.
+/// channel is simply everybody's and costs nothing to check. A read that
+/// fails answers "yes": the careful path (who exactly may read it) is right
+/// either way, and "no guests" would let a guest read every public channel.
 export async function hasGuests(db, orgId) {
-  return Boolean(await db.prepare("SELECT 1 FROM memberships WHERE org_id = ?1 AND role = 'guest' LIMIT 1").bind(orgId).first().catch(() => null));
+  return Boolean(await db.prepare("SELECT 1 FROM memberships WHERE org_id = ?1 AND role = 'guest' LIMIT 1").bind(orgId).first().catch(() => ({ failed: true })));
 }
 
 /// Everyone who can read a public channel in a workspace with guests: every
