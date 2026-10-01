@@ -122,8 +122,10 @@ await step('a plain Enter sends it, in Japanese, as written', async () => {
   await d.keyboard.press('Enter')
   await d.waitForSelector('.slk-msg:has-text("会議は15時から")', { timeout: 10000 })
     .catch(() => { throw new Error('Enter did not send the message') })
-  const left = await d.$eval('.slk-input', (el) => el.value)
-  if (left) throw new Error(`the composer kept "${left}" after sending`)
+  // The message can arrive over the live connection a moment before the send
+  // returns and the composer is cleared: wait for that, not for a snapshot.
+  await d.waitForFunction(() => document.querySelector('.slk-input')?.value === '', null, { timeout: 5000 })
+    .catch(async () => { throw new Error(`the composer kept "${await d.$eval('.slk-input', (el) => el.value)}" after sending`) })
   await d.screenshot({ path: join(SHOTS, 'win-01-channel-ja.png') })
 })
 
