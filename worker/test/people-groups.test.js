@@ -109,3 +109,38 @@ test("a folded section stays folded when an app that does not know about folding
   expect(older.order).toEqual(["b:cafe"]);
   expect(folded(older)).toEqual([["s1", true]]);
 });
+
+test("folding a section writes that flag and nothing else, so a window open since the morning keeps your stars", async () => {
+  const put = async (sidebar) => (await (await call("/channels/sidebar", toru, { method: "PUT", body: { orgId: ORG, sidebar } })).json()).sidebar;
+  const fold = (token, body) => call("/channels/sidebar/fold", token, { method: "POST", body: { orgId: ORG, ...body } });
+  // What the stale window loaded: one section, nothing starred.
+  await put({ starred: [], sections: [{ id: "s1", name: "Later", views: [], collapsed: false }], order: [] });
+  // Since then, on another device: a star, a new section, an order.
+  const since = await put({ starred: ["b:cafe"], sections: [{ id: "s1", name: "Later", views: ["b:roastery"], collapsed: false }, { id: "s2", name: "Clients", views: [`dm:${refs.Mika}`], collapsed: false }], order: ["b:roastery", "b:cafe"] });
+
+  const folded = await fold(toru, { id: "s1", collapsed: true });
+  expect(folded.status).toBe(200);
+  const after = (await folded.json()).sidebar;
+  expect(after).toEqual({ ...since, sections: [{ ...since.sections[0], collapsed: true }, since.sections[1]] });
+  expect((await (await call(`/channels/sidebar?${q({ orgId: ORG })}`, toru)).json()).sidebar).toEqual(after);
+  // The second one, and open again: each its own flag.
+  expect((await (await fold(toru, { id: "s2", collapsed: true })).json()).sidebar.sections.map((s) => s.collapsed)).toEqual([true, true]);
+  expect((await (await fold(toru, { id: "s1", collapsed: false })).json()).sidebar.sections.map((s) => s.collapsed)).toEqual([false, true]);
+  // Anything but true opens it.
+  expect((await (await fold(toru, { id: "s2", collapsed: "yes" })).json()).sidebar.sections.map((s) => s.collapsed)).toEqual([false, false]);
+
+  // A section you do not have, or no section at all: nothing is written.
+  expect((await fold(toru, { id: "gone", collapsed: true })).status).toBe(404);
+  expect((await fold(toru, { id: "s1'] || '", collapsed: true })).status).toBe(404);
+  expect((await fold(toru, { id: { $ne: null }, collapsed: true })).status).toBe(404);
+  expect((await fold(toru, { collapsed: true })).status).toBe(404);
+  // Mika has no sidebar yet, and Toru's "s1" is not hers to fold.
+  expect((await fold(mika, { id: "s1", collapsed: true })).status).toBe(404);
+  expect((await (await call(`/channels/sidebar?${q({ orgId: ORG })}`, mika)).json()).sidebar).toEqual({ starred: [], sections: [], order: [] });
+  expect((await (await call(`/channels/sidebar?${q({ orgId: ORG })}`, toru)).json()).sidebar.sections.map((s) => s.collapsed)).toEqual([false, false]);
+
+  // Signed in, and in the workspace, like the rest of the sidebar.
+  expect((await fold("nope", { id: "s1", collapsed: true })).status).toBe(401);
+  expect((await call("/channels/sidebar/fold", toru, { method: "POST", body: { orgId: "personal:elsewhere", id: "s1", collapsed: true } })).status).toBe(403);
+  expect((await call("/channels/sidebar/fold", toru, { method: "POST", body: { id: "s1", collapsed: true } })).status).toBe(400);
+});
