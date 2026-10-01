@@ -48,32 +48,47 @@ export function isSafeExternal(value) {
   }
 }
 
-/// How long a sign-in may take once it has left for an identity provider.
-export const SIGN_IN_MS = 10 * 60 * 1000
+/// How long a company sign-in may stay on its identity provider's page: long
+/// enough to type a password and approve a push, short enough that a window
+/// left open does not keep the door open.
+export const SIGN_IN_MS = 3 * 60 * 1000
 
 /// Whether the app window may go to `target`.
 ///
 /// - The app and the API (and GitHub, for sign-in) are always allowed.
-/// - A sign-in leaves them: the API redirects to GitHub or to a company's
-///   identity provider, whose own pages then redirect among themselves. A
-///   navigation the API redirected elsewhere starts a sign-in window of
-///   `SIGN_IN_MS` in which any https page may load; it ends the moment the
-///   window is back on the app or the API.
+/// - A company's sign-in leaves them: the API redirects to the company's
+///   identity provider, which sends the person back to the API when done. A
+///   navigation the API redirected elsewhere allows exactly that one origin,
+///   over https, for `SIGN_IN_MS` — not any site: a link on the identity
+///   provider's page to somewhere else opens in the browser. It ends the
+///   moment the window is back on the app or the API.
 /// - Anything else stays out of the window and opens in the browser.
 ///
-/// `from` is where the navigation started (for a redirect, the address the
-/// chain began at). Returns `{ allow, external, signInUntil }`.
-export function navigationDecision({ target, from, origins, apiOrigins, signInUntil = 0, now = Date.now(), redirect = false }) {
+/// `signIn` is the sign-in in progress (`{ origin, until }`) or null. `from`
+/// is where the navigation started (for a redirect, the address the chain
+/// began at). Returns `{ allow, external, signIn }`.
+export function navigationDecision({ target, from, origins, apiOrigins, signIn = null, now = Date.now(), redirect = false }) {
   const to = originOf(target)
   let protocol = ''
   try { protocol = new URL(target).protocol } catch { /* not a URL */ }
   if (!to || (protocol !== 'https:' && protocol !== 'http:')) {
-    return { allow: false, external: isSafeExternal(target), signInUntil }
+    return { allow: false, external: isSafeExternal(target), signIn }
   }
-  if (origins.includes(to)) return { allow: true, external: false, signInUntil: 0 }
-  if (protocol === 'https:' && signInUntil > now) return { allow: true, external: false, signInUntil }
-  if (protocol === 'https:' && redirect && apiOrigins.includes(originOf(from))) {
-    return { allow: true, external: false, signInUntil: now + SIGN_IN_MS }
+  if (origins.includes(to)) return { allow: true, external: false, signIn: null }
+  if (protocol !== 'https:') return { allow: false, external: true, signIn }
+  if (signIn && signIn.until > now && signIn.origin === to) return { allow: true, external: false, signIn }
+  if (redirect && apiOrigins.includes(originOf(from))) {
+    return { allow: true, external: false, signIn: { origin: to, until: now + SIGN_IN_MS } }
   }
-  return { allow: false, external: true, signInUntil }
+  return { allow: false, external: true, signIn }
+}
+
+/// The window's title. On the app it is the page's own (which carries the
+/// unread count); anywhere else — the API, GitHub, a company's sign-in — it
+/// names the site, since the window has no address bar to show it.
+export function windowTitle({ url, appOrigin, pageTitle = '', appName = 'Honmaru AI' }) {
+  let parsed = null
+  try { parsed = new URL(url) } catch { /* not a URL */ }
+  if (!parsed || parsed.origin === appOrigin || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')) return pageTitle || appName
+  return `${appName} — signing in at ${parsed.host}`
 }

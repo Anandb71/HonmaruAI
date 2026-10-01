@@ -48,11 +48,27 @@ Following the baseline in `docs/architecture/discord-model-platform-plan.md` §1
   reload needs, and only when pointed at a local http server.
 - Permissions (notifications, microphone and camera for Jam, full screen,
   clipboard write) are granted only to the app's own origin.
-- The window stays on the app, its API and GitHub. A sign-in that the API
-  sends elsewhere (a company's identity provider) may load https pages for
-  up to 10 minutes and ends as soon as the window is back on the app. Every
-  other link opens in the default browser, and only `http(s)` and `mailto`
-  links are handed to the system. `<webview>` is refused.
+- The window stays on the app, its API and GitHub. Every other link opens in
+  the default browser, and only `http(s)` and `mailto` links are handed to
+  the system. `<webview>` is refused.
+- Company sign-in (SSO). When the API redirects the window to a company's
+  identity provider, exactly that one origin (https only) may load, for up to
+  3 minutes; the allowance ends as soon as the window is back on the API or
+  the app. A link on the identity provider's page to any other site opens in
+  the browser. While the window is off the app, its title names the site
+  (`Honmaru AI — signing in at login.company.example`), since there is no
+  address bar.
+
+  Why not the system browser? Signing in there would leave the session in
+  the browser, not in the app: the Worker ends a web sign-in by sending the
+  browser to `app.honmaruai.com/#/sso/done?code=…`, and only knows how to
+  hand the code to the iOS app's own scheme. Doing it properly needs the
+  Worker to accept a `client=desktop` sign-in that returns to
+  `honmaru://sso?code=…`, and the web app to start one when it runs in the
+  desktop app — both outside this shell. Until then the in-window sign-in is
+  kept, as narrow as it can be. An identity provider that hands off to a
+  second origin of its own (federation to another provider) opens that step
+  in the browser and will not complete in the app.
 - A page that opens a blank window to point it at a tool's sign-in (Tools,
   Smithery apps) gets a hidden window whose first navigation goes to the
   browser.

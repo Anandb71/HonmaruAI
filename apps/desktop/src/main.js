@@ -14,7 +14,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { allowedOrigins, apiOriginsFrom, appUrlFrom } from './config.js'
 import { buildCsp, withCsp } from './csp.js'
-import { PROTOCOL, deepLinkToUrl, isSafeExternal, linkFromArgv, navigationDecision } from './links.js'
+import { PROTOCOL, deepLinkToUrl, isSafeExternal, linkFromArgv, navigationDecision, windowTitle } from './links.js'
 import { countFromTitle, shouldAttract, trayTooltip } from './badge.js'
 import { fitBounds, loadWindowState, saveWindowState, MIN_SIZE } from './windowState.js'
 
@@ -97,11 +97,13 @@ function setCount(next) {
 /// page opens (connecting a tool opens a blank one, then points it at the
 /// tool's sign-in — that goes to the browser, and the blank one closes).
 function guard(contents, { child = false } = {}) {
-  let signInUntil = 0
+  // A company sign-in in progress: the one identity provider origin the API
+  // redirected this window to, and until when (src/links.js).
+  let signIn = null
   let startedAt = ''
   const decide = (event, target, redirect) => {
-    const d = navigationDecision({ target, from: startedAt || contents.getURL(), origins: ORIGINS, apiOrigins: API_ORIGINS, signInUntil, redirect })
-    signInUntil = d.signInUntil
+    const d = navigationDecision({ target, from: startedAt || contents.getURL(), origins: ORIGINS, apiOrigins: API_ORIGINS, signIn, redirect })
+    signIn = d.signIn
     if (d.allow && !(child && new URL(target).origin !== APP_ORIGIN)) return
     event.preventDefault()
     if ((d.external || child) && isSafeExternal(target)) void shell.openExternal(target)
@@ -183,7 +185,19 @@ function createWindow() {
   win.once('ready-to-show', () => win?.show())
 
   guard(win.webContents)
-  win.webContents.on('page-title-updated', (_event, title) => setCount(countFromTitle(title)))
+  // On the app the title is the page's, and carries the count. Anywhere else
+  // (a sign-in) it names the site instead, as the window has no address bar.
+  const onApp = () => {
+    try { return new URL(win.webContents.getURL()).origin === APP_ORIGIN } catch { return false }
+  }
+  win.webContents.on('page-title-updated', (event, title) => {
+    if (onApp()) { setCount(countFromTitle(title)); return }
+    event.preventDefault()
+    win?.setTitle(windowTitle({ url: win.webContents.getURL(), appOrigin: APP_ORIGIN, pageTitle: title, appName: APP_NAME }))
+  })
+  win.webContents.on('did-navigate', (_event, url) => {
+    if (!onApp()) win?.setTitle(windowTitle({ url, appOrigin: APP_ORIGIN, appName: APP_NAME }))
+  })
   win.webContents.on('render-process-gone', (_event, details) => {
     if (details.reason !== 'clean-exit') win?.webContents.reload()
   })
