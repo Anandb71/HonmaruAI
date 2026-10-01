@@ -15,7 +15,7 @@ const html = (files: FileRef[]) => renderToStaticMarkup(<MessageFiles files={fil
 describe('MessageFiles', () => {
   it('plays a video where it is, at the shape it was measured at', () => {
     const out = html([file('f_v', 'clip.mp4', 'video/mp4', { width: 1080, height: 1920 })])
-    expect(out).toContain(`<video src="${BASE}/files/f_v?e=1&amp;s=abc" controls="" preload="metadata" playsinline="" aria-label="clip.mp4" style="aspect-ratio:0.5625"></video>`)
+    expect(out).toContain(`<video src="${BASE}/files/f_v?e=1&amp;s=abc#t=0.001" controls="" preload="metadata" playsinline="" aria-label="clip.mp4" style="aspect-ratio:0.5625"></video>`)
     expect(out).toMatch(/<figure class="att-media video" style="width:min\(100%, 203px\)"/)
     expect(out).not.toContain('att-pic')
   })
@@ -31,6 +31,12 @@ describe('MessageFiles', () => {
     expect(out).toContain(`<audio src="${BASE}/files/f_a?e=1&amp;s=abc" controls="" preload="none" aria-label="memo.m4a"></audio>`)
     expect(out).toContain('class="att-media audio"')
     expect(out).not.toContain('<video')
+  })
+
+  it('asks a video, and only a video, for its first frame', () => {
+    const out = html([file('f_v', 'clip.mp4', 'video/mp4'), file('f_a', 'memo.m4a', 'audio/x-m4a')])
+    expect(out.match(/#t=0.001/g)).toHaveLength(1)
+    expect(out).toContain(`href="${BASE}/files/f_v?e=1&amp;s=abc&amp;download=1"`)
   })
 
   it('names each player and gives a way to save it, labelled', () => {
@@ -151,10 +157,10 @@ describe('MessageFiles, read again', () => {
     const clip = file('f_v', 'clip.mp4', 'video/mp4')
     const { box, show, close } = drawn([clip])
     const video = box.all('video')[0]
-    expect(video.attrs.src).toBe(`${BASE}/files/f_v?e=1&s=abc`)
+    expect(video.attrs.src).toBe(`${BASE}/files/f_v?e=1&s=abc#t=0.001`)
     show([later(clip)])
     expect(box.all('video')).toEqual([video])
-    expect(video.attrs.src).toBe(`${BASE}/files/f_v?e=1&s=abc`)
+    expect(video.attrs.src).toBe(`${BASE}/files/f_v?e=1&s=abc#t=0.001`)
     close()
   })
 
@@ -183,7 +189,7 @@ describe('MessageFiles, read again', () => {
     show([later(clip)])
     tell(video, 'error', { code: UNPLAYABLE, at: 12.5 })
     expect(box.all('video')).toEqual([video])
-    expect(video.attrs.src).toBe(`${BASE}/files/f_v?e=2&s=xyz`)
+    expect(video.attrs.src).toBe(`${BASE}/files/f_v?e=2&s=xyz#t=0.001`)
     tell(video, 'loadedmetadata', { at: 0 })
     expect(video.currentTime).toBe(12.5)
     close()
@@ -259,7 +265,7 @@ describe('MessageFiles, when the connection drops', () => {
     const { box, show, close } = drawn([clip])
     show([later(clip)])
     tell(box.all('video')[0], 'error', { code: DROPPED, at: 42 })
-    expect(box.all('video')[0].attrs.src).toBe(`${BASE}/files/f_v?e=2&s=xyz`)
+    expect(box.all('video')[0].attrs.src).toBe(`${BASE}/files/f_v?e=2&s=xyz#t=0.001`)
     close()
   })
 

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../utils/i18n'
 import type { FileRef } from '../types/card'
-import { mediaKind, videoBox, downloadUrl, type MediaKind } from '../utils/media'
+import { mediaKind, videoBox, downloadUrl, firstFrameUrl, type MediaKind } from '../utils/media'
 import { Icon, type IconName } from './Icon'
 import './Attachments.css'
 
@@ -215,7 +215,8 @@ const UNPLAYABLE = 4
 
 /// A video or a song, played where it is with the browser's own controls,
 /// and under it its name and a way to save it. A video is drawn at the
-/// shape it was measured at, so the list does not move when it loads; a
+/// shape it was measured at, so the list does not move when it loads, and
+/// asked for its first frame, which an iPhone does not draw unasked; a
 /// song loads nothing until it is played. One this browser cannot play
 /// becomes the card that saves it.
 ///
@@ -265,7 +266,7 @@ const Player: React.FC<{ file: FileRef; kind: 'video' | 'audio'; src: string }> 
     const box = videoBox(file.width, file.height)
     return (
       <figure className="att-media video" style={{ width: `min(100%, ${box.width}px)` }} data-file={file.name}>
-        <video key={drops} src={from} controls preload={drops ? 'none' : 'metadata'} playsInline aria-label={file.name} style={{ aspectRatio: String(box.ratio) }} onError={failed} onLoadedMetadata={resume} />
+        <video key={drops} src={firstFrameUrl(from)} controls preload={drops ? 'none' : 'metadata'} playsInline aria-label={file.name} style={{ aspectRatio: String(box.ratio) }} onError={failed} onLoadedMetadata={resume} />
         {about}
       </figure>
     )
