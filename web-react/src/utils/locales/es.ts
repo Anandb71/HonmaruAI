@@ -742,8 +742,6 @@ const table: Record<string, string> = {
   'Travel & places': 'Viajes y lugares',
   'Objects': 'Objetos',
   'Symbols': 'Símbolos',
-  'Work': 'Trabajo',
-  'Feelings': 'Emociones',
   'Pinned': 'Fijado',
   'Last reply {when}': 'Última respuesta {when}',
   'Escape to cancel · Enter to save': 'Esc para cancelar · Enter para guardar',

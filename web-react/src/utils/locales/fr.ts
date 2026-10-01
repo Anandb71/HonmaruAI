@@ -742,8 +742,6 @@ const table: Record<string, string> = {
   'Travel & places': 'Voyages et lieux',
   'Objects': 'Objets',
   'Symbols': 'Symboles',
-  'Work': 'Travail',
-  'Feelings': 'Émotions',
   'Answers': 'Réponses',
   'Pinned': 'Épinglé',
   'Last reply {when}': 'Dernière réponse {when}',

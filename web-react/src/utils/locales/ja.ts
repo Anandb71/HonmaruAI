@@ -530,8 +530,6 @@ const table: Record<string, string> = {
   'Travel & places': '旅行と場所',
   'Objects': 'オブジェクト',
   'Symbols': '記号',
-  'Work': '仕事',
-  'Feelings': '気持ち',
   'Pinned': 'ピン留め',
   'Last reply {when}': '最終返信 {when}',
   'Escape to cancel · Enter to save': 'Escでキャンセル・Enterで保存',
