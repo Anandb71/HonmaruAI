@@ -1711,28 +1711,64 @@ export const ClassicList: React.FC<Props> = ({
   /// Delete a message, after asking in the app — not the browser's own box,
   /// unstyled and in the browser's language. ⇧ skips the question, as in
   /// Discord; somebody else's words in the thread go only when you say so
-  /// outright, so that one is always asked.
-  const [deleting, setDeleting] = useState<null | { channel: string; m: ChannelMessage; busy?: boolean }>(null)
+  /// outright, so that one is always asked. `others`: the server found
+  /// replies from others that this page did not know of.
+  const [deleting, setDeleting] = useState<null | { channel: string; m: ChannelMessage; others?: boolean; busy?: boolean }>(null)
   const remove = (channel: string, m: ChannelMessage, skipConfirm = false) => {
-    if (skipsDeleteConfirm(skipConfirm, m, myRef)) void unsend(channel, m)
-    else setDeleting({ channel, m })
+    if (!skipsDeleteConfirm(skipConfirm, m, myRef)) { setDeleting({ channel, m }); return }
+    // Nobody was asked, so nobody said others' replies may go: the server
+    // is asked without them, and when it finds some the question is asked
+    // after all — with the warning that names them.
+    void unsend(channel, m, false).then((r) => {
+      if (r.others) { setDeleting({ channel, m, others: true }); return }
+      if (r.gone) return
+      // Still here: focus stays on it rather than waiting for it to go.
+      dropKeyReturn('delete')
+      if (r.error) setProblem(r.error)
+    })
   }
-  const unsend = async (channel: string, m: ChannelMessage) => {
-    const done = await act('DELETE', '/channels/messages', channel, { messageId: m.id, withThread: true })
+  /// Ask the server to delete it. `withThread` lets other people's replies
+  /// go with it, and is only said once the question that names them was
+  /// answered: without it the server refuses (`others`) rather than take
+  /// them. It is the server that knows who replied — replyRefs leaves out
+  /// anyone who has since left, and is behind when a live event was missed.
+  const unsend = async (channel: string, m: ChannelMessage, withThread: boolean): Promise<{ gone: boolean; others?: boolean; error?: string }> => {
+    setProblem(null)
+    let res: Response | null = null
+    let data: { message?: unknown; code?: string } = {}
+    try {
+      res = await fetch(`${api.httpBase}/channels/messages`, {
+        method: 'DELETE',
+        headers: { ...authHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ orgId: api.orgId, channel, messageId: m.id, withThread }),
+      })
+      data = await res.json().catch(() => ({}))
+    } catch {
+      res = null
+    }
+    if (res?.status === 409 && data.code === 'thread_has_replies') return { gone: false, others: true }
     setEditing((cur) => (cur?.id === m.id ? null : cur))
+    if (!res?.ok) return { gone: false, error: (typeof data.message === 'string' && data.message) || t('That did not work. Try again.') }
+    if (data.message && typeof data.message === 'object') replaceMessage(channel, data.message as ChannelMessage)
     // Gone here at once, and its thread with it.
-    if (done && !m.parentId) {
+    if (!m.parentId) {
       setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
       setThread((prev) => (prev && prev.parent.id === m.id ? null : prev))
     }
-    // Still here: focus stays on it rather than waiting for it to go.
-    if (!done) dropKeyReturn('delete')
-    return Boolean(done)
+    return { gone: true }
   }
   const confirmDelete = async () => {
     if (!deleting || deleting.busy) return
+    const { channel, m } = deleting
     setDeleting({ ...deleting, busy: true })
-    await unsend(deleting.channel, deleting.m)
+    // Their replies go only when the question on show named them.
+    const r = await unsend(channel, m, Boolean(deleting.others) || othersReplied(m, myRef))
+    // It did not: the same question again, now saying so.
+    if (r.others) { setDeleting({ channel, m, others: true }); return }
+    if (!r.gone) {
+      dropKeyReturn('delete')
+      if (r.error) setProblem(r.error)
+    }
     setDeleting(null)
   }
   const cancelDelete = () => { dropKeyReturn('delete'); setDeleting(null) }
@@ -3975,11 +4011,12 @@ export const ClassicList: React.FC<Props> = ({
       )}
       {deleting && (() => {
         const { m, busy } = deleting
+        const others = Boolean(deleting.others) || othersReplied(m, myRef)
         const face = faceOfMessage(m)
         return (
           <Dialog
             title={t('Delete message')}
-            lede={t(deleteWarning(m, myRef))}
+            lede={t(deleteWarning(m, myRef, others))}
             className="cl-delete-dialog"
             onClose={cancelDelete}
             footer={(
@@ -4003,7 +4040,7 @@ export const ClassicList: React.FC<Props> = ({
               )}
             </div>
             {/* A phone has no ⇧ to hold. */}
-            {wide && !othersReplied(m, myRef) && <p className="dlg-hint">{t('Tip: hold Shift when you delete to skip this question.')}</p>}
+            {wide && !others && <p className="dlg-hint">{t('Tip: hold Shift when you delete to skip this question.')}</p>}
           </Dialog>
         )
       })()}
