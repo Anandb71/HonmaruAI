@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds } from './sidebarSections'
+import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold } from './sidebarSections'
 
 const row = (key: string, extra: { view?: string; unread?: number; fresh?: boolean } = {}) => ({ key, view: extra.view, unread: extra.unread || 0, fresh: extra.fresh })
 
@@ -142,6 +142,17 @@ describe('folds', () => {
     })
     expect(readFolds('org-a')).toEqual({})
     expect(() => writeFolds('org-a', { channels: true })).not.toThrow()
+  })
+
+  it('change one section’s flag and leave the rest of it, and the others, alone', () => {
+    const clients = { id: 's1', name: 'Clients', views: ['b:cafe'], collapsed: false }
+    const later = { id: 's2', name: 'Later', views: ['dm:mika'] }
+    const next = withFold([clients, later], 's1', true)
+    expect(next).toEqual([{ ...clients, collapsed: true }, later])
+    expect(next[1]).toBe(later)
+    expect(withFold(next, 's1', false)[0]).toEqual(clients)
+    // A section this window does not have: nothing changes.
+    expect(withFold([clients, later], 'gone', true)).toEqual([clients, later])
   })
 
   it('take your own sections from the server and forget the ones gone', () => {

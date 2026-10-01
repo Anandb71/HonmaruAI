@@ -31,7 +31,7 @@ import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
-import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds } from '../utils/sidebarSections'
+import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold } from '../utils/sidebarSections'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -350,12 +350,20 @@ export const ClassicList: React.FC<Props> = ({
     saveLayout({ ...layout, sections: [...sections, { id, name, views: view ? [view] : [] }] })
   }
   /// Fold a section, or open it again. One of your own is saved folded on
-  /// the server too, so the phone and the laptop agree.
+  /// the server too, so the phone and the laptop agree — that flag and
+  /// nothing else. A fold is a casual click, and this window may have been
+  /// open since the morning: it must not save the stars and sections as it
+  /// remembers them over what another window or the phone did since.
   const toggleFold = (id: string) => {
     const shut = !folded[id]
     setFolded((p) => ({ ...p, [id]: shut }))
     const own = layout.sections.find((x) => `sec:${x.id}` === id)
-    if (own) saveLayout({ ...layout, sections: layout.sections.map((x) => (x === own ? { ...x, collapsed: shut } : x)) })
+    if (!own) return
+    // Here too, so the next star or move says the fold as it now is.
+    setLayout((now) => ({ ...now, sections: withFold(now.sections, own.id, shut) }))
+    void fetch(`${api.httpBase}/channels/sidebar/fold`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, id: own.id, collapsed: shut }),
+    }).catch(() => {})
   }
   const [addingSection, setAddingSection] = useState<null | { view?: string }>(null)
   const [sectionName, setSectionName] = useState('')

@@ -100,3 +100,10 @@ export function withSectionFolds(folded: Record<string, boolean>, sections: Arra
   for (const s of sections) if (s.collapsed) next[`sec:${s.id}`] = true
   return next
 }
+
+/// One of your sections folded, or opened again, and the rest as they were:
+/// all a fold changes in the sidebar this window holds, as it is all the
+/// server writes for one.
+export function withFold<T extends { id: string; collapsed?: boolean }>(sections: T[], id: string, collapsed: boolean): T[] {
+  return sections.map((s) => (s.id === id ? { ...s, collapsed } : s))
+}
