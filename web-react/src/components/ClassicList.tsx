@@ -33,7 +33,7 @@ import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
 import { visibleOrder, step, foldedHome } from '../utils/sidebarOrder'
 import type { SidebarGroup } from '../utils/sidebarOrder'
-import { isMacPlatform, formatCombo } from '../utils/keys'
+import { isMacPlatform, formatCombo, hasPrimaryMod } from '../utils/keys'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -943,6 +943,8 @@ export const ClassicList: React.FC<Props> = ({
   useEffect(() => {
     if (!active) return
     const onKey = (e: KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229) return
+      const mod = hasPrimaryMod(e, isMac)
       if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         // With no conversation at all the keys are not the list's to take.
         const all = visibleOrder(sidebarGroups, {})
@@ -962,9 +964,9 @@ export const ClassicList: React.FC<Props> = ({
         if (home) setFolded((p) => ({ ...p, [home]: false }))
         walked.current = true
         choose(next.key)
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+      } else if (mod && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault(); openActivity()
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+      } else if (mod && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault(); setSideHidden((h) => !h)
       } else if (e.shiftKey && e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault(); markEverythingRead()

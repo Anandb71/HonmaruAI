@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isMacPlatform, formatCombo } from './keys'
+import { isMacPlatform, formatCombo, hasPrimaryMod } from './keys'
 
 // ⌘ on a Mac, Ctrl everywhere else: what the shortcuts sheet, the search
 // button and the workspace menu print.
@@ -19,6 +19,12 @@ describe('which keyboard this is', () => {
     expect(isMacPlatform({ platform: 'Linux armv8l', userAgent: 'Mozilla/5.0 (Linux; Android 14)' })).toBe(false)
     expect(isMacPlatform({})).toBe(false)
     expect(isMacPlatform(null)).toBe(false)
+  })
+  it('takes Command on a Mac and Ctrl everywhere else', () => {
+    expect(hasPrimaryMod({ metaKey: true, ctrlKey: false }, true)).toBe(true)
+    expect(hasPrimaryMod({ metaKey: false, ctrlKey: true }, true)).toBe(false)
+    expect(hasPrimaryMod({ metaKey: false, ctrlKey: true }, false)).toBe(true)
+    expect(hasPrimaryMod({ metaKey: true, ctrlKey: false }, false)).toBe(false)
   })
   it('reads the newer platform before the old one', () => {
     expect(isMacPlatform({ userAgentData: { platform: 'Windows' }, platform: 'MacIntel' })).toBe(false)

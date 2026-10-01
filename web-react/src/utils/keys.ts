@@ -21,6 +21,12 @@ export function isMacPlatform(nav: NavigatorLike | null | undefined = typeof nav
   return /Mac|iPhone|iPad|iPod/i.test(said)
 }
 
+/// The shortcut modifier for this keyboard: Command on a Mac, Ctrl everywhere
+/// else. Ctrl+K on a Mac is the system's "delete to end of line".
+export function hasPrimaryMod(e: { metaKey: boolean; ctrlKey: boolean }, mac = isMacPlatform()): boolean {
+  return mac ? e.metaKey : e.ctrlKey
+}
+
 /// What each part of a combo is called on a Mac: glyphs, written together.
 const MAC: Record<string, string> = {
   Mod: '⌘', Ctrl: '⌃', Alt: '⌥', Shift: '⇧',

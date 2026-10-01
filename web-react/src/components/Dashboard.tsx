@@ -25,7 +25,7 @@ import { aiHeaders } from '../utils/aiKey'
 import type { Screen, Mode } from '../utils/route'
 import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
-import { isMacPlatform, formatCombo } from '../utils/keys'
+import { isMacPlatform, formatCombo, hasPrimaryMod } from '../utils/keys'
 import { tabWithin, TAB_STOPS } from '../utils/focusTrap'
 import type { ChannelMessage } from '../types/card'
 
@@ -518,15 +518,12 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   // Escape closes whatever is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPalette((p) => !p); return }
-      if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
-      if (palette) return
-      // The shortcuts sheet is on top: Escape closes it, not what is under
-      // it, even with focus gone elsewhere; N waits too. Tab goes round
-      // inside it — the sheet is modal, and the list and the composer behind
-      // the scrim are not to be reached, or typed into, from the keyboard.
+      if (e.isComposing || e.keyCode === 229) return
+      const mod = hasPrimaryMod(e, isMac)
+      // The shortcuts sheet is on top. ⌘K must not open the palette over it.
       if (shortcuts) {
         const sheet = shortcutsSheet.current
+        if (mod && (e.key === 'k' || e.key === 'K' || e.key === '/')) { e.preventDefault(); setShortcuts(false); return }
         if (e.key === 'Escape') setShortcuts(false)
         else if (e.key === 'Tab' && sheet && !e.metaKey && !e.ctrlKey && !e.altKey) {
           e.preventDefault()
@@ -536,6 +533,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
         }
         return
       }
+      if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPalette((p) => !p); return }
+      if (mod && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
+      if (palette) return
       if (e.key === 'Escape') { setPanel(null); if (screen) closeScreen() }
       else if (e.key === 'n' && !panel && !screen && !(e.target as HTMLElement)?.matches('input, textarea')) { e.preventDefault(); setPanel('compose') }
     }
