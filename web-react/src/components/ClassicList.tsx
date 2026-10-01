@@ -31,7 +31,7 @@ import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
-import { visibleOrder, step } from '../utils/sidebarOrder'
+import { visibleOrder, step, foldedHome } from '../utils/sidebarOrder'
 import type { SidebarGroup } from '../utils/sidebarOrder'
 import { isMacPlatform, formatCombo } from '../utils/keys'
 import './ClassicList.css'
@@ -927,21 +927,31 @@ export const ClassicList: React.FC<Props> = ({
 
   // Keys a chat client has: ⌥↑/⌥↓ between conversations in the order the
   // sidebar shows them (a folded group's are out of sight, and skipped),
-  // ⌥⇧↑/⌥⇧↓ between the ones with something new, ⌘⇧A Activity, ⌘⇧D the
-  // sidebar. None of them while the shell has something over the list.
+  // ⌥⇧↑/⌥⇧↓ between the ones with something new — a fold does not hide
+  // those: the jump opens the group — ⌘⇧A Activity, ⌘⇧D the sidebar. None
+  // of them while the shell has something over the list.
   const [sideHidden, setSideHidden] = useState(false)
   useEffect(() => {
     if (!active) return
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        const list = visibleOrder(sidebarGroups, folded)
-        if (!list.length) return
+        // With no conversation at all the keys are not the list's to take.
+        const all = visibleOrder(sidebarGroups, {})
+        if (!all.length) return
         e.preventDefault()
         // Under Activity or Later no row is lit: down starts at the top.
         const here = special ? null : current?.key ?? null
+        // The unread jump looks inside folded groups too: a folded heading
+        // counts the cards waiting in it, and a dot or an @ in one shows
+        // nowhere else, so "Nothing unread" there would be untrue.
+        const list = e.shiftKey ? all : visibleOrder(sidebarGroups, folded)
         const next = step(list, here, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey ? hasNews : undefined)
-        if (!next) setToast(t('Nothing unread'))
-        else if (next.key !== here) choose(next.key)
+        if (!next) { setToast(e.shiftKey ? t('Nothing unread') : t('Every section is folded')); return }
+        // The only one with something new is the one open.
+        if (next.key === here) { if (e.shiftKey) setToast(t('Nothing else unread')); return }
+        const home = foldedHome(sidebarGroups, folded, next.key)
+        if (home) setFolded((p) => ({ ...p, [home]: false }))
+        choose(next.key)
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault(); openActivity()
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {

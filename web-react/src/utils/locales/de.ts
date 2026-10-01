@@ -1843,6 +1843,8 @@ const table: Record<string, string> = {
   'Mark as read': 'Als gelesen markieren',
   'Nothing new to mark as read': 'Nichts Neues zum Als-gelesen-Markieren',
   'Nothing unread': 'Nichts Ungelesenes',
+  'Nothing else unread': 'Sonst nichts Ungelesenes',
+  'Every section is folded': 'Alle Abschnitte sind eingeklappt',
   'Marked {n} conversations as read': '{n} Unterhaltungen als gelesen markiert',
   'Activity marked as read': 'Aktivität als gelesen markiert',
   'archive.lede': 'Er verschwindet aus der Seitenleiste aller. Nachrichten, Dateien und Entscheidungen bleiben erhalten, und er lässt sich unter „Archivierte Channels“ in deinem Profil wiederherstellen.',

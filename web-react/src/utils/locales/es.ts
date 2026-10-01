@@ -1840,6 +1840,8 @@ const table: Record<string, string> = {
   'Mark as read': 'Marcar como leído',
   'Nothing new to mark as read': 'No hay nada nuevo que marcar como leído',
   'Nothing unread': 'No hay nada sin leer',
+  'Nothing else unread': 'No hay nada más sin leer',
+  'Every section is folded': 'Todas las secciones están plegadas',
   'Marked {n} conversations as read': '{n} conversaciones marcadas como leídas',
   'Activity marked as read': 'Actividad marcada como leída',
   'archive.lede': 'Desaparece de la barra lateral de todos. Sus mensajes, archivos y decisiones se conservan, y se puede restaurar desde «Canales archivados» en tu perfil.',
