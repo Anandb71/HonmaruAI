@@ -19,10 +19,25 @@ describe('replyExcerpt', () => {
   })
 
   it('hides every spoiler, even one the cut would have halved', () => {
-    expect(replyExcerpt('a ||b|| c ||d\ne|| f')).toBe(`a ${SPOILER_MASK} c ${SPOILER_MASK} f`)
+    expect(replyExcerpt('a ||b|| c ||d|| f')).toBe(`a ${SPOILER_MASK} c ${SPOILER_MASK} f`)
     const long = replyExcerpt(`${'a'.repeat(110)} ||the secret that runs past the cut||`)
     expect(long).not.toContain('secret')
     expect(long).not.toContain('||')
+  })
+
+  it('reads a spoiler as the renderer does: within one line, never across two', () => {
+    expect(replyExcerpt('a ||b\nc|| d')).toBe('a ||b c|| d')
+    // Bars on two lines must not pair up and leave the real one showing.
+    expect(replyExcerpt('a || b\n||the secret|| c')).toBe(`a || b ${SPOILER_MASK} c`)
+  })
+
+  it('reads code before the lines are joined', () => {
+    expect(replyExcerpt('```\nif (a || b) {}\nx || y\n``` ok')).toBe('``` if (a || b) {} x || y ``` ok')
+    // Two stray backticks on different lines are not code, and protect
+    // nothing between them.
+    expect(replyExcerpt('use the ` key\n||the butler did it|| not the ` one')).toBe(`use the \` key ${SPOILER_MASK} not the \` one`)
+    // A backtick inside a link opens no code either.
+    expect(replyExcerpt('see https://x.test/`a ||b|| c`')).toBe(`see https://x.test/\`a ${SPOILER_MASK} c\``)
   })
 
   it('reads bars inside code as code, not as a spoiler', () => {
