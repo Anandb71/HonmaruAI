@@ -1036,9 +1036,13 @@ await step('your role is whatever you say it is', async () => {
 // whoever deploys the Worker.
 await step('You on a laptop lists where to go the way Tools does, and nothing twice', async () => {
   const d = desk.pages()[0]
-  await d.evaluate(() => { location.hash = '#/profile' })
-  await d.click('nav [data-tab="you"]').catch(() => {})
+  // On a laptop the rail's avatar opens your status; You is behind its
+  // "View profile", which closes it on the way.
+  await d.evaluate(() => { location.hash = '#/feed' })
+  await d.click('nav [data-tab="you"]')
+  await d.click('[data-status-popover] [data-view-profile]')
   await d.waitForSelector('.profile-stats', { timeout: 15000 })
+  if (await d.$('[data-status-popover]')) throw new Error('the status popover stayed open over You')
   // Tools and History have their own tabs on the rail: not rows here too.
   const shown = await d.$$eval('.pf-ws .row', (rows) => rows.filter((r) => r.offsetParent !== null).map((r) => (r.querySelector('.row-main')?.firstChild?.textContent || '').trim()))
   for (const twice of ['Tools', 'History']) if (shown.includes(twice)) throw new Error(`${twice} is both a tab and a row under You`)
@@ -1255,6 +1259,9 @@ await step('the other screens hold up on a laptop', async () => {
     ['you', '.profile-stats', '22-desktop-profile'],
   ]) {
     await d.click(`nav [data-tab="${label}"]`)
+    // The rail's avatar opens your status first; You is behind its
+    // "View profile".
+    if (label === 'you') await d.click('[data-status-popover] [data-view-profile]')
     await d.waitForSelector(marker, { timeout: 10000 })
     await d.screenshot({ path: `${SHOTS}/${name}.png` })
     // The rail stays: a screen is a place in the app, not a takeover.
@@ -2916,8 +2923,14 @@ await step('a screen closed with its own button stays closed when Back is presse
   await page.goto(`${WEB}#/feed`, { waitUntil: 'load' })
   await page.goto(`${WEB}#/list`, { waitUntil: 'load' })
   await page.waitForSelector('.cl-tabs', { timeout: 20000 })
+  // The list's You tab opens your status, above the tabs; You is behind
+  // its "View profile".
   await page.click('[data-phone-tab="you"]')
+  await page.waitForSelector('[data-status-popover].from-tabs [data-view-profile]', { timeout: 10000 })
+    .catch(() => { throw new Error('the list’s You tab did not open your status') })
+  await page.click('[data-status-popover] [data-view-profile]')
   await page.waitForSelector('.profile-stats', { timeout: 10000 })
+  if (await page.$('[data-status-popover]')) throw new Error('the status popover stayed open over You')
   await page.click('.screen .back')
   await page.waitForSelector('.cl-tabs', { timeout: 10000 })
   if ((await page.evaluate(() => location.hash)) !== '#/list') throw new Error('closing You did not return to the list')
@@ -3052,6 +3065,69 @@ await step('a workspace adds its own emoji, and uses them in a message and a rea
     await kenji.screenshot({ path: `${SHOTS}/fail-${Date.now()}-kenji.png` }).catch(() => {})
     throw err
   } finally {
+    await desk.close()
+  }
+})
+
+// Your status, one click from your avatar — on a laptop the rail's, at its
+// foot. A preset and Save, and a teammate's sidebar wears its emoji; Escape
+// shuts the popover and hands focus back to the avatar that opened it.
+await step('a status set from the avatar on a laptop shows in a teammate’s sidebar', async () => {
+  await closeEverything()
+  if (!mate) throw new Error('the teammate this step needs is not here')
+  // Kenji at a laptop, in the same browser as his phone; the owner at theirs.
+  const kdesk = await mate.newPage()
+  await kdesk.setViewportSize({ width: 1280, height: 820 })
+  const desk = await phone.newPage()
+  await desk.setViewportSize({ width: 1280, height: 820 })
+  try {
+    await kdesk.goto(`${WEB}#/feed`, { waitUntil: 'load' })
+    await kdesk.click('nav [data-tab="you"]')
+    await kdesk.waitForSelector('[data-status-popover].from-rail [data-status-preset="Focusing"]', { timeout: 15000 })
+      .catch(() => { throw new Error('the rail’s avatar did not open your status') })
+    if ((await kdesk.getAttribute('nav [data-tab="you"]', 'aria-expanded')) !== 'true') throw new Error('the avatar does not say its popover is open')
+    await kdesk.click('[data-status-preset="Focusing"]')
+    const picked = await kdesk.inputValue('[data-status-emoji]')
+    if (picked !== '🎧') throw new Error(`the Focusing preset put "${picked}" in the emoji`)
+    if (!(await kdesk.inputValue('[data-status-text]')).trim()) throw new Error('the Focusing preset left the words empty')
+    await kdesk.click('[data-status-save]')
+    await kdesk.waitForSelector('[data-status-popover]', { state: 'detached', timeout: 10000 })
+      .catch(async () => { throw new Error(`Save did not close it: ${(await kdesk.textContent('[data-status-popover] .dlg-error').catch(() => null)) || 'no reason given'}`) })
+
+    // Opened again, it says what is set now; Escape shuts it, and focus is
+    // back on the avatar.
+    await kdesk.click('nav [data-tab="you"]')
+    await kdesk.waitForSelector('[data-status-popover] [data-status-now]', { timeout: 15000 })
+      .catch(() => { throw new Error('the popover does not say the status just set') })
+    const now = await kdesk.textContent('[data-status-popover] [data-status-now]')
+    if (!now.includes('🎧')) throw new Error(`the popover says the status is: ${now}`)
+    await kdesk.screenshot({ path: `${SHOTS}/76-status-popover.png` })
+    await kdesk.keyboard.press('Escape')
+    await kdesk.waitForSelector('[data-status-popover]', { state: 'detached', timeout: 5000 })
+      .catch(() => { throw new Error('Escape did not close your status') })
+    const focused = await kdesk.evaluate(() => document.activeElement?.getAttribute('data-tab') || document.activeElement?.tagName)
+    if (focused !== 'you') throw new Error(`Escape left focus on ${focused}, not the avatar`)
+
+    // The owner's sidebar, read fresh: Kenji's row wears the emoji.
+    await desk.goto(`${WEB}#/list`, { waitUntil: 'load' })
+    const worn = desk.locator('.slk-side .cl-thread[data-view^="dm:"]', { hasText: 'Kenji' }).locator('.cl-status')
+    await worn.waitFor({ timeout: 20000 })
+      .catch(() => { throw new Error('the owner’s sidebar shows no status beside Kenji') })
+    const emoji = ((await worn.textContent()) || '').trim()
+    if (emoji !== '🎧') throw new Error(`Kenji's row wears "${emoji}", not the status he set`)
+    await desk.screenshot({ path: `${SHOTS}/77-status-sidebar.png` })
+
+    // Cleared from the same popover, for the steps after this one.
+    await kdesk.click('nav [data-tab="you"]')
+    await kdesk.click('[data-status-popover] [data-status-clear]')
+    await kdesk.waitForSelector('[data-status-popover]', { state: 'detached', timeout: 10000 })
+      .catch(() => { throw new Error('Clear status did not close it') })
+  } catch (err) {
+    await kdesk.screenshot({ path: `${SHOTS}/fail-${Date.now()}-status-kenji.png` }).catch(() => {})
+    await desk.screenshot({ path: `${SHOTS}/fail-${Date.now()}-status-owner.png` }).catch(() => {})
+    throw err
+  } finally {
+    await kdesk.close()
     await desk.close()
   }
 })

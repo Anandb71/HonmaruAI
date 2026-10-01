@@ -1,0 +1,115 @@
+/* Your status, from your avatar: a small card beside it — under the top
+   bar's avatar on a phone, beside the rail's at its foot on a laptop. It
+   lives in the shell, outside the list, so it carries the dialog's palette
+   rather than the list's: the dialog's pieces (.dlg-input, .dlg-btn…) draw
+   the same in it, in both themes. */
+.status-pop {
+  --dlg-bg: #ffffff; --dlg-ink: #202020; --dlg-dim: #646464; --dlg-faint: #838383;
+  --dlg-line: #e8e8e8; --dlg-field: #f8f9fa; --dlg-hover: #f2f2f2; --dlg-accent: #6647f0;
+  /* The date picker, the menus' lists and the checkbox are the browser's:
+     they follow this, not the page's theme, unless told. */
+  color-scheme: light;
+  /* Over a screen (35) beside the rail, under ⌘K and the shortcuts (40+). */
+  position: fixed; z-index: 38;
+  top: calc(52px + env(safe-area-inset-top)); left: 8px; right: 8px;
+  max-height: calc(100dvh - 60px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  display: flex; flex-direction: column;
+  overflow-y: auto; overscroll-behavior: contain;
+  background: var(--dlg-bg); color: var(--dlg-ink);
+  border: 1px solid var(--dlg-line); border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .22);
+  font-size: 13.5px;
+  animation: status-pop-in .14s ease-out;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .status-pop {
+    --dlg-bg: #1c1c1e; --dlg-ink: #f2f2f2; --dlg-dim: #a3a3a3; --dlg-faint: #7c7d80;
+    --dlg-line: #2e2e31; --dlg-field: #141416; --dlg-hover: #26262a; --dlg-accent: #8f7bff;
+    color-scheme: dark;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, .5);
+  }
+}
+:root[data-theme="dark"] .status-pop {
+  --dlg-bg: #1c1c1e; --dlg-ink: #f2f2f2; --dlg-dim: #a3a3a3; --dlg-faint: #7c7d80;
+  --dlg-line: #2e2e31; --dlg-field: #141416; --dlg-hover: #26262a; --dlg-accent: #8f7bff;
+  color-scheme: dark;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .5);
+}
+@keyframes status-pop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes status-pop-rise { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+@keyframes status-pop-up { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.status-pop:focus { outline: none; }
+.status-pop :focus-visible { outline: 2px solid var(--dlg-accent); outline-offset: 2px; }
+.status-pop .dlg-input:focus-visible { outline: none; }
+
+/* Under the avatar at the top right once there is room; beside the rail's
+   avatar, rising from the foot, where the rail is. */
+@media (min-width: 480px) {
+  .status-pop { left: auto; right: 12px; width: 360px; }
+}
+/* From the list's You tab on a phone: above its tab bar (58px and the
+   home indicator), at the right, where the tab is. */
+.status-pop.from-tabs {
+  top: auto; bottom: calc(66px + env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 126px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  animation-name: status-pop-up;
+}
+@media (min-width: 720px) {
+  .status-pop.from-top { top: calc(var(--chrome) + 8px); max-height: calc(100dvh - var(--chrome) - 20px); }
+  .status-pop.from-rail {
+    top: auto; right: auto; bottom: 12px; left: calc(var(--rail) + 8px);
+    max-height: calc(100dvh - var(--chrome) - 24px);
+    animation-name: status-pop-rise;
+  }
+}
+@media (prefers-reduced-motion: reduce) { .status-pop, .status-pop.from-rail, .status-pop.from-tabs { animation: none; } }
+
+.status-pop-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 14px 10px 16px; border-bottom: 1px solid var(--dlg-line); }
+.status-pop-who { flex: 1; min-width: 0; }
+.status-pop-who h2 { margin: 1px 0 3px; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-pop-now { margin: 2px 0 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.status-pop-now-emoji { margin-right: 5px; }
+.status-pop-dim { color: var(--dlg-dim); }
+.status-pop .dialog-close { margin: -4px -2px 0 0; }
+
+.status-pop-body { margin: 0; padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 12px; }
+.status-pop-failed { align-items: flex-start; }
+.status-pop-line { display: flex; gap: 8px; }
+.status-pop-line .dlg-input { flex: 1; min-width: 0; }
+.status-pop-line .status-pop-emoji { flex: none; width: 48px; padding: 0; text-align: center; font-size: 17px; }
+
+.status-pop-presets { list-style: none; margin: -2px -8px 0; padding: 0; }
+.status-pop-preset {
+  width: 100%; min-height: 36px; display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px; border: none; border-radius: 8px; background: none;
+  font: inherit; color: var(--dlg-ink); text-align: left; cursor: pointer;
+}
+.status-pop-preset:hover { background: var(--dlg-hover); }
+.status-pop-preset-emoji { flex: none; width: 22px; text-align: center; font-size: 16px; }
+.status-pop-preset-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-pop-preset .status-pop-dim { flex: none; font-size: 12.5px; }
+
+.status-pop-away { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid var(--dlg-line); }
+.status-pop-away .dlg-hint { margin: 0; }
+.status-pop-away-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+@media (max-width: 380px) { .status-pop-away-fields { grid-template-columns: 1fr; } }
+
+.status-pop-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+
+.status-pop-foot { margin-top: auto; padding: 6px 8px 8px; border-top: 1px solid var(--dlg-line); }
+.status-pop-profile {
+  width: 100%; min-height: 36px; display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px; border: none; border-radius: 8px; background: none;
+  font: inherit; font-weight: 600; color: var(--dlg-ink); cursor: pointer;
+}
+.status-pop-profile:hover { background: var(--dlg-hover); }
+
+/* A finger: rows and buttons a thumb can hit, and fields at 16px, below
+   which Safari on iPhone zooms the page in when one is tapped. */
+@media (pointer: coarse) {
+  .status-pop-preset, .status-pop-profile, .status-pop .dlg-check { min-height: 44px; }
+  /* The ✕ grows into the corner's padding, where it was drawn. */
+  .status-pop .dialog-close { width: 44px; height: 44px; margin: -11px -9px 0 0; }
+  .status-pop .dlg-btn { height: 40px; }
+  .status-pop .dlg-input { height: 40px; font-size: 16px; }
+}
