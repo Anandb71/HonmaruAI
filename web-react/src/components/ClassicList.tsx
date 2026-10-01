@@ -4080,7 +4080,11 @@ export const ClassicList: React.FC<Props> = ({
             // You are here, though the relay never says so (byPresence).
             online={mine || isOnline(m, onlineKeys)}
             anchor={popout.anchor}
-            onMessage={!mine && dm ? () => { setPopout(null); choose(dm.key); setTimeout(() => composer.current?.focus(), 50) } : undefined}
+            // Their conversation, with nothing left over it: when it is already
+            // the open one, choosing it again closes nothing, and a thread the
+            // card was opened from would stay on top of the composer (on a
+            // phone, of the whole conversation).
+            onMessage={!mine && dm ? () => { setPopout(null); setThread(null); setDetailId(null); setProfile(null); choose(dm.key); setTimeout(() => composer.current?.focus(), 50) } : undefined}
             onFullProfile={() => { setPopout(null); void openProfile(popout.ref) }}
             onClose={() => setPopout(null)}
           />
