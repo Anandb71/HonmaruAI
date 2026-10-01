@@ -74,10 +74,12 @@ export const StatusPopover: React.FC<Props> = ({ httpBase, orgId, sessionToken, 
       .then((d) => {
         if (ignore) return
         if (!d) { setPhase('failed'); return }
-        const members: Array<{ ref: string; name: string; mine?: boolean }> = Array.isArray(d.members) ? d.members : []
+        const members: Array<{ ref: string; name: string; mine?: boolean; guest?: boolean }> = Array.isArray(d.members) ? d.members : []
         setMine(d.mine || null)
         setMyRef(members.find((m) => m.mine)?.ref || null)
-        setPeople(members.filter((m) => !m.mine).map((m) => ({ ref: m.ref, name: m.name })))
+        // Only a member can decide for you while you are away: a guest sees only
+        // their own channels, and the decisions could be about any of them.
+        setPeople(members.filter((m) => !m.mine && !m.guest).map((m) => ({ ref: m.ref, name: m.name })))
         setDraft(draftFromMine(d.mine))
         setPhase('ready')
       })

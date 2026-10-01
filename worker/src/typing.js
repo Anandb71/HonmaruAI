@@ -17,9 +17,9 @@ import { safe } from "./log.js";
 
 export const TYPING_TYPES = new Set(["typing", "typing_stop"]);
 /// A browser says it at most every three seconds per box and stops when it
-/// is done: thirty in ten seconds is several tabs' worth, and a loop is cut
+/// is done: ten in ten seconds is three boxes' worth, and a loop is cut
 /// off long before it costs anything.
-export const TYPING_BUDGET = 30;
+export const TYPING_BUDGET = 10;
 /// A thread is named by the id of the message it hangs off.
 const MESSAGE_ID = /^[\w-]{1,80}$/;
 /// The newest signal from each typist about each place, while it is still

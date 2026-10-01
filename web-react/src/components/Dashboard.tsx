@@ -429,7 +429,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'open-card' && event.data.cardId) { setPanel(null); navigate(hashForCard(event.data.cardId)) }
+      if (event.data?.type === 'open-card' && event.data.cardId) { setPanel(null); navigate(hashForCard(event.data.cardId, typeof event.data.orgId === 'string' ? event.data.orgId : null)) }
       // The worker sends the message's address with its workspace, so one
       // from another workspace switches to it rather than finding nothing.
       if (event.data?.type === 'open-message' && event.data.messageId) { setPanel(null); window.location.hash = typeof event.data.hash === 'string' && event.data.hash.startsWith('#/m/') ? event.data.hash : `#/m/${encodeURIComponent(event.data.messageId)}` }
@@ -559,6 +559,20 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     navigate(hashForMode('classic'), true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.openView, route.openOrg, workspaces.length, orgId, navigate])
+  // A card in another of your workspaces (a notification from there): go
+  // there, and the card opens once it has loaded. One you are not in drops
+  // the workspace and looks here, as a plain card link does.
+  useEffect(() => {
+    const id = route.cardId
+    const org = route.cardOrg
+    if (!id || !org) return
+    if (org !== orgId) {
+      if (!workspaces.length) return
+      if (workspaces.some((w) => w.id === org)) onSwitchOrg(org)
+    }
+    navigate(hashForCard(id), true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.cardId, route.cardOrg, workspaces.length, orgId, navigate])
   // A link to a message: the list opens where it is, then the address goes
   // back to the list's own, so a reload does not jump again.
   useEffect(() => {

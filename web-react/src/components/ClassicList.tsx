@@ -1476,7 +1476,7 @@ export const ClassicList: React.FC<Props> = ({
     setSeenTick((n) => n + 1)
     void fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel: appOpen }),
+      body: JSON.stringify({ orgId: api.orgId, channel: appOpen, at: now }),
     }).then(() => setServerReads((prev) => ({ ...prev, [appOpen]: now }))).catch(() => { /* this device still remembers */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appOpen, appNew, api.orgId, looking])
@@ -2594,12 +2594,15 @@ export const ClassicList: React.FC<Props> = ({
   /// Read this thread, here and on every other device: Threads stops
   /// calling it unread.
   const markThreadRead = (channel: string, parentId: string) => {
+    // Read up to the newest reply on screen, not the server's now: one that
+    // lands while this is on its way stays new.
+    const seenUpTo = threadItems?.find((x) => x.parent.id === parentId)?.lastReplyAt || new Date().toISOString()
     setThreadItems((prev) => prev && prev.map((x) => (x.parent.id === parentId ? { ...x, unread: false } : x)))
     // Its replies, and its first message where it named you, in Activity too.
     setActivityItems((prev) => prev && prev.map((i) => (i.unread && (i.message.parentId === parentId || (i.message.id === parentId && i.type !== 'reaction')) ? { ...i, unread: false } : i)))
     void fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel, thread: parentId }),
+      body: JSON.stringify({ orgId: api.orgId, channel, thread: parentId, at: seenUpTo }),
     }).catch(() => {})
   }
   // Read on another device (or another tab): the same here, at once —

@@ -165,9 +165,10 @@ self.addEventListener('push', (event) => {
 })
 
 /// Where a tapped notification leads, as this app's address: the card, or
-/// the message in its own workspace (`#/m/<id>/<orgId>` switches to it).
+/// the message, in its own workspace (`#/feed/<id>/<orgId>` and
+/// `#/m/<id>/<orgId>` switch to it).
 function hashFor(data) {
-  if (data.cardId) return '#/feed/' + encodeURIComponent(data.cardId)
+  if (data.cardId) return '#/feed/' + encodeURIComponent(data.cardId) + (data.orgId ? '/' + encodeURIComponent(data.orgId) : '')
   if (data.messageId) return '#/m/' + encodeURIComponent(data.messageId) + (data.orgId ? '/' + encodeURIComponent(data.orgId) : '')
   return ''
 }

@@ -235,6 +235,10 @@ export async function enableWebPush(httpBase: string, sessionToken: string): Pro
 /// Never prompts, never throws. Returns whether pushes will arrive.
 export async function resyncWebPush(httpBase: string, sessionToken: string): Promise<boolean> {
   if (pushSupport() !== 'ready' || Notification.permission !== 'granted') return false
+  // A tab left open from before someone else signed in (in another tab)
+  // holds the old session: handing the Worker this browser's subscription
+  // under it would send the new person's decisions to the old account.
+  if (!sessionIsCurrent(sessionToken)) return false
   const started = generation
   try {
     const reg = await navigator.serviceWorker.getRegistration('/')
@@ -248,6 +252,16 @@ export async function resyncWebPush(httpBase: string, sessionToken: string): Pro
     return await finish(started, publicKey, subscription, httpBase, sessionToken)
   } catch {
     return false
+  }
+}
+
+/// Whether this tab's session is still the one this browser signed in last.
+function sessionIsCurrent(sessionToken: string): boolean {
+  try {
+    const saved = localStorage.getItem('sessionToken')
+    return !saved || saved === sessionToken
+  } catch {
+    return true
   }
 }
 

@@ -221,7 +221,7 @@ export function notifyNewDecision(title: string, from: string, cardId?: string, 
   show(heading, {
     tag: cardId || 'honmaru-decision',
     body: `${title}\n${byline}`,
-    data: { cardId: cardId || null, kind: 'created', hash: cardId ? `#/feed/${encodeURIComponent(cardId)}` : '' },
+    data: { cardId: cardId || null, orgId: orgId || null, kind: 'created', hash: cardId ? `#/feed/${encodeURIComponent(cardId)}${orgId ? `/${encodeURIComponent(orgId)}` : ''}` : '' },
   })
 }
 
@@ -329,9 +329,14 @@ function paintBadge(): void {
   if (typeof document !== 'undefined') document.title = count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE
   paintFavicon(count)
   // An installed app's icon (Chrome, Edge, Safari); a no-op in a plain tab.
+  // A push sets it too, with the count across every workspace — this tab
+  // knows only its own, so it never takes down a badge it did not put up.
   const nav = typeof navigator !== 'undefined' ? navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> } : null
-  if (nav?.setAppBadge && nav.clearAppBadge) void (count > 0 ? nav.setAppBadge(count) : nav.clearAppBadge()).catch(() => {})
+  if (!nav?.setAppBadge || !nav.clearAppBadge) return
+  if (count > 0) { appBadgeOurs = true; void nav.setAppBadge(count).catch(() => {}) }
+  else if (appBadgeOurs) { appBadgeOurs = false; void nav.clearAppBadge().catch(() => {}) }
 }
+let appBadgeOurs = false
 
 /// "9+" past nine, as every chat app's badge does.
 export function badgeLabel(count: number): string {

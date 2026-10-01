@@ -4,7 +4,7 @@ import { beforeEach, afterEach, expect, test } from "vitest";
 import schemaSql from "../schema.sql?raw";
 import {
   vapidToken, resetVapidTokens, encryptPayload, decryptPayload, sendWebPush,
-  isDeadSubscription, parseSubscription, b64url, fromB64url, vapidSubject,
+  isDeadSubscription, parseSubscription, isPushService, b64url, fromB64url, vapidSubject,
 } from "../src/webpush.js";
 import { notifyCard } from "../src/notify.js";
 
@@ -189,7 +189,7 @@ test("the recipient's browsers get the alert in their language", async () => {
 });
 
 test("what a browser posts is validated, and bound to the session's login", async () => {
-  const sub = await subscriber("https://push.example.com/send/route");
+  const sub = await subscriber("https://fcm.googleapis.com/fcm/send/route");
 
   const anonymous = await SELF.fetch("https://example.com/push/subscriptions", {
     method: "POST", headers: { "content-type": "application/json" },
@@ -203,6 +203,14 @@ test("what a browser posts is validated, and bound to the session's login", asyn
     body: JSON.stringify({ endpoint: "http://not-https.example.com/x", keys: sub.keys }),
   });
   expect(malformed.status).toBe(400);
+
+  // Only a browser's push service is a place the Worker will post to.
+  const elsewhere = await SELF.fetch("https://example.com/push/subscriptions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-session-token": globalThis.__aliceSession },
+    body: JSON.stringify({ endpoint: "https://evil.example/collect", keys: sub.keys }),
+  });
+  expect(elsewhere.status).toBe(400);
 
   const res = await SELF.fetch("https://example.com/push/subscriptions", {
     method: "POST",
@@ -226,6 +234,13 @@ test("parseSubscription refuses anything that is not a real subscription", () =>
   expect(parseSubscription(null)).toBeNull();
   expect(parseSubscription({ endpoint: "https://p.example.com/x" })).toBeNull();
   expect(parseSubscription({ endpoint: "https://p.example.com/x", keys: { p256dh: "short", auth: "short" } })).toBeNull();
+});
+
+test("only the browsers' push services are accepted as endpoints", () => {
+  for (const ok of ["https://fcm.googleapis.com/fcm/send/a", "https://updates.push.services.mozilla.com/wpush/v2/a",
+    "https://web.push.apple.com/a", "https://wns2-par02p.notify.windows.com/w/?token=a"]) expect(isPushService(ok)).toBe(true);
+  for (const bad of ["https://evil.example/a", "http://fcm.googleapis.com/a", "https://fcm.googleapis.com.evil.example/a",
+    "https://push.apple.com.evil.example/a", "https://169.254.169.254/latest", "not a url"]) expect(isPushService(bad)).toBe(false);
 });
 
 test("the public key is served only when web push is configured", async () => {

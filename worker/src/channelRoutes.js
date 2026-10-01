@@ -644,7 +644,7 @@ export async function handleChannels(request, env, url, { route, after }) {
       // `loginHash` lets a browser tell which member a card it already holds
       // is from — cards carry logins — without being handed anyone's login.
       members: await Promise.all(members.map(async (m) => ({
-        ref: m.ref, name: m.name, title: m.title || m.role, mine: m.mine,
+        ref: m.ref, name: m.name, title: m.title || m.role, mine: m.mine, ...(m.role === "guest" ? { guest: true } : {}),
         handle: m.handle || null, status: m.status || null, awayUntil: m.awayUntil || null, avatarUrl: m.avatarUrl || null,
         loginHash: (await sha256Hex(m.login)).slice(0, 16),
       }))),
@@ -1477,6 +1477,9 @@ export async function handleChannels(request, env, url, { route, after }) {
     if (body.awayUntil && body.delegateRef) {
       const d = members.find((m) => m.ref === body.delegateRef);
       if (!d || d.login === who.user.login) return json({ message: "Pick somebody else in this workspace." }, 400);
+      // Decisions meant for you go to them while you are away — about any
+      // channel, private ones too — so not to a guest, who sees only theirs.
+      if (d.role === "guest") return json({ message: "A guest cannot decide for you. Pick a member of this workspace." }, 400);
       delegateLogin = d.login;
     }
     const out = await setStatus(env.DB, { orgId: body.orgId, githubId: who.session.github_id, emoji: body.emoji, text: body.text, until: body.until, awayUntil: body.awayUntil, delegateLogin });

@@ -131,6 +131,19 @@ test("a private channel's typing stays with its members when the database loses 
   expect(r.sent.map((s) => s.to)).toEqual(["mika"]);
 });
 
+test("when the first lookup of a private channel fails, nobody hears its typing", async () => {
+  // Not knowing whether a channel is private is not knowing who may read it:
+  // resolveChannel lets nobody in (worker/src/channels.js), so neither a
+  // member nor somebody outside it is heard by anyone.
+  const r = recorder();
+  r.db = losing(env.DB, 1);
+  await handleTyping(r, as("toru", "3001"), "typing", { channel: "b:payroll" });
+  expect(r.sent).toEqual([]);
+  r.db = losing(env.DB, 1);
+  await handleTyping(r, as("kenji", "3003"), "typing", { channel: "b:payroll" });
+  expect(r.sent).toEqual([]);
+});
+
 test("a typing held up by a slow query does not land after the stop that followed it", async () => {
   const r = recorder();
   const held = slow(env.DB);

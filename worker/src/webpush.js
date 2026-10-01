@@ -228,12 +228,27 @@ export function isDeadSubscription({ status }) {
   return status === 404 || status === 410;
 }
 
+/// The push services browsers use: Chrome and Edge's FCM, Firefox's
+/// Mozilla service, Safari's Apple service, and Windows' WNS.
+const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^(?:[a-z0-9-]+\.)*push\.services\.mozilla\.com$/, /^(?:[a-z0-9-]+\.)*push\.apple\.com$/, /^(?:[a-z0-9-]+\.)*notify\.windows\.com$/];
+export function isPushService(endpoint) {
+  try {
+    const u = new URL(endpoint);
+    return u.protocol === "https:" && !u.port && PUSH_HOSTS.some((re) => re.test(u.hostname));
+  } catch {
+    return false;
+  }
+}
+
 /// What a browser posts to us: the shape PushSubscription.toJSON() produces.
 export function parseSubscription(body) {
   const endpoint = body?.endpoint;
   const p256dh = body?.keys?.p256dh;
   const auth = body?.keys?.auth;
   if (typeof endpoint !== "string" || !/^https:\/\//.test(endpoint) || endpoint.length > 2048) return null;
+  // Only a browser's own push service: anything else would have the Worker
+  // post, on every notification, to whatever host an account named.
+  if (!isPushService(endpoint)) return null;
   if (typeof p256dh !== "string" || typeof auth !== "string") return null;
   try {
     if (fromB64url(p256dh).length !== 65 || fromB64url(auth).length !== 16) return null;

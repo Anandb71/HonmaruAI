@@ -123,6 +123,10 @@ function App() {
       .then(async (response) => {
         if (controller.signal.aborted) return
         if (response.status === 401 || response.status === 409) {
+          // The session is over: this browser stops taking its pushes too.
+          // The Worker refuses the dead token, but the endpoint, unsubscribed
+          // here, fails its next push and is pruned.
+          disableWebPush(httpBase(savedHost), savedToken).catch(() => {})
           for (const key of ['sessionToken', 'userId', 'orgId']) localStorage.removeItem(key)
           clearCardCache()
           setUserId(null); setSessionToken(''); setOrgId(''); setStage('welcome'); setRestoring(false)

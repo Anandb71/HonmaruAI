@@ -87,3 +87,13 @@ describe('links from outside', () => {
     expect(parseRoute('#/c/b%3Ax?org=%3Cx%3E').openOrg).toBeNull()
   })
 })
+
+describe('a card in another workspace', () => {
+  it('carries its workspace, and only a real one', () => {
+    expect(parseRoute('#/feed/c1/org-abc')).toMatchObject({ mode: 'cards', cardId: 'c1', cardOrg: 'org-abc' })
+    expect(parseRoute('#/feed/c1/%3Cscript%3E').cardOrg).toBeUndefined()
+    expect(hashForCard('c1', 'o1')).toBe('#/feed/c1/o1')
+    expect(hashForCard('c1')).toBe('#/feed/c1')
+    expect(parseRoute('#/feed/c1').cardOrg).toBeUndefined()
+  })
+})

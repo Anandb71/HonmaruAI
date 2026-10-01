@@ -9,7 +9,7 @@ import { isOrgId, parseAppLink, webHashFor } from '@honmaru/core/links'
 // string, which this never touches.
 //
 //   #/feed            the cards, whichever is first
-//   #/feed/<cardId>   this card
+//   #/feed/<cardId>[/<orgId>]   this card — in that workspace, switched to
 //   #/list            the same cards as a list
 //   #/m/<messageId>[/<orgId>]   one message in the list, for whoever can read
 //                     it — in the workspace it was said in, switched to
@@ -35,6 +35,8 @@ export interface Route {
   /// back to the remembered one.
   mode: Mode | null
   cardId: string | null
+  /// The workspace that card is in, when the address says (a notification's).
+  cardOrg?: string | null
   /// An invite code carried by the URL — the link a teammate was sent.
   join: string | null
   /// A message, from "Copy link": the list finds where it is for you.
@@ -67,7 +69,9 @@ export function parseRoute(hash: string): Route {
   if (head === 'feed') {
     let cardId: string | null = null
     if (rest[0]) { try { cardId = decodeURIComponent(rest[0]) } catch { cardId = rest[0] } }
-    return { screen: null, mode: 'cards', cardId, join: null }
+    let org = rest[1] || ''
+    try { org = decodeURIComponent(org) } catch { /* as written */ }
+    return { screen: null, mode: 'cards', cardId, join: null, ...(cardId && org && isOrgId(org) ? { cardOrg: org } : {}) }
   }
   if (head === 'list') return { screen: null, mode: 'classic', cardId: null, join: null }
   if (head === 'm') {
@@ -101,7 +105,9 @@ export function parseRoute(hash: string): Route {
 }
 
 export function hashForScreen(screen: Screen): string { return `#/${PATH_BY_SCREEN[screen]}` }
-export function hashForCard(cardId: string): string { return `#/feed/${encodeURIComponent(cardId)}` }
+export function hashForCard(cardId: string, orgId?: string | null): string {
+  return `#/feed/${encodeURIComponent(cardId)}${orgId ? `/${encodeURIComponent(orgId)}` : ''}`
+}
 export function hashForMode(mode: Mode): string { return mode === 'classic' ? '#/list' : '#/feed' }
 /// A conversation, opened in the list: `#/c/ag%3A<id>` for one with an agent.
 export function hashForView(view: string): string { return `#/c/${encodeURIComponent(view)}` }

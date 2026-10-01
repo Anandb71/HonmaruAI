@@ -153,7 +153,7 @@ describe('a notification, clicked', () => {
 
     it('sends a card to the card', async () => {
       await w.click({ cardId: 'c1', orgId: 'org1' })
-      expect(w.posted[0].message).toEqual({ type: 'open-card', cardId: 'c1', orgId: 'org1', hash: '#/feed/c1' })
+      expect(w.posted[0].message).toEqual({ type: 'open-card', cardId: 'c1', orgId: 'org1', hash: '#/feed/c1/org1' })
     })
   })
 })
