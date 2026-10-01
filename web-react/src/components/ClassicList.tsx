@@ -21,8 +21,9 @@ import type { AgentFace } from '../utils/mentions'
 import { meReader } from '../utils/mentionsMe'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
+import { messageContextEntries, messageMenuTriggers, type MessageMenuActions } from '../utils/messageMenu'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, TypingLine, ReplyQuoteLine, ReplyingBar } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, QUICK_REACTIONS, TypingLine, ReplyQuoteLine, ReplyingBar } from './MessageParts'
 import { heard, said, expire, nextExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
 import type { Typist, TypingEvent, Outgoing, Place, Signal } from '../utils/typing'
 import { quoteOf, refreshQuotes } from '../utils/replies'
@@ -1581,7 +1582,11 @@ export const ClassicList: React.FC<Props> = ({
   // ---- What you can do to a message ----
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [toolsOpen, setToolsOpen] = useState<string | null>(null)
+  // Which copy of a message the picker under it is open on: a thread's
+  // first message is drawn in the channel and in the thread, and the one
+  // whose + was pressed is the one that opens it, not both at once.
   const [pickerFor, setPickerFor] = useState<string | null>(null)
+  const pickerKey = (m: ChannelMessage, inThread: boolean) => `${inThread ? 'thread:' : ''}${m.id}`
   const [thread, setThread] = useState<{ channel: string; parent: ChannelMessage; replies: ChannelMessage[] } | null>(null)
 
   // Messages in another language, in yours: translated once on the server
@@ -1733,6 +1738,16 @@ export const ClassicList: React.FC<Props> = ({
   const [flash, setFlash] = useState<string | null>(null)
   // On a phone: a long press on a message brings up what you can do to it.
   const [sheet, setSheet] = useState<{ channel: string; m: ChannelMessage; inThread: boolean } | null>(null)
+  // On a laptop: a right-click on a message, or the menu key on one with
+  // the focus, opens the same things where the pointer is, with the quick
+  // reactions along the top. `anchor` is the message's element, kept lit.
+  const [msgMenu, setMsgMenu] = useState<{ channel: string; m: ChannelMessage; inThread: boolean; x: number; y: number; anchor: string } | null>(null)
+  const closeMsgMenu = useCallback(() => setMsgMenu(null), [])
+  // The whole emoji picker, from the smile along the top of that menu:
+  // where the menu was, rather than under the message, which may be far
+  // down the page or drawn twice (a thread's first message).
+  const [reactAt, setReactAt] = useState<{ channel: string; m: ChannelMessage; x: number; y: number; anchor: string } | null>(null)
+  const closeReactAt = useCallback(() => setReactAt(null), [])
   const [forwarding, setForwarding] = useState<{ channel: string; m: ChannelMessage } | null>(null)
   /// "Mark unread from here": the conversation (or the thread) is read only
   /// up to just before this message, on every device.
@@ -1928,7 +1943,7 @@ export const ClassicList: React.FC<Props> = ({
   }
   // Leaving a conversation closes what was open on it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); setReplyingTo(null); uploads.clear() }, [current?.key])
+  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); setReplyingTo(null); setMsgMenu(null); setReactAt(null); uploads.clear() }, [current?.key])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { threadUploads.clear() }, [thread?.parent.id])
   useEffect(() => {
@@ -2250,7 +2265,9 @@ export const ClassicList: React.FC<Props> = ({
   useEffect(() => {
     if (!detailId && !thread) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !(e.target as HTMLElement)?.closest('textarea, input')) { setDetailId(null); setThread(null) }
+      // An Escape a menu has already taken (a right-click menu over a
+      // reply) closes that menu, not the thread under it as well.
+      if (e.key === 'Escape' && !e.defaultPrevented && !(e.target as HTMLElement)?.closest('textarea, input')) { setDetailId(null); setThread(null) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -2491,10 +2508,10 @@ export const ClassicList: React.FC<Props> = ({
   /// a busy channel, and says so to a screen reader, which sees no tint.
   /// `quote`: the line an inline reply shows above its author, as a pin's
   /// mark sits there.
-  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; mentionsMe?: boolean; quote?: React.ReactNode }, body: React.ReactNode) => (
+  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; onMenu?: (at: { x: number; y: number }, anchor: string) => void; mentionsMe?: boolean; quote?: React.ReactNode }, body: React.ReactNode) => (
     <article key={key} id={opts.msgId ? `msg-${opts.msgId}` : undefined} tabIndex={opts.msgId ? -1 : undefined}
-      {...(!wide ? longPress(opts.onHold) : {})}
-      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.mentionsMe ? ' mentions-me' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
+      {...(!wide ? longPress(opts.onHold) : messageMenuTriggers(opts.onMenu))}
+      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && [msgMenu?.anchor, reactAt?.anchor].includes(`msg-${opts.msgId}`) ? ' menu-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.mentionsMe ? ' mentions-me' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
       <div className="slk-gutter" aria-hidden="true">
         {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span> : avatarFor(opts.app, opts.face || { name: opts.name })}
       </div>
@@ -2556,9 +2573,9 @@ export const ClassicList: React.FC<Props> = ({
           onHide={m.mine ? () => void act('POST', '/channels/previews', channel, { messageId: m.id, hidden: true }) : undefined} />
       )}
       {!m.deleted && (
-        <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(m.id)} />
+        <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(pickerKey(m, inThread))} />
       )}
-      {pickerFor === m.id && <div className="slk-picker-anchor"><EmojiPicker onPick={(e) => react(channel, m, e)} onClose={() => setPickerFor(null)} /></div>}
+      {pickerFor === pickerKey(m, inThread) && <div className="slk-picker-anchor"><EmojiPicker onPick={(e) => react(channel, m, e)} onClose={() => setPickerFor(null)} /></div>}
       {!inThread && (m.replyCount || 0) > 0 && (
         <button type="button" className="slk-thread-link" onClick={() => void openThread(channel, m)}>
           <span className="slk-thread-faces" aria-hidden="true">
@@ -2612,23 +2629,28 @@ export const ClassicList: React.FC<Props> = ({
       </>
     )
   }
+  /// What this reader may do to one message, said once: the ⋯ menu over
+  /// it, a phone's long press and a right-click all offer exactly this.
+  const actionsFor = (channel: string, m: ChannelMessage, inThread: boolean): MessageMenuActions => ({
+    inThread,
+    onQuote: inThread ? undefined : () => startReply(channel, m),
+    onReply: () => void openThread(channel, m),
+    onPin: () => togglePin(channel, m),
+    onEdit: m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined,
+    onDelete: m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined,
+    onDecide: !m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined,
+    onLater: (at) => void saveLater(channel, m, at),
+    onClip: () => toggleClip(channel, m),
+    clipped: clip.some((x) => x.id === m.id),
+    onUnread: m.mine ? undefined : () => void markUnread(channel, m),
+    onForward: m.kind === 'message' || m.kind === 'ai' ? () => setForwarding({ channel, m }) : undefined,
+    onCopyLink: () => copyLink(m),
+  })
   const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id) ? undefined : (
     <MessageActions
       message={m}
-      inThread={inThread}
+      {...actionsFor(channel, m, inThread)}
       onReact={(e) => react(channel, m, e)}
-      onQuote={inThread ? undefined : () => startReply(channel, m)}
-      onReply={() => void openThread(channel, m)}
-      onPin={() => togglePin(channel, m)}
-      onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
-      onDelete={m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined}
-      onDecide={!m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined}
-      onLater={(at) => void saveLater(channel, m, at)}
-      onClip={() => toggleClip(channel, m)}
-      clipped={clip.some((x) => x.id === m.id)}
-      onUnread={m.mine ? undefined : () => void markUnread(channel, m)}
-      onForward={m.kind === 'message' || m.kind === 'ai' ? () => setForwarding({ channel, m }) : undefined}
-      onCopyLink={() => copyLink(m)}
       onOpenChange={(open) => setToolsOpen((cur) => (open ? m.id : cur === m.id ? null : cur))}
     />
   )
@@ -2637,6 +2659,10 @@ export const ClassicList: React.FC<Props> = ({
   const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id)
     ? undefined
     : () => setSheet({ channel, m, inThread })
+  /// A right-click, on a laptop: the same things again, at the pointer.
+  const menuFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id)
+    ? undefined
+    : (at: { x: number; y: number }, anchor: string) => setMsgMenu({ channel, m, inThread, ...at, anchor })
   /// A link to one message that opens it for anyone who can read it — the
   /// message's id, not the conversation's name, which differs per reader.
   const copyLink = (m: ChannelMessage) => {
@@ -3001,7 +3027,7 @@ export const ClassicList: React.FC<Props> = ({
                   name: whoSaid(m),
                   face: m.kind !== 'ai' ? faceOfMessage(m) : null,
                   msgId: i === 0 ? `thread-${m.id}` : m.id, mentionsMe: callsMe(m),
-                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true),
+                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true), onMenu: menuFor(thread.channel, m, true),
                 }, (
                   <>
                     {words(thread.channel, m)}
@@ -3156,7 +3182,7 @@ export const ClassicList: React.FC<Props> = ({
         }
         if (m.kind === 'ai') {
           const card = m.cardId ? cardsById.get(m.cardId) : undefined
-          out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m) },
+          out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m), onMenu: menuFor(thread.view!, m) },
             <>
               <div className="slk-text">{rich(shownBody(m).text)}</div>
               {translationNote(m)}
@@ -3173,7 +3199,7 @@ export const ClassicList: React.FC<Props> = ({
           const quote = m.replyTo && !m.deleted ? m.replyTo : null
           out.push(block(m.id, {
             joined: joined && !m.pinned && !quote, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
-            mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m),
+            mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m), onMenu: menuFor(thread.view!, m),
             quote: quote && <ReplyQuoteLine quote={quote} name={quoteName(quote)} onJump={() => void goToQuoted(thread.view!, quote.id)} />,
           }, (
             <>
@@ -3889,19 +3915,9 @@ export const ClassicList: React.FC<Props> = ({
         return (
           <MessageSheet
             message={m}
-            inThread={inThread}
+            {...actionsFor(channel, m, inThread)}
             onClose={() => setSheet(null)}
             onReact={(e) => react(channel, m, e)}
-            onQuote={inThread ? undefined : () => startReply(channel, m)}
-            onReply={() => void openThread(channel, m)}
-            onPin={() => togglePin(channel, m)}
-            onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
-            onDelete={m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined}
-            onDecide={!m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined}
-            onLater={(at) => void saveLater(channel, m, at)}
-            onCopyLink={() => copyLink(m)}
-            onUnread={m.mine ? undefined : () => void markUnread(channel, m)}
-            onForward={() => setForwarding({ channel, m })}
           />
         )
       })()}
@@ -3967,6 +3983,18 @@ export const ClassicList: React.FC<Props> = ({
       })()}
       {rowMenu && rowMenu.thread.view && (
         <RowMenu at={{ x: rowMenu.x, y: rowMenu.y }} label={rowMenu.thread.name} entries={rowMenuEntries(rowMenu.thread)} onClose={closeRowMenu} />
+      )}
+      {msgMenu && (() => {
+        const { channel, m, inThread, x, y, anchor } = msgMenu
+        return (
+          <RowMenu at={{ x, y }} label={t('Message actions')} onClose={closeMsgMenu} entries={messageContextEntries(m, {
+            ...actionsFor(channel, m, inThread), t,
+            reactions: QUICK_REACTIONS, onReact: (e) => react(channel, m, e), onMoreReactions: () => setReactAt({ channel, m, x, y, anchor }),
+          })} />
+        )
+      })()}
+      {reactAt && (
+        <EmojiPickerAt at={{ x: reactAt.x, y: reactAt.y }} onPick={(e) => react(reactAt.channel, reactAt.m, e)} onClose={closeReactAt} />
       )}
       {renameDialog && (
         <Dialog
