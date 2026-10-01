@@ -32,6 +32,18 @@ function recorder(orgId = ORG) {
 }
 const as = (login, githubId, orgId = ORG) => ({ orgId, userId: login, githubId, authed: true });
 
+/// The database, losing the lookup of whether a channel is private from the
+/// `from`th time it is asked: one query failed, as D1 fails one now and then.
+function losing(db, from) {
+  let asked = 0;
+  return {
+    prepare(sql) {
+      if (!/FROM businesses/.test(sql) || (asked += 1) < from) return db.prepare(sql);
+      return { bind: () => ({ first: () => Promise.reject(new Error("D1_ERROR: overloaded")) }) };
+    },
+  };
+}
+
 beforeEach(async () => {
   await env.DB.exec(schemaSql.replace(/\n/g, " "));
   await env.DB.prepare("DELETE FROM businesses WHERE org_id = ?1").bind(ORG).run();
@@ -86,6 +98,15 @@ test("a private channel's typing reaches its members and never anyone outside it
   const r = recorder();
   await handleTyping(r, as("kenji", "3003"), "typing", { channel: "b:payroll" });
   expect(r.sent).toEqual([]);
+  await handleTyping(r, as("toru", "3001"), "typing", { channel: "b:payroll" });
+  expect(r.sent.map((s) => s.to)).toEqual(["mika"]);
+});
+
+test("a private channel's typing stays with its members when the database loses a query", async () => {
+  // Who hears it is who the channel was resolved to, once: nothing is looked
+  // up a second time that could fail and call the channel public.
+  const r = recorder();
+  r.db = losing(env.DB, 2);
   await handleTyping(r, as("toru", "3001"), "typing", { channel: "b:payroll" });
   expect(r.sent.map((s) => s.to)).toEqual(["mika"]);
 });
