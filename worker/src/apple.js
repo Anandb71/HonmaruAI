@@ -13,13 +13,28 @@
 /// with the address Apple vouches for (one that proved it here too), or a new
 /// account made the way an emailed-code sign-up makes one. A private relay
 /// address (…@privaterelay.appleid.com) is an address like any other.
+///
+/// The app also sends the authorization code Apple gave it. After the person
+/// is in, that code is traded at Apple for a refresh token, which is kept
+/// sealed beside the Apple identity. Its only use is the other end of the
+/// account: Apple asks that deleting an account here also ends the person's
+/// Sign in with Apple authorization for the app (App Review 5.1.1(v)), and the
+/// revoke endpoint wants a token to do it with. The trade needs our Sign in
+/// with Apple private key (APPLE_SIGNIN_KEY, APPLE_SIGNIN_KEY_ID,
+/// APPLE_TEAM_ID); without it, or when Apple says no, the person is signed in
+/// all the same and there is simply nothing to revoke later.
 
 import { signedClaims } from "./sso.js";
 import { signup, acceptInvite, sha256Hex, EMAIL_AUTH_TOKEN, MAX_NAME_CHARS } from "./auth.js";
 import { createSession, primaryOrgId } from "./db.js";
+import { base64url, derFromPEM } from "./apns.js";
+import { sealField, openField, aad } from "./secrets.js";
+import { logJSON, safe } from "./log.js";
 
 export const APPLE_ISSUER = "https://appleid.apple.com";
 export const APPLE_KEYS_URL = "https://appleid.apple.com/auth/keys";
+export const APPLE_TOKEN_URL = "https://appleid.apple.com/auth/token";
+export const APPLE_REVOKE_URL = "https://appleid.apple.com/auth/revoke";
 export const DEFAULT_APPLE_CLIENT_IDS = ["com.honmaru.ai", "com.honmaru.ai.poc"];
 const SKEW_SECONDS = 120;
 
@@ -61,8 +76,10 @@ async function link(env, subject, githubId, email) {
 
 /// Verify the token and sign the person in. The same answer as
 /// /auth/otp/verify: { token, userId, login, orgId, created, inviteError? },
-/// or { error, status }.
-export async function signInWithApple(env, { identityToken, nonce, name, inviteCode, locale }) {
+/// or { error, status }. `after` runs work past the response where the
+/// runtime allows it (the route's ctx.waitUntil); without it that work is
+/// awaited here, for a few seconds at most.
+export async function signInWithApple(env, { identityToken, nonce, name, inviteCode, locale, authorizationCode }, { after } = {}) {
   let claims;
   try {
     claims = await verifyAppleToken(identityToken, { clientIds: appleClientIds(env), nonce });
@@ -70,6 +87,18 @@ export async function signInWithApple(env, { identityToken, nonce, name, inviteC
     return { error: err?.message || "Apple could not sign you in.", status: 401 };
   }
   const subject = claims.sub;
+  // The app the token was for is the client_id Apple wants back when the code
+  // is traded and when the token is revoked.
+  const clientId = (Array.isArray(claims.aud) ? claims.aud : [claims.aud]).find((a) => appleClientIds(env).includes(a));
+  // Once the person is linked: the code for a refresh token, off the
+  // response's path where it can be. It never decides whether the sign-in
+  // worked.
+  const keepToken = async () => {
+    const work = () => keepRefreshToken(env, { subject, clientId, code: authorizationCode })
+      .catch((err) => console.error("apple code exchange failed", safe(err?.message || err)));
+    if (after) after(work);
+    else await Promise.race([work(), new Promise((r) => setTimeout(r, EXCHANGE_WAIT_MS))]);
+  };
   const email = typeof claims.email === "string" && verified(claims.email_verified) ? claims.email.trim().toLowerCase() : null;
 
   // Linked before: that account, whatever address Apple now forwards to.
@@ -101,10 +130,12 @@ export async function signInWithApple(env, { identityToken, nonce, name, inviteC
     await env.DB.prepare("UPDATE users SET email_verified_at = COALESCE(email_verified_at, ?2) WHERE github_id = ?1")
       .bind(created.userId, new Date().toISOString()).run();
     await link(env, subject, created.userId, email);
+    await keepToken();
     return { ...created, created: true };
   }
 
   await link(env, subject, user.github_id, email);
+  await keepToken();
   const token = await createSession(env.DB, user.github_id, EMAIL_AUTH_TOKEN);
   // An invitation means the same here as on every other way in; a bad one
   // does not cost the sign-in.
@@ -123,4 +154,138 @@ export async function signInWithApple(env, { identityToken, nonce, name, inviteC
     orgId: joined || (await primaryOrgId(env.DB, user.github_id)) || undefined,
     ...(inviteError ? { inviteError } : {}),
   };
+}
+
+// ---- The refresh token, and revoking it ----
+
+const EXCHANGE_WAIT_MS = 5_000;
+const APPLE_CALL_MS = 10_000;
+// Apple allows a client secret up to six months; this one is made for each
+// call and lives five minutes, so a copy of it is worth little.
+const CLIENT_SECRET_SECONDS = 300;
+
+/// Whether this deployment holds the Sign in with Apple private key. Without
+/// it there is no client secret, so no trading codes and no revoking.
+export function appleKeyConfigured(env) {
+  return Boolean(env.APPLE_SIGNIN_KEY && env.APPLE_SIGNIN_KEY_ID && env.APPLE_TEAM_ID);
+}
+
+const b64urlJSON = (object) => base64url(new TextEncoder().encode(JSON.stringify(object)));
+
+/// The client_secret Apple's token and revoke endpoints ask for: a JWT signed
+/// ES256 with the Sign in with Apple key (the .p8, PKCS#8 PEM), naming the key
+/// in its header, and our team, Apple, and the app in its claims.
+export async function appleClientSecret(env, clientId, now = Date.now()) {
+  const key = await crypto.subtle.importKey(
+    "pkcs8", derFromPEM(env.APPLE_SIGNIN_KEY), { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]
+  );
+  const iat = Math.floor(now / 1000);
+  const header = b64urlJSON({ alg: "ES256", kid: String(env.APPLE_SIGNIN_KEY_ID).trim() });
+  const claims = b64urlJSON({
+    iss: String(env.APPLE_TEAM_ID).trim(), iat, exp: iat + CLIENT_SECRET_SECONDS, aud: APPLE_ISSUER, sub: clientId,
+  });
+  const input = `${header}.${claims}`;
+  // Web Crypto's ECDSA signature is already r||s, the form a JWT wants.
+  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(input));
+  return `${input}.${base64url(signature)}`;
+}
+
+function claimsOf(jwt) {
+  try {
+    const part = String(jwt || "").split(".")[1];
+    return JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return null;
+  }
+}
+
+/// Trade the app's authorization code for a refresh token and keep it on the
+/// Apple identity, sealed. Says what happened; throws only on the unexpected
+/// (Apple unreachable), which the caller logs.
+export async function keepRefreshToken(env, { subject, clientId, code }) {
+  if (typeof code !== "string" || !code) return { kept: false, reason: "no-code" };
+  if (!appleKeyConfigured(env)) return { kept: false, reason: "no-key" };
+  if (!clientId) return { kept: false, reason: "no-client" };
+  const res = await fetch(APPLE_TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: await appleClientSecret(env, clientId),
+      code,
+      grant_type: "authorization_code",
+    }),
+    signal: AbortSignal.timeout(APPLE_CALL_MS),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || typeof body.refresh_token !== "string" || !body.refresh_token) {
+    logJSON({ event: "apple.code_exchange", outcome: "failed", status: res.status, error: safe(body.error) });
+    return { kept: false, reason: body.error || `status ${res.status}` };
+  }
+  // The code must be this person's. Apple's id_token in the answer, straight
+  // from Apple over TLS, names whose it was; a code from another Apple account
+  // would otherwise put someone else's authorization on this row, for us to
+  // revoke one day.
+  if (claimsOf(body.id_token)?.sub !== subject) {
+    logJSON({ event: "apple.code_exchange", outcome: "other-subject" });
+    return { kept: false, reason: "other-subject" };
+  }
+  await env.DB.prepare("UPDATE apple_identities SET refresh_token = ?2, client_id = ?3 WHERE subject = ?1")
+    .bind(subject, await sealField(body.refresh_token, aad.appleRefresh(subject)), clientId).run();
+  logJSON({ event: "apple.code_exchange", outcome: "kept" });
+  return { kept: true };
+}
+
+/// End the person's Sign in with Apple authorization for every Apple identity
+/// linked to this account, before the rows go (account deletion). One log line
+/// per identity: revoked, failed (Apple said no, or could not be reached),
+/// skipped for want of the key, or nothing to revoke. An identity signed in
+/// before refresh tokens were kept, or whose code could not be traded, holds no
+/// token and so has nothing to revoke; the person can still remove the app
+/// themselves in their Apple Account settings (Sign in with Apple). None of
+/// these stops the deletion.
+export async function revokeAppleTokens(env, githubId) {
+  let rows;
+  try {
+    ({ results: rows = [] } = await env.DB.prepare(
+      "SELECT subject, client_id, refresh_token FROM apple_identities WHERE user_github_id = ?1"
+    ).bind(String(githubId)).all());
+  } catch (err) {
+    if (/no such (table|column)/i.test(String(err?.message))) return [];
+    throw err;
+  }
+  const outcomes = [];
+  for (const row of rows) {
+    const token = row.refresh_token ? await openField(row.refresh_token, aad.appleRefresh(row.subject)) : null;
+    let outcome;
+    if (!token || !row.client_id) outcome = { outcome: "nothing-to-revoke" };
+    else if (!appleKeyConfigured(env)) outcome = { outcome: "skipped", reason: "no-key" };
+    else {
+      try {
+        const res = await fetch(APPLE_REVOKE_URL, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: row.client_id,
+            client_secret: await appleClientSecret(env, row.client_id),
+            token,
+            token_type_hint: "refresh_token",
+          }),
+          signal: AbortSignal.timeout(APPLE_CALL_MS),
+        });
+        // 200 is revoked, or already invalid: either way it is over.
+        if (res.ok) outcome = { outcome: "revoked" };
+        else {
+          const body = await res.json().catch(() => ({}));
+          outcome = { outcome: "failed", status: res.status, reason: safe(body.error || "") };
+        }
+      } catch (err) {
+        outcome = { outcome: "failed", reason: safe(err?.message || err) };
+      }
+    }
+    logJSON({ event: "account.apple_revoke", ...outcome });
+    if (outcome.outcome === "failed") console.error("apple token not revoked", outcome.status || "", outcome.reason || "");
+    outcomes.push(outcome);
+  }
+  return outcomes;
 }
