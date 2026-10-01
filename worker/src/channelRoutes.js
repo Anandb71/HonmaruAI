@@ -6,7 +6,7 @@ import { translateMessages } from "./translate.js";
 import { getSession, isMember, getUserByGithubId, getUserByLogin, saveCard, getCard, listBusinesses } from "./db.js";
 import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText, discardDraft, dailyChannelFor } from "./dailyReport.js";
 import { providerFor, readerEnvFor } from "./orgAI.js";
-import { groupsIn, toClientGroup, saveGroup, deleteGroup, getSidebar, saveSidebar } from "./people-groups.js";
+import { groupsIn, toClientGroup, saveGroup, deleteGroup, getSidebar, saveSidebar, foldSection } from "./people-groups.js";
 import { allowanceFor } from "./gate.js";
 import { enforce } from "./ratelimit.js";
 import { listMembers } from "./team.js";
@@ -851,6 +851,18 @@ export async function handleChannels(request, env, url, { route, after }) {
     if (who.denied) return who.denied;
     if (request.method === "GET") return json({ sidebar: await getSidebar(env.DB, orgId, who.user.login) });
     return json({ sidebar: await saveSidebar(env.DB, orgId, who.user.login, body.sidebar || body) });
+  }
+
+  // One of your sections folded, or opened again. Only that is written: a
+  // window open since the morning says nothing here about your stars.
+  if (path === "/channels/sidebar/fold" && request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") return json({ message: "Invalid JSON body." }, 400);
+    const who = await caller(env, request, body.orgId);
+    if (who.denied) return who.denied;
+    const sidebar = await foldSection(env.DB, body.orgId, who.user.login, body.id, body.collapsed === true);
+    if (!sidebar) return json({ message: "No such section." }, 404);
+    return json({ sidebar });
   }
 
   // Threads: every thread you are in, the newest reply first.

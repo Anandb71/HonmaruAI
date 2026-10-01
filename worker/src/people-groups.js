@@ -156,3 +156,20 @@ export async function saveSidebar(db, orgId, login, input) {
   ).bind(orgId, login, JSON.stringify(clean), new Date().toISOString()).run();
   return clean;
 }
+
+/// One of your sections folded, or opened again: that flag and nothing
+/// else. A fold is a casual click, often in a window open since the
+/// morning, and must not put the stars and sections back as that window
+/// remembers them. One statement, so a star saved at the same moment is not
+/// written over either. Null when you have no such section.
+export async function foldSection(db, orgId, login, id, collapsed) {
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,40}$/.test(id)) return null;
+  const here = "FROM json_each(sidebar_prefs.data, '$.sections') j WHERE json_extract(j.value, '$.id') = ?3";
+  await db.prepare(
+    `UPDATE sidebar_prefs
+     SET data = json_set(data, '$.sections[' || (SELECT j.key ${here} LIMIT 1) || '].collapsed', json(?4)), updated_at = ?5
+     WHERE org_id = ?1 AND login = ?2 AND EXISTS (SELECT 1 ${here})`
+  ).bind(orgId, login, id, collapsed ? "true" : "false", new Date().toISOString()).run();
+  const now = await getSidebar(db, orgId, login);
+  return now.sections.some((s) => s.id === id) ? now : null;
+}
