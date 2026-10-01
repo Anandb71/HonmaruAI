@@ -1713,7 +1713,12 @@ export const ClassicList: React.FC<Props> = ({
   /// Discord; somebody else's words in the thread go only when you say so
   /// outright, so that one is always asked. `others`: the server found
   /// replies from others that this page did not know of.
-  const [deleting, setDeleting] = useState<null | { channel: string; m: ChannelMessage; others?: boolean; busy?: boolean }>(null)
+  const [deleting, setDeleting] = useState<null | { channel: string; m: ChannelMessage; others?: boolean; busy?: boolean; error?: string | null }>(null)
+  /// The question was answered and the server is deleting: it can no longer
+  /// be taken back. A ref, for Esc — the dialog keeps the onClose it opened
+  /// with — and for a second click before the button is drawn disabled.
+  const deleteBusy = useRef(false)
+  const deleteCancel = useRef<HTMLButtonElement>(null)
   /// Messages the server is deleting right now. A second press of the key
   /// before it answers is not a second delete: the server would say "No
   /// such message" of one that went as asked, and focus would be let go.
@@ -1725,7 +1730,8 @@ export const ClassicList: React.FC<Props> = ({
     // is asked without them, and when it finds some the question is asked
     // after all — with the warning that names them.
     void unsend(channel, m, false).then((r) => {
-      if (r.others) { setDeleting({ channel, m, others: true }); return }
+      // (Never over a question already open about another message.)
+      if (r.others) { setDeleting((cur) => cur ?? { channel, m, others: true }); return }
       if (r.gone) return
       // Still here: focus stays on it rather than waiting for it to go.
       dropKeyReturn('delete')
@@ -1766,20 +1772,33 @@ export const ClassicList: React.FC<Props> = ({
     return { gone: true }
   }
   const confirmDelete = async () => {
-    if (!deleting || deleting.busy) return
+    if (!deleting || deleteBusy.current) return
     const { channel, m } = deleting
-    setDeleting({ ...deleting, busy: true })
+    deleteBusy.current = true
+    setDeleting({ ...deleting, busy: true, error: null })
     // Their replies go only when the question on show named them.
     const r = await unsend(channel, m, Boolean(deleting.others) || othersReplied(m, myRef))
-    // It did not: the same question again, now saying so.
-    if (r.others) { setDeleting({ channel, m, others: true }); return }
-    if (!r.gone) {
-      dropKeyReturn('delete')
-      if (r.error) setProblem(r.error)
-    }
+    deleteBusy.current = false
+    // Only the question that was answered is closed, or told what went
+    // wrong — it stays open to say so, and to be answered again. Others
+    // replied and it had not said so: nothing went, and now it does.
+    setDeleting((cur) => {
+      if (cur?.m.id !== m.id) return cur
+      if (r.gone) return null
+      if (r.others) return { ...cur, busy: false, others: true, error: t('Others replied in this thread, so nothing was deleted. Delete again to delete their replies too.') }
+      return { ...cur, busy: false, error: r.error || t('That did not work. Try again.') }
+    })
+    // The buttons are live again, and focus left them when they were not:
+    // back to Cancel, where it was when the question opened.
+    if (!r.gone) requestAnimationFrame(() => deleteCancel.current?.focus())
+  }
+  /// Not while it is being deleted: the question would look withdrawn, and
+  /// the message would go all the same.
+  const cancelDelete = () => {
+    if (deleteBusy.current) return
+    dropKeyReturn('delete')
     setDeleting(null)
   }
-  const cancelDelete = () => { dropKeyReturn('delete'); setDeleting(null) }
 
   /// A message a key acted on (see logKeys): focus goes back to it when the
   /// edit box or the picker the key opened closes, and to the one beside it
@@ -4036,7 +4055,7 @@ export const ClassicList: React.FC<Props> = ({
         </Dialog>
       )}
       {deleting && (() => {
-        const { m, busy } = deleting
+        const { m, busy, error } = deleting
         const others = Boolean(deleting.others) || othersReplied(m, myRef)
         const face = faceOfMessage(m)
         return (
@@ -4048,7 +4067,7 @@ export const ClassicList: React.FC<Props> = ({
             onClose={cancelDelete}
             footer={(
               <>
-                <button type="button" className="dlg-btn" onClick={cancelDelete}>{t('Cancel')}</button>
+                <button type="button" className="dlg-btn" ref={deleteCancel} disabled={busy} onClick={cancelDelete}>{t('Cancel')}</button>
                 <button type="button" className="dlg-btn danger" data-delete-confirm disabled={busy} onClick={() => void confirmDelete()}>
                   {busy ? t('Deleting…') : t('Delete')}
                 </button>
@@ -4068,6 +4087,7 @@ export const ClassicList: React.FC<Props> = ({
             </div>
             {/* A phone has no ⇧ to hold. */}
             {wide && !others && <p className="dlg-hint">{t('Tip: hold Shift when you delete to skip this question.')}</p>}
+            {error && <p className="dlg-error" role="alert">{error}</p>}
           </Dialog>
         )
       })()}

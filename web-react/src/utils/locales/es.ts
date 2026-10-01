@@ -391,6 +391,7 @@ const table: Record<string, string> = {
   'Archiving…': 'Archivando…',
   'Deleting…': 'Eliminando…',
   'Tip: hold Shift when you delete to skip this question.': 'Consejo: mantén pulsada Mayús al eliminar para saltarte esta pregunta.',
+  'Others replied in this thread, so nothing was deleted. Delete again to delete their replies too.': 'Otras personas respondieron en este hilo, así que no se eliminó nada. Elimina de nuevo para eliminar también sus respuestas.',
   'Archive {n}': 'Archivar {n}',
   'Record (Markdown)': 'Registro (Markdown)',
   '#{name}: the record': '#{name}: el registro',

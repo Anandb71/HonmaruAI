@@ -181,6 +181,7 @@ const table: Record<string, string> = {
   'Archiving…': 'アーカイブ中…',
   'Deleting…': '削除中…',
   'Tip: hold Shift when you delete to skip this question.': 'ヒント：Shiftキーを押しながら削除すると、この確認を省略できます。',
+  'Others replied in this thread, so nothing was deleted. Delete again to delete their replies too.': 'ほかの人がこのスレッドに返信しているため、まだ何も削除していません。返信ごと削除するには、もう一度削除してください。',
   'Archive {n}': '{n}件をアーカイブ',
   'Record (Markdown)': '記録（Markdown）',
   '#{name}: the record': '#{name} の記録',
