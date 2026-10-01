@@ -29,6 +29,7 @@ import { isGuest, isPersonal } from "./access.js";
 import { learnFromDecision } from "./memory.js";
 import { settleProposal } from "./proposals.js";
 import { JAM_TYPES, JAM_SIGNAL_BUDGET, handleJamMessage, leaveJam, jamStatesFor } from "./jam.js";
+import { TYPING_TYPES, TYPING_BUDGET, handleTyping } from "./typing.js";
 import { useSecretKey } from "./secrets.js";
 import { useMirrorEnv } from "./store/mirror.js";
 
@@ -46,6 +47,8 @@ const MAX_MESSAGE_BYTES = 256 * 1024;
 // a handful of attempts per socket, each of which costs a session lookup and
 // a membership check against D1.
 const MAX_JOINS_PER_SOCKET = 5;
+/// Each kind of traffic's allowance per window, counted apart.
+const BUDGETS = { chat: MESSAGE_BUDGET, jam: JAM_SIGNAL_BUDGET, typing: TYPING_BUDGET };
 
 export class OrgRelay {
   constructor(state, env) {
@@ -233,18 +236,20 @@ export class OrgRelay {
   /// In memory, so it is lost when the object hibernates. That fails toward
   /// letting someone through after an idle gap, which is the right way for a
   /// limiter to be wrong.
-  overBudget(userId, jam = false) {
+  overBudget(userId, kind = "chat") {
     const now = Date.now();
     // A Jam's signals are many and small, and counted on their own: a call
     // setting up must not use up the budget for everything else.
-    const window = jam ? (this.jamWindow ||= new Map()) : (this.messageWindow ||= new Map());
+    const windows = (this.windows ||= new Map());
+    if (!windows.has(kind)) windows.set(kind, new Map());
+    const window = windows.get(kind);
     const seen = window.get(userId);
     if (!seen || now - seen.since > MESSAGE_WINDOW_MS) {
       window.set(userId, { since: now, count: 1 });
       return false;
     }
     seen.count += 1;
-    return seen.count > (jam ? JAM_SIGNAL_BUDGET : MESSAGE_BUDGET);
+    return seen.count > (BUDGETS[kind] ?? MESSAGE_BUDGET);
   }
 
   async webSocketMessage(ws, raw) {
@@ -273,7 +278,11 @@ export class OrgRelay {
     if (type !== "join" && !att.authed) {
       return this.refuse(ws, att.agui, "Join with a valid session before sending anything.");
     }
-    if (type !== "join" && this.overBudget(att.userId, JAM_TYPES.has(type))) {
+    const kind = JAM_TYPES.has(type) ? "jam" : TYPING_TYPES.has(type) ? "typing" : "chat";
+    if (type !== "join" && this.overBudget(att.userId, kind)) {
+      // Typing past its allowance is dropped without a word: the next one, a
+      // few seconds on, says the same, and an error would be on screen.
+      if (kind === "typing") return;
       // Told, not closed: a burst is far more often a client bug than an
       // attack, and dropping the socket turns a recoverable moment into a
       // reconnect loop.
@@ -372,6 +381,12 @@ export class OrgRelay {
 
     if (JAM_TYPES.has(type)) {
       await handleJamMessage(this, ws, ws.deserializeAttachment() || att, type, payload || {});
+      return;
+    }
+
+    // Somebody typing, or done: passed to whoever can read where.
+    if (TYPING_TYPES.has(type)) {
+      await handleTyping(this, att, type, payload || {});
       return;
     }
 

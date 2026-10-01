@@ -21,7 +21,9 @@ import type { AgentFace } from '../utils/mentions'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, TypingLine } from './MessageParts'
+import { heard, said, expire, nextExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
+import type { Typist, TypingEvent, Outgoing, Place, Signal } from '../utils/typing'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
 import type { DetailsTab, JournalCite } from './ChannelPanes'
 import { JamCall } from '../utils/jam'
@@ -1377,6 +1379,8 @@ export const ClassicList: React.FC<Props> = ({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setProblem(refusal(data)); return }
+      // Sent, or set for later: the box empties, and nobody is typing in it.
+      stoppedTyping({ channel, parentId: parentId || null })
       if (data.scheduled) {
         setDraft('')
         setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
@@ -1659,6 +1663,49 @@ export const ClassicList: React.FC<Props> = ({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`
   }, [threadDraft, thread?.channel, thread?.parent?.id])
+
+  // ---- Who is typing ----
+  // Others typing where this person can read, heard from the relay: ended
+  // by a stop, by their message arriving there, or by silence.
+  const [typists, setTypists] = useState<Typist[]>([])
+  // The thread on screen as last drawn, for telling a reply in it from news
+  // about one already there.
+  const threadNow = useRef(thread)
+  threadNow.current = thread
+  useEffect(() => {
+    const on = (e: Event) => setTypists((prev) => heard(prev, (e as CustomEvent<TypingEvent>).detail, Date.now()))
+    const arrived = (e: Event) => {
+      const m = (e as CustomEvent<ChannelMessage>).detail
+      // Something new said, not an old message edited, reacted to, pinned
+      // or replied under.
+      if (!m?.channel || m.kind !== 'message' || m.editedAt || m.deleted) return
+      const open = threadNow.current
+      const known = m.parentId ? (open?.parent.id === m.parentId ? open.replies : undefined) : messagesRef.current[m.channel]
+      setTypists((prev) => said(prev, m, known))
+    }
+    window.addEventListener('honmaru:typing', on)
+    window.addEventListener('honmaru:channel-message', arrived)
+    return () => { window.removeEventListener('honmaru:typing', on); window.removeEventListener('honmaru:channel-message', arrived) }
+  }, [])
+  useEffect(() => {
+    const at = nextExpiry(typists)
+    if (at === null) return
+    const id = setTimeout(() => setTypists((prev) => expire(prev, Date.now())), Math.max(0, at - Date.now()) + 50)
+    return () => clearTimeout(id)
+  }, [typists])
+  /// Who is typing in one place, first to start first, never yourself.
+  const typingHere = (channel: string, parentId: string | null) =>
+    typistsIn(typists, { channel, parentId }, Date.now(), members.find((m) => m.mine)?.ref).map((x) => x.name)
+  // This person's own typing, as the relay has been told it.
+  const typingOut = useRef<Outgoing | null>(null)
+  const tellTyping = useCallback((step: { next: Outgoing | null; send: Signal[] }) => {
+    typingOut.current = step.next
+    for (const s of step.send) sendTyping(s)
+  }, [])
+  const typed = (place: Place, text: string) => tellTyping(typedIn(typingOut.current, place, text, Date.now()))
+  const stoppedTyping = useCallback((place?: Place) => tellTyping(stoppedIn(typingOut.current, place)), [tellTyping])
+  // Leaving a conversation or a thread is done typing there.
+  useEffect(() => () => stoppedTyping(), [view, thread?.channel, thread?.parent?.id, stoppedTyping])
   const [pins, setPins] = useState<ChannelMessage[] | null>(null)
   // The pinned list, in your language too.
   useEffect(() => {
@@ -2913,6 +2960,7 @@ export const ClassicList: React.FC<Props> = ({
             {aiSteps(thinking[thread.channel])}
             {agentLines(thread.channel, { parentId: thread.parent.id })}
           </div>
+          <TypingLine names={typingHere(thread.channel, thread.parent.id)} />
           <form className="slk-composer thread" onSubmit={(e) => { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }}>
             <PendingUploads items={threadUploads.items} onRemove={threadUploads.remove} />
             {threadHl.layer}
@@ -2925,7 +2973,8 @@ export const ClassicList: React.FC<Props> = ({
               maxLength={4000}
               placeholder={t('Reply… — @AI to ask the AI')}
               aria-label={t('Reply in thread')}
-              onChange={(e) => { setThreadDraft(e.target.value); threadMention.track() }}
+              onChange={(e) => { setThreadDraft(e.target.value); threadMention.track(); typed({ channel: thread.channel, parentId: thread.parent.id }, e.target.value) }}
+              onBlur={() => stoppedTyping({ channel: thread.channel, parentId: thread.parent.id })}
               onKeyUp={threadMention.track}
               onClick={threadMention.track}
               onKeyDown={(e) => {
@@ -3337,7 +3386,7 @@ export const ClassicList: React.FC<Props> = ({
             })}
           </div>
         ) : (
-        <div className="slk-log" ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
+        <div className={thread.view ? 'slk-log with-typing' : 'slk-log'} ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
           {thread.view && more[thread.view] && <div className="slk-older" role="status">{t('Loading earlier messages…')}</div>}
           {!(thread.view && more[thread.view]) && <div className="slk-start">
             {lead(thread, 'head')}
@@ -3420,6 +3469,8 @@ export const ClassicList: React.FC<Props> = ({
             <DailyReportDraft card={card} api={api} inChannel />
           </div>
         ))}
+        {/* Right above the box, under whatever else sits between it and the log. */}
+        {thread.view && <TypingLine names={typingHere(thread.view, null)} />}
         {thread.view ? (
           <form className="slk-composer" onSubmit={(e) => { e.preventDefault(); void send(thread.view!, false) }}>
             <PendingUploads items={uploads.items} onRemove={uploads.remove} />
@@ -3433,7 +3484,8 @@ export const ClassicList: React.FC<Props> = ({
               maxLength={4000}
               placeholder={placeholder}
               aria-label={placeholder}
-              onChange={(e) => { setDraft(e.target.value); mention.track() }}
+              onChange={(e) => { setDraft(e.target.value); mention.track(); typed({ channel: thread.view!, parentId: null }, e.target.value) }}
+              onBlur={() => stoppedTyping({ channel: thread.view!, parentId: null })}
               onKeyUp={mention.track}
               onClick={mention.track}
               onKeyDown={(e) => {

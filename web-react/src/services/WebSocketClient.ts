@@ -2,6 +2,7 @@ import type { ChannelMessage } from '../types/card'
 import { applyPatch, type Operation } from 'fast-json-patch'
 import type { StateSnapshot, StateDelta, ToolCallResult } from '../types/agui'
 import type { AppState, DecisionCard } from '../types/card'
+import type { TypingEvent } from '../utils/typing'
 
 const RECONNECT_MIN_MS = 2000
 const RECONNECT_MAX_MS = 30000
@@ -55,6 +56,9 @@ export class WebSocketClient {
   /// A Jam: who is talking where, this browser's place in one, the signals
   /// its calls need, and a channel's description changing.
   onJam?: (name: string, value: any) => void
+  /// Somebody typing in a conversation, or a thread, this person can read —
+  /// or done with it.
+  onTyping?: (typing: TypingEvent) => void
   /// The workspace's channels changed: somebody made, renamed or deleted one.
   /// `partial`: the room was told only the public channels; ask for yours.
   onBusinesses?: (businesses: Array<{ slug: string; name: string; private?: boolean }>, partial?: boolean) => void
@@ -252,6 +256,13 @@ export class WebSocketClient {
     return true
   }
 
+  /// Typing, or done typing, in a conversation or a thread in it. Now or not
+  /// at all, as a Jam's signals: "typing" kept for a later socket would say
+  /// so long after it stopped being true.
+  sendTyping(channel: string, parentId: string | null, stop = false): boolean {
+    return this.sendJam(stop ? 'typing_stop' : 'typing', { channel, parentId: parentId || null })
+  }
+
   /// Send now if the relay will take it, otherwise keep it for when it will.
   private post(message: { type: string; payload: unknown }): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN && this.joined) {
@@ -374,6 +385,8 @@ export class WebSocketClient {
       this.onChannelMessage?.(event.value.message)
     } else if (event.name === 'channel_ai_progress' && event.value?.channel) {
       this.onChannelProgress?.(event.value)
+    } else if (event.name === 'typing' && event.value?.channel && event.value?.who) {
+      this.onTyping?.(event.value)
     } else if (typeof event.name === 'string' && (event.name.startsWith('jam_') || event.name === 'channel_described' || event.name === 'channel_bookmarks' || event.name === 'channel_canvas') && event.value) {
       this.onJam?.(event.name, event.value)
     } else if (event.name === 'reads_changed' && event.value) {

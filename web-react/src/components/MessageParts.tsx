@@ -5,6 +5,8 @@ import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
+import { typingLine, announce, ANNOUNCE_GAP_MS } from '../utils/typing'
+import type { Announced } from '../utils/typing'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
@@ -539,6 +541,39 @@ export const SchedulePicker: React.FC<{ onPick: (at: string) => void; onClose: (
         <input type="datetime-local" value={custom} onChange={(e) => setCustom(e.target.value)} aria-label={t('Custom time')} />
         <button type="submit" disabled={!custom}>{t('Schedule')}</button>
       </form>
+    </div>
+  )
+}
+
+/// "Aki is typing…" just above a box, in a row kept for it whether or not
+/// anyone is typing: it comes and goes without moving anything and is never
+/// on top of what was said. A screen reader hears it through a region of its
+/// own, at most once every few seconds: who is typing changes far more often
+/// than anyone wants it read out.
+export const TypingLine: React.FC<{ names: string[] }> = ({ names }) => {
+  useT()
+  const line = typingLine(names)
+  const [told, setTold] = useState<Announced>({ text: '', at: 0 })
+  useEffect(() => {
+    const next = announce(told, line, Date.now())
+    if (next !== told) { setTold(next); return }
+    if (!line || line === told.text) return
+    // Too soon after the last thing said: said once the gap is over, if
+    // it is still true then. A little past it: a timer can wake a
+    // millisecond before Date.now() agrees the gap is over, and one that
+    // changes nothing is not run again.
+    const id = setTimeout(() => setTold((prev) => announce(prev, line, Date.now())), told.at + ANNOUNCE_GAP_MS - Date.now() + 50)
+    return () => clearTimeout(id)
+  }, [line, told])
+  return (
+    <div className="slk-typing-people" data-typing={line ? '1' : undefined}>
+      {line && (
+        <span className="slk-typing-now" aria-hidden="true">
+          <span className="slk-dots"><i /><i /><i /></span>
+          <span className="slk-typing-text">{line}</span>
+        </span>
+      )}
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{told.text}</span>
     </div>
   )
 }
