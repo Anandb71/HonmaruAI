@@ -5,9 +5,10 @@ import { useCallback, useState } from 'react'
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import type { Business } from '@honmaru/protocol'
 import { useSession } from '../lib/session'
+import { WorkspaceMenu } from '../components/WorkspaceMenu'
 
 export default function Channels() {
-  const { api, orgId, me, signOut } = useSession()
+  const { api, orgId } = useSession()
   const [channels, setChannels] = useState<Business[]>([])
   const [unread, setUnread] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(false)
@@ -35,10 +36,7 @@ export default function Channels() {
       data={channels}
       keyExtractor={(b) => b.slug}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-      ListHeaderComponent={error ? <Text style={styles.error}>{error}</Text> : null}
-      ListFooterComponent={
-        <Pressable onPress={signOut} style={styles.footer}><Text style={styles.link}>Sign out {me?.name || ''}</Text></Pressable>
-      }
+      ListHeaderComponent={<><WorkspaceMenu />{error ? <Text style={styles.error}>{error}</Text> : null}</>}
       renderItem={({ item }) => {
         const key = `b:${item.slug}`
         const n = unread[key] || 0
