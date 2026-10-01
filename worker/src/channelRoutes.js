@@ -42,7 +42,7 @@ import { audit, person } from "./audit.js";
 import { getCanvas, toClientCanvas, listRevisions, getRevision, saveCanvas, draftCanvas } from "./canvas.js";
 import { listBookmarks, toClientBookmark, addBookmark, editBookmark, removeBookmark } from "./bookmarks.js";
 import {
-  listAgents, saveAgent, deleteAgent, toClientAgent, agentsHere, channelAgents, agentChannels, agentTalkFilter, addChannelAgent, removeChannelAgent, presetsFor, agentsCalled, requestFor, askAgent, contextFor, playbookFor, setAgentAvatar,
+  listAgents, saveAgent, deleteAgent, toClientAgent, agentsHere, channelAgents, agentChannels, agentTalkFilter, addChannelAgent, removeChannelAgent, presetsFor, agentsCalled, requestFor, askAgent, contextFor, playbookFor, setAgentAvatar, MAX_CALLED,
 } from "./customAgents.js";
 import { readImage } from "./userAvatar.js";
 import { connectedSources, searchNotion, searchGithubIssues, formatSourcesForModel } from "./context.js";
@@ -366,7 +366,7 @@ export async function answerAsAgents(env, { orgId, session, user, resolved, row,
     // answers without being named, in the conversation, not a thread.
     if (resolved.kind === "agent" && !agents.some((a) => a.id === resolved.agent.id)) {
       const own = (await listAgents(env.DB, orgId, user.login)).find((a) => a.id === resolved.agent.id);
-      if (own) agents = [own, ...agents].slice(0, 3);
+      if (own) agents = [own, ...agents].slice(0, MAX_CALLED);
     }
   } catch (err) {
     console.error("agents lookup failed", safe(err?.message));
@@ -392,8 +392,8 @@ export async function answerAsAgents(env, { orgId, session, user, resolved, row,
   return runAgents(env, { orgId, session, user, resolved, row, members, locale, agents });
 }
 
-/// The agents' answers, one after another: each reads the conversation,
-/// researches with its tools, and answers as itself.
+/// The agents' answers, side by side: each reads the conversation,
+/// researches with its tools, and answers as itself when it is ready.
 export async function runAgents(env, { orgId, session, user, resolved, row, members, locale, agents }) {
   locale = await loadCopy(env, locale || "en", { orgId });
   const parentId = row.parent_id || (resolved.kind === "agent" ? null : row.id);
@@ -456,7 +456,21 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
     }).catch(() => ({}))
     : {};
   let answered = 0;
-  for (const agent of agents) {
+  // A metered day is one budget for the whole message. `remaining` was read
+  // once above; spending it here stops five parallel answers from running
+  // past the last call the person has left. Teammates bill their own
+  // service, so they do not take a slot.
+  let modelLeft = !allowance?.metered ? Infinity : Math.max(0, allowance.remaining ?? 0);
+  const spend = agents.map((agent) => {
+    if (agent.provider) return "teammate";
+    if (!allowance?.metered) return allowance?.allowed ? "model" : "quota";
+    if (modelLeft <= 0) return "quota";
+    modelLeft -= 1;
+    return "model";
+  });
+  // Every agent called works at once, each answering as soon as it is done:
+  // five agents take as long as the slowest, not the sum of all five.
+  const answerOne = async (agent, index) => {
     // An AI teammate works through its own service, not the workspace's
     // model: it starts, says so, and answers when it is done.
     if (agent.provider) {
@@ -465,13 +479,13 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
       await runTeammate(env, { orgId, user, resolved, row, members, locale, agent, t, deadline: Date.now() + (env.TEAMMATE_WATCH_MS !== undefined ? Number(env.TEAMMATE_WATCH_MS) : env.AGENT_INLINE === "1" || !env.AGENT_RUNNER ? 20000 : 240000) })
         .catch((err) => console.error("teammate failed", safe(err?.message)));
       await progress(agent, "done");
-      continue;
+      return;
     }
     await progress(agent, "agent");
     let text;
     try {
       if (!provider) text = serverText(locale, "agent.noModel");
-      else if (!allowance.allowed) text = serverText(locale, "agent.quota");
+      else if (spend[index] !== "model") text = serverText(locale, "agent.quota");
       else {
         const result = await askAgent({
           provider, agent, request: requestFor(row.body, agent), transcript, playbook, where, research, links, tools, env,
@@ -500,7 +514,8 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
       } catch { /* the database itself is down: nothing more to say */ }
     }
     await progress(agent, "done");
-  }
+  };
+  await Promise.all(agents.map((agent, index) => answerOne(agent, index).catch((err) => console.error("agent turn failed", safe(err?.message)))));
   if (provider) await settleUsage(env.DB, provider, { orgId, githubId: session.github_id });
   return answered;
 }
