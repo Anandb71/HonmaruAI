@@ -424,6 +424,7 @@ const table: Record<string, string> = {
   'Edit your last message': '直前のメッセージを編集',
   'Bold / italic': '太字 / 斜体',
   'Mention someone, or @AI': '誰か、または @AI をメンション',
+  'Save the canvas': 'キャンバスを保存',
   'Approve {name}’s requests like this in #{business} automatically from now on?': '#{business} での{name}さんからのこの種の依頼を、次から自動で承認しますか？',
   'Approve {name}’s requests like this automatically from now on?': '{name}さんからのこの種の依頼を、次から自動で承認しますか？',
   'Yes, automatically': 'はい、自動で',

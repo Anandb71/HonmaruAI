@@ -636,6 +636,7 @@ const table: Record<string, string> = {
   'Edit your last message': 'Modifier votre dernier message',
   'Bold / italic': 'Gras / italique',
   'Mention someone, or @AI': 'Mentionner quelqu’un, ou @AI',
+  'Save the canvas': 'Enregistrer le canevas',
   'Approve {name}’s requests like this in #{business} automatically from now on?': 'Approuver automatiquement désormais ce type de demande de {name} dans #{business} ?',
   'Approve {name}’s requests like this automatically from now on?': 'Approuver automatiquement désormais ce type de demande de {name} ?',
   'Yes, automatically': 'Oui, automatiquement',

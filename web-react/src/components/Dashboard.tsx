@@ -993,7 +993,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
               [t('Everywhere'), [['Mod+K', t('Search, or jump anywhere')], ['N', t('Tell your AI')], ['Mod+/', t('This list')], ['Mod+1–9', t('Switch workspace')]]],
               [t('Cards'), [['A', t('Approve')], ['D', t('Decline')], ['J / K', t('Next / previous decision')], ['← →', t('Swipe the card')]]],
               [t('List'), [['Alt+Up / Alt+Down', t('Previous / next conversation')], ['Alt+Shift+Up / Alt+Shift+Down', t('Previous / next unread conversation')], ['Mod+Shift+A', t('Activity')], ['Mod+Shift+D', t('Show or hide the sidebar')], ['Shift+Esc', t('Mark all as read')], ['Esc', t('Close the pane')]]],
-              [t('Writing'), [['Enter', t('Send')], ['Shift+Enter', t('New line')], ['Up', t('Edit your last message')], ['Mod+B / Mod+I', t('Bold / italic')], ['/', t('Commands')], ['@', t('Mention someone, or @AI')]]],
+              [t('Writing'), [['Enter', t('Send')], ['Shift+Enter', t('New line')], ['Up', t('Edit your last message')], ['Mod+B / Mod+I', t('Bold / italic')], ['/', t('Commands')], ['@', t('Mention someone, or @AI')], ['Mod+Enter', t('Save the canvas')]]],
             ] as Array<[string, string[][]]>).map(([group, rows]) => (
               <section key={group} className="shortcuts-group">
                 <h3>{group}</h3>
