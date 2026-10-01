@@ -106,7 +106,13 @@ CREATE INDEX IF NOT EXISTS idx_workspace_activity_seen ON workspace_activity(org
 /* Android phones (FCM) beside iPhones (APNs). Every token registered before
    this column existed came from the iPhone app. */
 ALTER TABLE device_tokens ADD COLUMN platform TEXT NOT NULL DEFAULT 'ios';
+/* Which iPhone app a token is for (apns.js targetFor). */
+ALTER TABLE device_tokens ADD COLUMN app_id TEXT;
 CREATE TABLE IF NOT EXISTS apple_identities (subject TEXT PRIMARY KEY, user_github_id TEXT NOT NULL, email TEXT, created_at TEXT NOT NULL, last_login_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_apple_identities_user ON apple_identities(user_github_id);
+/* Apple's refresh token (sealed) and the app it was issued to, so deleting an
+   account can revoke the person's Sign in with Apple authorization. */
+ALTER TABLE apple_identities ADD COLUMN refresh_token TEXT;
+ALTER TABLE apple_identities ADD COLUMN client_id TEXT;
 /* An inline reply: the message it answers (schema.sql says why). */
 ALTER TABLE channel_messages ADD COLUMN reply_to_id TEXT;

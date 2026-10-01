@@ -12,7 +12,7 @@ import { enforce } from "./ratelimit.js";
 import { listMembers } from "./team.js";
 import { allowed } from "./permissions.js";
 import { resolveMentions } from "./threads.js";
-import { teammateForAgent, startTeammateRun, loadTeammate, readRun, settleRun, openRuns } from "./teammates.js";
+import { teammateForAgent, startTeammateRun, loadTeammate, readRun, settleRun, openRuns, canSignIn } from "./teammates.js";
 import { appendCardEvent } from "./events.js";
 import { announceCards, announceEvents, announceTo } from "./announce.js";
 import { localizeForRecipient } from "./localize.js";
@@ -550,7 +550,7 @@ export async function watchTeammateRuns(env, { ids = null, deadline = 0, pause =
       working += 1;
       try {
         const t = await loadTeammate(env.DB, run.org_id, run.provider);
-        const read = t?.apiKey ? await readRun(env, t, run) : { texts: [], stop: "terminated", last: null, costCents: null };
+        const read = canSignIn(t) ? await readRun(env, t, run) : { texts: [], stop: "terminated", last: null, costCents: null };
         const status = await settleRun(env.DB, run, read);
         if (read.stop || status) working -= 1;
         if (status) await postTeammateResult(env, run, t, read, status);

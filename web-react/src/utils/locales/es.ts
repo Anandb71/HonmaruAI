@@ -1908,6 +1908,10 @@ const table: Record<string, string> = {
   'A scheduled message cannot be a reply yet.': 'Un mensaje programado todavía no puede ser una respuesta.',
   'Could not find the original message.': 'No se encontró el mensaje original.',
   'replied to you': 'te respondió',
+  "How Codex is reached": "Cómo se llega a Codex",
+  "Codex has no API to hand work to, so HonmaruAI asks it on GitHub: each request opens a draft pull request in the first repository below and writes @codex there, and Codex’s replies come back to the thread. Connect that repository to Codex in ChatGPT and turn on Codex for it first; Codex runs on your ChatGPT plan.": "Codex no tiene una API para encargarle trabajo, así que HonmaruAI se lo pide en GitHub: cada petición abre un pull request en borrador en el primer repositorio de abajo y escribe @codex allí, y las respuestas de Codex vuelven al hilo. Conecta antes ese repositorio a Codex en ChatGPT y activa Codex para él; Codex funciona con tu plan de ChatGPT.",
+  "The repository Codex works in (the first one listed), and a GitHub token that can push to it and open pull requests.": "El repositorio en el que trabaja Codex (el primero de la lista) y un token de GitHub que pueda hacer push en él y abrir pull requests.",
+  "Codex runs on your ChatGPT plan, so its limit here is a number of tasks: each request and follow-up is one.": "Codex funciona con tu plan de ChatGPT, así que aquí su límite es un número de tareas: cada petición y cada seguimiento cuentan como una.",
 }
 
 export default table

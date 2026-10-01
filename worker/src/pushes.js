@@ -242,7 +242,7 @@ export async function clearDelivered(env, orgId, login, { key, view, thread, las
   // handle a silent FCM message.
   for (const device of (await devicesForLogin(env.DB, login)).filter(isIPhone)) {
     const result = await sendPush(env, {
-      deviceToken: device.device_token,
+      deviceToken: device.device_token, device,
       pushType: "background",
       priority: 5,
       payload: { aps: { "content-available": 1 }, kind: "read", orgId, channel: view, parentId: thread || null, lastReadAt: lastReadAt || null },
@@ -268,7 +268,7 @@ export async function clearDeliveredMessages(env, orgId, login, messageIds) {
   let sent = 0;
   for (const device of (await devicesForLogin(env.DB, login)).filter(isIPhone)) {
     const result = await sendPush(env, {
-      deviceToken: device.device_token,
+      deviceToken: device.device_token, device,
       pushType: "background",
       priority: 5,
       payload: { aps: { "content-available": 1 }, kind: "read", orgId, messageIds: ids },
@@ -301,7 +301,7 @@ async function pushMessage(env, login, { title, body, orgId, channel, messageId,
   if (apnsConfigured(env)) {
     for (const device of devices.filter(isIPhone)) {
       const result = await sendPush(env, {
-        deviceToken: device.device_token,
+        deviceToken: device.device_token, device,
         collapseId: messageId,
         // Grouped by workspace and conversation: two teams' #general are not one thread.
         payload: { aps: { alert: { title, body }, sound: "default", "thread-id": `${orgId}|${channel}` }, kind: "message", orgId, channel, messageId, parentId },

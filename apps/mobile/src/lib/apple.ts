@@ -33,5 +33,13 @@ export async function signInWithApple(api: Api, inviteCode?: string): Promise<Si
   if (!credential.identityToken) throw new Error('Apple did not return a sign-in token.')
   // Apple gives the name the first time only; the Worker uses it for a new account.
   const name = credential.fullName ? AppleAuthentication.formatFullName(credential.fullName).trim() : ''
-  return api.signInWithApple({ identityToken: credential.identityToken, nonce, name: name || undefined, inviteCode: inviteCode || undefined })
+  // The authorization code goes along so the Worker can get a refresh token,
+  // which is what it revokes at Apple when the account is deleted.
+  return api.signInWithApple({
+    identityToken: credential.identityToken,
+    nonce,
+    name: name || undefined,
+    inviteCode: inviteCode || undefined,
+    authorizationCode: credential.authorizationCode || undefined,
+  })
 }

@@ -426,6 +426,48 @@ Apple Developer 側でやること：App ID `com.honmaru.ai` と `com.honmaru.ai
 `app.json` の `usesAppleSignIn` / `associatedDomains` から自動で付ける）。
 iOS は AASA をインストール時に取りに行くので、変数を入れたあとに入れ直す。
 
+### 4.7b Sign in with Apple の鍵（アカウント削除時の取り消し・App Store 審査に必要）
+
+App Store 審査ガイドライン 5.1.1(v) により、アカウント削除のときは Sign in with
+Apple の認可も Apple 側で取り消す必要がある。Worker はサインイン時にアプリから届く
+`authorizationCode` を `https://appleid.apple.com/auth/token` でリフレッシュトークンに
+交換して `apple_identities` に暗号化（`DATA_KEY`）して保存し、`DELETE /account` のときに
+`https://appleid.apple.com/auth/revoke` で取り消してから行を消す。どちらも Sign in with
+Apple 用の秘密鍵で作る client secret（ES256 の JWT、毎回 5 分だけ有効）が要る。
+
+| 変数 | 値 | 無いと |
+|------|----|--------|
+| `APPLE_SIGNIN_KEY` | Sign in with Apple 用の `.p8` ファイルの中身そのまま（`-----BEGIN PRIVATE KEY-----` から `-----END PRIVATE KEY-----` まで）。**秘密**なので必ず `secret put` | コード交換も取り消しもしない。サインインと削除は普通に通るが、Apple 側の認可は残る（審査で指摘されうる） |
+| `APPLE_SIGNIN_KEY_ID` | その鍵の Key ID（10 文字） | 同上 |
+| `APPLE_TEAM_ID` | 上の表と同じ Team ID（client secret の `iss` にも使う） | 同上 |
+
+鍵の作り方（Apple Developer、5 分）：
+
+1. developer.apple.com → Certificates, Identifiers & Profiles → **Keys** → ＋
+2. Key Name は何でもよい（例 `Honmaru Sign in with Apple`）。**Sign in with Apple** にチェックして **Configure** →
+   Primary App ID に `com.honmaru.ai` を選んで Save（`com.honmaru.ai.poc` はこの App ID に
+   グループされていれば同じ鍵で通る。別グループなら PoC 側の取り消しは失敗してログに残るだけ）
+3. Continue → Register → **Download**。`.p8` は一度しかダウンロードできないので保管する。
+   画面の **Key ID** を控える
+4. Worker に入れる：
+
+```bash
+cd worker
+npx wrangler@4 secret put APPLE_SIGNIN_KEY < AuthKey_XXXXXXXXXX.p8
+npx wrangler@4 secret put APPLE_SIGNIN_KEY_ID      # 例: XXXXXXXXXX
+npx wrangler@4 secret put APPLE_TEAM_ID            # 4.7 で入れていればそのまま
+```
+
+APNs の鍵（`APNS_PRIVATE_KEY`）とは別物。1 本の鍵に APNs と Sign in with Apple の両方を
+付けることもできるが、その場合も変数は別々に入れる。
+
+確認：アプリで Sign in with Apple したあと `npx wrangler@4 tail` に
+`"event":"apple.code_exchange","outcome":"kept"` が出る。アカウント削除では
+`"event":"account.apple_revoke","outcome":"revoked"` が出る。`failed` は Apple が断ったか
+届かなかった（削除自体は完了している）、`skipped` は鍵が無い、`nothing-to-revoke` は
+鍵を入れる前のサインインでトークンを持っていない（その人がもう一度 Apple でサインインすれば
+保存される。本人は iPhone の設定 → Apple アカウント → Sign in with Apple からいつでも外せる）。
+
 ## 5. 確認
 
 ```bash
