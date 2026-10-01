@@ -38,6 +38,13 @@ describe('who is typing', () => {
     expect(said(list, { channel: 'b:general', parentId: 'm-1', authorRef: 'r-aki' })).toBe(list)
   })
 
+  it('does not take someone off for a reaction or a reply count on what they said before', () => {
+    const list = heard([], inGeneral(aki), 0)
+    const old = { id: 'm-1', channel: 'b:general', parentId: null, authorRef: 'r-aki' }
+    expect(said(list, old, [{ id: 'm-0' }, { id: 'm-1' }])).toBe(list)
+    expect(said(list, { ...old, id: 'm-2' }, [{ id: 'm-0' }, { id: 'm-1' }])).toEqual([])
+  })
+
   it('lets a line nobody refreshed run out', () => {
     const list = heard(heard([], inGeneral(aki), 0), inGeneral(ben), 3000)
     expect(nextExpiry(list)).toBe(TYPING_TTL_MS)

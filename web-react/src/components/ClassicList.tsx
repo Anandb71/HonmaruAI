@@ -1618,12 +1618,20 @@ export const ClassicList: React.FC<Props> = ({
   // Others typing where this person can read, heard from the relay: ended
   // by a stop, by their message arriving there, or by silence.
   const [typists, setTypists] = useState<Typist[]>([])
+  // The thread on screen as last drawn, for telling a reply in it from news
+  // about one already there.
+  const threadNow = useRef(thread)
+  threadNow.current = thread
   useEffect(() => {
     const on = (e: Event) => setTypists((prev) => heard(prev, (e as CustomEvent<TypingEvent>).detail, Date.now()))
     const arrived = (e: Event) => {
       const m = (e as CustomEvent<ChannelMessage>).detail
-      // Something new said, not an old message edited or reacted to.
-      if (m?.channel && m.kind === 'message' && !m.editedAt && !m.deleted) setTypists((prev) => said(prev, m))
+      // Something new said, not an old message edited, reacted to, pinned
+      // or replied under.
+      if (!m?.channel || m.kind !== 'message' || m.editedAt || m.deleted) return
+      const open = threadNow.current
+      const known = m.parentId ? (open?.parent.id === m.parentId ? open.replies : undefined) : messagesRef.current[m.channel]
+      setTypists((prev) => said(prev, m, known))
     }
     window.addEventListener('honmaru:typing', on)
     window.addEventListener('honmaru:channel-message', arrived)

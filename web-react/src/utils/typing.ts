@@ -53,8 +53,15 @@ export function heard(list: Typist[], e: TypingEvent | null | undefined, now: nu
 }
 
 /// Their message arrived where they were typing: not typing it any more.
-export function said(list: Typist[], m: { channel: string; parentId?: string | null; authorRef: string | null }): Typist[] {
-  if (!m.authorRef) return list
+/// `known` is what is already on screen there. The same event carries a
+/// reaction, a pin or a thread's new count on one of those, and that is
+/// not something new said: its author may well be typing again.
+export function said(
+  list: Typist[],
+  m: { id?: string; channel: string; parentId?: string | null; authorRef: string | null },
+  known?: ReadonlyArray<{ id: string }>,
+): Typist[] {
+  if (!m.authorRef || (m.id && known?.some((x) => x.id === m.id))) return list
   return heard(list, { channel: m.channel, parentId: m.parentId, who: { ref: m.authorRef, name: '' }, stop: true }, 0)
 }
 
