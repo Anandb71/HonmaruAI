@@ -206,7 +206,15 @@ than into a chat app — [docs/viktor-gap-plan.md](docs/viktor-gap-plan.md).
       beat later — what the team decided before, from `GET /search?orgId=&q=`
       (the same keyword search the router and "Ask anything" use, with the
       card's id so a hit opens). ↑↓ ⏎ esc; a search button in the top bar
-      for the pointer. One e2e step: a card by a word, Insights by name
+      for the pointer. One e2e step: a card by a word, Insights by name.
+      First in the box now, as in a chat client's quick switcher: a
+      channel, a DM, a group DM or an agent by a few letters of its name or
+      handle (`utils/places.ts` — start, then a word, then anywhere, then
+      letters in order; `#` narrows to channels, `@` to people and agents —
+      what has an @handle), and with
+      nothing typed the conversation before this one first (⌘K then ⏎ goes
+      back), then up to four with mentions or decisions waiting, then where
+      you were, kept per workspace in this browser, then anything new
 - [x] **Say it, and "How I work", on the web.** A mic on "Tell your AI"
       where the browser can listen (Web Speech; Chrome and Safari — Firefox
       is not offered a button it cannot honour): the box fills as you speak,

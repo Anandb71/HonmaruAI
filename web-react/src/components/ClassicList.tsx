@@ -51,6 +51,8 @@ import { playSound, setOpenView, rememberLevels, rememberLevel, startRing, stopR
 import { closeMessageNotifications } from '../utils/notifications'
 import { hasOlder } from '../utils/historyPage'
 import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold, unplacedAgents } from '../utils/sidebarSections'
+import { placesFrom } from '../utils/places'
+import type { Place as Conversation } from '../utils/places'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -89,8 +91,9 @@ interface Props {
   onTellAI: (text: string) => void
   /// Take a card back: the sender before it is decided, the recipient any time.
   onDeleteCard?: (cardId: string) => void
-  /// The conversation open now, for what shows beside it (the record).
-  onViewChange?: (view: string | null, name: string | null) => void
+  /// The conversation open now, for what shows beside it (the record), and
+  /// whether you opened it — rather than the list putting one up by itself.
+  onViewChange?: (view: string | null, name: string | null, opened: boolean) => void
   /// Open the record of the channel open now: its context and decisions.
   onOpenRecord?: () => void
   /// A conversation (or a decision) fills a phone's screen: the shell hides
@@ -109,6 +112,9 @@ interface Props {
   onDeleteChannel: (slug: string) => Promise<string | null>
   /// Another screen: the team to invite, tools to connect, you.
   onOpenScreen?: (screen: 'team' | 'tools' | 'profile' | 'agents') => void
+  /// Every conversation that can be opened, with what is unread in each,
+  /// for ⌘K to jump to by name. Told again whenever the sidebar changes.
+  onPlaces?: (places: Conversation[]) => void
 }
 
 /// One conversation in the sidebar: a channel (a business), a person, or an app.
@@ -249,7 +255,7 @@ function when(iso?: string): string {
 export const ClassicList: React.FC<Props> = ({
   userId, orgName, pending, sent, decided, businesses, presence,
   onOpen, onNudge, onDecide, api, onSearch, onCompose, onTellAI, onDeleteCard, onViewChange, onOpenRecord, onImmersive, renderCard, onWorkspace, workspaceMenu,
-  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen,
+  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, onPlaces,
 }) => {
   const t = useT()
   const locale = getLocale()
@@ -607,7 +613,20 @@ export const ClassicList: React.FC<Props> = ({
   }, [])
   const current = everything.find((th) => th.key === openKey)
     || (wide ? (everything.find((th) => th.unread > 0) || everything[0]) : undefined)
+  // A conversation asked for before the list knew of it — a DM picked in ⌘K
+  // or opened from a link while the team is still loading: opened once it
+  // appears, if that is soon. Opening anything else first — another
+  // conversation, Activity, Later, Threads, Sent, a channel's settings —
+  // forgets it, so it does not take the screen from what you went to.
+  const wantedView = useRef<{ view: string; until: number } | null>(null)
+  const forgetWanted = () => { wantedView.current = null }
+  // A conversation opened by hand, until the shell has been told. The one
+  // the list puts up by itself — on a laptop, the first with something
+  // waiting — is not somewhere you went, and ⌘K does not remember it.
+  const chosenKey = useRef<string | null>(null)
   const choose = (key: string | null) => {
+    forgetWanted()
+    chosenKey.current = key
     setActivityOpen(false)
     setLaterOpen(false)
     setThreadsOpen(false)
@@ -761,7 +780,19 @@ export const ClassicList: React.FC<Props> = ({
     return out
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activityItems])
+  // What ⌘K jumps to: every conversation here with somewhere to open, each
+  // with the second name it answers to — a teammate's or an agent's @handle,
+  // a channel's slug.
+  useEffect(() => {
+    if (!onPlaces) return
+    const handleOf = new Map<string, string | null>(members.map((m) => [`dm:${m.ref}`, m.handle || null]))
+    onPlaces(placesFrom(everything.map((th) => ({
+      ...th,
+      handle: th.kind === 'channel' ? th.slug : th.kind === 'agent' ? th.agent?.handle : th.view ? handleOf.get(th.view) : null,
+    })), mentionsIn))
+  }, [everything, mentionsIn, members, onPlaces])
   const openActivity = () => {
+    forgetWanted()
     setOpenKey(null)
     setLaterOpen(false)
     setThreadsOpen(false)
@@ -1232,7 +1263,13 @@ export const ClassicList: React.FC<Props> = ({
   }, [])
   const composer = useRef<HTMLTextAreaElement>(null)
   const view = current?.view
-  useEffect(() => { onViewChange?.(current?.view || null, current?.name || null) }, [current?.view, current?.name, onViewChange])
+  useEffect(() => {
+    const opened = Boolean(current && current.key === chosenKey.current)
+    chosenKey.current = null
+    onViewChange?.(current?.view || null, current?.name || null, opened)
+  // openKey too: choosing the conversation already on screen is opening it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.view, current?.name, openKey, onViewChange])
   // Whether there is more above what is loaded, per conversation: the
   // Worker's `more`, or, from one that does not say, a full page of PAGE.
   const [more, setMore] = useState<Record<string, boolean>>({})
@@ -2628,6 +2665,7 @@ export const ClassicList: React.FC<Props> = ({
       if (view.startsWith('ag:')) { setPhoneTab('home'); openAgent(view.slice(3)); return }
       const th = everything.find((x) => x.view === view)
       if (th) choose(th.key)
+      else wantedView.current = { view, until: Date.now() + 10_000 }
     }
     const on = (e: Event) => { try { sessionStorage.removeItem('list.openView') } catch {}; go(String((e as CustomEvent).detail || '')) }
     window.addEventListener('honmaru:open-view', on)
@@ -2638,6 +2676,14 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:open-view', on)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [everything.length])
+  useEffect(() => {
+    const want = wantedView.current
+    if (!want) return
+    if (Date.now() > want.until) { wantedView.current = null; return }
+    const th = everything.find((x) => x.view === want.view)
+    if (th) choose(th.key)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [everything])
   const decideMessage = async (channel: string, m: ChannelMessage) => {
     setProblem(null)
     const res = await fetch(`${api.httpBase}/channels/decide`, {
@@ -4125,7 +4171,7 @@ export const ClassicList: React.FC<Props> = ({
           {thread.kind === 'channel' && thread.slug && (
             <button
               className="slk-more"
-              onClick={() => { setSettings((v) => !v); setRenaming(null) }}
+              onClick={() => { forgetWanted(); setSettings((v) => !v); setRenaming(null) }}
               aria-label={t('Channel settings')}
               aria-expanded={settings}
             >
@@ -4546,9 +4592,9 @@ export const ClassicList: React.FC<Props> = ({
   const dmUnread = [...people, ...agentConvos].filter((th) => th.unread > 0 || th.fresh).length
   const phoneRoot = !wide && !current && !detail && !thread && !profile
   const tabOn = (which: 'home' | 'dms' | 'activity' | 'later') => (activityOpen ? 'activity' : laterOpen ? 'later' : phoneTab) === which
-  const openLater = () => { setOpenKey(null); setActivityOpen(false); setThreadsOpen(false); setSentOpen(false); setLaterOpen(true); void loadLater() }
-  const openThreads = () => { setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setSentOpen(false); setThreadsOpen(true); void loadThreads() }
-  const openSent = () => { setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false); setSentOpen(true); void loadSent() }
+  const openLater = () => { forgetWanted(); setOpenKey(null); setActivityOpen(false); setThreadsOpen(false); setSentOpen(false); setLaterOpen(true); void loadLater() }
+  const openThreads = () => { forgetWanted(); setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setSentOpen(false); setThreadsOpen(true); void loadThreads() }
+  const openSent = () => { forgetWanted(); setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false); setSentOpen(true); void loadSent() }
   /// Somebody to write to, from "New message": one person is a DM.
   const startWith = async (refs: string[]) => {
     setStarting(null)
@@ -4769,7 +4815,7 @@ export const ClassicList: React.FC<Props> = ({
               {th.kind === 'channel' && th.slug && onOpenRecord && <SheetRow icon="record" label={t('Record (Markdown)')} onClick={close(() => onOpenRecord())} data="record" />}
               <SheetRow icon="pin" label={t('Pinned messages')} onClick={close(() => void loadPins(th.view!))} data="pins" />
               {th.kind === 'channel' && <SheetRow icon="repeat" label={t('Automations')} hint={String(automationCount[th.view!] ?? 0)} onClick={close(() => openSide({ kind: 'details', tab: 'automations' }))} data="automations" />}
-              {th.kind === 'channel' && th.slug && <SheetRow icon="settings" label={t('Channel settings')} onClick={close(() => { setSettings(true); setRenaming(null) })} data="settings" />}
+              {th.kind === 'channel' && th.slug && <SheetRow icon="settings" label={t('Channel settings')} onClick={close(() => { forgetWanted(); setSettings(true); setRenaming(null) })} data="settings" />}
               {th.private && <SheetRow icon="invite" label={t('Add people')} onClick={close(() => setAddingTo(th.view!))} data="add-people" />}
               {th.private && <SheetRow icon="x" label={t('Leave channel')} onClick={close(() => void leaveChannel(th))} danger data="leave" />}
             </div>
@@ -4987,7 +5033,7 @@ export const ClassicList: React.FC<Props> = ({
               onTab={(tab) => setSide({ kind: 'details', tab })}
               level={prefs[current.view] || 'all'}
               onLevel={(lv) => void setPref(current.view!, lv)}
-              onSettings={current.kind === 'channel' && current.slug ? () => { setSettings(true); setRenaming(null) } : null}
+              onSettings={current.kind === 'channel' && current.slug ? () => { forgetWanted(); setSettings(true); setRenaming(null) } : null}
               onInvite={() => (current.private ? setAddingTo(current.view!) : setInviting('people'))}
               onProfile={(ref) => void openProfile(ref)}
               onlineRefs={onlineRefs}
