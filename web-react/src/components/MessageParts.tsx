@@ -5,7 +5,7 @@ import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
-import { gridStep, isEmojiOnly, pickerSections, rememberEmoji, useEmojiData, useQuickReactions, useRecentEmoji } from '../utils/emojiSearch'
+import { emojiDataState, gridStep, isEmojiOnly, loadEmojiData, pickerSections, rememberEmoji, useEmojiData, useEmojiDataState, useQuickReactions, useRecentEmoji } from '../utils/emojiSearch'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
@@ -18,7 +18,8 @@ const PICKER_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 
 /// Every emoji to react with: a search box on top, this workspace's own
 /// first, the ones you used lately, then the list by group. Typing turns it
 /// into one grid of what matches, and Enter takes the first. The arrows move
-/// through the grids, and Tab leaves them in one step.
+/// through the grids, and Tab leaves them in one step. Until the list is
+/// here it says so, and offers to fetch it again if it did not come.
 export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: () => void }> = ({ onPick, onClose }) => {
   const t = useT()
   const box = useRef<HTMLDivElement>(null)
@@ -26,6 +27,7 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
   const custom = useCustomEmoji()
   const recent = useRecentEmoji()
   const data = useEmojiData()
+  const listState = useEmojiDataState()
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const id = useId()
@@ -52,6 +54,9 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
     return () => { if (giveBack.current && opener?.isConnected) opener.focus({ preventScroll: true }) }
   }, [])
   useEffect(() => { setActive(0); if (box.current) box.current.scrollTop = 0 }, [query])
+  // A list that did not come — offline, or a deploy replaced its chunk — is
+  // asked for again as the search changes, not only when the picker reopens.
+  useEffect(() => { if (emojiDataState() === 'failed') void loadEmojiData() }, [query])
   const pick = (emoji: string) => {
     rememberEmoji(emoji)
     giveBack.current = true
@@ -134,7 +139,14 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
           )}
         </div>
       ))}
-      {searching && !total && <p className="slk-picker-empty" role="status">{t('Nothing matches that.')}</p>}
+      {/* Nothing matches only once there is a list to match against. */}
+      {listState === 'ready' && searching && !total && <p className="slk-picker-empty" role="status">{t('Nothing matches that.')}</p>}
+      {listState === 'loading' && <p className="slk-picker-empty" role="status" data-emoji-list="loading">{t('Loading…')}</p>}
+      {listState === 'failed' && (
+        <p className="slk-picker-empty" role="alert" data-emoji-list="failed">
+          {t('The emoji list did not load.')} <button type="button" className="slk-picker-retry" onClick={() => void loadEmojiData()}>{t('Try again')}</button>
+        </p>
+      )}
     </div>
   )
 }

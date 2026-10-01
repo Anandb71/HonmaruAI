@@ -106,9 +106,12 @@ describe('the emoji picker', () => {
     expect(before).toContain('<input class="slk-picker-search" type="search" placeholder="Search emoji" aria-label="Search emoji"')
     expect(before).toContain('Frequently used')
     expect(before).not.toContain('Smileys &amp; people')
+    // It says the rest is on its way, rather than look complete.
+    expect(before).toContain('data-emoji-list="loading">Loading…</p>')
     await loadEmojiData()
     const after = draw()
     expect(after).toContain('Smileys &amp; people')
+    expect(after).not.toContain('data-emoji-list')
     expect(after).toContain('aria-label="👍" title=":+1:"')
     // One stop for Tab; the arrows do the rest.
     expect(after.match(/tabindex="0"/g)).toHaveLength(1)
