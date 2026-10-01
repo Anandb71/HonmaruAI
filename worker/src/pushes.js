@@ -71,9 +71,10 @@ export async function isActive(db, orgId, login, now = Date.now()) {
 
 /// Who a message is for, and why: everyone in a DM or group, whoever it
 /// names, whoever wrote the message it answers inline, and whoever wrote in
-/// the thread it replies to. Never its author; never somebody who muted the
-/// conversation, and in one set to mentions only, only for a mention, an
-/// inline reply to them, or a DM.
+/// the thread it replies to. Never its author; never somebody who is not in
+/// the workspace any more (`members` is everyone who is); never somebody
+/// who muted the conversation, and in one set to mentions only, only for a
+/// mention, an inline reply to them, or a DM.
 export async function recipientsOf(db, orgId, row, members) {
   // An agent's answer reaches whoever called it the way a teammate's reply
   // would: through the thread it answers in.
@@ -105,6 +106,11 @@ export async function recipientsOf(db, orgId, row, members) {
     ).bind(orgId, row.parent_id).all();
     for (const r of results || []) add(r.author_login, "thread");
   }
+  // What somebody wrote stays when they leave, and can still be answered
+  // or have its thread carried on; what is said after they left is not
+  // theirs to be told.
+  const here = new Set((members || []).map((m) => m.login));
+  for (const login of [...out.keys()]) if (!here.has(login)) out.delete(login);
   // A closed conversation's words go only to the people in it.
   const audience = await audienceOf(db, orgId, key);
   if (audience) for (const login of [...out.keys()]) if (!audience.includes(login)) out.delete(login);
