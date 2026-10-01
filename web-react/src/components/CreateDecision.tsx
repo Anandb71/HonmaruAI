@@ -9,6 +9,7 @@ import type { Dictation } from '../utils/dictation'
 import { Icon } from './Icon'
 import { useMembers, mentionedRefs } from '../utils/mentions'
 import { useMentionMenu } from './MentionMenu'
+import { enterKey } from '../utils/keys'
 
 interface Props {
   relayHttpUrl: string
@@ -172,7 +173,7 @@ export const CreateDecision: React.FC<Props> = ({ relayHttpUrl, orgId, userId, s
         disabled={busy}
         onKeyDown={(e) => {
           if (mention.onKeyDown(e)) return
-          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCreate() }
+          if (enterKey(e) && !e.shiftKey) { e.preventDefault(); handleCreate() }
         }}
       />
       {mention.menu}

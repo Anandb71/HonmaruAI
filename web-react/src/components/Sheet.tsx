@@ -9,6 +9,7 @@ import type { MenuEntry } from './RowMenu'
 import { messageMenuEntries, type MessageMenuActions } from '../utils/messageMenu'
 import { useQuickReactions } from '../utils/emojiSearch'
 import './Sheet.css'
+import { composing } from '../utils/keys'
 
 // A sheet that comes up from the bottom of a phone: what a long press on a
 // message opens, and the "new message" choices. A phone has no hover, so
@@ -35,7 +36,7 @@ export const Sheet: React.FC<{ label: string; onClose: () => void; children: Rea
   const close = useRef(onClose)
   close.current = onClose
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) close.current() }
     document.addEventListener('keydown', key)
     // The first control, so a keyboard or a screen reader lands in it — once,
     // as the sheet opens. Placed again on a later render, it took the caret

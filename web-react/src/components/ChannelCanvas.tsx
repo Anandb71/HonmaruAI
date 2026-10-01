@@ -4,6 +4,7 @@ import { isMacPlatform, formatCombo } from '../utils/keys'
 import { aiHeaders } from '../utils/aiKey'
 import { Markdown } from '../utils/markdown'
 import { Icon } from './Icon'
+import { enterKey } from '../utils/keys'
 
 // The canvas: one shared document per conversation — how things are done,
 // what was decided, who owns what — that anyone in it reads and edits, as
@@ -220,7 +221,7 @@ export const ChannelCanvas: React.FC<{ api: Api; headers: Record<string, string>
             )}
             <textarea
               value={editing} onChange={(e) => setEditing(e.target.value)} aria-label={t('Canvas')} data-canvas-text="1"
-              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void save() } }}
+              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && enterKey(e)) { e.preventDefault(); void save() } }}
               spellCheck
             />
             <p className="slk-canvas-hint">{t('canvas.syntax', { key: formatCombo('Mod+Enter', isMac) })}</p>

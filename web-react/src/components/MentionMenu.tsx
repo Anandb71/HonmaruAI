@@ -5,6 +5,7 @@ import { useCustomEmoji, type CustomEmoji } from '../utils/customEmoji'
 import { bestName, rememberEmoji, searchEmoji, useEmojiData } from '../utils/emojiSearch'
 import type { EmojiEntry } from '../utils/emojiData'
 import { t } from '../utils/i18n'
+import { composing, enterKey } from '../utils/keys'
 
 /// ":sho" before the caret, after a space or at the start: the emoji whose
 /// names hold "sho". Two letters first, as Slack waits for, so a colon in a
@@ -155,11 +156,11 @@ export function useMentionMenu(
 
   /// Returns true when the key was the menu's to take.
   const onKeyDown = (e: React.KeyboardEvent): boolean => {
-    if (!open) return false
+    if (!open || composing(e)) return false
     if (e.key === 'ArrowDown') { e.preventDefault(); setIndex((i) => (i + 1) % count); return true }
     if (e.key === 'ArrowUp') { e.preventDefault(); setIndex((i) => (i - 1 + count) % count); return true }
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); take(Math.min(index, count - 1)); return true }
-    if (e.key === 'Escape') { e.preventDefault(); setDismissed(`${query?.start}:${query?.query}`); return true }
+    if (enterKey(e) || e.key === 'Tab') { e.preventDefault(); take(Math.min(index, count - 1)); return true }
+    if (e.key === 'Escape' && !composing(e)) { e.preventDefault(); setDismissed(`${query?.start}:${query?.query}`); return true }
     return false
   }
 

@@ -8,6 +8,7 @@ import { emptyQueryPlaces, placesFallback, rankPlaces } from '../utils/places'
 import type { Place } from '../utils/places'
 import type { Screen } from '../utils/route'
 import { Icon } from './Icon'
+import { composing, enterKey } from '../utils/keys'
 
 export type PaletteAction =
   | { kind: 'card'; cardId: string }
@@ -225,10 +226,10 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
   const onKey = (e: React.KeyboardEvent) => {
     // Mid-word in a Japanese or Chinese input method, Enter picks the word
     // and the arrows pick among candidates: those keys are the IME's.
-    if (e.nativeEvent.isComposing) return
+    if (composing(e)) return
     if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setCursor((c) => Math.min(c + 1, Math.max(items.length - 1, 0))) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setCursor((c) => Math.max(c - 1, 0)) }
-    else if (e.key === 'Enter') { e.preventDefault(); const it = items[cursor]; if (it) onPick(it.action) }
+    else if (enterKey(e)) { e.preventDefault(); const it = items[cursor]; if (it) onPick(it.action) }
     else if (e.key === 'Escape') { e.preventDefault(); onClose() }
   }
 

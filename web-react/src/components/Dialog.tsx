@@ -2,6 +2,7 @@ import React, { useEffect, useId, useRef } from 'react'
 import { useT } from '../utils/i18n'
 import { Icon } from './Icon'
 import './Dialog.css'
+import { composing } from '../utils/keys'
 
 interface Props {
   title: string
@@ -35,7 +36,7 @@ export const Dialog: React.FC<Props> = ({ title, lede, describedBy, art, onClose
     const before = document.activeElement as HTMLElement | null
     const first = box.current?.querySelector<HTMLElement>('input, textarea, select, button:not(.dialog-close)')
     first?.focus()
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) { e.stopPropagation(); onClose() } }
     document.addEventListener('keydown', onKey, true)
     return () => { document.removeEventListener('keydown', onKey, true); before?.focus?.() }
   // eslint-disable-next-line react-hooks/exhaustive-deps

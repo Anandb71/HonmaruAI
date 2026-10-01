@@ -11,6 +11,7 @@ import { excerptParts } from '../utils/replies'
 import { messageMenuEntries, type MessageMenuActions } from '../utils/messageMenu'
 import { keepOnScreen, focusGoesBack } from './RowMenu'
 import { emojiDataState, gridStep, isEmojiOnly, loadEmojiData, pickerSections, rememberEmoji, useEmojiData, useEmojiDataState, useQuickReactions, useRecentEmoji } from '../utils/emojiSearch'
+import { composing } from '../utils/keys'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
@@ -50,7 +51,7 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
     // Esc closes the picker and nothing under it: not the thread beside the
     // message (the window's Esc), which a picker opened with + sits over —
     // and not while an input method is composing, where Esc cancels that.
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); onClose() } }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) { e.preventDefault(); e.stopPropagation(); onClose() } }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
@@ -74,7 +75,7 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
   const focusCell = (i: number) => box.current?.querySelector<HTMLElement>(`[data-cell="${i}"]`)?.focus()
   const onKeyDown = (e: React.KeyboardEvent) => {
     // Keys that are choosing a word in an input method are its own.
-    if (e.nativeEvent.isComposing) return
+    if (composing(e)) return
     if (e.key === 'Escape') {
       // The picker's, not the pane's behind it: a search clears first.
       e.stopPropagation()
@@ -305,7 +306,7 @@ export const MessageActions: React.FC<MessageMenuActions & {
   useEffect(() => {
     if (!menu) return
     const down = (e: MouseEvent) => { if (menuBox.current && !menuBox.current.contains(e.target as Node)) setMenu(false) }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) setMenu(false) }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
@@ -358,7 +359,7 @@ export const CardActions: React.FC<{
   useEffect(() => {
     if (!menu) return
     const down = (e: MouseEvent) => { if (menuBox.current && !menuBox.current.contains(e.target as Node)) setMenu(false) }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) setMenu(false) }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }

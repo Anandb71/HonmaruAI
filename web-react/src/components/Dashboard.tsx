@@ -29,7 +29,7 @@ import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
 import { loadRecent, rememberRecent } from '../utils/places'
 import type { Place } from '../utils/places'
-import { isMacPlatform, formatCombo, hasPrimaryMod } from '../utils/keys'
+import { isMacPlatform, formatCombo, hasPrimaryMod, composing } from '../utils/keys'
 import { tabWithin, TAB_STOPS } from '../utils/focusTrap'
 import type { ChannelMessage } from '../types/card'
 
@@ -638,7 +638,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPalette((p) => !p); return }
       if (mod && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
       if (palette) return
-      if (e.key === 'Escape') { setPanel(null); if (screen) closeScreen() }
+      if (e.key === 'Escape' && !composing(e)) { setPanel(null); if (screen) closeScreen() }
       else if (e.key === 'n' && !panel && !screen && !(e.target as HTMLElement)?.matches('input, textarea')) { e.preventDefault(); setPanel('compose') }
     }
     window.addEventListener('keydown', onKey)
@@ -1126,7 +1126,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       {shortcuts && (
         <>
           <div className="scrim" onClick={() => setShortcuts(false)} />
-          <div ref={shortcutsSheet} tabIndex={-1} className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setShortcuts(false) } }}>
+          <div ref={shortcutsSheet} tabIndex={-1} className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape' && !composing(e)) { e.stopPropagation(); setShortcuts(false) } }}>
             <div className="sheet-title">{t('Keyboard shortcuts')}<button className="close" onClick={() => setShortcuts(false)} aria-label={t('Close')}>×</button></div>
             {/* Each key written once, as code names it, and printed the way
                 this keyboard does: ⌘⇧A on a Mac, Ctrl+Shift+A elsewhere. */}

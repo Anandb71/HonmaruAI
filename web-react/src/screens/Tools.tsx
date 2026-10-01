@@ -17,6 +17,7 @@ import { ago } from '../utils/ago'
 import { Dialog } from '../components/Dialog'
 import { InviteDialog } from '../components/InviteDialog'
 import './Studio.css'
+import { composing, enterKey } from '../utils/keys'
 
 interface Connector { id: string; label: string; status: string }
 
@@ -469,7 +470,7 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
       if ((e.target as HTMLElement | null)?.closest?.('.studio-menu-wrap')) return
       setKeyMenu(false); setKeyMenuFor(null); setHookMenu(null)
     }
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setKeyMenu(false); setKeyMenuFor(null); setHookMenu(null) } }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) { setKeyMenu(false); setKeyMenuFor(null); setHookMenu(null) } }
     document.addEventListener('mousedown', away)
     document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
@@ -983,7 +984,7 @@ export const Tools: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClose 
         <div className="agent-intro">
           <label className="dlg-label" htmlFor="key-name">{t('Name')}</label>
           <input id="key-name" className="dlg-input" value={agentName} maxLength={60} onChange={(e) => setAgentName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void createAgentToken() }} placeholder={t('e.g. Claude Code on my laptop')} aria-label={t('Agent name')} disabled={agentBusy === 'create'} />
+            onKeyDown={(e) => { if (enterKey(e)) void createAgentToken() }} placeholder={t('e.g. Claude Code on my laptop')} aria-label={t('Agent name')} disabled={agentBusy === 'create'} />
           <div className="dlg-label key-scope-label">{t('What it may do')}</div>
           <div className="dlg-grid key-scope-grid">
             {Object.keys(SCOPE_WORD).map((sc) => (

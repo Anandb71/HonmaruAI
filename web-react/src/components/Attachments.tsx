@@ -5,6 +5,7 @@ import type { FileRef } from '../types/card'
 import { mediaKind, videoBox, downloadUrl, firstFrameUrl, type MediaKind } from '../utils/media'
 import { Icon, type IconName } from './Icon'
 import './Attachments.css'
+import { composing } from '../utils/keys'
 
 // Files and pictures: going up from the composer, and shown in a message.
 //
@@ -300,7 +301,7 @@ const Lightbox: React.FC<{ files: FileRef[]; at: number; base: string; onMove: (
   const f = files[at]
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape' && !composing(e)) onClose()
       else if (e.key === 'ArrowRight' && at < files.length - 1) onMove(at + 1)
       else if (e.key === 'ArrowLeft' && at > 0) onMove(at - 1)
     }
