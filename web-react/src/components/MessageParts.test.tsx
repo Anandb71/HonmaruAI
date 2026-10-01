@@ -117,14 +117,19 @@ describe('the emoji picker', () => {
 })
 
 describe('the hover bar’s reactions', () => {
-  it('are the usual three, then the ones you reacted with last', async () => {
+  it('are the usual three, then the ones you reacted with last, each staying where it is', async () => {
     const { QuickReactions } = await import('./MessageParts')
     const { rememberEmoji } = await import('../utils/emojiSearch')
     const bar = () => [...renderToStaticMarkup(<QuickReactions onReact={() => {}} />).matchAll(/aria-label="React with ([^"]+)"/g)].map((m) => m[1])
     vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} })
     expect(bar()).toEqual(['✅', '👀', '🙌'])
     rememberEmoji('🔥')
-    expect(bar()).toEqual(['🔥', '✅', '👀'])
+    expect(bar()).toEqual(['✅', '👀', '🔥'])
+    // One already in the bar, clicked: it does not move from under the pointer.
+    rememberEmoji('👀')
+    expect(bar()).toEqual(['✅', '👀', '🔥'])
+    rememberEmoji('🎉')
+    expect(bar()).toEqual(['🎉', '👀', '🔥'])
     vi.unstubAllGlobals()
   })
 })

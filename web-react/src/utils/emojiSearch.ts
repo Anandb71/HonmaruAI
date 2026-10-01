@@ -159,16 +159,36 @@ export function quickReactions(list: string[], drawable: (e: string) => boolean,
   return [...new Set([...list.filter(drawable), ...fallback])].slice(0, n)
 }
 
+/// A bar's emoji in the places they had: one that is still wanted stays
+/// where it was, and a new one takes the place of the one that left. Moved
+/// to the front instead, the reaction just clicked slid away from under the
+/// pointer, and the click to take it back landed on its neighbour.
+export function keepPlaces(shown: string[] | undefined, wanted: string[]): string[] {
+  if (!shown || shown.length !== wanted.length) return wanted
+  const stay = new Set(wanted)
+  const had = new Set(shown)
+  const fresh = wanted.filter((e) => !had.has(e))
+  return shown.map((e) => (stay.has(e) ? e : fresh.shift() ?? e))
+}
+
+// Each bar as it is drawn now — the hover bar's three, a sheet's six — so
+// every message's bar is in one order, and stays in it.
+const places = new Map<string, string[]>()
+
 /// The same, kept current: the bar's three, or as many as a phone's sheet
 /// has room for, topped up from its own usual ones (a constant, so it is
 /// one value from render to render). A workspace's own emoji counts only in
-/// the workspace that has it.
+/// the workspace that has it. Which emoji follows what you used last; where
+/// each sits does not change while it is one of them.
 export function useQuickReactions(fallback = QUICK_REACTIONS, n = 3): string[] {
   const list = useRecentEmoji()
   const custom = useCustomEmoji()
   return useMemo(() => {
     const names = new Set(custom.map((c) => `:${c.name}:`))
-    return quickReactions(list, (e) => !CUSTOM_EMOJI.test(e) || names.has(e), fallback, n)
+    const bar = `${n} ${fallback.join(' ')}`
+    const next = keepPlaces(places.get(bar), quickReactions(list, (e) => !CUSTOM_EMOJI.test(e) || names.has(e), fallback, n))
+    places.set(bar, next)
+    return next
   }, [list, custom, fallback, n])
 }
 

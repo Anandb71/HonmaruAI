@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { EMOJI, EMOJI_GROUPS } from './emojiData'
 import type { EmojiEntry } from './emojiData'
-import { searchEmoji, searchCustomEmoji, bestName, pushRecent, readRecent, rememberEmoji, quickReactions, isEmojiOnly, gridStep, canReact, loadEmojiData, pickerSections, QUICK_REACTIONS } from './emojiSearch'
+import { searchEmoji, searchCustomEmoji, bestName, pushRecent, readRecent, rememberEmoji, quickReactions, keepPlaces, isEmojiOnly, gridStep, canReact, loadEmojiData, pickerSections, QUICK_REACTIONS } from './emojiSearch'
 import type { PickerSection } from './emojiSearch'
 
 const entry = (e: string, ...n: string[]): EmojiEntry => ({ e, n, g: 'Symbols' })
@@ -85,6 +85,18 @@ describe('recently used', () => {
     const sheet = ['👍', '✅', '👀', '🙌', '🎉', '🙏']
     expect(quickReactions([], all, sheet, 6)).toEqual(sheet)
     expect(quickReactions(['🔥', '👀'], all, sheet, 6)).toEqual(['🔥', '👀', '👍', '✅', '🙌', '🎉'])
+  })
+
+  it('keeps a bar’s emoji where they are: a new one takes the place of the one that left', () => {
+    const bar = ['✅', '👀', '🙌']
+    // The third, clicked: first among the recent ones, still third in the bar.
+    expect(keepPlaces(bar, ['🙌', '✅', '👀'])).toEqual(bar)
+    expect(keepPlaces(bar, ['🔥', '✅', '👀'])).toEqual(['✅', '👀', '🔥'])
+    expect(keepPlaces(bar, ['🔥', '🎉', '👀'])).toEqual(['🔥', '👀', '🎉'])
+    expect(keepPlaces(bar, ['🔥', '🎉', '💯'])).toEqual(['🔥', '🎉', '💯'])
+    // Nothing drawn yet, or a bar of another length: as wanted.
+    expect(keepPlaces(undefined, ['🔥', '✅', '👀'])).toEqual(['🔥', '✅', '👀'])
+    expect(keepPlaces(bar, ['🔥', '✅'])).toEqual(['🔥', '✅'])
   })
 
   it('takes only what the Worker takes as a reaction', () => {
