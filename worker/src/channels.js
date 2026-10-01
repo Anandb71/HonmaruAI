@@ -62,7 +62,16 @@ export async function resolveChannel(db, orgId, viewer, channel, members) {
   if (channel.startsWith("b:")) {
     const slug = channel.slice(2);
     if (!slug || businessSlug(slug) !== slug) return null;
-    const row = await db.prepare("SELECT private FROM businesses WHERE org_id = ?1 AND slug = ?2").bind(orgId, slug).first().catch(() => null);
+    // A lookup that fails says nothing about whether the channel is private,
+    // so it lets nobody in: treating it as public handed a private channel
+    // (and everything broadcast in it) to the whole workspace whenever one
+    // read failed.
+    let row;
+    try {
+      row = await db.prepare("SELECT private FROM businesses WHERE org_id = ?1 AND slug = ?2").bind(orgId, slug).first();
+    } catch {
+      return null;
+    }
     if (!row?.private) {
       // With guests in the workspace, a public channel has a list of who
       // reads it too — and a guest who is not on it is not told it exists.
