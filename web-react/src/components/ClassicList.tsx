@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { awaitsPost } from '../utils/automation'
 import { hashForMessage, hashForView } from '../utils/route'
 import { RowMenu } from './RowMenu'
+import { SidebarSection } from './SidebarSection'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage } from '../types/card'
@@ -1066,21 +1067,8 @@ export const ClassicList: React.FC<Props> = ({
     const shown = shut ? foldedRows(threads, context) : threads
     const badge = sectionBadge(shown, mentionsIn, context.currentKey)
     return (
-      <section key={id} className={`cl-section${shut ? ' folded' : ''}`} data-section={id}>
-        <h2>
-          <button className="cl-fold" onClick={() => toggleFold(id)} aria-expanded={!shut}>
-            <span className="cl-caret" aria-hidden="true"><Icon name={shut ? 'chevron-right' : 'chevron-down'} size={12} /></span>
-            {label}
-            {shut && badge.mentions > 0 && <><span className="cl-badge mention" aria-hidden="true">@{badge.mentions}</span><span className="sr-only">{t('Mentions: {n}', { n: badge.mentions })}</span></>}
-            {shut && badge.cards > 0 && <><span className="cl-badge" aria-hidden="true">{badge.cards}</span><span className="sr-only">{t('{n} waiting on you', { n: badge.cards })}</span></>}
-            {shut && !badge.mentions && !badge.cards && badge.fresh && <span className="cl-fresh" role="img" aria-label={t('New messages')} />}
-          </button>
-          {action}
-        </h2>
-        {!shut && threads.length === 0 && <p className="cl-empty">{empty}</p>}
-        {shown.length > 0 && <ul>{shown.map((th) => row(th, place))}</ul>}
-        {!shut && below}
-      </section>
+      <SidebarSection key={id} id={id} label={label} shut={shut} onFold={() => toggleFold(id)} badge={badge}
+        rows={shown.map((th) => row(th, place))} empty={empty} action={action} below={below} />
     )
   }
 
