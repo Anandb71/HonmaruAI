@@ -44,6 +44,26 @@ function losing(db, from) {
   };
 }
 
+/// The database, answering nothing prepared between `hold()` and `pass()`
+/// until `release()`: a slow query, with the socket's next message let in
+/// while it is awaited.
+function slow(db) {
+  let gate = null;
+  let open = () => {};
+  const wrap = (stmt, wait) => ({
+    bind: (...args) => wrap(stmt.bind(...args), wait),
+    first: async (...args) => { await wait; return stmt.first(...args); },
+    all: async (...args) => { await wait; return stmt.all(...args); },
+    run: async (...args) => { await wait; return stmt.run(...args); },
+  });
+  return {
+    db: { prepare: (sql) => wrap(db.prepare(sql), gate) },
+    hold() { gate = new Promise((r) => { open = r; }); },
+    pass() { gate = null; },
+    release() { open(); },
+  };
+}
+
 beforeEach(async () => {
   await env.DB.exec(schemaSql.replace(/\n/g, " "));
   await env.DB.prepare("DELETE FROM businesses WHERE org_id = ?1").bind(ORG).run();
@@ -109,6 +129,37 @@ test("a private channel's typing stays with its members when the database loses 
   r.db = losing(env.DB, 2);
   await handleTyping(r, as("toru", "3001"), "typing", { channel: "b:payroll" });
   expect(r.sent.map((s) => s.to)).toEqual(["mika"]);
+});
+
+test("a typing held up by a slow query does not land after the stop that followed it", async () => {
+  const r = recorder();
+  const held = slow(env.DB);
+  r.db = held.db;
+  const toru = as("toru", "3001");
+
+  held.hold();
+  const typed = handleTyping(r, toru, "typing", { channel: "b:general" });
+  held.pass();
+  await handleTyping(r, toru, "typing_stop", { channel: "b:general" });
+  held.release();
+  await typed;
+  // The stop, and no "typing" after it to leave a line nobody is typing.
+  expect(r.sent.map((s) => [s.to, Boolean(s.value.stop)])).toEqual([["mika", true], ["kenji", true]]);
+
+  // Somewhere else is another line: one does not hold back the other.
+  r.sent.length = 0;
+  held.hold();
+  const inThread = handleTyping(r, toru, "typing", { channel: "b:general", parentId: "m-1" });
+  held.pass();
+  await handleTyping(r, toru, "typing_stop", { channel: "b:general" });
+  held.release();
+  await inThread;
+  expect(r.sent.map((s) => [s.value.parentId, Boolean(s.value.stop)])).toEqual([[null, true], [null, true], ["m-1", false], ["m-1", false]]);
+
+  // And the next one goes out as ever.
+  r.sent.length = 0;
+  await handleTyping(r, toru, "typing", { channel: "b:general" });
+  expect(r.sent.map((s) => s.to)).toEqual(["mika", "kenji"]);
 });
 
 test("a direct conversation's typing reaches the other one, under their name for it, and nobody beside it", async () => {
