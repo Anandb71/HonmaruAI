@@ -26,6 +26,7 @@ import type { Screen, Mode } from '../utils/route'
 import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
 import type { ChannelMessage } from '../types/card'
+import { composing } from '../utils/keys'
 
 // The screens a person opens now and then load when they are opened: the
 // first page is the conversation, not the settings behind it.
@@ -496,7 +497,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPalette((p) => !p); return }
       if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
       if (palette) return
-      if (e.key === 'Escape') { setPanel(null); if (screen) closeScreen() }
+      if (e.key === 'Escape' && !composing(e)) { setPanel(null); if (screen) closeScreen() }
       else if (e.key === 'n' && !panel && !screen && !(e.target as HTMLElement)?.matches('input, textarea')) { e.preventDefault(); setPanel('compose') }
     }
     window.addEventListener('keydown', onKey)
@@ -951,7 +952,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       {shortcuts && (
         <>
           <div className="scrim" onClick={() => setShortcuts(false)} />
-          <div className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape') setShortcuts(false) }}>
+          <div className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape' && !composing(e)) setShortcuts(false) }}>
             <div className="sheet-title">{t('Keyboard shortcuts')}<button className="close" onClick={() => setShortcuts(false)} aria-label={t('Close')}>×</button></div>
             {([
               [t('Everywhere'), [['⌘K', t('Search, or jump anywhere')], ['N', t('Tell your AI')], ['⌘/', t('This list')]]],

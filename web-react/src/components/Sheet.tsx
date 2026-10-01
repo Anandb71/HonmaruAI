@@ -6,6 +6,7 @@ import { Icon, type IconName } from './Icon'
 import { EmojiPicker } from './MessageParts'
 import { Avatar } from './Avatar'
 import './Sheet.css'
+import { composing } from '../utils/keys'
 
 // A sheet that comes up from the bottom of a phone: what a long press on a
 // message opens, and the "new message" choices. A phone has no hover, so
@@ -18,7 +19,7 @@ export const Sheet: React.FC<{ label: string; onClose: () => void; children: Rea
   const box = useRef<HTMLDivElement>(null)
   const startY = useRef<number | null>(null)
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) onClose() }
     document.addEventListener('keydown', key)
     // The first control, so a keyboard or a screen reader lands in it.
     requestAnimationFrame(() => box.current?.querySelector<HTMLElement>('button, input')?.focus({ preventScroll: true }))

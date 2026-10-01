@@ -6,6 +6,7 @@ import type { JamCall, JamMode, JamState } from '../utils/jam'
 import { Icon } from './Icon'
 import { Avatar } from './Avatar'
 import { renderRich } from './MessageParts'
+import { composing } from '../utils/keys'
 
 // What a channel's header opens, left to right: its journal (the context
 // someone new or back from a week away reads first), its details (members,
@@ -75,7 +76,7 @@ function Description({ api, headers, view, value, editable, onSaved }: { api: Ap
           className="cl-input" value={text} rows={3} maxLength={500} autoFocus disabled={busy}
           placeholder={t('What is this channel for?')} aria-label={t('Channel description')}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Escape') setEditing(false) }}
+          onKeyDown={(e) => { if (e.key === 'Escape' && !composing(e)) setEditing(false) }}
         />
         {problem && <p className="cl-problem" role="alert">{problem}</p>}
         <div className="slk-describe-bar">
@@ -489,7 +490,7 @@ export function JamButton({ state, inThis, busy, onStart, onLeave }: {
     if (!open) return
     void audioDevices().then(({ inputs, outputs }) => { setInputs(inputs); setOutputs(outputs) })
     const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) setOpen(false) }
     document.addEventListener('mousedown', away)
     document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }

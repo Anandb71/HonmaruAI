@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useT } from '../utils/i18n'
+import { enterKey } from '../utils/keys'
 
 interface Props {
   relayHttpUrl: string
@@ -161,7 +162,7 @@ export const InviteTeammate: React.FC<Props> = ({ relayHttpUrl, orgId, sessionTo
             inputMode="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void sendByEmail() } }}
+            onKeyDown={(e) => { if (enterKey(e)) { e.preventDefault(); void sendByEmail() } }}
             placeholder={t('teammate@company.com')}
             aria-label={t('Email')}
           />

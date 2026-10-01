@@ -5,6 +5,7 @@ import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
+import { composing } from '../utils/keys'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
@@ -28,7 +29,7 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
   const custom = useCustomEmoji()
   useEffect(() => {
     const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) onClose() }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
@@ -178,7 +179,7 @@ export const MessageActions: React.FC<{
   useEffect(() => {
     if (!menu) return
     const down = (e: MouseEvent) => { if (menuBox.current && !menuBox.current.contains(e.target as Node)) setMenu(false) }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) setMenu(false) }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
@@ -244,7 +245,7 @@ export const CardActions: React.FC<{
   useEffect(() => {
     if (!menu) return
     const down = (e: MouseEvent) => { if (menuBox.current && !menuBox.current.contains(e.target as Node)) setMenu(false) }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) setMenu(false) }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }

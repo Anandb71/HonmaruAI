@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import type { IconName } from './Icon'
+import { composing } from '../utils/keys'
 
 /// A menu that opens where you right-clicked, the way a desktop chat app's
 /// does: items, a line between groups, a small heading, a tick beside the
@@ -98,7 +99,7 @@ export const RowMenu: React.FC<Props> = ({ at, entries, label, onClose }) => {
   useEffect(() => {
     items(ref.current?.querySelector('ul') as HTMLElement | null)[0]?.focus()
     const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose() }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) { e.preventDefault(); onClose() } }
     const gone = () => onClose()
     document.addEventListener('mousedown', away, true)
     document.addEventListener('keydown', key)

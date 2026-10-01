@@ -12,6 +12,7 @@ import { canInstall, promptInstall, onInstallChange } from '../utils/install'
 import { getAIKey, setAIKey } from '../utils/aiKey'
 import { TidyChannels } from '../components/TidyChannels'
 import { ArchivedChannels } from '../components/ArchivedChannels'
+import { enterKey } from '../utils/keys'
 
 interface Props {
   httpBase: string
@@ -391,7 +392,7 @@ export const Profile: React.FC<Props> = ({
                   className="join-code"
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') join() }}
+                  onKeyDown={(e) => { if (enterKey(e)) join() }}
                   placeholder={t('Invite link')}
                   aria-label={t('Invite link')}
                 />
@@ -410,7 +411,7 @@ export const Profile: React.FC<Props> = ({
                   className="team-name-input"
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') createTeam() }}
+                  onKeyDown={(e) => { if (enterKey(e)) createTeam() }}
                   placeholder={t('Team name')}
                   aria-label={t('Team name')}
                   maxLength={60}
@@ -445,7 +446,7 @@ export const Profile: React.FC<Props> = ({
                     if (nameDraft !== null && next && next !== me?.name) void saveIdentity({ name: next })
                     setNameDraft(null)
                   }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                  onKeyDown={(e) => { if (enterKey(e)) (e.target as HTMLInputElement).blur() }}
                   placeholder={t('e.g. Toru Tano')}
                   aria-label={t('Name')}
                 />
@@ -472,7 +473,7 @@ export const Profile: React.FC<Props> = ({
                         if (await saveIdentity({ handle: next })) setHandleDraft(null)
                       } else setHandleDraft(null)
                     }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                    onKeyDown={(e) => { if (enterKey(e)) (e.target as HTMLInputElement).blur() }}
                     placeholder={t('e.g. toru')}
                     aria-label={t('Username')}
                     aria-invalid={handleNote ? !handleNote.ok : undefined}
@@ -501,7 +502,7 @@ export const Profile: React.FC<Props> = ({
                     maxLength={40}
                     onChange={(e) => setRoleDraft(e.target.value)}
                     onBlur={() => { if (roleDraft !== null && roleDraft.trim() && roleDraft.trim() !== me.role) patch({ role: roleDraft.trim(), orgId }); setRoleDraft(null) }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                    onKeyDown={(e) => { if (enterKey(e)) (e.target as HTMLInputElement).blur() }}
                     placeholder={t('e.g. store manager, CFO, designer')}
                     aria-label={t('Role')}
                   />

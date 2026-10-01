@@ -99,11 +99,13 @@ printf 'waiting for the Worker'
 wait_for "Worker" "http://127.0.0.1:$WORKER_PORT/health" 60 /tmp/e2e-worker.log
 echo
 curl -fsS "http://127.0.0.1:$WORKER_PORT/health" >/tmp/e2e-health.json
-python3 -m json.tool /tmp/e2e-health.json
+# Node rather than python: a Windows runner has node on its path for certain,
+# and python3 under that name not always.
+node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")), null, 2))' /tmp/e2e-health.json
 # Parsed, not grepped: curl returns compact JSON and the pretty-print above is
 # a different string. The first version of this check looked for `"email": true`
 # in a body that says `"email":true`, and stopped a Worker that was fine.
-python3 -c 'import json,sys; d=json.load(open("/tmp/e2e-health.json")); sys.exit(0 if d.get("email") else 1)' \
+node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).email ? 0 : 1)' /tmp/e2e-health.json \
   || { echo "the Worker has no mail configured; the sign-in flow cannot run" >&2; exit 1; }
 
 say "3. Web client, built against that Worker"
@@ -112,7 +114,10 @@ cd web-react
 # The browser the spec drives. Some images ship one at a fixed path and set
 # PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD, in which case `install` is a no-op that
 # would fail; everywhere else this is what makes a clean clone runnable at all.
-if [ -n "${E2E_CHROMIUM:-}" ] || [ -x /opt/pw-browsers/chromium ]; then
+if [ -n "${E2E_CHANNEL:-}" ]; then
+  # A browser the machine already has, by channel (Edge on Windows): nothing to fetch.
+  :
+elif [ -n "${E2E_CHROMIUM:-}" ] || [ -x /opt/pw-browsers/chromium ]; then
   export E2E_CHROMIUM="${E2E_CHROMIUM:-/opt/pw-browsers/chromium}"
 else
   npx playwright install --with-deps chromium >/tmp/e2e-browser.log 2>&1 \

@@ -32,6 +32,7 @@ import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } 
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
 import './ClassicList.css'
+import { composing, enterKey } from '../utils/keys'
 
 /// What was done, as a word rather than the verb the API uses — the same
 /// table History reads from, so one decision is not "approve" here and
@@ -918,7 +919,7 @@ export const ClassicList: React.FC<Props> = ({
         e.preventDefault(); openActivity()
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault(); setSideHidden((h) => !h)
-      } else if (e.shiftKey && e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      } else if (e.shiftKey && e.key === 'Escape' && !composing(e) && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault(); markEverythingRead()
       }
     }
@@ -1069,7 +1070,7 @@ export const ClassicList: React.FC<Props> = ({
         maxLength={120}
         placeholder={t('e.g. hotel, suppliers, marketing')}
         onChange={(e) => setNewName(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Escape') { setAdding(false); setNewName('') } }}
+        onKeyDown={(e) => { if (e.key === 'Escape' && !composing(e)) { setAdding(false); setNewName('') } }}
         aria-label={t('Channel name')}
         disabled={busy}
       />
@@ -2126,7 +2127,7 @@ export const ClassicList: React.FC<Props> = ({
   useEffect(() => {
     if (!detailId && !thread) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !(e.target as HTMLElement)?.closest('textarea, input')) { setDetailId(null); setThread(null) }
+      if (e.key === 'Escape' && !composing(e) && !(e.target as HTMLElement)?.closest('textarea, input')) { setDetailId(null); setThread(null) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -2431,8 +2432,8 @@ export const ClassicList: React.FC<Props> = ({
             maxLength={4000}
             onChange={(e) => setEditing({ id: m.id, text: e.target.value })}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') { e.preventDefault(); setEditing(null) }
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void saveEdit(channel) }
+              if (e.key === 'Escape' && !composing(e)) { e.preventDefault(); setEditing(null) }
+              if (enterKey(e) && !e.shiftKey) { e.preventDefault(); void saveEdit(channel) }
             }}
             aria-label={t('Edit message')}
           />
@@ -2880,8 +2881,8 @@ export const ClassicList: React.FC<Props> = ({
               onClick={threadMention.track}
               onKeyDown={(e) => {
                 if (threadMention.onKeyDown(e)) return
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
+                if (enterKey(e) && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
+                if (enterKey(e) && !e.shiftKey && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
               }}
               disabled={sending}
             />
@@ -3210,7 +3211,7 @@ export const ClassicList: React.FC<Props> = ({
                   autoFocus
                   maxLength={120}
                   onChange={(e) => setRenameTo(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Escape') setRenaming(null) }}
+                  onKeyDown={(e) => { if (e.key === 'Escape' && !composing(e)) setRenaming(null) }}
                   aria-label={t('Channel name')}
                   disabled={busy}
                 />
@@ -3389,7 +3390,7 @@ export const ClassicList: React.FC<Props> = ({
               onKeyDown={(e) => {
                 if (mention.onKeyDown(e)) return
                 // ↑ in an empty box edits what you last said, as in Slack.
-                if (e.key === 'ArrowUp' && !draft && !e.nativeEvent.isComposing) {
+                if (e.key === 'ArrowUp' && !draft && !composing(e)) {
                   const last = [...(messages[thread.view!] || [])].reverse().find((m) => m.mine && m.kind === 'message' && !m.deleted)
                   if (last) { e.preventDefault(); setEditing({ id: last.id, text: last.body }) }
                   return
@@ -3409,10 +3410,10 @@ export const ClassicList: React.FC<Props> = ({
                 // On a phone the keyboard's return is a new line and the
                 // arrow sends, as in every phone chat app.
                 // A new line in a quote or a list carries its mark on.
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, draft, setDraft)) { e.preventDefault(); return }
+                if (enterKey(e) && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, draft, setDraft)) { e.preventDefault(); return }
                 // ⌘Enter sends too — as a message. A decision card comes only
                 // from "@AI" or the ✦ button, never from a key pressed by habit.
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.view!, false) }
+                if (enterKey(e) && !e.shiftKey && wide) { e.preventDefault(); void send(thread.view!, false) }
               }}
               disabled={sending}
             />
@@ -3451,7 +3452,7 @@ export const ClassicList: React.FC<Props> = ({
               aria-label={t('Tell your AI')}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                if (enterKey(e) && !e.shiftKey) {
                   e.preventDefault()
                   if (draft.trim()) { tellAI(draft.trim()); setDraft('') }
                 }
