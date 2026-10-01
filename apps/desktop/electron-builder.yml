@@ -1,0 +1,47 @@
+# Installers for Windows (NSIS), macOS (DMG, plus the ZIP the updater needs)
+# and Linux (AppImage).
+#
+# Signing (docs/architecture/discord-model-platform-plan.md §11.4) comes from
+# the environment — CSC_LINK / CSC_KEY_PASSWORD (or WIN_CSC_LINK) for the
+# certificate, APPLE_API_KEY / APPLE_API_KEY_ID / APPLE_API_ISSUER (or
+# APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID) to notarize — and
+# `npm run dist` / `npm run release` refuse to build without it
+# (scripts/signing.mjs). `npm run dist:dir` builds an unsigned, unpacked app
+# to try locally; it never checks for updates.
+appId: com.honmaru.ai
+productName: Honmaru AI
+copyright: Copyright © Honmaru AI
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - src/**
+  - assets/**
+  - package.json
+protocols:
+  - name: Honmaru AI
+    schemes: [honmaru]
+# Where `npm run release` uploads the installers and the update feed
+# (latest.yml, latest-mac.yml, latest-linux.yml), and where the installed app
+# looks for a newer version (src/updates.js). A release is created as a
+# draft; publishing it is what offers the update to everyone. electron-updater
+# takes the repository's latest published release, so the desktop app's
+# releases have to be the newest ones here (or this moves to a repository of
+# their own).
+publish:
+  provider: github
+  owner: Torutesu
+  repo: HonmaruAI
+  releaseType: draft
+win:
+  target: nsis
+nsis:
+  oneClick: true
+  perMachine: false
+mac:
+  target: [dmg, zip]
+  category: public.app-category.productivity
+  hardenedRuntime: true
+linux:
+  target: AppImage
+  category: Office
