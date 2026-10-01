@@ -109,6 +109,13 @@ describe('what deleting a message asks', () => {
     expect(deleteWarning({ replyCount: 2, replyRefs: ['ken'] }, 'me')).toMatch(/Replies from others/)
   })
 
+  it('warns about others’ replies when the server found some this page did not know of', () => {
+    // Someone who has since left is in nobody's replyRefs; a missed live event leaves no count either.
+    expect(deleteWarning({ replyCount: 1, replyRefs: [] }, 'me', true)).toMatch(/Replies from others/)
+    expect(deleteWarning({}, 'me', true)).toMatch(/Replies from others/)
+    expect(deleteWarning({ replyCount: 1, replyRefs: ['me'] }, 'me', false)).not.toMatch(/Replies from others/)
+  })
+
   it('lets ⇧ skip the question, but never the one about others’ replies', () => {
     expect(skipsDeleteConfirm(true, {}, 'me')).toBe(true)
     expect(skipsDeleteConfirm(true, { replyCount: 1, replyRefs: ['me'] }, 'me')).toBe(true)

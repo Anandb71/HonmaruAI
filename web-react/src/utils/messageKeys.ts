@@ -77,21 +77,26 @@ export interface DeletedMessage {
 }
 
 /// Somebody other than you answered in this message's thread: deleting it
-/// takes their words too.
+/// takes their words too. As far as this page knows — `replyRefs` names
+/// only people still in the workspace, and is behind when a live event was
+/// missed — so `false` is not a promise: the server, which counts the
+/// replies themselves, has the last word (see `unsend` in ClassicList).
 export function othersReplied(m: DeletedMessage, myRef: string | undefined): boolean {
   return !m.parentId && (m.replyRefs || []).some((r) => r !== myRef)
 }
 
 /// What deleting a message warns, in English (the key for `t`), the more
-/// it takes with it the plainer.
-export function deleteWarning(m: DeletedMessage, myRef: string | undefined): string {
-  if (othersReplied(m, myRef)) return 'Delete this message and its thread? Replies from others will be deleted too. This cannot be undone.'
+/// it takes with it the plainer. `others`: the server said others replied,
+/// whatever this page knows of it.
+export function deleteWarning(m: DeletedMessage, myRef: string | undefined, others = false): string {
+  if (others || othersReplied(m, myRef)) return 'Delete this message and its thread? Replies from others will be deleted too. This cannot be undone.'
   if (m.replyCount) return 'Delete this message and its thread? This cannot be undone.'
   return 'Delete this message? This cannot be undone.'
 }
 
 /// ⇧ skips the question, as in Discord — except when others replied:
-/// their words go only when you say so outright.
+/// their words go only when you say so outright. Skipping the question is
+/// not saying so: that delete is asked of the server without their replies.
 export function skipsDeleteConfirm(shift: boolean, m: DeletedMessage, myRef: string | undefined): boolean {
   return shift && !othersReplied(m, myRef)
 }
