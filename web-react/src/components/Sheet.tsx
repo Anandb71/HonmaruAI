@@ -13,6 +13,16 @@ import './Sheet.css'
 // the bar of tools a laptop shows over a message has nowhere to be; this is
 // where they go, as every phone chat app puts them.
 
+/// Whether `from` is in something inside the sheet that scrolls by itself:
+/// between it and the sheet, a box with more in it than it shows and a
+/// scrollbar to reach it.
+export function inScroller(from: Element | null, sheet: Element | null, overflowOf: (el: Element) => string = (el) => getComputedStyle(el).overflowY): boolean {
+  for (let el = from; el && el !== sheet; el = el.parentElement) {
+    if (el.scrollHeight > el.clientHeight && /auto|scroll/.test(overflowOf(el))) return true
+  }
+  return false
+}
+
 /// The frame: a scrim, a handle, the rows. Escape, the scrim and a swipe
 /// down close it.
 export const Sheet: React.FC<{ label: string; onClose: () => void; children: React.ReactNode; className?: string }> = ({ label, onClose, children, className }) => {
@@ -40,7 +50,11 @@ export const Sheet: React.FC<{ label: string; onClose: () => void; children: Rea
         aria-modal="true"
         aria-label={label}
         onClick={(e) => e.stopPropagation()}
-        onTouchStart={(e) => { startY.current = e.touches[0]?.clientY ?? null }}
+        onTouchStart={(e) => {
+          // A drag that starts in a list of its own (the emoji picker) is
+          // that list being scrolled, not the sheet being pulled down.
+          startY.current = inScroller(e.target as Element, box.current) ? null : e.touches[0]?.clientY ?? null
+        }}
         onTouchEnd={(e) => {
           const from = startY.current
           startY.current = null
