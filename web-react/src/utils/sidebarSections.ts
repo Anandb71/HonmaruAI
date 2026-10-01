@@ -26,13 +26,14 @@ export interface FoldContext {
 
 /// The rows a folded section still shows, in their order: the one open now,
 /// and each with a card waiting, something new said, or a mention. A muted
-/// conversation shows only when it names you — muting it was asking not to
-/// hear about the rest.
+/// conversation shows only when it names you or a card waits on you there —
+/// muting it was asking not to hear what is said, not to lose a decision,
+/// whose row stays red when the section is open.
 export function foldedRows<T extends SectionRow>(threads: T[], { mentions, currentKey, prefs }: FoldContext): T[] {
   return threads.filter((th) => {
     if (currentKey && th.key === currentKey) return true
     const named = Boolean(th.view && (mentions[th.view] || 0) > 0)
-    if (th.view && prefs[th.view] === 'mute') return named
+    if (th.view && prefs[th.view] === 'mute') return named || th.unread > 0
     return th.unread > 0 || Boolean(th.fresh) || named
   })
 }

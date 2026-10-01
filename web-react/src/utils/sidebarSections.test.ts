@@ -12,25 +12,26 @@ describe('a folded section', () => {
   const named = row('channel:named', { view: 'b:named' })
   const muted = row('channel:muted', { view: 'b:muted', unread: 3 })
   const mutedNamed = row('channel:muted-named', { view: 'b:muted-named' })
+  const mutedTalk = row('channel:muted-talk', { view: 'b:muted-talk', fresh: true })
   const app = row('app:gmail', { unread: 1 })
-  const all = [quiet, cards, fresh, named, muted, mutedNamed, app]
+  const all = [quiet, cards, fresh, named, muted, mutedNamed, mutedTalk, app]
   const mentions = { 'b:named': 1, 'b:muted-named': 2 }
-  const prefs = { 'b:muted': 'mute', 'b:muted-named': 'mute' } as const
+  const prefs = { 'b:muted': 'mute', 'b:muted-named': 'mute', 'b:muted-talk': 'mute' } as const
 
   it('shows the rows with cards, something new or a mention, in their order', () => {
     expect(foldedRows(all, { mentions, prefs }).map((th) => th.key))
-      .toEqual(['channel:cards', 'channel:fresh', 'channel:named', 'channel:muted-named', 'app:gmail'])
+      .toEqual(['channel:cards', 'channel:fresh', 'channel:named', 'channel:muted', 'channel:muted-named', 'app:gmail'])
   })
 
-  it('shows a muted conversation only when it names you', () => {
-    const shown = foldedRows([muted, mutedNamed], { mentions, prefs })
-    expect(shown).toEqual([mutedNamed])
-    expect(foldedRows([muted], { mentions: {}, prefs })).toEqual([])
+  it('shows a muted conversation only when it names you or a card waits on you there', () => {
+    expect(foldedRows([muted, mutedNamed, mutedTalk], { mentions, prefs })).toEqual([muted, mutedNamed])
+    expect(foldedRows([mutedTalk], { mentions: {}, prefs })).toEqual([])
+    expect(foldedRows([{ ...muted, unread: 0 }], { mentions: {}, prefs })).toEqual([])
   })
 
   it('always shows the one open now, however quiet or muted', () => {
-    expect(foldedRows([quiet, muted], { mentions: {}, prefs, currentKey: 'channel:quiet' })).toEqual([quiet])
-    expect(foldedRows([quiet, muted], { mentions: {}, prefs, currentKey: 'channel:muted' })).toEqual([muted])
+    expect(foldedRows([quiet, mutedTalk], { mentions: {}, prefs, currentKey: 'channel:quiet' })).toEqual([quiet])
+    expect(foldedRows([quiet, mutedTalk], { mentions: {}, prefs, currentKey: 'channel:muted-talk' })).toEqual([mutedTalk])
     expect(foldedRows([quiet], { mentions: {}, prefs: {}, currentKey: null })).toEqual([])
   })
 
