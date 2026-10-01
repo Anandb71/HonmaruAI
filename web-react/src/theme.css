@@ -999,9 +999,12 @@
 .shortcuts-group h3 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ash); margin: 14px 0 6px; }
 .shortcuts-group dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 18px; }
 .shortcuts-group dl div { display: flex; gap: 10px; align-items: baseline; }
-.shortcuts-group dt { flex: none; min-width: 90px; }
+/* One column for the keys, so what they do lines up; a pair too long for it
+   ("Alt+Shift+↑ / Alt+Shift+↓" off a Mac) stacks its two caps instead of
+   squeezing the words beside it into a sliver. */
+.shortcuts-group dt { flex: none; width: 120px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 5px; }
 .shortcuts-group dd { margin: 0; font-size: 13.5px; color: var(--ink-black); }
-.shortcuts-group kbd { font: inherit; font-size: 12px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--bone); background: var(--mist, #f4f4f4); }
+.shortcuts-group kbd { font: inherit; font-size: 12px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--bone); background: var(--mist, #f4f4f4); white-space: nowrap; }
 .toast.rule-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: min(92vw, 640px); }
 .undo-button.quiet { background: transparent; color: inherit; border: 1px solid currentColor; opacity: .8; }
 @media (prefers-color-scheme: dark) {

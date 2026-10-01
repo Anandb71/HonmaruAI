@@ -997,7 +997,10 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
             ] as Array<[string, string[][]]>).map(([group, rows]) => (
               <section key={group} className="shortcuts-group">
                 <h3>{group}</h3>
-                <dl>{rows.map(([k, what]) => <div key={k}><dt><kbd>{formatCombo(k, isMac)}</kbd></dt><dd>{what}</dd></div>)}</dl>
+                {/* A cap for each alternative, so a long pair ("Alt+Shift+↑ /
+                    Alt+Shift+↓") breaks between the two and leaves room
+                    for what it does. */}
+                <dl>{rows.map(([k, what]) => <div key={k}><dt>{formatCombo(k, isMac).split(' / ').map((one, i) => <React.Fragment key={one}>{i > 0 && '/'}<kbd>{one}</kbd></React.Fragment>)}</dt><dd>{what}</dd></div>)}</dl>
               </section>
             ))}
           </div>
