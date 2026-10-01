@@ -4,7 +4,8 @@ import { useT } from '../utils/i18n'
 
 /// One section of the sidebar: a header that folds it, the rows under it,
 /// and whatever the header's own button opened. Folded, the header counts
-/// what its rows still call for.
+/// what its rows still call for — and what "+" opened is still drawn, so
+/// the button never does nothing on a section folded last week.
 
 interface Props {
   id: string
@@ -20,7 +21,7 @@ interface Props {
   /// The header's own button: "+", or ✕ on a section of your own.
   action?: React.ReactNode
   /// What that button opened — the new-channel box, the agents to pick
-  /// from. Null until asked for.
+  /// from. Null until asked for, and drawn open or folded.
   below?: React.ReactNode
 }
 
@@ -40,7 +41,7 @@ export const SidebarSection: React.FC<Props> = ({ id, label, shut, onFold, badge
       </h2>
       {!shut && rows.length === 0 && <p className="cl-empty">{empty}</p>}
       {rows.length > 0 && <ul>{rows}</ul>}
-      {!shut && below}
+      {below}
     </section>
   )
 }
