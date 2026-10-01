@@ -2211,9 +2211,11 @@ export const ClassicList: React.FC<Props> = ({
   }, [mentionable, userGroups, agents, current, businesses, onlineKeys, t])
   const mention = useMentionMenu(composer, draft, setDraft, withAI)
   const threadMention = useMentionMenu(threadComposer, threadDraft, setThreadDraft, withAI)
-  // @names that reach somebody light up as they are typed.
-  const draftHl = useMentionHighlight(composer, draft, withAI)
-  const threadHl = useMentionHighlight(threadComposer, threadDraft, withAI)
+  // @names that reach somebody light up as they are typed. What sits over
+  // the box — the "Replying to" bar, files waiting to go — moves it when it
+  // comes or goes, and the colour moves with it.
+  const draftHl = useMentionHighlight(composer, draft, withAI, `${replyingTo?.quote.id || ''}|${uploads.items.length}`)
+  const threadHl = useMentionHighlight(threadComposer, threadDraft, withAI, threadUploads.items.length)
 
   // The newest message in view when a conversation opens, as in any chat —
   // and kept in view while what is above it settles: the conversation drawn
