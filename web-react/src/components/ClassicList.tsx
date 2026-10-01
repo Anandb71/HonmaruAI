@@ -2536,6 +2536,26 @@ export const ClassicList: React.FC<Props> = ({
   /// go): what is typed after a click was meant for the composer, and a "p"
   /// in it would pin the message for everyone.
   const unpick = () => { keyPicked.current = null }
+  /// A key that did something to a message, still held down: its repeats
+  /// are nobody's until it comes up, or another key goes down. Focus has
+  /// often moved by then — a held E would type "eee" into the edit box it
+  /// opened, a held T into the thread's box, and ⇧⌫ would reach the message
+  /// focus went to when this one was deleted.
+  const holdKey = () => {
+    const swallow = (ev: KeyboardEvent) => {
+      if (!ev.repeat) { release(); return }
+      ev.preventDefault()
+      ev.stopPropagation()
+    }
+    const release = () => {
+      window.removeEventListener('keydown', swallow, true)
+      window.removeEventListener('keyup', release, true)
+      window.removeEventListener('blur', release)
+    }
+    window.addEventListener('keydown', swallow, true)
+    window.addEventListener('keyup', release, true)
+    window.addEventListener('blur', release)
+  }
   const logKeys = (channel: string, list: ChannelMessage[], box: React.RefObject<HTMLTextAreaElement>, inThread = false) => (e: React.KeyboardEvent<HTMLElement>) => {
     const log = e.currentTarget
     const target = e.target as HTMLElement
@@ -2568,11 +2588,12 @@ export const ClassicList: React.FC<Props> = ({
     e.stopPropagation()
     const all = rows()
     const at = all.indexOf(row)
-    if (action === 'prev') show(all[at - 1])
-    else if (action === 'next') show(all[at + 1])
-    else if (action === 'composer') box.current?.focus()
-    else if (!m) return
-    else if (action === 'edit') { keyReturn.current = { kind: 'edit', row, near: null }; setEditing({ id: m.id, text: m.body }) }
+    if (action === 'prev') { show(all[at - 1]); return }
+    if (action === 'next') { show(all[at + 1]); return }
+    if (action === 'composer') { box.current?.focus(); return }
+    if (!m) return
+    holdKey()
+    if (action === 'edit') { keyReturn.current = { kind: 'edit', row, near: null }; setEditing({ id: m.id, text: m.body }) }
     else if (action === 'thread') void openThread(channel, m)
     else if (action === 'pin') togglePin(channel, m)
     else if (action === 'react') {
