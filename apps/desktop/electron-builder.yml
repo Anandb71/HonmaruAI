@@ -42,6 +42,12 @@ mac:
   target: [dmg, zip]
   category: public.app-category.productivity
   hardenedRuntime: true
+  # Jam: the microphone and the camera (resources/entitlements.mac.plist).
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Honmaru AI uses the microphone when you join a Jam call.
+    NSCameraUsageDescription: Honmaru AI uses the camera when you turn on video in a Jam call.
 linux:
   target: AppImage
   category: Office

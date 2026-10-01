@@ -57,7 +57,7 @@ export const NotificationsButton: React.FC<Props> = ({ httpBase, sessionToken })
     return () => clearTimeout(t)
   }, [note])
 
-  if (state === 'on' || state === 'unknown' || support === 'unsupported') return null
+  if (state === 'on' || state === 'unknown' || support === 'unsupported' || support === 'desktop') return null
 
   const click = async () => {
     if (support === 'needs-install') {

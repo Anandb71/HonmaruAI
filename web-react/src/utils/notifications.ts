@@ -1,5 +1,6 @@
 import { t } from './i18n'
 import { getLocale, primary } from './locale'
+import { bringForward } from './desktop'
 import { isQuiet } from './quiet'
 
 // The tab's own notifications, for while the app is open but not in front:
@@ -197,7 +198,7 @@ function show(title: string, { tag, body, data, renotify = false, timestamp = Da
     try {
       const n = new Notification(title, options)
       n.onclick = () => {
-        try { window.focus() } catch { /* not ours to focus */ }
+        bringForward()
         n.close()
         const hash = typeof data.hash === 'string' ? data.hash : ''
         if (hash && typeof location !== 'undefined') location.hash = hash

@@ -1076,6 +1076,7 @@ const table: Record<string, string> = {
   'Routing failed': 'Routing fehlgeschlagen',
   'This browser cannot receive push notifications here.':
     'Dieser Browser kann hier keine Push-Mitteilungen empfangen.',
+  'The desktop app tells you while it runs, even from the tray.': 'Die Desktop-App benachrichtigt Sie, solange sie läuft – auch aus der Taskleiste.',
   'This browser cannot receive them.': 'Dieser Browser kann sie nicht empfangen.',
   'Could not turn notifications on. Try again in a moment.':
     'Mitteilungen ließen sich nicht aktivieren. Gleich noch einmal versuchen.',
