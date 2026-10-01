@@ -3336,7 +3336,7 @@ export const ClassicList: React.FC<Props> = ({
             })}
           </div>
         ) : (
-        <div className="slk-log" ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
+        <div className={thread.view ? 'slk-log with-typing' : 'slk-log'} ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
           {thread.view && more[thread.view] && <div className="slk-older" role="status">{t('Loading earlier messages…')}</div>}
           {!(thread.view && more[thread.view]) && <div className="slk-start">
             {lead(thread, 'head')}

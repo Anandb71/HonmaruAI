@@ -545,10 +545,11 @@ export const SchedulePicker: React.FC<{ onPick: (at: string) => void; onClose: (
   )
 }
 
-/// "Aki is typing…" just above a box, laid over the end of the log so it
-/// comes and goes without moving anything. A screen reader hears it through
-/// a region of its own, at most once every few seconds: who is typing
-/// changes far more often than anyone wants it read out.
+/// "Aki is typing…" just above a box, in a row kept for it whether or not
+/// anyone is typing: it comes and goes without moving anything and is never
+/// on top of what was said. A screen reader hears it through a region of its
+/// own, at most once every few seconds: who is typing changes far more often
+/// than anyone wants it read out.
 export const TypingLine: React.FC<{ names: string[] }> = ({ names }) => {
   useT()
   const line = typingLine(names)
