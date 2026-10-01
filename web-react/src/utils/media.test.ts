@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mediaKind, videoBox, downloadUrl } from './media'
+import { mediaKind, videoBox, downloadUrl, firstFrameUrl } from './media'
 
 // What a file in a message is drawn as.
 describe('mediaKind', () => {
@@ -62,5 +62,12 @@ describe('downloadUrl', () => {
   it('asks a signed address to be saved', () => {
     expect(downloadUrl('https://api.example/files/f_1?e=1&s=2')).toBe('https://api.example/files/f_1?e=1&s=2&download=1')
     expect(downloadUrl('/files/f_1')).toBe('/files/f_1?download=1')
+  })
+})
+
+describe('firstFrameUrl', () => {
+  it('asks for a moment just past the start, and leaves the signed address as it is', () => {
+    expect(firstFrameUrl('https://api.example/files/f_1?e=1&s=2')).toBe('https://api.example/files/f_1?e=1&s=2#t=0.001')
+    expect(new URL(firstFrameUrl('https://api.example/files/f_1?e=1&s=2')).search).toBe('?e=1&s=2')
   })
 })

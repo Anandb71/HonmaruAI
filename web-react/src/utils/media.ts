@@ -38,3 +38,13 @@ export function videoBox(width?: number | null, height?: number | null): { ratio
 export function downloadUrl(url: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}download=1`
 }
+
+/// A video's address as its player is given it, asking for a moment just
+/// past the start. An iPhone draws nothing of a video until it is played,
+/// which leaves a black box; asked for a moment in it, it fetches and
+/// draws that frame, as other browsers draw the first one unasked. The
+/// fragment never leaves the browser, so the signed address is fetched as
+/// it is.
+export function firstFrameUrl(url: string): string {
+  return `${url}#t=0.001`
+}
