@@ -10,33 +10,46 @@ export const DEFAULT_API_ORIGINS = ['https://tiktokforwork.torubj0904.workers.de
 /// Sign in with GitHub happens on github.com.
 const SIGN_IN_ORIGINS = ['https://github.com']
 
-const originOf = (value) => {
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/// The origin of a URL the app may be pointed at, or null. Only https, except
+/// a dev server on this machine over http — and that only while developing:
+/// an installed app is never pointed at plain http.
+export function trustedOrigin(value, { packaged = true } = {}) {
   try {
     const url = new URL(String(value).trim())
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : null
+    if (url.protocol === 'https:') return url.origin
+    if (url.protocol === 'http:' && !packaged && LOCAL_HOSTS.has(url.hostname)) return url.origin
+    return null
   } catch {
     return null
   }
 }
 
 /// `--app-url=<url>` or HONMARU_APP_URL (a local dev server, a staging build),
-/// else the production web app. A value that is not an http(s) URL is ignored.
-export function appUrlFrom(env = {}, argv = []) {
+/// else the production web app. Both are for development only: an installed
+/// (packaged) app ignores them, so nothing on the command line or in the
+/// environment can point a signed app at another site. A value that is not
+/// https (or http on localhost, in development) is ignored too.
+export function appUrlFrom(env = {}, argv = [], { packaged = true } = {}) {
+  if (packaged) return DEFAULT_APP_URL
   const flag = argv.find((arg) => typeof arg === 'string' && arg.startsWith('--app-url='))
   const wanted = flag ? flag.slice('--app-url='.length) : env.HONMARU_APP_URL
-  if (wanted && originOf(wanted)) return new URL(wanted).toString()
+  if (wanted && trustedOrigin(wanted, { packaged })) return new URL(wanted).toString()
   return DEFAULT_APP_URL
 }
 
-const list = (value) => String(value || '').split(',').map(originOf).filter(Boolean)
+const list = (value, options) => String(value || '').split(',').map((item) => trustedOrigin(item, options)).filter(Boolean)
 
 /// The API origins: the production Worker, plus HONMARU_API_ORIGINS
-/// (comma-separated) for another deployment.
-export function apiOriginsFrom(env = {}) {
-  return [...new Set([...DEFAULT_API_ORIGINS, ...list(env.HONMARU_API_ORIGINS)])]
+/// (comma-separated) for another deployment — in development only, like the
+/// app's address.
+export function apiOriginsFrom(env = {}, { packaged = true } = {}) {
+  if (packaged) return [...DEFAULT_API_ORIGINS]
+  return [...new Set([...DEFAULT_API_ORIGINS, ...list(env.HONMARU_API_ORIGINS, { packaged })])]
 }
 
 /// Every origin the window may show without a sign-in in progress.
-export function allowedOrigins(appUrl, env = {}) {
-  return [...new Set([originOf(appUrl), ...apiOriginsFrom(env), ...SIGN_IN_ORIGINS].filter(Boolean))]
+export function allowedOrigins(appUrl, env = {}, { packaged = true } = {}) {
+  return [...new Set([trustedOrigin(appUrl, { packaged }), ...apiOriginsFrom(env, { packaged }), ...SIGN_IN_ORIGINS].filter(Boolean))]
 }

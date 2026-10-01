@@ -5,13 +5,15 @@
 //
 // Security baseline (docs/architecture/discord-model-platform-plan.md §11.4):
 // context isolation, a sandboxed renderer without Node, a two-call preload,
-// permissions only for the app's own origin, navigation kept to the app, the
-// API and sign-in, and every other link sent to the browser.
+// permissions only for the app's own origin, a Content-Security-Policy on the
+// app's pages, navigation kept to the app, the API and sign-in, and every
+// other link sent to the browser.
 
 import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, session, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { allowedOrigins, apiOriginsFrom, appUrlFrom } from './config.js'
+import { buildCsp, withCsp } from './csp.js'
 import { PROTOCOL, deepLinkToUrl, isSafeExternal, linkFromArgv, navigationDecision } from './links.js'
 import { countFromTitle, shouldAttract, trayTooltip } from './badge.js'
 import { fitBounds, loadWindowState, saveWindowState, MIN_SIZE } from './windowState.js'
@@ -21,10 +23,18 @@ const asset = (name) => path.join(here, '..', 'assets', name)
 
 const APP_ID = 'com.honmaru.ai'
 const APP_NAME = 'Honmaru AI'
-const APP_URL = appUrlFrom(process.env, process.argv)
+// `--app-url`, HONMARU_APP_URL and HONMARU_API_ORIGINS count only while
+// developing (`npm start`, `npm run dev`): an installed app always loads the
+// production web app and talks to the production API.
+const PACKAGED = app.isPackaged
+const APP_URL = appUrlFrom(process.env, process.argv, { packaged: PACKAGED })
 const APP_ORIGIN = new URL(APP_URL).origin
-const ORIGINS = allowedOrigins(APP_URL, process.env)
-const API_ORIGINS = apiOriginsFrom(process.env)
+const ORIGINS = allowedOrigins(APP_URL, process.env, { packaged: PACKAGED })
+const API_ORIGINS = apiOriginsFrom(process.env, { packaged: PACKAGED })
+/// The policy the shell adds to the app's pages (src/csp.js). Vite's dev
+/// server needs inline scripts for hot reload; that is the only time it gets
+/// them.
+const CSP = buildCsp({ apiOrigins: API_ORIGINS, dev: !PACKAGED && APP_URL.startsWith('http:') })
 /// What the app's own pages may ask for: notifications, a microphone and
 /// camera for Jam calls, full screen, and writing to the clipboard.
 const PERMISSIONS = new Set(['notifications', 'media', 'fullscreen', 'clipboard-sanitized-write'])
@@ -130,6 +140,14 @@ function webPreferences() {
     // what lets a message arrive as a notification.
     backgroundThrottling: false,
   }
+}
+
+/// Every response from the app's own origin carries the policy, added beside
+/// whatever the server sent.
+function enforceCsp() {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({ responseHeaders: withCsp(details.responseHeaders, details.url, { appOrigin: APP_ORIGIN, policy: CSP }) })
+  })
 }
 
 function lockPermissions() {
@@ -266,6 +284,7 @@ if (!app.requestSingleInstanceLock()) {
     if (quitting) app.quit()
   })
   app.whenReady().then(() => {
+    enforceCsp()
     lockPermissions()
     createMenu()
     createWindow()

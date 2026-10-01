@@ -23,8 +23,12 @@ npm test                  # the rules: links, navigation, the count, window plac
 npm run dist              # installers in dist/ (unsigned for now)
 ```
 
-`HONMARU_APP_URL` or `--app-url=<url>` points it at another web build, and
-`HONMARU_API_ORIGINS` (comma-separated) adds that build's API.
+While developing (`npm start`, `npm run dev`), `HONMARU_APP_URL` or
+`--app-url=<url>` points it at another web build, and `HONMARU_API_ORIGINS`
+(comma-separated) adds that build's API. Each must be https; plain http is
+accepted only for `localhost`. An installed app ignores all three: it always
+loads https://app.honmaruai.com and its API, so nothing on the command line or
+in the environment can point a signed app at another site.
 
 ## Security
 
@@ -32,6 +36,16 @@ Following the baseline in `docs/architecture/discord-model-platform-plan.md` §1
 
 - `contextIsolation`, `sandbox` and no `nodeIntegration`. The preload exposes
   only `window.honmaruDesktop = { isDesktop, platform, show() }`.
+- A strict Content-Security-Policy on the app's pages, added by the shell to
+  every response from the app's origin (`src/csp.js`): scripts only from the
+  app itself plus the one inline theme script in `web-react/index.html`,
+  allowed by its sha256 hash (change that script and `test/csp.test.js`
+  fails until the hash in `src/csp.js` is updated); connections only to the
+  app, the API and its wss relay; images also from any https site (avatars,
+  link previews); frames only YouTube's player; no plugins, and no framing
+  by other sites. It is sent beside any policy the server sends, so it can
+  only narrow what the page may do. The dev policy adds what Vite's hot
+  reload needs, and only when pointed at a local http server.
 - Permissions (notifications, microphone and camera for Jam, full screen,
   clipboard write) are granted only to the app's own origin.
 - The window stays on the app, its API and GitHub. A sign-in that the API
