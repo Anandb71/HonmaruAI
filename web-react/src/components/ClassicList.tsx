@@ -4064,7 +4064,8 @@ export const ClassicList: React.FC<Props> = ({
               handle: d ? d.handle : m?.handle, title: d?.title || m?.title, status: d ? d.status : m?.status,
               awayUntil: d ? d.awayUntil : m?.awayUntil, timezone: d?.timezone, mine,
             }}
-            online={isOnline(m, onlineKeys)}
+            // You are here, though the relay never says so (byPresence).
+            online={mine || isOnline(m, onlineKeys)}
             anchor={popout.anchor}
             onMessage={!mine && dm ? () => { setPopout(null); choose(dm.key); setTimeout(() => composer.current?.focus(), 50) } : undefined}
             onFullProfile={() => { setPopout(null); void openProfile(popout.ref) }}
