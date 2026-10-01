@@ -182,3 +182,47 @@ describe('an inline reply', () => {
     expect(renderToStaticMarkup(<MessageActions message={m} onReact={() => {}} onOpenChange={() => {}} />)).not.toContain('data-tool="quote"')
   })
 })
+
+// Under a message of yours the server does not have yet.
+describe('the note under a message on its way', () => {
+  const said = { id: 'tmp-1', channel: 'b:hotel', kind: 'message' as const, body: 'Rooms are ready', authorName: 'Aiko', authorRef: 'm-aiko', mine: true, cardId: null, createdAt: '2026-09-30T09:00:00.000Z' }
+  const note = async (extra: object) => {
+    const { UnsentNote } = await import('./MessageParts')
+    return renderToStaticMarkup(<UnsentNote message={{ ...said, ...extra }} onRetry={() => {}} onDelete={() => {}} onEdit={() => {}} />)
+  }
+
+  it('says why it did not go, as an alert, with Retry and Delete', async () => {
+    const html = await note({ failed: 'That did not send. Try again.' })
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('That did not send. Try again.')
+    expect(html).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-retry="1">.*Retry<\/button>/)
+    expect(html).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-delete="1">.*Delete<\/button>/)
+    expect(html).not.toContain('data-unsent-edit')
+  })
+
+  it('refused for what it says, offers Edit in place of Retry — the same words would be refused again', async () => {
+    const html = await note({ failed: 'This can’t be sent here.', refused: true })
+    expect(html).toContain('This can’t be sent here.')
+    expect(html).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-edit="1">.*Edit<\/button>/)
+    expect(html).toContain('data-unsent-delete="1"')
+    expect(html).not.toContain('data-unsent-retry')
+  })
+
+  it('only tells a screen reader it is on its way — it is drawn dimmed', async () => {
+    expect(await note({ pending: true })).toBe('<span class="sr-only">Sending…</span>')
+  })
+
+  it('on its way for longer than a send should take, says so with Delete', async () => {
+    const { UnsentNote } = await import('./MessageParts')
+    const at = (lateAt: number) => renderToStaticMarkup(<UnsentNote message={{ ...said, pending: true }} onRetry={() => {}} onDelete={() => {}} lateAt={lateAt} />)
+    expect(at(Date.now() + 60_000)).toBe('<span class="sr-only">Sending…</span>')
+    const late = at(Date.now() - 1)
+    expect(late).toContain('class="slk-unsent late"')
+    expect(late).toMatch(/<button type="button" class="slk-unsent-act" data-unsent-delete="1">.*Delete<\/button>/)
+    expect(late).not.toContain('data-unsent-retry')
+  })
+
+  it('is nothing under a message the server has', async () => {
+    expect(await note({ id: '0f9c-uuid' })).toBe('')
+  })
+})

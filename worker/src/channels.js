@@ -466,23 +466,45 @@ export async function getMessage(db, orgId, id) {
     .first();
 }
 
-export async function postMessage(db, { orgId, key, authorLogin, body, kind = "message", cardId = null, parentId = null, replyTo = null, withFiles = false }) {
+/// The browser's id for a send (`tmp-…`). Anything else is not a retry key.
+const CLIENT_ID = /^tmp-[0-9a-z-]{1,76}$/;
+export const clientIdOk = (id) => typeof id === "string" && CLIENT_ID.test(id);
+
+async function messageByClientId(db, orgId, authorLogin, clientId) {
+  const hit = await db
+    .prepare("SELECT id FROM channel_messages WHERE org_id = ?1 AND author_login = ?2 AND client_id = ?3")
+    .bind(orgId, authorLogin, clientId)
+    .first();
+  return hit ? getMessage(db, orgId, hit.id) : null;
+}
+
+export async function postMessage(db, { orgId, key, authorLogin, body, kind = "message", cardId = null, parentId = null, replyTo = null, withFiles = false, clientId = null }) {
   const text = String(body || "").replace(/\r\n/g, "\n").trim();
   // A picture on its own is something said.
   if (!text && !withFiles) return { error: "Write something first." };
   if (text.length > MAX_MESSAGE_CHARS) return { error: `That is longer than ${MAX_MESSAGE_CHARS} characters.` };
+  if (clientId != null && clientId !== "" && !clientIdOk(clientId)) return { error: "That send cannot be tried again.", status: 400 };
   if (parentId) {
     // A reply goes under a message in this same conversation, one level deep.
     const parent = await getMessage(db, orgId, parentId);
     if (!parent || parent.channel !== key || parent.parent_id) return { error: "That thread is not here any more." };
   }
+  // A retry of a send that already landed gets that message back, before
+  // anything about it is checked again: it was fine when it was written.
+  const remembered = clientIdOk(clientId) ? clientId : null;
+  if (remembered && authorLogin) {
+    const prior = await messageByClientId(db, orgId, authorLogin, remembered);
+    if (prior) return { row: prior, replay: true };
+  }
   if (replyTo) {
     // An inline reply answers a message where it is read: the conversation
     // for a message, the same thread for a reply in one. Gone, unsent or
     // somewhere else are refused alike, so the refusal says nothing of
-    // what another conversation holds.
+    // what another conversation holds. Only something somebody said — not
+    // a "joined" line or another notice — can be answered.
     const original = await getMessage(db, orgId, replyTo);
     const here = original && original.channel === key && !original.deleted_at
+      && ["message", "ai", "agent"].includes(original.kind)
       && (parentId ? original.id === parentId || original.parent_id === parentId : !original.parent_id);
     if (!here) return { error: "The message you are replying to is not here any more.", code: "reply_gone" };
   }
@@ -490,13 +512,21 @@ export async function postMessage(db, { orgId, key, authorLogin, body, kind = "m
   // Strictly after the channel's last message, so two sent in the same
   // millisecond still read in the order they were sent.
   const now = new Date().toISOString();
-  await db
-    .prepare(
-      `INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, card_id, created_at, parent_id, reply_to_id)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
-    )
-    .bind(id, orgId, key, authorLogin, kind, text, cardId, now, parentId, replyTo || null)
-    .run();
+  try {
+    await db
+      .prepare(
+        `INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, card_id, created_at, parent_id, reply_to_id, client_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
+      )
+      .bind(id, orgId, key, authorLogin, kind, text, cardId, now, parentId, replyTo || null, remembered)
+      .run();
+  } catch (err) {
+    if (remembered && authorLogin) {
+      const prior = await messageByClientId(db, orgId, authorLogin, remembered);
+      if (prior) return { row: prior, replay: true };
+    }
+    throw err;
+  }
   await mirrorIds(db, orgId, [id]);
   return { row: await getMessage(db, orgId, id) };
 }

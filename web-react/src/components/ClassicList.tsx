@@ -9,7 +9,11 @@ import { RowMenu } from './RowMenu'
 import { SidebarSection } from './SidebarSection'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
-import type { DecisionCard, Business, ChannelMessage, ReplyQuote } from '../types/card'
+import type { DecisionCard, Business, ChannelMessage, FileRef, ReplyQuote } from '../types/card'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptAsYours, keptUnsent, landedCopy, markFailed, markPending, outboxKey, provenYours, readUnsent, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from '../utils/pendingSend'
+import type { Unsent } from '../utils/pendingSend'
+import { askingAboutData } from '../utils/authGuard'
+import { draftToClear, withoutDraft } from '../utils/drafts'
 import { getLocale } from '../utils/locale'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
@@ -25,9 +29,9 @@ import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { messageContextEntries, messageMenuTriggers, type MessageMenuActions } from '../utils/messageMenu'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, QUICK_REACTIONS, TypingLine, ReplyQuoteLine, ReplyingBar } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, QUICK_REACTIONS, TypingLine, ReplyQuoteLine, ReplyingBar, UnsentNote } from './MessageParts'
 import { heard as heardTyping, said, expire, nextExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
-import type { Typist, TypingEvent, Outgoing, Place, Signal } from '../utils/typing'
+import type { Typist, TypingEvent, Outgoing as TypingOut, Place, Signal } from '../utils/typing'
 import { quoteOf, refreshQuotes } from '../utils/replies'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
 import type { DetailsTab, JournalCite } from './ChannelPanes'
@@ -1144,8 +1148,13 @@ export const ClassicList: React.FC<Props> = ({
     return map
   }, [pending, sent, decided])
   const [messages, setMessages] = useState<Record<string, ChannelMessage[]>>({})
+  /// A message sent from here stays drawn under its temporary id's key once
+  /// the server's copy has taken its place (server id → temp id): the same
+  /// element carries on, so nothing is redrawn and a picture in it is not
+  /// loaded twice.
+  const drawnAs = useRef(new Map<string, string>())
+  const keyOf = (m: ChannelMessage) => drawnAs.current.get(m.id) || m.id
   const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
   // An inline reply being written (Discord's Reply, not a thread): the
   // message the next one answers, in the conversation it was started in.
   const [replyingTo, setReplyingTo] = useState<{ view: string; quote: ReplyQuote } | null>(null)
@@ -1182,9 +1191,12 @@ export const ClassicList: React.FC<Props> = ({
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return
+        // What is still on its way, or did not go, is only here: kept —
+        // and what did not go before this page loaded, back where it was.
         const page = (data.messages || []) as ChannelMessage[]
         const had = messagesRef.current[channel]
-        setMessages((prev) => ({ ...prev, [channel]: leavesGap(prev[channel], page, PAGE) ? page : mergeById(prev[channel], page) }))
+        const back = heldFor(channel, undefined, page)
+        setMessages((prev) => ({ ...prev, [channel]: withHeld(keepTemps(leavesGap(prev[channel], page, PAGE) ? page : mergeById(prev[channel], page), prev[channel]), back) }))
         if (leavesGap(had, page, PAGE) || !reachesPast(had, page)) setMore((prev) => ({ ...prev, [channel]: hasOlder(data, PAGE) }))
         maybeNewEmoji(page.map((m) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
       })
@@ -1355,14 +1367,17 @@ export const ClassicList: React.FC<Props> = ({
       const msg = { ...m, mine, reactions }
       maybeNewEmoji(`${m.body || ''} ${reactions.map((r) => r.emoji).join(' ')}`)
       if (m.parentId) {
-        // A reply: into the thread if it is open; its parent's count comes
-        // as an event of its own.
+        // A reply: into the thread if it is open — our own, back before the
+        // answer to the send, in place of the copy on its way. Its parent's
+        // count comes as an event of its own.
         setThread((prev) => {
           if (!prev || prev.parent.id !== m.parentId) return prev
-          const has = prev.replies.some((x) => x.id === m.id)
-          const replies = m.deleted ? prev.replies.filter((x) => x.id !== m.id)
-            : has ? prev.replies.map((x) => (x.id === m.id ? msg : x)) : [...prev.replies, msg]
-          return { ...prev, replies }
+          if (m.deleted) return { ...prev, replies: prev.replies.filter((x) => x.id !== m.id) }
+          const held = echoOf(prev.replies, msg)
+          if (held) drawnAs.current.set(m.id, held.id)
+          // One that looked failed got there: not kept to send again.
+          if (held?.failed) queueMicrotask(() => settle(held.id))
+          return { ...prev, replies: arrive(prev.replies, msg) }
         })
         if (m.kind === 'ai') setThinking((prev) => ({ ...prev, [m.channel]: false }))
         if (m.kind === 'agent') agentDone(m.channel, m.agent?.id)
@@ -1379,7 +1394,12 @@ export const ClassicList: React.FC<Props> = ({
         // a reply quoting it says so instead, and one quoting an edit
         // quotes the new words.
         if (m.deleted) return { ...prev, [m.channel]: refreshQuotes(list.filter((x) => x.id !== m.id), msg) }
-        return { ...prev, [m.channel]: refreshQuotes(has ? list.map((x) => (x.id === m.id ? msg : x)) : [...list, msg], msg) }
+        // Our own, back before the answer to the send, takes the place of
+        // the copy on its way rather than showing twice.
+        const held = echoOf(list, msg)
+        if (held) drawnAs.current.set(m.id, held.id)
+        if (held?.failed) queueMicrotask(() => settle(held.id))
+        return { ...prev, [m.channel]: refreshQuotes(arrive(list, msg), msg) }
       })
       setReplyingTo((prev) => (prev?.quote.id === m.id ? { ...prev, quote: quoteOf(msg) } : prev))
       setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
@@ -1425,10 +1445,152 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:channel-progress', on)
   }, [agentDone])
 
+  /// Who you are in this workspace, once the team has loaded: whose name
+  /// what you send goes under, and whose what is kept here must be.
+  const myRef = members.find((m) => m.mine)?.ref
+  /// A message on its way, or one that did not go, by its temporary id:
+  /// what Retry sends again, and (`landing`) the server's copy an edit begun
+  /// on it waits for. Its words are in the log with it. `abort` gives up on
+  /// it while it goes — Delete, offered once it is still going at `lateAt`.
+  /// `going`: in line or sent, with no answer yet, so a Retry pressed twice
+  /// sends it once. `said` is how it was first drawn, and `failed` and
+  /// `refused` how it stands: kept in this browser (keepOutbox) so that a
+  /// reload or a closed tab does not lose it. `restored`: kept from before
+  /// this page loaded, and not drawn yet.
+  type Outgoing = {
+    tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; said: ChannelMessage
+    landing?: Promise<ChannelMessage | null>; abort?: () => void; lateAt?: number; going?: boolean
+    failed?: string; refused?: boolean; restored?: boolean
+  }
+  const outbox = useRef(new Map<string, Outgoing>())
+  /// Every message this tab has sent, or done something with — Retry,
+  /// Delete, Edit, or found it got there — gone since or not: what it keeps
+  /// in this browser is only ever these, never another tab's. One kept from
+  /// before this page loaded is not among them until then: every open tab
+  /// brings it back, and one that has not touched it must not write it back
+  /// after another tab has sent it or thrown it away.
+  const heldHere = useRef(new Set<string>())
+  /// The outbox as it is now, kept in this browser for a reload or the next
+  /// visit: this tab's messages as they stand, and any other — another
+  /// tab's, or one brought back that this tab has not touched — left as it
+  /// is kept. `tempId`: one this tab does something with now, so its own.
+  const keepOutbox = (tempId?: string) => {
+    // Signed out (or someone else signed in) while a send was still going:
+    // a failure that lands now must not write the words back to disk.
+    try { if (localStorage.getItem('userId') !== userId) return } catch { return }
+    if (tempId) heldHere.current.add(tempId)
+    const now: Unsent[] = []
+    for (const o of outbox.current.values())
+      now.push({ said: o.said, decide: o.decide, ...(o.failed ? { failed: o.failed } : {}), ...(o.refused ? { refused: true } : {}) })
+    const key = outboxKey(api.orgId, userId)
+    try {
+      const kept = keptUnsent(readUnsent(localStorage.getItem(key)), now, heldHere.current)
+      if (kept.length) localStorage.setItem(key, JSON.stringify(kept)); else localStorage.removeItem(key)
+    } catch { /* not kept: this tab still has them */ }
+  }
+  /// One kept in this browser from before this page loaded, back in the
+  /// outbox: failed, and not drawn yet — nor this tab's (heldHere) until it
+  /// does something with it.
+  const restore = (u: Unsent) => {
+    if (outbox.current.has(u.said.id)) return
+    outbox.current.set(u.said.id, {
+      tempId: u.said.id, channel: u.said.channel, body: u.said.body, decide: u.decide, parentId: u.said.parentId || undefined, files: u.said.files || [], said: u.said,
+      failed: u.failed || t('That did not send. Try again.'), refused: u.refused, restored: true,
+    })
+  }
+  // What did not go before this page loaded: back in the outbox, failed,
+  // drawn where it was sent once that conversation or thread is loaded.
+  // Only yours — kept under your own key, not the workspace's, so what
+  // someone else signed in here left unsent is never drawn as yours.
+  useEffect(() => {
+    let kept: Unsent[] = []
+    try { kept = readUnsent(localStorage.getItem(outboxKey(api.orgId, userId))) } catch { /* nothing kept */ }
+    for (const u of kept) if (keptAsYours(u.said, myRef)) restore(u)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api.orgId, userId])
+  // Once the team has loaded, who you are is known. One kept for you that
+  // names someone else as its author is let go — never drawn as yours, nor
+  // sent under your name. What was kept for the whole workspace, before it
+  // was kept per person, comes back only where it names you; the rest, and
+  // the old key with it, is dropped.
+  useEffect(() => {
+    if (!myRef) return
+    for (const o of [...outbox.current.values()]) {
+      if (keptAsYours(o.said, myRef)) continue
+      o.abort?.()
+      drop(o.tempId, o.channel, o.parentId)
+    }
+    let shared: Unsent[] = []
+    try {
+      shared = readUnsent(localStorage.getItem(sharedOutboxKey(api.orgId)))
+      localStorage.removeItem(sharedOutboxKey(api.orgId))
+    } catch { /* nothing kept there */ }
+    const yours = shared.filter((u) => provenYours(u.said, myRef))
+    // Taken from a key that is gone now: this tab keeps them, under yours.
+    for (const u of yours) { restore(u); heldHere.current.add(u.said.id) }
+    if (yours.length) keepOutbox()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRef])
+  // Leaving while something is still on its way: asked first, as it may not
+  // get there. What did not go is kept for next time, so is not asked about.
+  useEffect(() => {
+    const leaving = (e: BeforeUnloadEvent) => {
+      if (![...outbox.current.values()].some((o) => o.going)) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', leaving)
+    return () => window.removeEventListener('beforeunload', leaving)
+  }, [])
+  /// Ours for one conversation (`parentId` unset) or one thread, as they are
+  /// to be drawn: on their way or failed as they stand. One kept from before
+  /// this page loaded is let go instead when `fresh`, what the server has
+  /// there, shows it got there after all; one the socket's copy has already
+  /// taken the place of is drawn as that.
+  const heldFor = (channel: string, parentId: string | undefined, fresh: ChannelMessage[]): ChannelMessage[] => {
+    const back: ChannelMessage[] = []
+    const taken = new Set(drawnAs.current.values())
+    let settled = false
+    for (const o of [...outbox.current.values()]) {
+      const here = parentId ? o.parentId === parentId : !o.parentId && o.channel === channel
+      if (!here || taken.has(o.tempId)) continue
+      const fromBefore = o.restored
+      if (o.restored) o.restored = false
+      // Failed, and not on its way: a page that already has it means the
+      // send landed and the answer was lost. Sending it again would post it twice.
+      if (!o.going && !o.refused && (fromBefore || o.failed) && wentAfterAll(o.said, fresh)) {
+        outbox.current.delete(o.tempId); heldHere.current.add(o.tempId); settled = true; continue
+      }
+      back.push(o.failed ? unsentAgain(o, o.failed) : { ...o.said, pending: true, failed: undefined, refused: undefined })
+    }
+    if (settled) keepOutbox()
+    return back
+  }
+  /// One that looked failed but got there: the socket's copy has taken its
+  /// place, so it is no longer kept to be sent again.
+  const settle = (tempId: string) => {
+    const o = outbox.current.get(tempId)
+    if (!o || o.going) return
+    outbox.current.delete(tempId)
+    keepOutbox(tempId)
+  }
+  /// The same words to the same place a moment ago: a second Enter or a
+  /// double tap before the box has cleared does not send them twice. Said
+  /// again on purpose, they go again (isDoubleSend).
+  const justSent = useRef(new Map<string, number>())
+  /// A message for later, waiting for the server's answer: the box still
+  /// holds it until then, so Enter again meanwhile does not schedule it twice.
+  const scheduling = useRef(new Set<string>())
+  const goingKey = (o: Pick<Outgoing, 'channel' | 'parentId' | 'body' | 'files'>) => [o.channel, o.parentId || '', o.body, o.files.map((f) => f.id).join(',')].join('\n')
+  /// A conversation's messages go one after another, in the order they were
+  /// sent — as they did from the box that locked — or two sent in a blink
+  /// could reach the server, and be kept, the other way round.
+  const inLine = useRef(new Map<string, Promise<unknown>>())
+
   const send = async (channel: string, decide: boolean, parentId?: string, sendAt?: string) => {
     let body = (parentId ? threadDraft : draft).trim()
     const up = parentId ? threadUploads : uploads
-    if ((!body && !up.ids.length) || sending) return
+    if (!body && !up.ids.length) return
     if (up.busy) { setProblem(t('Wait for the files to finish uploading.')); return }
     if (sendAt && up.ids.length) { setProblem(t('A scheduled message cannot carry files yet.')); return }
     // A command, not a message: done here, with a note only you see.
@@ -1438,60 +1600,209 @@ export const ClassicList: React.FC<Props> = ({
       const done = await runCommand(channel, name.toLowerCase(), rest.trim())
       if (done === 'send-decide') { body = rest.trim(); decide = true }
       else if (done === 'send-later') return
-      else { if (done) setDraft(''); return }
+      else { if (done) clearDraftOf(channel); return }
       if (!body) return
     }
-    // The conversation's own box answers the message it is replying to.
-    const replyTo = !parentId && replyingTo?.view === channel ? replyingTo.quote.id : null
-    setSending(true); setProblem(null)
-    try {
+    const files = up.items.flatMap((i) => (i.state === 'done' && i.file ? [i.file] : []))
+    const key = goingKey({ channel, parentId, body, files })
+    if (sendAt ? scheduling.current.has(key) : isDoubleSend(justSent.current, key)) return
+    setProblem(null)
+    // Written now, sent later: nothing shows in the conversation until it
+    // goes, so this one still waits for the server's answer.
+    if (sendAt) {
+      scheduling.current.add(key)
       const res = await fetch(`${api.httpBase}/channels/messages`, {
         method: 'POST',
         headers: { ...authHeaders, 'content-type': 'application/json' },
-        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), ...(replyTo ? { replyTo } : {}), ...(sendAt ? { sendAt } : {}), ...(up.ids.length ? { files: up.ids } : {}) }),
-      })
-      const data = await res.json().catch(() => ({}))
-      // Unsent while this was being written: the words stay in the box, to
-      // go as a plain message if they are sent again.
-      if (!res.ok && data.code === 'reply_gone') { setReplyingTo(null); setProblem(t('The message you were replying to is gone. Send again to post this on its own.')); return }
-      if (!res.ok) { setProblem(refusal(data)); return }
-      // Sent, or set for later: the box empties, and nobody is typing in it.
-      stoppedTyping({ channel, parentId: parentId || null })
-      if (data.scheduled) {
-        setDraft('')
-        setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
-        note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
-        return
-      }
-      const msg = data.message as ChannelMessage
-      // Sent: a small confirmation, in a direct conversation — as Slack does.
-      if (channel.startsWith('dm:') || channel.startsWith('ag:')) playSound('sent')
-      up.clear()
-      if (parentId) {
-        setThreadDraft('')
-        setThread((prev) => (prev && prev.parent.id === parentId && !prev.replies.some((x) => x.id === msg.id) ? { ...prev, replies: [...prev.replies, msg] } : prev))
-        // The parent as the server now has it: its count is a fact, not
-        // one more than whatever the live event already made it.
-        const parent = data.parent as ChannelMessage | undefined
-        setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).map((x) => (x.id !== parentId ? x
-          : parent ? { ...x, replyCount: Math.max(parent.replyCount || 0, x.replyCount || 0), lastReplyAt: parent.lastReplyAt || msg.createdAt, replyRefs: parent.replyRefs || x.replyRefs }
-            : { ...x, replyCount: (x.replyCount || 0) + 1, lastReplyAt: msg.createdAt })) }))
-        if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
-        return
-      }
-      setDraft('')
-      if (replyTo) setReplyingTo((prev) => (prev?.quote.id === replyTo ? null : prev))
-      setMessages((prev) => {
-        const list = prev[channel] || []
-        return list.some((x) => x.id === msg.id) ? prev : { ...prev, [channel]: [...list, msg] }
-      })
-      if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
-    } catch {
-      setProblem(t('That did not send. Try again.'))
-    } finally {
-      setSending(false)
-      if (parentId) threadComposer.current?.focus(); else composer.current?.focus()
+        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), sendAt }),
+      }).catch(() => null)
+      const data = res ? await res.json().catch(() => ({})) : {}
+      scheduling.current.delete(key)
+      if (!res?.ok || !data.scheduled) { setProblem(res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return }
+      if (parentId) setThreadDraft(''); else clearDraftOf(channel)
+      setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
+      note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
+      return
     }
+    // In the conversation at once, marked as on its way, and the box free
+    // for the next line while it goes — the files in it are already up.
+    // The conversation's own box answers the message it is replying to: the
+    // quote rides on the copy shown at once, and on a retry or a reload.
+    const quoting = !parentId && replyingTo?.view === channel ? replyingTo.quote : null
+    const temp = { ...tempMessage({ channel, body, parentId, files }, { name: myName || null, ref: myRef || null, avatar: myAvatar }, sendTime(parentId ? undefined : messagesRef.current[channel])), ...(quoting ? { replyTo: quoting } : {}) }
+    if (quoting) setReplyingTo(null)
+    // Sent: nobody is typing in this box any more.
+    stoppedTyping({ channel, parentId: parentId || null })
+    if (parentId) {
+      setThreadDraft('')
+      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: [...prev.replies, temp] } : prev))
+    } else {
+      clearDraftOf(channel)
+      setMessages((prev) => ({ ...prev, [channel]: [...(prev[channel] || []), temp] }))
+    }
+    up.clear()
+    if (parentId) threadComposer.current?.focus(); else composer.current?.focus()
+    const out: Outgoing = { tempId: temp.id, channel, body, decide, parentId, files, said: temp, lateAt: Date.now() + SEND_TIMEOUT }
+    outbox.current.set(temp.id, out)
+    out.landing = deliver(out)
+    keepOutbox(temp.id)
+    await out.landing
+  }
+
+  /// Send what shows as on its way, once whatever went before it in that
+  /// conversation has had its answer.
+  const deliver = (out: Outgoing): Promise<ChannelMessage | null> => {
+    out.going = true
+    const turn = (inLine.current.get(out.channel) || Promise.resolve()).then(() => post(out)).finally(() => { out.going = false })
+    inLine.current.set(out.channel, turn.catch(() => null))
+    return turn
+  }
+  /// The server's copy takes the place of ours. No answer in SEND_TIMEOUT
+  /// and it is given up on as a dropped connection would be — with Retry —
+  /// and the next in line goes; a request that hangs holds nothing up.
+  const post = async (out: Outgoing): Promise<ChannelMessage | null> => {
+    const { tempId, channel, body, decide, parentId, files } = out
+    // Deleted while it waited its turn: it never goes.
+    if (outbox.current.get(tempId) !== out) return null
+    const ctrl = new AbortController()
+    out.abort = () => ctrl.abort()
+    const stopClock = sendDeadline(ctrl, SEND_TIMEOUT, askingAboutData)
+    const res = await fetch(`${api.httpBase}/channels/messages`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel, body, decide, clientId: tempId, ...(parentId ? { parentId } : {}), ...(out.said.replyTo?.id ? { replyTo: out.said.replyTo.id } : {}), ...(files.length ? { files: files.map((f) => f.id) } : {}) }),
+      signal: ctrl.signal,
+    }).catch(() => null)
+    const data = res ? await res.json().catch(() => ({})) : {}
+    stopClock()
+    out.abort = undefined
+    const msg = res?.ok ? (data.message as ChannelMessage | undefined) : undefined
+    // Deleted while it went, and it did not land: nothing more to say.
+    if (!msg?.id && outbox.current.get(tempId) !== out) return null
+    if (!msg?.id) {
+      // Unsent while this was on its way: back in the box, to go as a plain
+      // message if it is sent again.
+      if (res && !res.ok && data.code === 'reply_gone') { out.said = { ...out.said, replyTo: null }; refuse(out, t('The message you were replying to is gone. Send again to post this on its own.')) }
+      else if (res && !res.ok && refusedOutright(res.status)) refuse(out, refusal(data))
+      else fail(out, res && !res.ok ? refusal(data) : t('That did not send. Try again.'))
+      return null
+    }
+    outbox.current.delete(tempId)
+    keepOutbox(tempId)
+    // An edit begun on it while it went carries on, on the server's copy.
+    setEditing((e) => (e && e.id === tempId ? { ...e, id: msg.id } : e))
+    // Sent: a small confirmation, in a direct conversation — as Slack does.
+    if (channel.startsWith('dm:') || channel.startsWith('ag:')) playSound('sent')
+    // Drawn on in ours' place — unless something else already took it.
+    if (parentId) {
+      setThread((prev) => {
+        if (!prev || prev.parent.id !== parentId) return prev
+        drawUnder(drawnAs.current, msg.id, tempId, prev.replies)
+        return { ...prev, replies: reconcile(prev.replies, tempId, msg) }
+      })
+      // The parent as the server now has it: its count is a fact, not
+      // one more than whatever the live event already made it.
+      const parent = data.parent as ChannelMessage | undefined
+      setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).map((x) => (x.id !== parentId ? x
+        : parent ? { ...x, replyCount: Math.max(parent.replyCount || 0, x.replyCount || 0), lastReplyAt: parent.lastReplyAt || msg.createdAt, replyRefs: parent.replyRefs || x.replyRefs }
+          : { ...x, replyCount: (x.replyCount || 0) + 1, lastReplyAt: msg.createdAt })) }))
+      if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
+      return msg
+    }
+    setMessages((prev) => {
+      const list = prev[channel] || []
+      drawUnder(drawnAs.current, msg.id, tempId, list)
+      return { ...prev, [channel]: reconcile(list, tempId, msg) }
+    })
+    if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
+    return msg
+  }
+
+  /// It did not go: it stays where it was, marked, with why. Moved on from
+  /// there since, you are told where you are now as well. A reply whose
+  /// thread has closed is kept, and is back in the thread when it is opened
+  /// again. `refused`: the server said no to the words, so it waits to be
+  /// edited, not retried.
+  const fail = (out: Outgoing, why: string, refused = false) => {
+    const { tempId, channel, parentId } = out
+    out.failed = why
+    out.refused = refused || undefined
+    keepOutbox(tempId)
+    if (parentId) {
+      if (shownNow.current.thread !== parentId) { setProblem(why); return }
+      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: markFailed(prev.replies, tempId, why, refused) } : prev))
+      return
+    }
+    setMessages((prev) => (prev[channel] ? { ...prev, [channel]: markFailed(prev[channel], tempId, why, refused) } : prev))
+    if (shownNow.current.view !== channel) setProblem(why)
+  }
+  /// Refused for what it says — a data rule, a thread that has gone: back
+  /// into the box it was written in, files and all, with why above it, when
+  /// that box is on screen and empty. With something else written there by
+  /// now, it stays where it was with Edit, so neither is lost.
+  const refuse = (out: Outgoing, why: string) => {
+    const { tempId, channel, parentId, body, files } = out
+    const box = parentId
+      ? shownNow.current.thread === parentId && !boxes.current.thread.trim() && !boxes.current.threadFiles
+      : shownNow.current.view === channel && draftView.current === channel && !boxes.current.draft.trim() && !boxes.current.files
+    if (!box) { fail(out, why, true); return }
+    drop(tempId, channel, parentId)
+    if (parentId) { setThreadDraft(body); threadUploads.restore(files) } else { setDraft(body); uploads.restore(files) }
+    setProblem(why)
+  }
+  /// Edit, under one that was refused: its words and files back in the box
+  /// it was written in, after whatever is there already, and it goes from
+  /// the conversation — it was only ever here.
+  const writeAgain = (m: ChannelMessage) => {
+    const after = (was: string) => (was.trim() ? `${was.replace(/\s+$/, '')}\n${m.body}` : m.body)
+    if (m.parentId) { setThreadDraft(after); threadUploads.restore(m.files || []) } else { setDraft(after); uploads.restore(m.files || []) }
+    discard(m)
+    ;(m.parentId ? threadComposer : composer).current?.focus()
+  }
+  /// Retry: the same words, files and thread, on their way again from
+  /// where they are.
+  const retry = (m: ChannelMessage) => {
+    const fresh = (m.parentId
+      ? (thread?.parent.id === m.parentId ? thread.replies : [])
+      : (messages[m.channel] || [])).filter((x) => !isTemp(x))
+    const real = landedCopy(m, fresh)
+    if (real && !m.refused) {
+      if (m.parentId) setThread((prev) => (prev && prev.parent.id === m.parentId ? { ...prev, replies: reconcile(prev.replies, m.id, real) } : prev))
+      else setMessages((prev) => (prev[m.channel] ? { ...prev, [m.channel]: reconcile(prev[m.channel], m.id, real) } : prev))
+      settle(m.id)
+      return
+    }
+    const out: Outgoing = outbox.current.get(m.id) || { tempId: m.id, channel: m.channel, body: m.body, decide: false, parentId: m.parentId || undefined, files: m.files || [], said: m }
+    if (out.going) return
+    out.lateAt = Date.now() + SEND_TIMEOUT
+    out.failed = undefined
+    out.refused = undefined
+    outbox.current.set(m.id, out)
+    if (out.parentId) setThread((prev) => (prev && prev.parent.id === out.parentId ? { ...prev, replies: markPending(prev.replies, m.id) } : prev))
+    else setMessages((prev) => (prev[out.channel] ? { ...prev, [out.channel]: markPending(prev[out.channel], m.id) } : prev))
+    out.landing = deliver(out)
+    keepOutbox(m.id)
+  }
+  /// The server's id for one of yours sent from here: waited for while it
+  /// is on its way, none when it did not go.
+  const landedId = async (tempId: string) => {
+    const out = outbox.current.get(tempId)
+    if (out) return (await out.landing)?.id || null
+    for (const [id, drawn] of drawnAs.current) if (drawn === tempId) return id
+    return null
+  }
+  /// One only ever held here, gone from where it was drawn.
+  const drop = (tempId: string, channel: string, parentId?: string | null) => {
+    outbox.current.delete(tempId)
+    keepOutbox(tempId)
+    if (parentId) setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: prev.replies.filter((x) => x.id !== tempId) } : prev))
+    else setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== tempId) } : prev))
+  }
+  /// Delete: it was only ever here, so it just goes — still on its way, it
+  /// is given up on first, or dropped from the line before its turn.
+  const discard = (m: ChannelMessage) => {
+    outbox.current.get(m.id)?.abort?.()
+    drop(m.id, m.channel, m.parentId)
   }
 
   // ---- Time and gathering: drafts, scheduled sends, Later, clips, notes ----
@@ -1521,6 +1832,14 @@ export const ClassicList: React.FC<Props> = ({
     setDrafts((prev) => (Boolean(prev[v]) === Boolean(draft) ? prev : { ...prev, [v]: Boolean(draft) }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft])
+  /// What was sent leaves the box it was written in. Moved on to another
+  /// conversation while it went, only what that one kept goes — never the
+  /// draft of the conversation open now, which the box holds by then.
+  const clearDraftOf = (v: string) => {
+    if (draftToClear(v, draftView.current) === 'box') { setDraft(''); return }
+    try { localStorage.removeItem(draftKey(v)) } catch { /* nothing kept */ }
+    setDrafts((prev) => withoutDraft(prev, v))
+  }
 
   const [scheduled, setScheduled] = useState<Array<{ id: string; body: string; sendAt: string; channel: string; parentId?: string | null }>>([])
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -1587,7 +1906,7 @@ export const ClassicList: React.FC<Props> = ({
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
     if (!res?.ok) { setProblem(data.message || t('That could not become a decision. Try again.')); return }
-    setClip([]); setDraft('')
+    setClip([]); clearDraftOf(channel)
     if (data.message) setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).some((x) => x.id === data.message.id) ? prev[channel] : [...(prev[channel] || []), data.message] }))
     setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
   }
@@ -1637,7 +1956,7 @@ export const ClassicList: React.FC<Props> = ({
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
     if (!res?.ok) { setProblem(refusal(data)); return }
-    setDraft('')
+    clearDraftOf(channel)
     setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
     note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
   }
@@ -1780,8 +2099,8 @@ export const ClassicList: React.FC<Props> = ({
   const typingHere = (channel: string, parentId: string | null) =>
     typistsIn(typists, { channel, parentId }, Date.now(), members.find((m) => m.mine)?.ref).map((x) => x.name)
   // This person's own typing, as the relay has been told it.
-  const typingOut = useRef<Outgoing | null>(null)
-  const tellTyping = useCallback((step: { next: Outgoing | null; send: Signal[] }) => {
+  const typingOut = useRef<TypingOut | null>(null)
+  const tellTyping = useCallback((step: { next: TypingOut | null; send: Signal[] }) => {
     typingOut.current = step.next
     for (const s of step.send) sendTyping(s)
   }, [])
@@ -1852,7 +2171,13 @@ export const ClassicList: React.FC<Props> = ({
   }
   const messagesRef = useRef(messages)
   messagesRef.current = messages
-  const myRef = members.find((m) => m.mine)?.ref
+  /// Where you are now, for a send that answers after you may have moved on.
+  const shownNow = useRef({ view: openView, thread: threadOpenParent })
+  shownNow.current = { view: openView, thread: threadOpenParent }
+  /// What is in the boxes now — words, and files going with them — for an
+  /// answer that comes after more may have been written.
+  const boxes = useRef({ draft, thread: threadDraft, files: uploads.items.length, threadFiles: threadUploads.items.length })
+  boxes.current = { draft, thread: threadDraft, files: uploads.items.length, threadFiles: threadUploads.items.length }
   const nameOfRef = (ref: string) => (ref === myRef ? t('You') : members.find((m) => m.ref === ref)?.name || t('a teammate'))
 
   /// Put a changed message wherever it shows: the log, the thread, the pins.
@@ -1894,9 +2219,16 @@ export const ClassicList: React.FC<Props> = ({
     if (!editing) return
     const text = editing.text.trim()
     if (!text) return
-    const done = await act('PUT', '/channels/messages', channel, { messageId: editing.id, body: text })
+    // Begun while it was on its way: saved to the server's copy once it has
+    // landed — not at all if it did not go.
+    const id = isTemp(editing) ? await landedId(editing.id) : editing.id
+    if (!id) { setProblem(t('That did not save.')); return }
+    const done = await act('PUT', '/channels/messages', channel, { messageId: id, body: text })
     if (done) setEditing(null)
   }
+  /// The message an edit is open on. Begun on one of yours still on its way,
+  /// it stays open on the server's copy that took its place.
+  const editingThis = (m: ChannelMessage) => Boolean(editing && (editing.id === m.id || editing.id === drawnAs.current.get(m.id)))
   const remove = async (channel: string, m: ChannelMessage) => {
     // Somebody else's words in the thread go only when you say so outright.
     const others = !m.parentId && (m.replyRefs || []).some((r) => r !== myRef)
@@ -1915,11 +2247,14 @@ export const ClassicList: React.FC<Props> = ({
   const openThread = async (channel: string, m: ChannelMessage) => {
     setDetailId(null)
     setProfile(null)
-    setThread({ channel, parent: m, replies: [] })
+    setThread((prev) => ({ channel, parent: m, replies: prev && prev.parent.id === m.id ? prev.replies.filter(isTemp) : [] }))
     setThreadDraft('')
     const res = await fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(m.id)}`, { headers: authHeaders }).catch(() => null)
     const data = res?.ok ? await res.json().catch(() => null) : null
-    if (data) setThread((prev) => (prev && prev.parent.id === m.id ? { channel, parent: data.parent, replies: data.replies || [] } : prev))
+    // Replies of yours still on their way, or that did not go — sent while
+    // it was open before, or before this page loaded — back in it.
+    const back = data ? heldFor(channel, m.id, data.replies || []) : []
+    if (data) setThread((prev) => (prev && prev.parent.id === m.id ? { channel, parent: data.parent, replies: withHeld(keepTemps(data.replies || [], prev.replies), back) } : prev))
     requestAnimationFrame(() => threadComposer.current?.focus())
     markThreadRead(channel, m.id)
   }
@@ -1937,7 +2272,8 @@ export const ClassicList: React.FC<Props> = ({
     if (!data?.parent) { setThread(null); return }
     threadInActivity.current = true
     setThreadDraft('')
-    setThread({ channel, parent: data.parent, replies: data.replies || [] })
+    const back = heldFor(channel, parentId, data.replies || [])
+    setThread((prev) => ({ channel, parent: data.parent, replies: withHeld(keepTemps(data.replies || [], prev && prev.parent.id === parentId ? prev.replies : undefined), back) }))
     markThreadRead(channel, parentId)
     requestAnimationFrame(() => {
       const id = focusId === parentId ? `thread-${focusId}` : focusId
@@ -2229,8 +2565,9 @@ export const ClassicList: React.FC<Props> = ({
       list = [...got.filter((m) => !known.has(m.id)), ...list]
       older = hasOlder(data, PAGE)
     }
-    const merged = list
-    setMessages((prev) => ({ ...prev, [channel]: merged }))
+    // Pages loaded around what was held; what is only here is as it is now.
+    const merged = list.filter((m) => !isTemp(m))
+    setMessages((prev) => ({ ...prev, [channel]: keepTemps(merged, prev[channel]) }))
     setMore((prev) => ({ ...prev, [channel]: Boolean(older) }))
     setTimeout(() => jumpTo(cite.id), 80)
     return list.some((m) => m.id === cite.id)
@@ -2657,11 +2994,12 @@ export const ClassicList: React.FC<Props> = ({
   /// One that calls you (`mentionsMe`) is tinted and barred, to be found in
   /// a busy channel, and says so to a screen reader, which sees no tint.
   /// `quote`: the line an inline reply shows above its author, as a pin's
-  /// mark sits there.
-  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; onMenu?: (at: { x: number; y: number }, anchor: string) => void; mentionsMe?: boolean; quote?: React.ReactNode }, body: React.ReactNode) => (
+  /// mark sits there. `state`: yours, shown before the server has it — on
+  /// its way, or failed.
+  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; onMenu?: (at: { x: number; y: number }, anchor: string) => void; mentionsMe?: boolean; quote?: React.ReactNode; state?: 'pending' | 'failed' }, body: React.ReactNode) => (
     <article key={key} id={opts.msgId ? `msg-${opts.msgId}` : undefined} tabIndex={opts.msgId ? -1 : undefined}
       {...(!wide ? longPress(opts.onHold) : messageMenuTriggers(opts.onMenu))}
-      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && [msgMenu?.anchor, reactAt?.anchor].includes(`msg-${opts.msgId}`) ? ' menu-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.mentionsMe ? ' mentions-me' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
+      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && [msgMenu?.anchor, reactAt?.anchor].includes(`msg-${opts.msgId}`) ? ' menu-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.mentionsMe ? ' mentions-me' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}${opts.state ? ` ${opts.state}` : ''}`}>
       <div className="slk-gutter" aria-hidden="true">
         {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span> : avatarFor(opts.app, opts.face || { name: opts.name })}
       </div>
@@ -2715,10 +3053,14 @@ export const ClassicList: React.FC<Props> = ({
     return <Avatar key={r} className="slk-face" name={mine ? (myName || t('You')) : nameOfRef(r)} url={mine ? myAvatar : memberByRef(r)?.avatarUrl} size={20} />
   }
 
-  /// What sits under a message's words: its reactions and its thread.
+  /// What sits under a message's words: its reactions and its thread — or,
+  /// one of yours the server does not have yet, that it is on its way or
+  /// why it did not go (from the keyboard, back to the box it came from).
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
-      {!m.deleted && m.kind === 'message' && !m.previewsHidden && (
+      <UnsentNote message={m} onRetry={() => retry(m)} onDelete={() => discard(m)} onEdit={() => writeAgain(m)} lateAt={outbox.current.get(m.id)?.lateAt}
+        refocus={() => (m.parentId ? threadComposer : composer).current?.focus()} />
+      {!m.deleted && m.kind === 'message' && !m.previewsHidden && !isTemp(m) && (
         <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken}
           onHide={m.mine ? () => void act('POST', '/channels/previews', channel, { messageId: m.id, hidden: true }) : undefined} />
       )}
@@ -2741,7 +3083,7 @@ export const ClassicList: React.FC<Props> = ({
   /// A person's message: the words (or the box to change them), what is
   /// under them, and on hover everything you can do to it.
   const words = (channel: string, m: ChannelMessage) => {
-    if (editing?.id === m.id) {
+    if (editing && editingThis(m)) {
       return (
         <form className="slk-edit" onSubmit={(e) => { e.preventDefault(); void saveEdit(channel) }}>
           <textarea
@@ -2796,7 +3138,8 @@ export const ClassicList: React.FC<Props> = ({
     onForward: m.kind === 'message' || m.kind === 'ai' ? () => setForwarding({ channel, m }) : undefined,
     onCopyLink: () => copyLink(m),
   })
-  const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id) ? undefined : (
+  // Nothing to do to a message only held here: the server has no such id.
+  const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editingThis(m) || isTemp(m)) ? undefined : (
     <MessageActions
       message={m}
       {...actionsFor(channel, m, inThread)}
@@ -2806,7 +3149,7 @@ export const ClassicList: React.FC<Props> = ({
   )
 
   /// A long press, on a phone: the same things, in a sheet from the bottom.
-  const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id)
+  const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editingThis(m) || isTemp(m))
     ? undefined
     : () => setSheet({ channel, m, inThread })
   /// A right-click, on a laptop: the same things again, at the pointer.
@@ -3171,13 +3514,13 @@ export const ClassicList: React.FC<Props> = ({
     <>
           <div className="slk-thread-log">
             {[thread.parent, ...thread.replies].map((m, i) => (
-              <React.Fragment key={m.id}>
-                {block(m.id, {
+              <React.Fragment key={keyOf(m)}>
+                {block(keyOf(m), {
                   joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
                   name: whoSaid(m),
                   face: m.kind !== 'ai' ? faceOfMessage(m) : null,
                   msgId: i === 0 ? `thread-${m.id}` : m.id, mentionsMe: callsMe(m),
-                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true), onMenu: menuFor(thread.channel, m, true),
+                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true), onMenu: menuFor(thread.channel, m, true), state: tempState(m),
                 }, (
                   <>
                     {words(thread.channel, m)}
@@ -3217,7 +3560,6 @@ export const ClassicList: React.FC<Props> = ({
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
               }}
-              disabled={sending}
             />
             {threadMention.menu}
             <div className="slk-composer-bar">
@@ -3225,7 +3567,7 @@ export const ClassicList: React.FC<Props> = ({
               <input ref={threadAttachInput} type="file" multiple hidden onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) threadUploads.add(files, thread.channel) }} />
               <FormatBar target={threadComposer} value={threadDraft} set={setThreadDraft} />
               <span className="slk-composer-hint" />
-              <button type="submit" className="slk-send" disabled={sending || threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
+              <button type="submit" className="slk-send" disabled={threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
                 <Icon name="send" size={16} />
               </button>
             </div>
@@ -3347,9 +3689,9 @@ export const ClassicList: React.FC<Props> = ({
           const name = whoSaid(m)
           // A reply always shows whose it is, under the line it quotes.
           const quote = m.replyTo && !m.deleted ? m.replyTo : null
-          out.push(block(m.id, {
+          out.push(block(keyOf(m), {
             joined: joined && !m.pinned && !quote, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
-            mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m), onMenu: menuFor(thread.view!, m),
+            mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m), onMenu: menuFor(thread.view!, m), state: tempState(m),
             quote: quote && <ReplyQuoteLine quote={quote} name={quoteName(quote)} onJump={() => void goToQuoted(thread.view!, quote.id)} />,
           }, (
             <>
@@ -3745,10 +4087,12 @@ export const ClassicList: React.FC<Props> = ({
                 if (mention.onKeyDown(e)) return
                 // Escape takes the reply back, and leaves the words.
                 if (e.key === 'Escape' && replying && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); setReplyingTo(null); return }
-                // ↑ in an empty box edits what you last said, as in Slack.
+                // ↑ in an empty box edits what you last said, as in Slack —
+                // on its way still, the edit waits for it to land; one that
+                // did not go has its own Retry and Delete instead.
                 if (e.key === 'ArrowUp' && !draft && !e.nativeEvent.isComposing) {
                   const last = [...(messages[thread.view!] || [])].reverse().find((m) => m.mine && m.kind === 'message' && !m.deleted)
-                  if (last) { e.preventDefault(); setEditing({ id: last.id, text: last.body }) }
+                  if (last && !last.failed) { e.preventDefault(); setEditing({ id: last.id, text: last.body }) }
                   return
                 }
                 // Bold, italic, strike, as everywhere.
@@ -3771,7 +4115,6 @@ export const ClassicList: React.FC<Props> = ({
                 // from "@AI" or the ✦ button, never from a key pressed by habit.
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && wide) { e.preventDefault(); void send(thread.view!, false) }
               }}
-              disabled={sending}
             />
             {mention.menu}
             <SlashMenu draft={draft} onPick={(name) => { setDraft(`/${name} `); composer.current?.focus() }} />
@@ -3780,14 +4123,14 @@ export const ClassicList: React.FC<Props> = ({
               <input ref={attachInput} type="file" multiple hidden data-attach="1" onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) uploads.add(files, thread.view!) }} />
               <FormatBar target={composer} value={draft} set={setDraft} />
               <span className="slk-composer-hint">{t('Enter to send · @AI to ask · ✦ makes it a decision · / for commands')}</span>
-              <button type="button" className="slk-send ai" disabled={sending || !draft.trim()} onClick={() => void send(thread.view!, true)} aria-label={t('Send as a decision')} title={t('Send as a decision')}>
+              <button type="button" className="slk-send ai" disabled={!draft.trim()} onClick={() => void send(thread.view!, true)} aria-label={t('Send as a decision')} title={t('Send as a decision')}>
                 <Icon name="sparkle" size={15} /><span className="slk-send-label">{t('Send as a decision')}</span>
               </button>
               <span className="slk-send-group">
-                <button type="submit" className="slk-send" disabled={sending || uploads.busy || (!draft.trim() && !uploads.ids.length)} aria-label={t('Send')}>
+                <button type="submit" className="slk-send" disabled={uploads.busy || (!draft.trim() && !uploads.ids.length)} aria-label={t('Send')}>
                   <Icon name="send" size={16} />
                 </button>
-                <button type="button" className="slk-send more" disabled={sending || !draft.trim() || draft.trim().startsWith('/')} onClick={() => setScheduleOpen((o) => !o)} aria-label={t('Schedule message')} title={t('Schedule message')} aria-expanded={scheduleOpen}>
+                <button type="button" className="slk-send more" disabled={!draft.trim() || draft.trim().startsWith('/')} onClick={() => setScheduleOpen((o) => !o)} aria-label={t('Schedule message')} title={t('Schedule message')} aria-expanded={scheduleOpen}>
                   <Icon name="chevron-down" size={14} />
                 </button>
                 {scheduleOpen && <SchedulePicker onPick={(at) => void sendAtTime(thread.view!, at)} onClose={() => setScheduleOpen(false)} />}

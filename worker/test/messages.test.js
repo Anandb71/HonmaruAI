@@ -222,6 +222,25 @@ test("a direct conversation's messages cannot be touched from outside it", async
   expect((await post("/channels/reactions", kenji, { orgId: ORG, channel: "b:cafe", messageId: m.id, emoji: "👍" })).status).toBe(404);
 });
 
+test("posting the same client id again returns the message already sent, and does not send it twice", async () => {
+  const first = await post("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "once", clientId: "tmp-ab12" });
+  expect(first.status).toBe(201);
+  const a = (await first.json()).message;
+  const queued = await env.DB.prepare("SELECT COUNT(*) AS n FROM push_queue WHERE org_id = ?1 AND message_id = ?2").bind(ORG, a.id).first();
+  const again = await post("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "once", clientId: "tmp-ab12" });
+  expect(again.status).toBe(200);
+  expect((await again.json()).message.id).toBe(a.id);
+  const rows = await env.DB.prepare("SELECT COUNT(*) AS n FROM channel_messages WHERE org_id = ?1 AND body = 'once'").bind(ORG).first();
+  expect(rows.n).toBe(1);
+  const queuedAfter = await env.DB.prepare("SELECT COUNT(*) AS n FROM push_queue WHERE org_id = ?1 AND message_id = ?2").bind(ORG, a.id).first();
+  expect(queuedAfter.n).toBe(queued.n);
+  // The same id from somebody else is their own message.
+  expect((await post("/channels/messages", toru, { orgId: ORG, channel: "b:cafe", body: "once", clientId: "tmp-ab12" })).status).toBe(201);
+  expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM channel_messages WHERE org_id = ?1 AND body = 'once'").bind(ORG).first()).n).toBe(2);
+  expect((await post("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "x", clientId: "not-a-temp" })).status).toBe(400);
+  expect((await post("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "x", clientId: `tmp-${"a".repeat(80)}` })).status).toBe(400);
+});
+
 test("a link to a message opens it for whoever can read it, and for nobody else", async () => {
   const m = await say(mika, "Friday price change?");
   const r = await say(toru, "Yes", { parentId: m.id });

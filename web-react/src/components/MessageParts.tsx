@@ -336,6 +336,56 @@ export const ReplyingBar: React.FC<{ quote: ReplyQuote; name: string; textId: st
   )
 }
 
+/// Under one of yours the server does not have yet: that it is on its way
+/// (said, not shown — it is drawn dimmed), or why it did not go, with Retry
+/// and Delete — or, refused for what it says, Edit in place of Retry, since
+/// the same words would only be refused again. Still on its way at
+/// `lateAt` (ms), longer than a send should take, it says so with Delete, so
+/// it can be let go of rather than waited on. Any button goes once pressed;
+/// pressed from the keyboard, `refocus` says where focus goes instead of
+/// nowhere.
+export const UnsentNote: React.FC<{
+  message: ChannelMessage
+  onRetry: () => void
+  onDelete: () => void
+  /// Back into the box it was written in, to be changed and sent again.
+  onEdit?: () => void
+  lateAt?: number
+  refocus?: () => void
+}> = ({ message, onRetry, onDelete, onEdit, lateAt, refocus }) => {
+  const t = useT()
+  const pressed = (act: () => void) => (e: React.MouseEvent) => { act(); if (e.detail === 0) refocus?.() }
+  // Drawn again when it becomes late, if it is still on its way by then.
+  const [, turnedLate] = useState(0)
+  const waiting = message.pending && lateAt !== undefined ? lateAt - Date.now() : 0
+  useEffect(() => {
+    if (waiting <= 0) return
+    const id = setTimeout(() => turnedLate((n) => n + 1), waiting)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.pending, lateAt])
+  if (message.pending && lateAt !== undefined && waiting <= 0) {
+    return (
+      <div className="slk-unsent late" data-unsent={message.id}>
+        <span className="slk-unsent-why">{t('Sending…')}</span>
+        <button type="button" className="slk-unsent-act" onClick={pressed(onDelete)} data-unsent-delete="1"><Icon name="trash" size={12} />{t('Delete')}</button>
+      </div>
+    )
+  }
+  if (message.failed) {
+    return (
+      <div className="slk-unsent" role="alert" data-unsent={message.id}>
+        <span className="slk-unsent-why">{message.failed}</span>
+        {message.refused
+          ? onEdit && <button type="button" className="slk-unsent-act" onClick={pressed(onEdit)} data-unsent-edit="1"><Icon name="edit" size={12} />{t('Edit')}</button>
+          : <button type="button" className="slk-unsent-act" onClick={pressed(onRetry)} data-unsent-retry="1"><Icon name="refresh" size={12} />{t('Retry')}</button>}
+        <button type="button" className="slk-unsent-act" onClick={pressed(onDelete)} data-unsent-delete="1"><Icon name="trash" size={12} />{t('Delete')}</button>
+      </div>
+    )
+  }
+  return message.pending ? <span className="sr-only">{t('Sending…')}</span> : null
+}
+
 /// Wrap what is selected in a textarea with a mark — the composer's B, I,
 /// S and code — or put the mark at the caret when nothing is.
 export function wrapSelection(el: HTMLTextAreaElement | null, value: string, set: (v: string) => void, before: string, after = before) {

@@ -646,6 +646,29 @@
 .classic.slk.slk .slk-edit-bar { display: flex; align-items: center; gap: 8px; padding: 4px 6px 6px 12px; }
 .classic.slk.slk .slk-send.save { background: var(--slk-green); color: #fff; padding: 0 14px; font-weight: 700; }
 
+/* Yours, before the server has it: dimmed while it is on its way — at once,
+   no fade, so a quick send never flickers — and, when it did not go, a faint
+   red wash with the reason and what to do under the words. The red is mixed
+   toward the ink so the reason reads on both themes. */
+.classic.slk.slk .slk-msg.pending:not(.editing) .slk-body > :not(.slk-meta):not(.slk-unsent) { opacity: .55; }
+.classic.slk.slk .slk-msg.failed,
+.classic.slk.slk .slk-msg.failed:hover { background: color-mix(in srgb, var(--slk-red) 7%, transparent); }
+.classic.slk.slk .slk-unsent {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px;
+  font-size: 12.5px; color: color-mix(in srgb, var(--slk-red) 65%, var(--slk-ink));
+}
+/* Still on its way after longer than a send should take: not an error yet,
+   so in the quiet grey, with Delete beside it. */
+.classic.slk.slk .slk-unsent.late { color: var(--slk-dim); }
+.classic.slk.slk .slk-unsent-why { min-width: 0; margin-right: 2px; }
+.classic.slk.slk .slk-unsent-act {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; border-radius: 4px;
+  background: none; font: inherit; font-weight: 700; color: var(--slk-accent); cursor: pointer;
+}
+.classic.slk.slk .slk-unsent-act:hover { background: var(--slk-hover); }
+.classic.slk.slk .slk-unsent-act:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 1px; }
+@media (hover: none) { .classic.slk.slk .slk-unsent-act { padding: 6px 10px; } }
+
 /* Slack's formatting, read back. */
 .classic.slk.slk .slk-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; padding: 1px 4px; border-radius: 4px; background: var(--slk-field); color: #e01e5a; border: 1px solid var(--slk-line); }
 .classic.slk.slk .slk-pre { margin: 6px 0; padding: 8px 10px; border-radius: 6px; background: var(--slk-field); border: 1px solid var(--slk-line); overflow-x: auto; font-size: 12.5px; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }

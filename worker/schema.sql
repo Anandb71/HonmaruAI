@@ -572,8 +572,12 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   /* An inline reply, as Discord has: the message this one answers, in the
      same conversation. Its words are looked up when read, never copied, so
      an edit or an unsend shows in the quote too. */
-  reply_to_id   TEXT
+  reply_to_id   TEXT,
+  /* The sender's own id for this post (`tmp-…`). A retry of a send that
+     already landed returns this row instead of writing another. */
+  client_id     TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_messages_client ON channel_messages(org_id, author_login, client_id) WHERE client_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_channel_messages ON channel_messages(org_id, channel, created_at);
 
 /* One emoji from one person on one message. A browser is told who reacted

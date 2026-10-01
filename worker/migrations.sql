@@ -116,3 +116,6 @@ ALTER TABLE apple_identities ADD COLUMN refresh_token TEXT;
 ALTER TABLE apple_identities ADD COLUMN client_id TEXT;
 /* An inline reply: the message it answers (schema.sql says why). */
 ALTER TABLE channel_messages ADD COLUMN reply_to_id TEXT;
+/* A retried send names the message it already posted, and gets that one back. */
+ALTER TABLE channel_messages ADD COLUMN client_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_messages_client ON channel_messages(org_id, author_login, client_id) WHERE client_id IS NOT NULL;
