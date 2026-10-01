@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countNewBelow, focusAfterJump, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow, waitToSay } from './chatScroll'
+import { countNewBelow, focusAfterJump, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, newestOf, reachesPast, shouldFollow, waitToSay } from './chatScroll'
 
 /// A message said `i` minutes into the day, by a teammate unless it is yours.
 const at = (i: number) => new Date(Date.UTC(2026, 8, 30, 0, i)).toISOString()
@@ -78,6 +78,20 @@ describe('what is new', () => {
 
   it('counts nothing for a reader at the bottom', () => {
     expect(countNewBelow([msg(1), msg(2)], null)).toBe(0)
+  })
+})
+
+describe('the newest', () => {
+  it('is the last said, not the last in the list', () => {
+    // One of yours that did not go an hour ago is kept at the end.
+    const list = [...range(60, 70), msg(5, { mine: true })]
+    expect(newestOf(list)?.id).toBe('m70')
+  })
+
+  it('is the later in the list of two said at once, and nothing in an empty one', () => {
+    const twin = { ...msg(7), id: 'twin' }
+    expect(newestOf([msg(3), msg(7), twin])?.id).toBe('twin')
+    expect(newestOf([])).toBeUndefined()
   })
 })
 

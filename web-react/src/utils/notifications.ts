@@ -1,6 +1,7 @@
 import { t } from './i18n'
 import { getLocale, primary } from './locale'
 import { isQuiet } from './quiet'
+import { isLooking } from './chatScroll'
 
 // The tab's own notifications, for while the app is open but not in front:
 // a decision for you, a direct message, an @mention. Web Push (utils/push.ts)
@@ -43,11 +44,10 @@ function permitted(): boolean {
   return typeof Notification !== 'undefined' && Notification.permission === 'granted'
 }
 
-/// The person is looking at this tab, in a window that has focus.
+/// The person is looking at this tab, in a window that has focus: the same
+/// rule the open conversation is read by (chatScroll's isLooking).
 export function lookingHere(): boolean {
-  if (typeof document === 'undefined') return false
-  if (document.visibilityState !== 'visible') return false
-  return typeof document.hasFocus === 'function' ? document.hasFocus() : true
+  return typeof document !== 'undefined' && isLooking(document)
 }
 
 // ---- Which tab speaks for a workspace ----

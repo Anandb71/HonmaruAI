@@ -18,7 +18,7 @@ import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
-import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow, waitToSay } from '../utils/chatScroll'
+import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, newestOf, reachesPast, shouldFollow, waitToSay } from '../utils/chatScroll'
 import { JumpToPresent, newBelowLabel } from './JumpToPresent'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
@@ -1261,8 +1261,9 @@ export const ClassicList: React.FC<Props> = ({
   const noteWhere = (v: string, el: HTMLElement) => {
     if (isAtBottom(el)) { if (readingUp) setReadingUp(null); return }
     if (readingUp?.view === v) return
-    const list = messages[v] || []
-    setReadingUp({ view: v, since: list[list.length - 1]?.createdAt || '' })
+    // The newest the server has: what is held only here sits at the end
+    // however long ago it was said, and a send's time is this device's.
+    setReadingUp({ view: v, since: newestOf((messages[v] || []).filter((m) => !isTemp(m)))?.createdAt || '' })
   }
   // Whether anybody is looking at the page. What is open is read only
   // then, and read again the moment they come back to it.
@@ -2285,7 +2286,13 @@ export const ClassicList: React.FC<Props> = ({
       const { channel, parent } = thread
       fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(parent.id)}`, { headers: authHeaders })
         .then((r) => (r.ok ? r.json() : null))
-        .then((data) => { if (data?.parent) setThread((prev) => (prev && prev.parent.id === parent.id ? { ...prev, parent: data.parent, replies: data.replies || [] } : prev)) })
+        .then((data) => {
+          if (!data?.parent) return
+          // Replies of yours still on their way, or that did not go, stay in
+          // it, as when it was opened.
+          const back = heldFor(channel, parent.id, data.replies || [])
+          setThread((prev) => (prev && prev.parent.id === parent.id ? { ...prev, parent: data.parent, replies: withHeld(keepTemps(data.replies || [], prev.replies), back) } : prev))
+        })
         .catch(() => { /* the thread stays as it was */ })
     }
     if (activityItems) void loadActivity()
@@ -2726,8 +2733,7 @@ export const ClassicList: React.FC<Props> = ({
   useEffect(() => {
     const el = logRef.current
     if (!el) return
-    const list = messages[current?.view || ''] || []
-    const newest = list[list.length - 1]
+    const newest = newestOf(messages[current?.view || ''] || [])
     const last = followed.current
     const opened = last.el !== el || last.key !== current?.key
     const newestIsMine = Boolean(newest?.mine && newest.createdAt > last.newestAt)

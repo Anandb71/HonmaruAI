@@ -39,6 +39,16 @@ export function isNewSince(m: Pick<Said, 'mine' | 'createdAt'>, since: string): 
   return !m.mine && m.createdAt > since
 }
 
+/// The newest message by when it was said, not by where it sits: what is
+/// held only on this device (on its way, or failed) is kept at the end of a
+/// conversation however long ago it was said. Of two said at once, the one
+/// later in the list.
+export function newestOf<T extends Pick<Said, 'createdAt'>>(list: readonly T[]): T | undefined {
+  let newest: T | undefined
+  for (const m of list) if (!newest || m.createdAt >= newest.createdAt) newest = m
+  return newest
+}
+
 /// How many new messages are below a reader who left the bottom when the
 /// newest they had was said at `since`. Counted by message, so a page of
 /// older ones loading above, or one edited, adds nothing; one deleted is
