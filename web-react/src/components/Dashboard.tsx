@@ -1,5 +1,5 @@
 import { setQuietState, getQuietState, onQuietChange, type QuietState } from '../utils/quiet'
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { WebSocketClient } from '../services/WebSocketClient'
 import { Feed } from './Feed'
 import { ClassicList, type Presence } from './ClassicList'
@@ -12,21 +12,26 @@ import { CreateDecision } from './CreateDecision'
 import { RecordSheet } from './RecordSheet'
 import type { FlagReason, Answer } from './Feed'
 import { NotificationsButton } from './NotificationsBanner'
-import { notifyNewDecision, setNotificationCopy, setTabBadge } from '../utils/notifications'
+import { StatusPopover } from './StatusPopover'
+import { notifyNewDecision, notifyMessage, closeCardNotifications, closeMessageNotifications, watchWorkspace, setNotificationCopy, setTabBadge } from '../utils/notifications'
 import type { AppState, Business, DecisionCard } from '../types/card'
 import './Dashboard.css'
 import { useT } from '../utils/i18n'
 import { getLocale } from '../utils/locale'
 import { displayName } from '../utils/names'
-import { useRoute, useDesktop, hashForCard, hashForMode, hashForScreen, hashForView } from '../utils/route'
+import { useRoute, useDesktop, useMinWidth, hashForCard, hashForMode, hashForScreen, hashForView } from '../utils/route'
 import { loadCardCache, saveCardCache } from '../utils/cardCache'
+import { reconnectWatch, wakeWatch } from '../utils/resync'
 import { needsLocalizing } from '../utils/language'
 import { aiHeaders } from '../utils/aiKey'
 import type { Screen, Mode } from '../utils/route'
 import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
+import { loadRecent, rememberRecent } from '../utils/places'
+import type { Place } from '../utils/places'
+import { isMacPlatform, formatCombo, hasPrimaryMod, composing } from '../utils/keys'
+import { tabWithin, TAB_STOPS } from '../utils/focusTrap'
 import type { ChannelMessage } from '../types/card'
-import { composing } from '../utils/keys'
 
 // The screens a person opens now and then load when they are opened: the
 // first page is the conversation, not the settings behind it.
@@ -61,6 +66,9 @@ type Panel = null | 'compose' | 'record'
 // is on, live in the URL (utils/route.ts): a reload, the back button and a
 // pasted link all mean what they say.
 
+// ⌘ on a Mac, Ctrl everywhere else, in every key the shell prints.
+const isMac = isMacPlatform()
+
 // What just happened, said back. English keys, translated where read.
 const DECIDED_WORD: Record<string, string> = {
   approve: 'Approved', decline: 'Declined', reply: 'Replied', revise: 'Revision asked',
@@ -82,7 +90,9 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   // written in the last minute is news.
   const heard = useRef<Set<string>>(new Set())
   const soundFor = async (message: ChannelMessage) => {
-    if (!message?.id || message.deleted || heard.current.has(message.id)) return
+    // Unsent: whatever this browser showed of it comes off the screen.
+    if (message?.id && message.deleted) { closeMessageNotifications([message.id]); return }
+    if (!message?.id || heard.current.has(message.id)) return
     heard.current.add(message.id)
     if (Date.now() - Date.parse(message.createdAt) > 60_000) return
     const people = await loadMembers(relayUrl.replace(/^ws/, 'http'), orgId, sessionToken).catch(() => [])
@@ -93,6 +103,19 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     const open = getOpenView() === message.channel && document.visibilityState === 'visible' && document.hasFocus()
     const kind = soundForMessage({ mine, channel: message.channel, mentionsMe, kind: message.kind, parentId: message.parentId }, { level: levelOf(orgId, message.channel), open })
     if (kind) playSound(kind)
+    // A direct message or an @mention while nobody is looking at this
+    // workspace: on the screen now, rather than a push's delay later. Only
+    // what the Worker would push too (a person's message or an agent's
+    // answer — not the AI's own notes), and one tab decides (notifications.ts).
+    if (kind === 'mention' && (message.kind === 'message' || message.kind === 'agent')) {
+      const business = message.channel.startsWith('b:') ? businessesRef.current.find((b) => `b:${b.slug}` === message.channel) : undefined
+      notifyMessage({
+        id: message.id, orgId, channel: message.channel,
+        author: message.authorName || message.agent?.name || t('a teammate'),
+        where: business ? `#${business.name}` : null,
+        body: message.body || '', hasFiles: Boolean(message.files?.length), createdAt: message.createdAt,
+      })
+    }
   }
   // The relay has sent its snapshot at least once. Before that the feed says
   // it is opening, not that it is empty — "All clear" on a cold start, half a
@@ -110,10 +133,19 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   const [panel, setPanel] = useState<Panel>(null)
   // ⌘K: one box that goes anywhere and finds anything.
   const [palette, setPalette] = useState(false)
+  // The conversations it jumps to, as the list last told them: kept, not
+  // drawn, so the list saying so on every change repaints nothing here.
+  const placesRef = useRef<Place[]>([])
+  const onPlaces = useCallback((next: Place[]) => { placesRef.current = next }, [])
+  // Where you were lately, read as the palette opens.
+  const recent = useMemo(() => (palette ? loadRecent(orgId) : []), [palette, orgId])
   const { route, navigate } = useRoute()
   const desktop = useDesktop()
   const screen: Screen | null = route.screen
   const [businesses, setBusinesses] = useState<Business[]>([])
+  // For a notification's "#channel", read from the socket's handler.
+  const businessesRef = useRef<Business[]>([])
+  businessesRef.current = businesses
   // Who is here right now, by login — the relay's word, shown as a dot.
   const [presence, setPresence] = useState<Presence>({})
   // The team's name, for the list's header. From /members, which is the one
@@ -220,12 +252,21 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
 
   const relayHttpUrl = relayUrl.replace(/^ws/, 'http')
 
+  // Cards waiting on you: counted on the tab, and a card that stops waiting
+  // (decided here, on a phone, or taken back) takes its notification with it.
+  const waitingIds = useRef<Set<string>>(new Set())
   useEffect(() => {
     const cards = Object.values(state.cardsById || {})
     const pending = cards.filter((c) => c.status === 'pending' && c.recipientUserID === userId)
+    const now = new Set(pending.map((c) => c.id))
+    closeCardNotifications([...waitingIds.current].filter((id) => !now.has(id)))
+    waitingIds.current = now
     setTabBadge(pending.length)
     return () => setTabBadge(0)
   }, [state, userId])
+  // This tab takes part in choosing which tab notifies for the workspace,
+  // and clears what came in while away once it is looked at again.
+  useEffect(() => watchWorkspace(orgId), [orgId])
   useEffect(() => {
     if (synced) saveCardCache(orgId, state.cardsById || {})
   }, [state, synced, orgId])
@@ -250,7 +291,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (card.recipientUserID === userId && card.status === 'pending') {
         // Your own note to yourself does not need announcing to you.
         if (card.senderUserID !== userId) playSound('decision')
-        notifyNewDecision(card.localized?.[getLocale()]?.title || card.title || t('A decision is waiting'), card.requestedBy?.name || displayName(card.senderUserID) || t('a teammate'))
+        if (card.senderUserID !== userId) notifyNewDecision(card.localized?.[getLocale()]?.title || card.title || t('A decision is waiting'), card.requestedBy?.name || displayName(card.senderUserID) || t('a teammate'), card.id, orgId)
       }
     }
     wsClient.onCardUpdated = (card) => { if (!ignore) addDebugLog(`Card updated: ${card.id}`) }
@@ -285,6 +326,10 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (ignore) return
       window.dispatchEvent(new CustomEvent('honmaru:channel-progress', { detail: progress }))
     }
+    // Somebody typing: the list shows it where they are typing.
+    wsClient.onTyping = (typing) => {
+      if (!ignore) window.dispatchEvent(new CustomEvent('honmaru:typing', { detail: typing }))
+    }
     wsClient.onReaction = (cardId, emoji, on, by, reactions) => {
       if (ignore) return
       window.dispatchEvent(new CustomEvent('honmaru:reaction', { detail: { cardId, emoji, on, by, reactions } }))
@@ -303,13 +348,24 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (code === 'sso-required' || code === 'sso-reauth') window.dispatchEvent(new CustomEvent('honmaru:sso-required', { detail: { orgId, start: `/sso/start?orgId=${encodeURIComponent(orgId)}` } }))
     }
     wsClient.onToolCallResult = (toolCallId) => { if (!ignore) addDebugLog(`Tool result: ${toolCallId}`) }
+    // Back after a drop: what was said in the channels meanwhile did not
+    // come over the socket, and the join does not replay it. The list reads
+    // it again.
+    const back = reconnectWatch()
     wsClient.onConnectionChange = (connected) => {
       if (ignore) return
       setIsConnected(connected)
       if (connected) setError(null)
+      // Cut off, nobody is known to be here: presence only moves when
+      // someone comes or goes, and whoever went while the socket was down
+      // would stay green. The relay says who is here again on the next join.
+      else setPresence({})
       addDebugLog(connected ? `Connected to ${relayUrl}` : 'Disconnected — will retry')
+      if (back(connected)) window.dispatchEvent(new Event('honmaru:resync'))
     }
     setSynced(false)
+    // Another workspace's socket: its people, not the last one's.
+    setPresence({})
     wsClient.connect(relayUrl, userId, orgId, sessionToken).catch((err) => {
       if (ignore) return
       // A socket that fails hands back an Event, not an Error, and "[object
@@ -326,7 +382,17 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if (type) wsClient.sendJam(type, payload)
     }
     window.addEventListener('honmaru:jam-send', jamSend)
-    return () => { ignore = true; window.removeEventListener('honmaru:jam-send', jamSend); wsClient.disconnect() }
+    const typingSend = (e: Event) => {
+      const { channel, parentId, stop } = (e as CustomEvent<{ channel: string; parentId: string | null; stop: boolean }>).detail || {}
+      if (channel) wsClient.sendTyping(channel, parentId ?? null, Boolean(stop))
+    }
+    window.addEventListener('honmaru:typing-send', typingSend)
+    return () => {
+      ignore = true
+      window.removeEventListener('honmaru:jam-send', jamSend)
+      window.removeEventListener('honmaru:typing-send', typingSend)
+      wsClient.disconnect()
+    }
   }, [relayUrl, userId, orgId, sessionToken, addDebugLog, onLeft])
 
   // Using the app, here: the relay is told at most every thirty seconds, so
@@ -348,14 +414,25 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       document.removeEventListener('visibilitychange', seen)
     }
   }, [])
+  // Back after a while away — a closed lid, a locked phone — the socket may
+  // have slept through what was said without ever dropping: the list reads
+  // it again, as after a reconnect.
+  useEffect(() => {
+    const woke = wakeWatch()
+    const on = () => { if (woke(document.visibilityState === 'visible', Date.now())) window.dispatchEvent(new Event('honmaru:resync')) }
+    document.addEventListener('visibilitychange', on)
+    return () => document.removeEventListener('visibilitychange', on)
+  }, [])
 
   // A notification tapped while a tab is open: the service worker tells us
   // which card, rather than opening a second tab.
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'open-card' && event.data.cardId) { setPanel(null); navigate(hashForCard(event.data.cardId)) }
-      if (event.data?.type === 'open-message' && event.data.messageId) { setPanel(null); window.location.hash = `#/m/${encodeURIComponent(event.data.messageId)}` }
+      if (event.data?.type === 'open-card' && event.data.cardId) { setPanel(null); navigate(hashForCard(event.data.cardId, typeof event.data.orgId === 'string' ? event.data.orgId : null)) }
+      // The worker sends the message's address with its workspace, so one
+      // from another workspace switches to it rather than finding nothing.
+      if (event.data?.type === 'open-message' && event.data.messageId) { setPanel(null); window.location.hash = typeof event.data.hash === 'string' && event.data.hash.startsWith('#/m/') ? event.data.hash : `#/m/${encodeURIComponent(event.data.messageId)}` }
     }
     navigator.serviceWorker.addEventListener('message', onMessage)
     return () => navigator.serviceWorker.removeEventListener('message', onMessage)
@@ -388,6 +465,21 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   // Your own name and photo, for the rail.
   const [myFace, setMyFace] = useState<{ name: string; url: string | null }>({ name: '', url: null })
+  // Your status, open from your avatar: the top bar's on a phone, the one
+  // at the foot of the rail on a laptop — where the top bar's is not drawn,
+  // and the rail's opens this instead of the You screen, which the popover
+  // still leads to. On a phone in the list neither is drawn: the list's own
+  // You tab, along the bottom, opens it there.
+  const [statusFrom, setStatusFrom] = useState<null | 'top' | 'rail' | 'tabs'>(null)
+  const avatarButton = useRef<HTMLButtonElement>(null)
+  const railAvatar = useRef<HTMLButtonElement>(null)
+  const listYou = useRef<HTMLElement | null>(null)
+  const railed = useMinWidth(720)
+  // It belongs to where it was opened: going somewhere else — another
+  // workspace, a screen, the other view, a card from a link — closes it,
+  // as does the window crossing 720px, where the avatar it sits beside
+  // is hidden and another drawn.
+  useEffect(() => { setStatusFrom(null) }, [orgId, screen, mode, focusCardId, railed])
   // Notifications paused: said at the top, with a way out.
   const [quiet, setQuiet] = useState<QuietState>(getQuietState())
   useEffect(() => onQuietChange(() => setQuiet({ ...getQuietState() })), [])
@@ -467,6 +559,20 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     navigate(hashForMode('classic'), true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.openView, route.openOrg, workspaces.length, orgId, navigate])
+  // A card in another of your workspaces (a notification from there): go
+  // there, and the card opens once it has loaded. One you are not in drops
+  // the workspace and looks here, as a plain card link does.
+  useEffect(() => {
+    const id = route.cardId
+    const org = route.cardOrg
+    if (!id || !org) return
+    if (org !== orgId) {
+      if (!workspaces.length) return
+      if (workspaces.some((w) => w.id === org)) onSwitchOrg(org)
+    }
+    navigate(hashForCard(id), true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.cardId, route.cardOrg, workspaces.length, orgId, navigate])
   // A link to a message: the list opens where it is, then the address goes
   // back to the list's own, so a reload does not jump again.
   useEffect(() => {
@@ -491,18 +597,53 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.messageId, route.messageOrg, workspaces.length, orgId, navigate])
 
+  // ⌘/ — every key the app answers to, in one place.
+  const [shortcuts, setShortcuts] = useState(false)
+  // It takes focus when it opens, so its own Escape is heard, and hands it
+  // back when it closes — unless something else has taken it since.
+  const shortcutsSheet = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!shortcuts) return
+    const before = document.activeElement as HTMLElement | null
+    shortcutsSheet.current?.focus()
+    return () => {
+      const now = document.activeElement
+      if (!now || now === document.body || shortcutsSheet.current?.contains(now)) before?.focus?.()
+    }
+  }, [shortcuts])
+  useEffect(() => {
+    const on = () => setShortcuts(true)
+    window.addEventListener('honmaru:shortcuts', on)
+    return () => window.removeEventListener('honmaru:shortcuts', on)
+  }, [])
+
   // Escape closes whatever is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPalette((p) => !p); return }
-      if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
+      if (e.isComposing || e.keyCode === 229) return
+      const mod = hasPrimaryMod(e, isMac)
+      // The shortcuts sheet is on top. ⌘K must not open the palette over it.
+      if (shortcuts) {
+        const sheet = shortcutsSheet.current
+        if (mod && (e.key === 'k' || e.key === 'K' || e.key === '/')) { e.preventDefault(); setShortcuts(false); return }
+        if (e.key === 'Escape') setShortcuts(false)
+        else if (e.key === 'Tab' && sheet && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault()
+          const stops = Array.from(sheet.querySelectorAll<HTMLElement>(TAB_STOPS))
+          const to = tabWithin(stops, document.activeElement as HTMLElement | null, e.shiftKey) ?? sheet
+          to.focus()
+        }
+        return
+      }
+      if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPalette((p) => !p); return }
+      if (mod && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
       if (palette) return
       if (e.key === 'Escape' && !composing(e)) { setPanel(null); if (screen) closeScreen() }
       else if (e.key === 'n' && !panel && !screen && !(e.target as HTMLElement)?.matches('input, textarea')) { e.preventDefault(); setPanel('compose') }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [panel, screen, setScreen, closeScreen, palette])
+  }, [panel, screen, setScreen, closeScreen, palette, shortcuts])
   const pickFromPalette = useCallback((action: PaletteAction) => {
     setPalette(false)
     setPanel(null)
@@ -511,6 +652,17 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     else if (action.kind === 'feed') { try { localStorage.setItem('mode', 'cards') } catch {}; navigate(hashForMode('cards')) }
     else if (action.kind === 'list') { try { localStorage.setItem('mode', 'classic') } catch {}; navigate(hashForMode('classic')) }
     else if (action.kind === 'compose') { navigate(hashForMode('cards')); setPanel('compose') }
+    // A conversation opens the way a link to one does (and "Message" on an
+    // agent): the list picks it up whether or not it is on screen yet. With
+    // the list already here it is told directly: a link's #/c/… would be a
+    // step in the history that the address at once turns back into #/list,
+    // and Back would go nowhere.
+    else if (action.kind === 'view') {
+      if (mode !== 'classic') { navigate(hashForView(action.view)); return }
+      try { sessionStorage.setItem('list.openView', action.view) } catch {}
+      window.dispatchEvent(new CustomEvent('honmaru:open-view', { detail: action.view }))
+      if (screen) navigate(hashForMode('classic'))
+    }
     else if (action.kind === 'message') {
       // The list opens the conversation and goes to the message; if it is
       // not mounted yet it picks the target up when it is.
@@ -519,7 +671,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       navigate(hashForMode('classic'))
       setTimeout(() => window.dispatchEvent(new CustomEvent('honmaru:open-message', { detail: target })), 150)
     }
-  }, [navigate])
+  }, [navigate, mode, screen])
 
   // A toast that stays until clicked is a banner. Errors clear themselves.
   useEffect(() => {
@@ -585,13 +737,6 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       }
     }
   }, [addDebugLog, userId, orgId])
-  // ⌘/ — every key the app answers to, in one place.
-  const [shortcuts, setShortcuts] = useState(false)
-  useEffect(() => {
-    const on = () => setShortcuts(true)
-    window.addEventListener('honmaru:shortcuts', on)
-    return () => window.removeEventListener('honmaru:shortcuts', on)
-  }, [])
   const [suggestRule, setSuggestRule] = useState<{ cardId: string; sender: string; business: string | null } | null>(null)
   const acceptRule = useCallback(async () => {
     if (!suggestRule) return
@@ -604,9 +749,13 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   }, [suggestRule, relayHttpUrl, sessionToken, orgId, t])
   // The conversation open in the list: the record shows that channel.
   const [listView, setListView] = useState<{ view: string; name: string } | null>(null)
-  const onListView = useCallback((view: string | null, name: string | null) => {
+  const onListView = useCallback((view: string | null, name: string | null, opened: boolean) => {
     setListView(view ? { view, name: name || view } : null)
-  }, [])
+    // Opened by you: the most recent place you were, for ⌘K with nothing
+    // typed. Not the one the list put up as it loaded — that is not where
+    // you were, and ⌘K then Enter would go back to it.
+    if (view && opened) rememberRecent(orgId, view)
+  }, [orgId])
   const handleDelete = useCallback((cardId: string) => {
     wsClientRef.current?.sendDeleteCard(cardId)
     addDebugLog(`Deleted: ${cardId}`)
@@ -718,7 +867,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     return () => { ignore = true }
   }, [focusCardId, cards, fetched, relayHttpUrl, orgId, sessionToken, t])
   useEffect(() => {
-    if (!workbench || panel || screen) return
+    if (!workbench || panel || screen || shortcuts) return
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target as HTMLElement | null
@@ -730,7 +879,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [workbench, panel, screen, inboxCards, selectedId, navigate])
+  }, [workbench, panel, screen, shortcuts, inboxCards, selectedId, navigate])
   const api = { httpBase: relayHttpUrl, orgId, sessionToken }
   const workspaceSwitcher = (variant: 'rail' | 'header') => (
     <WorkspaceSwitcher
@@ -769,7 +918,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
             businesses={businesses}
             focusCardId={null}
             ready={synced || cards.length > 0}
-            active={!panel && !screen}
+            active={!panel && !screen && !shortcuts}
             onDecide={handleDecision}
             onAsk={handleAsk}
             onFlag={handleFlag}
@@ -788,7 +937,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           businesses={businesses}
           focusCardId={focusCardId}
           ready={synced || cards.length > 0}
-          active={!panel && !screen}
+          active={!panel && !screen && !shortcuts}
           onDecide={handleDecision}
           onAsk={handleAsk}
           onFlag={handleFlag}
@@ -829,7 +978,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
               businesses={businesses}
               focusCardId={null}
               ready
-              active={!panel && !screen && !palette}
+              active={!panel && !screen && !palette && !shortcuts}
               onDecide={handleDecision}
               onAsk={handleAsk}
               onFlag={handleFlag}
@@ -842,10 +991,14 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           )}
           onWorkspace={() => setScreen('team')}
           onOpenScreen={(sc) => setScreen(sc)}
+          onStatus={(tab) => { listYou.current = tab; setStatusFrom((f) => (f === 'tabs' ? null : 'tabs')) }}
+          statusOpen={statusFrom === 'tabs'}
+          active={!panel && !screen && !palette && !shortcuts}
           workspaceMenu={workspaceSwitcher('header')}
           onCreateChannel={(name, opts) => channelCall('POST', { name, ...(opts?.private ? { private: true } : {}) })}
           onRenameChannel={(slug, name) => channelCall('PUT', { slug, name })}
           onDeleteChannel={(slug) => channelCall('DELETE', { slug })}
+          onPlaces={onPlaces}
         />
       )}
 
@@ -888,15 +1041,23 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
               connection is said in words, just before this. The marker is
               for whoever needs to know without looking — a test, a script. */}
           <span className="conn-state" data-connected={isConnected ? '1' : '0'} hidden />
-          <button className="palette-button" onClick={() => setPalette(true)} aria-label={t('Search or jump to')} title="⌘K" aria-keyshortcuts="Meta+K Control+K">
+          <button className="palette-button" onClick={() => setPalette(true)} aria-label={t('Search or jump to')} title={formatCombo('Mod+K', isMac)} aria-keyshortcuts="Meta+K Control+K">
             <Icon name="search" size={18} />
             {/* The search field a chat client puts across its top: words on a
                 laptop, a magnifier on a phone. */}
             <span className="palette-label">{t('Search {name}', { name: workspaceLabel(workspaces.find((w) => w.id === orgId) || (orgName ? { id: orgId, name: orgName, role: 'member' } : undefined), t) })}</span>
-            <kbd className="palette-kbd">⌘K</kbd>
+            <kbd className="palette-kbd">{formatCombo('Mod+K', isMac)}</kbd>
           </button>
           <NotificationsButton httpBase={relayHttpUrl} sessionToken={sessionToken} />
-          <button className="avatar-button" onClick={() => setScreen('profile')} aria-label={t('You')}>
+          <button
+            ref={avatarButton}
+            className="avatar-button"
+            onClick={() => setStatusFrom((f) => (f === 'top' ? null : 'top'))}
+            aria-label={t('You')}
+            aria-haspopup="dialog"
+            aria-expanded={statusFrom === 'top'}
+            data-status-open="top"
+          >
             {(userId.replace(/^(u:|email:)/, '')[0] || '?').toUpperCase()}
           </button>
         </div>
@@ -943,8 +1104,21 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
             <span className="fab-face"><Icon name="plus" /></span>
           </button>
           <button className={screen === 'tools' ? 'tab on' : 'tab'} aria-current={screen === 'tools' ? 'page' : undefined} data-tab="tools" onClick={() => setScreen('tools')} aria-label={t('Tools')}><Icon name="tools" /></button>
-          <button className={screen && screen !== 'history' && screen !== 'tools' ? 'tab on' : 'tab'} aria-current={screen && screen !== 'history' && screen !== 'tools' ? 'page' : undefined} data-tab="you" onClick={() => setScreen('profile')} aria-label={t('You')}><Icon name="you" /><span className={`tab-avatar${myFace.url ? ' has-photo' : ''}`} aria-hidden="true" data-initial={((myFace.name || userId.replace(/^(u:|email:)/, ''))[0] || '?').toUpperCase()}>{myFace.url && <img src={myFace.url} alt="" referrerPolicy="no-referrer" />}</span></button>
+          <button className={screen && screen !== 'history' && screen !== 'tools' ? 'tab on' : 'tab'} aria-current={screen && screen !== 'history' && screen !== 'tools' ? 'page' : undefined} data-tab="you" ref={railAvatar} onClick={() => (railed ? setStatusFrom((f) => (f === 'rail' ? null : 'rail')) : setScreen('profile'))} aria-label={t('You')} aria-haspopup={railed ? 'dialog' : undefined} aria-expanded={railed ? statusFrom === 'rail' : undefined}><Icon name="you" /><span className={`tab-avatar${myFace.url ? ' has-photo' : ''}`} aria-hidden="true" data-initial={((myFace.name || userId.replace(/^(u:|email:)/, ''))[0] || '?').toUpperCase()}>{myFace.url && <img src={myFace.url} alt="" referrerPolicy="no-referrer" />}</span></button>
         </nav>
+      )}
+
+      {statusFrom && (
+        <StatusPopover
+          httpBase={relayHttpUrl}
+          orgId={orgId}
+          sessionToken={sessionToken}
+          me={{ name: myFace.name || displayName(userId), url: myFace.url }}
+          from={statusFrom}
+          anchor={statusFrom === 'rail' ? railAvatar : statusFrom === 'tabs' ? listYou : avatarButton}
+          onClose={() => setStatusFrom(null)}
+          onProfile={() => { setStatusFrom(null); setScreen('profile') }}
+        />
       )}
 
       {panel && <div className="scrim" onClick={() => { setPanel(null); setComposeSeed(null) }} />}
@@ -952,17 +1126,23 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       {shortcuts && (
         <>
           <div className="scrim" onClick={() => setShortcuts(false)} />
-          <div className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape' && !composing(e)) setShortcuts(false) }}>
+          <div ref={shortcutsSheet} tabIndex={-1} className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape' && !composing(e)) { e.stopPropagation(); setShortcuts(false) } }}>
             <div className="sheet-title">{t('Keyboard shortcuts')}<button className="close" onClick={() => setShortcuts(false)} aria-label={t('Close')}>×</button></div>
+            {/* Each key written once, as code names it, and printed the way
+                this keyboard does: ⌘⇧A on a Mac, Ctrl+Shift+A elsewhere. */}
             {([
-              [t('Everywhere'), [['⌘K', t('Search, or jump anywhere')], ['N', t('Tell your AI')], ['⌘/', t('This list')]]],
+              [t('Everywhere'), [['Mod+K', t('Search, or jump anywhere')], ['N', t('Tell your AI')], ['Mod+/', t('This list')], ['Mod+1–9', t('Switch workspace')]]],
               [t('Cards'), [['A', t('Approve')], ['D', t('Decline')], ['J / K', t('Next / previous decision')], ['← →', t('Swipe the card')]]],
-              [t('List'), [['⌥↑ / ⌥↓', t('Previous / next conversation')], ['⌘⇧A', t('Activity')], ['⌘⇧D', t('Show or hide the sidebar')], ['⇧Esc', t('Mark all as read')], ['Esc', t('Close the pane')]]],
-              [t('Writing'), [['Enter', t('Send')], ['⇧Enter', t('New line')], ['↑', t('Edit your last message')], ['⌘B / ⌘I', t('Bold / italic')], ['/', t('Commands')], ['@', t('Mention someone, or @AI')]]],
+              [t('List'), [['Alt+Up / Alt+Down', t('Previous / next conversation')], ['Alt+Shift+Up / Alt+Shift+Down', t('Previous / next unread conversation')], ['Mod+Shift+A', t('Activity')], ['Mod+Shift+D', t('Show or hide the sidebar')], ['Shift+Esc', t('Mark all as read')], ['Esc', t('Close the pane')]]],
+              [t('Messages'), [['Up / Down', t('Previous / next message')], ['E', t('Edit message')], ['T', t('Reply in thread')], ['P', t('Pin to channel')], ['+', t('Add reaction')], ['Backspace', t('Delete message')], ['Shift+Backspace', t('Delete without asking')], ['Esc', t('Back to the message box')]]],
+              [t('Writing'), [['Enter', t('Send')], ['Shift+Enter', t('New line')], ['Up', t('Edit your last message')], ['Mod+B / Mod+I', t('Bold / italic')], ['/', t('Commands')], ['@', t('Mention someone, or @AI')], ['Mod+Enter', t('Save the canvas')]]],
             ] as Array<[string, string[][]]>).map(([group, rows]) => (
               <section key={group} className="shortcuts-group">
                 <h3>{group}</h3>
-                <dl>{rows.map(([k, what]) => <div key={k}><dt><kbd>{k}</kbd></dt><dd>{what}</dd></div>)}</dl>
+                {/* A cap for each alternative, so a long pair ("Alt+Shift+↑ /
+                    Alt+Shift+↓") breaks between the two and leaves room
+                    for what it does. */}
+                <dl>{rows.map(([k, what]) => <div key={k}><dt>{formatCombo(k, isMac).split(' / ').map((one, i) => <React.Fragment key={one}>{i > 0 && '/'}<kbd>{one}</kbd></React.Fragment>)}</dt><dd>{what}</dd></div>)}</dl>
               </section>
             ))}
           </div>
@@ -975,6 +1155,10 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           orgId={orgId}
           sessionToken={sessionToken}
           cards={[...pendingCards, ...decidedCards, ...sentCards]}
+          places={placesRef.current}
+          recent={recent}
+          current={mode === 'classic' && !screen ? listView?.view ?? null : null}
+          businesses={businesses}
           onPick={pickFromPalette}
           onClose={() => setPalette(false)}
         />

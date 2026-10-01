@@ -154,8 +154,10 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     id: row.id,
     channel: view,
     kind: row.kind,
-    // A deleted message keeps its place (its thread hangs off it) and
-    // loses its words.
+    // A deleted message loses its words. A page of history leaves it out;
+    // it comes only as the head of a thread opened by its link (listThread
+    // fetches it by id), and in what the unsend sends out to take it off
+    // the screens it is on.
     body: deleted ? "" : row.body,
     // The language it is written in, for a reader in another to ask for it
     // translated (translate.js). Null when there is nothing to translate.
@@ -176,8 +178,79 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     ...(row.previews_hidden ? { previewsHidden: true } : {}),
     reactions: deleted ? [] : reactions,
     files: deleted ? [] : (extra.files || []),
+    // An inline reply carries the message it answers, as that is now.
+    ...(!deleted && row.reply_to_id ? { replyTo: quoteOf(row, extra.original || null, members) } : {}),
     ...(agent ? { agent: { id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji || null, avatarUrl: agent.avatar_url || agent.avatarUrl || null } } : {}),
   };
+}
+
+/// What a spoiler hides in a quote: one bar, the same whatever it said, so
+/// not even its length shows.
+export const SPOILER_MASK = "████";
+const QUOTE_CHARS = 120;
+
+/// What the message renderer reads on a line before it reads a spoiler, in
+/// its own order (the web's MessageParts inline()): `code`, a link, an
+/// :emoji:, an @name — each kept whole — and then ||a spoiler||, which
+/// never crosses a line and holds no bar. One pass, left to right, as the
+/// renderer makes: a spoiler here is exactly a spoiler there.
+const QUOTE_TOKENS = /(`[^`\n]+`|https?:\/\/[^\s<>"）」|]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;|]+)|\|\|[^|\n]+\|\|/g;
+
+/// The first words of a message, as a reply quotes them: each ||spoiler||
+/// hidden before anything is cut (so half of one never shows), then put on
+/// one line. What is a spoiler is decided as the renderer decides it, on
+/// the message's own lines: a ```block``` is code across lines (an unclosed
+/// one to the end), `code` only within a line — two stray backticks on
+/// different lines protect nothing between them — and bars inside either
+/// open no spoiler. A file is named when there are no words. At most `max`
+/// characters, with an ellipsis when cut.
+export function replyExcerpt(body, fileName = null, max = QUOTE_CHARS) {
+  const masked = String(body || "").split("```")
+    .map((piece, i) => (i % 2 ? piece : piece.replace(QUOTE_TOKENS, (all, kept) => kept || SPOILER_MASK)))
+    .join("```");
+  const text = masked.replace(/\s+/g, " ").trim() || (fileName ? `📎 ${fileName}` : "");
+  const chars = Array.from(text);
+  return chars.length > max ? `${chars.slice(0, max - 1).join("").trimEnd()}…` : text;
+}
+
+/// What a reply shows of the message it answers: who said it and how it
+/// starts, or only that it is gone. `original` is that message as it is
+/// now, null when there is none; one from another conversation is never
+/// shown, whatever the id says.
+export function quoteOf(row, original, members) {
+  const id = row.reply_to_id;
+  if (!original || original.deleted_at || original.channel !== row.channel) {
+    return { id, kind: null, authorName: null, authorRef: null, excerpt: "", deleted: true };
+  }
+  const author = original.kind === "ai" ? null : members.find((m) => m.login === original.author_login);
+  return {
+    id,
+    kind: original.kind,
+    authorName: original.kind === "ai" ? null : (author?.name || original.author_name || null),
+    authorRef: author?.ref || null,
+    excerpt: replyExcerpt(original.body, original.file_name),
+    deleted: false,
+  };
+}
+
+/// The messages these rows reply to, as they are now, by id: one query for
+/// a page (in chunks D1's bound-parameter limit allows), none when nothing
+/// in it is a reply.
+async function originalsOf(db, orgId, rows) {
+  const ids = [...new Set(rows.map((r) => r.reply_to_id).filter(Boolean))];
+  const out = new Map();
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    const { results } = await db.prepare(
+      `SELECT m.id, m.channel, m.kind, m.body, m.author_login, m.deleted_at,
+              COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name,
+              (SELECT f.name FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id ORDER BY f.created_at LIMIT 1) AS file_name
+         FROM channel_messages m LEFT JOIN users u ON u.login = m.author_login
+        WHERE m.org_id = ?1 AND m.id IN (${chunk.map((_, j) => `?${j + 2}`).join(", ")})`
+    ).bind(orgId, ...chunk).all();
+    for (const r of results || []) out.set(r.id, r);
+  }
+  return out;
 }
 
 /// The agents that wrote any of these rows, by id — the deleted too, so
@@ -228,31 +301,38 @@ export async function hydrate(db, orgId, rows) {
 /// Rows to messages, with their threads, reactions and files — each file
 /// with an address signed for whoever is being shown it.
 export async function present(db, orgId, rows, viewerLogin, view, members) {
-  const [extras, files, agents] = await Promise.all([hydrate(db, orgId, rows), filesFor(db, orgId, rows.map((r) => r.id)), agentsOf(db, orgId, rows)]);
+  const [extras, files, agents, originals] = await Promise.all([hydrate(db, orgId, rows), filesFor(db, orgId, rows.map((r) => r.id)), agentsOf(db, orgId, rows), originalsOf(db, orgId, rows)]);
   const now = Date.now();
   return Promise.all(rows.map(async (r) => {
     const x = extras.get(r.id) || {};
     const replyRefs = (x.replyLogins || []).map((l) => (l === "ai" || String(l).startsWith("agent:") ? l : members.find((m) => m.login === l)?.ref)).filter(Boolean).slice(0, 5);
     const own = await Promise.all((files.get(r.id) || []).map((f) => toFile(db, f, now)));
-    return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null });
+    return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null, original: originals.get(r.reply_to_id) || null });
   }));
 }
 
+/// A page of a conversation: up to `PAGE` messages before `before`, oldest
+/// first, and `more` — whether there are older ones still.
+///
+/// A deleted message is simply gone. (Before its thread went with it, one
+/// could be left with replies under it; those are not shown either.) It is
+/// left out by the query, not after it: filtered from a page already cut to
+/// `PAGE`, one unsent message made the page short, and a short page read as
+/// the start of the conversation — the history above it could not be
+/// reached. One row past the page says outright whether there is more.
 export async function listMessages(db, orgId, resolved, viewerLogin, view, members, { before } = {}) {
   const { results } = await db
     .prepare(
       `SELECT m.*, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name FROM channel_messages m
          LEFT JOIN users u ON u.login = m.author_login
-        WHERE m.org_id = ?1 AND m.channel = ?2 AND m.parent_id IS NULL ${before ? "AND m.created_at < ?4" : ""}
+        WHERE m.org_id = ?1 AND m.channel = ?2 AND m.parent_id IS NULL AND m.deleted_at IS NULL ${before ? "AND m.created_at < ?4" : ""}
         ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?3`
     )
-    .bind(...[orgId, resolved.key, PAGE, ...(before ? [before] : [])])
+    .bind(...[orgId, resolved.key, PAGE + 1, ...(before ? [before] : [])])
     .all();
-  const rows = (results || []).reverse();
-  const shown = await present(db, orgId, rows, viewerLogin, view, members);
-  // A deleted message is simply gone. (Before its thread went with it, one
-  // could be left with replies under it; those are not shown either.)
-  return shown.filter((m) => !m.deleted);
+  const more = (results || []).length > PAGE;
+  const rows = (results || []).slice(0, PAGE).reverse();
+  return { messages: await present(db, orgId, rows, viewerLogin, view, members), more };
 }
 
 /// A thread: the message it hangs off, and every reply under it, oldest first.
@@ -386,27 +466,67 @@ export async function getMessage(db, orgId, id) {
     .first();
 }
 
-export async function postMessage(db, { orgId, key, authorLogin, body, kind = "message", cardId = null, parentId = null, withFiles = false }) {
+/// The browser's id for a send (`tmp-…`). Anything else is not a retry key.
+const CLIENT_ID = /^tmp-[0-9a-z-]{1,76}$/;
+export const clientIdOk = (id) => typeof id === "string" && CLIENT_ID.test(id);
+
+async function messageByClientId(db, orgId, authorLogin, clientId) {
+  const hit = await db
+    .prepare("SELECT id FROM channel_messages WHERE org_id = ?1 AND author_login = ?2 AND client_id = ?3")
+    .bind(orgId, authorLogin, clientId)
+    .first();
+  return hit ? getMessage(db, orgId, hit.id) : null;
+}
+
+export async function postMessage(db, { orgId, key, authorLogin, body, kind = "message", cardId = null, parentId = null, replyTo = null, withFiles = false, clientId = null }) {
   const text = String(body || "").replace(/\r\n/g, "\n").trim();
   // A picture on its own is something said.
   if (!text && !withFiles) return { error: "Write something first." };
   if (text.length > MAX_MESSAGE_CHARS) return { error: `That is longer than ${MAX_MESSAGE_CHARS} characters.` };
+  if (clientId != null && clientId !== "" && !clientIdOk(clientId)) return { error: "That send cannot be tried again.", status: 400 };
   if (parentId) {
     // A reply goes under a message in this same conversation, one level deep.
     const parent = await getMessage(db, orgId, parentId);
     if (!parent || parent.channel !== key || parent.parent_id) return { error: "That thread is not here any more." };
   }
+  // A retry of a send that already landed gets that message back, before
+  // anything about it is checked again: it was fine when it was written.
+  const remembered = clientIdOk(clientId) ? clientId : null;
+  if (remembered && authorLogin) {
+    const prior = await messageByClientId(db, orgId, authorLogin, remembered);
+    if (prior) return { row: prior, replay: true };
+  }
+  if (replyTo) {
+    // An inline reply answers a message where it is read: the conversation
+    // for a message, the same thread for a reply in one. Gone, unsent or
+    // somewhere else are refused alike, so the refusal says nothing of
+    // what another conversation holds. Only something somebody said — not
+    // a "joined" line or another notice — can be answered.
+    const original = await getMessage(db, orgId, replyTo);
+    const here = original && original.channel === key && !original.deleted_at
+      && ["message", "ai", "agent"].includes(original.kind)
+      && (parentId ? original.id === parentId || original.parent_id === parentId : !original.parent_id);
+    if (!here) return { error: "The message you are replying to is not here any more.", code: "reply_gone" };
+  }
   const id = crypto.randomUUID();
   // Strictly after the channel's last message, so two sent in the same
   // millisecond still read in the order they were sent.
   const now = new Date().toISOString();
-  await db
-    .prepare(
-      `INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, card_id, created_at, parent_id)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
-    )
-    .bind(id, orgId, key, authorLogin, kind, text, cardId, now, parentId)
-    .run();
+  try {
+    await db
+      .prepare(
+        `INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, card_id, created_at, parent_id, reply_to_id, client_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
+      )
+      .bind(id, orgId, key, authorLogin, kind, text, cardId, now, parentId, replyTo || null, remembered)
+      .run();
+  } catch (err) {
+    if (remembered && authorLogin) {
+      const prior = await messageByClientId(db, orgId, authorLogin, remembered);
+      if (prior) return { row: prior, replay: true };
+    }
+    throw err;
+  }
   await mirrorIds(db, orgId, [id]);
   return { row: await getMessage(db, orgId, id) };
 }
@@ -417,11 +537,13 @@ export async function linkCard(db, orgId, messageId, cardId) {
 }
 
 /// The conversation before (and including) a message, as the AI reads it:
-/// one line per message, names not logins, oldest first.
+/// one line per message, names not logins, oldest first. An inline reply
+/// says what it answers, as its reader sees over it — so the AI knows which
+/// message "this" is, and is shown one too old to be among these lines.
 export async function transcriptUpTo(db, orgId, key, createdAt, { limit = 24, skip = null } = {}) {
   const { results } = await db
     .prepare(
-      `SELECT m.kind, m.body, m.created_at, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name, m.author_login,
+      `SELECT m.kind, m.body, m.created_at, m.reply_to_id, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name, m.author_login,
               (SELECT group_concat(f.name, ', ') FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id) AS file_names
          FROM channel_messages m
          LEFT JOIN users u ON u.login = m.author_login
@@ -432,10 +554,22 @@ export async function transcriptUpTo(db, orgId, key, createdAt, { limit = 24, sk
     .all();
   // `skip`: rows left out — talk with the agents, for a decision.
   const kept = skip ? (results || []).filter((r) => !skip({ ...r, channel: key })).slice(0, limit) : (results || []);
-  return kept.reverse().map((r) => {
+  const originals = await originalsOf(db, orgId, kept);
+  const answers = (r, max) => {
+    const o = r.reply_to_id ? originals.get(r.reply_to_id) : null;
+    // Never one from another conversation, one unsent, or one `skip`
+    // leaves out of these lines.
+    if (!o || o.deleted_at || o.channel !== key || (skip && skip(o))) return "";
+    const said = String(o.body || "").replace(/\s+/g, " ").trim() || (o.file_name ? `[attached: ${o.file_name}]` : "");
+    return ` (replying to ${o.kind === "ai" ? "AI" : (o.author_name || "someone")}: "${said.length > max ? `${said.slice(0, max)}…` : said}")`;
+  };
+  return kept.reverse().map((r, i, all) => {
     const who = r.kind === "ai" ? "AI" : (r.author_name || "someone");
     const attached = r.file_names ? ` [attached: ${String(r.file_names).slice(0, 200)}]` : "";
-    return `${String(r.created_at).slice(5, 16).replace("T", " ")} ${who}: ${String(r.body).replace(/\s+/g, " ").slice(0, 500)}${attached}`;
+    // The newest line is the one that asks: what it answers comes as long
+    // as a line of its own would. The rest carry the short quote people see.
+    const answered = answers(r, i === all.length - 1 ? 500 : QUOTE_CHARS);
+    return `${String(r.created_at).slice(5, 16).replace("T", " ")} ${who}${answered}: ${String(r.body).replace(/\s+/g, " ").slice(0, 500)}${attached}`;
   });
 }
 
@@ -502,7 +636,10 @@ export async function channelActivity(db, orgId, viewerLogin, members) {
 
 /// Read up to `at` (now, if not given). Never moves backwards.
 export async function markRead(db, orgId, login, key, at) {
-  const when = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : new Date().toISOString();
+  const parsed = at ? Date.parse(at) : NaN;
+  // A clock ahead of the server must not mark a message read that has not
+  // been written yet. A clock behind keeps the earlier moment the person saw.
+  const when = Number.isNaN(parsed) ? new Date().toISOString() : new Date(Math.min(parsed, Date.now())).toISOString();
   await db.prepare(
     `INSERT INTO channel_reads (org_id, login, channel, last_read_at) VALUES (?1, ?2, ?3, ?4)
      ON CONFLICT (org_id, login, channel) DO UPDATE SET last_read_at = MAX(last_read_at, excluded.last_read_at)`
@@ -589,13 +726,15 @@ const VISIBLE = `(
   OR (m.channel LIKE 'g:%' AND EXISTS (SELECT 1 FROM conversation_members c WHERE c.org_id = ?1 AND c.channel = m.channel AND c.login = ?2)))`;
 
 /// The Activity inbox: messages that name you, replies in threads you
-/// started or answered in, and your keywords said anywhere you can read —
-/// the last 30 days, newest first.
+/// started or answered in or inline to what you wrote, and your keywords
+/// said anywhere you can read — the last 30 days, newest first.
 export async function activityFeed(db, orgId, login, members, { days = 30, limit = 60 } = {}) {
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const [recent, mine, read, kw] = await Promise.all([
     db.prepare(
-      `SELECT m.*, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name FROM channel_messages m LEFT JOIN users u ON u.login = m.author_login
+      `SELECT m.*, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name,
+              (SELECT o.author_login FROM channel_messages o WHERE o.org_id = m.org_id AND o.id = m.reply_to_id AND o.channel = m.channel AND o.deleted_at IS NULL) AS reply_to_login
+         FROM channel_messages m LEFT JOIN users u ON u.login = m.author_login
         WHERE m.org_id = ?1 AND ${VISIBLE} AND m.deleted_at IS NULL AND m.created_at >= ?3
           AND (m.author_login IS NULL OR m.author_login != ?2)
         ORDER BY m.created_at DESC LIMIT 500`
@@ -614,7 +753,8 @@ export async function activityFeed(db, orgId, login, members, { days = 30, limit
     // "@here" was for whoever was at the app then — a push, not a later
     // entry in Activity; "@channel" is for everyone.
     const mention = r.body && resolveMentions(r.body, members, { online: NOBODY }).some((m) => m.login === login);
-    const reply = r.parent_id && threads.has(r.parent_id);
+    // A reply: in a thread you are in, or inline to what you wrote.
+    const reply = (r.parent_id && threads.has(r.parent_id)) || r.reply_to_login === login;
     const keyword = !mention && !reply ? keywordHit(r.body, keywords) : null;
     if (!mention && !reply && !keyword) continue;
     picked.push({ row: r, type: mention ? "mention" : reply ? "reply" : "keyword", keyword });

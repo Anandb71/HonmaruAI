@@ -1036,9 +1036,13 @@ await step('your role is whatever you say it is', async () => {
 // whoever deploys the Worker.
 await step('You on a laptop lists where to go the way Tools does, and nothing twice', async () => {
   const d = desk.pages()[0]
-  await d.evaluate(() => { location.hash = '#/profile' })
-  await d.click('nav [data-tab="you"]').catch(() => {})
+  // On a laptop the rail's avatar opens your status; You is behind its
+  // "View profile", which closes it on the way.
+  await d.evaluate(() => { location.hash = '#/feed' })
+  await d.click('nav [data-tab="you"]')
+  await d.click('[data-status-popover] [data-view-profile]')
   await d.waitForSelector('.profile-stats', { timeout: 15000 })
+  if (await d.$('[data-status-popover]')) throw new Error('the status popover stayed open over You')
   // Tools and History have their own tabs on the rail: not rows here too.
   const shown = await d.$$eval('.pf-ws .row', (rows) => rows.filter((r) => r.offsetParent !== null).map((r) => (r.querySelector('.row-main')?.firstChild?.textContent || '').trim()))
   for (const twice of ['Tools', 'History']) if (shown.includes(twice)) throw new Error(`${twice} is both a tab and a row under You`)
@@ -1255,6 +1259,9 @@ await step('the other screens hold up on a laptop', async () => {
     ['you', '.profile-stats', '22-desktop-profile'],
   ]) {
     await d.click(`nav [data-tab="${label}"]`)
+    // The rail's avatar opens your status first; You is behind its
+    // "View profile".
+    if (label === 'you') await d.click('[data-status-popover] [data-view-profile]')
     await d.waitForSelector(marker, { timeout: 10000 })
     await d.screenshot({ path: `${SHOTS}/${name}.png` })
     // The rail stays: a screen is a place in the app, not a takeover.
@@ -1697,6 +1704,24 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
       .catch(() => { throw new Error('the message does not count its reply') })
     if (await d.$('.slk-main .slk-msg:has-text("Housekeeping")')) throw new Error('a thread reply leaked into the channel')
     await d.screenshot({ path: `${SHOTS}/39-thread.png` })
+    // A right-click on the reply's words opens its own menu at the pointer:
+    // the quick reactions along the top, then what ⋯ offers. Escape shuts
+    // the menu and leaves the thread open under it.
+    const reply = '.slk-thread-pane .slk-msg:has-text("Housekeeping")'
+    await d.click(`${reply} .slk-text`, { button: 'right' })
+    await d.waitForSelector('.row-menu [data-row-menu="react:✅"]', { timeout: 5000 })
+      .catch(() => { throw new Error('right-clicking a message opened no menu with its quick reactions') })
+    if (!(await d.$('.row-menu [data-row-menu="copy"]'))) throw new Error('the right-click menu on a message has no "Copy text"')
+    if (await d.$('.row-menu [data-row-menu="reply"]')) throw new Error('the right-click menu on a reply offers a thread inside its thread')
+    await d.screenshot({ path: `${SHOTS}/39a-message-menu.png` })
+    await d.keyboard.press('Escape')
+    await d.waitForSelector('.row-menu', { state: 'detached', timeout: 3000 }).catch(() => { throw new Error('Escape did not shut the menu on a message') })
+    if (!(await d.$('.slk-thread-pane'))) throw new Error('Escape on the menu over a reply shut the thread under it as well')
+    // A quick reaction from it lands on the reply.
+    await d.click(`${reply} .slk-text`, { button: 'right' })
+    await d.click('.row-menu [data-row-menu="react:✅"]')
+    await d.waitForSelector(`${reply} .slk-reaction.mine`, { timeout: 10000 })
+      .catch(() => { throw new Error('a reaction from the right-click menu did not land') })
     await d.click('.slk-thread-pane .slk-pane-close')
     // Pinned, and listed under the pin.
     await d.hover(msg)
@@ -1705,16 +1730,61 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
     await d.click('.slk-pins-button')
     await d.waitForSelector('.slk-pins .slk-pin-row:has-text("Check-in")', { timeout: 10000 }).catch(() => { throw new Error('the pin list does not hold it') })
     await d.click('.slk-pins .slk-pane-close')
-    // Unsent: a second message, gone for good after a confirm.
+    // Unsent: a second message, gone for good after the app's own question —
+    // never the browser's box, which would show in the browser's language.
+    let nativeAsked = false
+    const onNative = (dl) => { nativeAsked = true; void dl.dismiss() }
+    d.on('dialog', onNative)
     await d.fill('.slk-input', 'oops, wrong channel')
     await d.keyboard.press('Enter')
     const oops = '.slk-msg:has-text("oops, wrong channel")'
     await d.waitForSelector(oops, { timeout: 10000 })
     await d.hover(oops)
     await d.click(`${oops} [aria-label="More actions"]`)
-    d.once('dialog', (dl) => dl.accept())
     await d.click(`${oops} .slk-menu button.danger`)
+    await d.waitForSelector('.cl-delete-dialog [data-delete-preview]:has-text("oops, wrong channel")', { timeout: 5000 })
+      .catch(() => { throw new Error('deleting a message did not ask which one, in the app') })
+    await d.click('[data-delete-confirm]')
     await d.waitForSelector(oops, { state: 'detached', timeout: 10000 }).catch(() => { throw new Error('a deleted message is still there') })
+    // ⇧ on Delete skips the question, as in Discord.
+    await d.fill('.slk-input', 'typo, never mind')
+    await d.keyboard.press('Enter')
+    const typo = '.slk-msg:has-text("typo, never mind")'
+    await d.waitForSelector(typo, { timeout: 10000 })
+    await d.hover(typo)
+    await d.click(`${typo} [aria-label="More actions"]`)
+    await d.click(`${typo} .slk-menu button.danger`, { modifiers: ['Shift'] })
+    await d.waitForSelector(typo, { state: 'detached', timeout: 10000 }).catch(() => { throw new Error('⇧ Delete did not delete the message') })
+    if (await d.$('.cl-delete-dialog')) throw new Error('⇧ Delete still asked')
+    // The letters the ⋯ menu shows: ↑ on the log picks the last message, E
+    // edits it and Esc hands focus back to it, ⌫ asks, ⇧⌫ does not.
+    await d.fill('.slk-input', 'said with the keys')
+    await d.keyboard.press('Enter')
+    const keyed = '.slk-main .slk-msg:has-text("said with the keys")'
+    await d.waitForSelector(keyed, { timeout: 10000 })
+    const onKeyed = () => d.waitForFunction(() => {
+      const el = document.activeElement
+      return Boolean(el && el.matches('article.slk-msg') && /said with the keys/.test(el.textContent || ''))
+    }, null, { timeout: 5000 })
+    await d.focus('.slk-main .slk-log')
+    await d.keyboard.press('ArrowUp')
+    await onKeyed().catch(() => { throw new Error('↑ on the log did not pick its last message') })
+    await d.keyboard.press('e')
+    const editBox = '.slk-main .slk-msg.editing .slk-edit textarea'
+    await d.waitForSelector(editBox, { timeout: 5000 }).catch(() => { throw new Error('E did not edit the picked message') })
+    if (await d.inputValue(editBox) !== 'said with the keys') throw new Error('E opened another message for editing')
+    await d.keyboard.press('Escape')
+    await onKeyed().catch(() => { throw new Error('focus did not come back to the message after its edit') })
+    await d.keyboard.press('Backspace')
+    await d.waitForSelector('[data-delete-confirm]', { timeout: 5000 }).catch(() => { throw new Error('⌫ did not ask before deleting') })
+    await d.keyboard.press('Escape')
+    await d.waitForSelector('[data-delete-confirm]', { state: 'detached', timeout: 5000 })
+    if (!(await d.$(keyed))) throw new Error('cancelling the question deleted the message')
+    await onKeyed().catch(() => { throw new Error('focus did not come back to the message after the question') })
+    await d.keyboard.press('Shift+Backspace')
+    await d.waitForSelector(keyed, { state: 'detached', timeout: 10000 }).catch(() => { throw new Error('⇧⌫ did not delete the picked message') })
+    d.off('dialog', onNative)
+    if (nativeAsked) throw new Error('deleting a message opened the browser’s own box')
     // And all of it survives a reload.
     await d.reload({ waitUntil: 'load' })
     await d.click('.cl-thread:has-text("Front desk") .cl-open')
@@ -1781,8 +1851,13 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
     // ⌘/ lists the keys.
     await d.keyboard.press(process.platform === 'darwin' ? 'Meta+/' : 'Control+/')
     await d.waitForSelector('.shortcuts-sheet', { timeout: 5000 }).catch(() => { throw new Error('⌘/ did not open the shortcuts') })
+    // Tab stays in it: the list behind the scrim is out of reach.
+    await d.keyboard.press('Tab')
+    await d.keyboard.press('Tab')
+    if (!(await d.evaluate(() => Boolean(document.activeElement?.closest('.shortcuts-sheet'))))) throw new Error('Tab left the shortcuts sheet for what is behind it')
+    // Escape closes it.
     await d.keyboard.press('Escape')
-    await d.click('.shortcuts-sheet .close').catch(() => {})
+    await d.waitForSelector('.shortcuts-sheet', { state: 'detached', timeout: 3000 }).catch(() => { throw new Error('Escape did not close the shortcuts') })
     // No status editor on You: it was taken out as clutter.
     await d.goto(`${WEB}/#/you`, { waitUntil: 'load' })
     await d.waitForSelector('.profile-stats', { timeout: 15000 })
@@ -1957,6 +2032,32 @@ await step('right-clicking a channel in the sidebar offers what a desktop chat a
     await d.keyboard.press('Shift+Escape')
     await d.waitForFunction(() => !document.querySelector('.slk-side .cl-fresh'), null, { timeout: 5000 })
       .catch(() => { throw new Error('⇧Esc left a conversation marked new') })
+    // ⌥⇧↓ finds what is waiting even in a folded group, and opens the group:
+    // a folded heading still counts it. With every group folded (and
+    // everything read) only the open conversation and those with a card
+    // stay drawn, so a lit row other than the open one means the jump
+    // reached what was waiting.
+    const waiting = await d.$$eval('.slk-side .cl-section .cl-thread:not(.on)', (rows) => rows.filter((r) => r.querySelector('.cl-badge, .cl-fresh')).length)
+    const openBefore = await d.$eval('.slk-side .cl-section .cl-thread.on .cl-title', (el) => el.textContent.trim()).catch(() => null)
+    for (const fold of await d.$$('.slk-side .cl-section .cl-fold[aria-expanded="true"]')) await fold.click()
+    // A card waiting on you keeps its row, as a mention would: reading does
+    // not clear those. Nothing else stays.
+    await d.waitForFunction(() => [...document.querySelectorAll('.slk-side .cl-section .cl-thread')]
+      .every((r) => r.classList.contains('on') || r.querySelector('.cl-badge')), null, { timeout: 3000 })
+      .catch(() => { throw new Error('folding every group left a conversation drawn with nothing waiting in it') })
+    await d.keyboard.press('Alt+Shift+ArrowDown')
+    const litElsewhere = () => d.waitForFunction((before) => {
+      const on = document.querySelector('.slk-side .cl-section .cl-thread.on .cl-title')
+      return Boolean(on && on.textContent.trim() !== before)
+    }, openBefore, { timeout: 5000 })
+    if (waiting > 0) {
+      await litElsewhere().catch(() => { throw new Error('⌥⇧↓ did not reach an unread conversation in a folded group') })
+    } else {
+      // Nothing waiting: it says so (or stops on what arrived just now).
+      await Promise.any([d.waitForSelector('.cl-toast:has-text("unread")', { timeout: 5000 }), litElsewhere()])
+        .catch(() => { throw new Error('⌥⇧↓ with nothing unread said nothing') })
+    }
+    for (const fold of await d.$$('.slk-side .cl-section .cl-fold[aria-expanded="false"]')) await fold.click()
     // Archive a channel from the menu, then bring it back from You.
     await d.click('.cl-add')
     await d.fill('.cl-add-form input', 'Old launch')
@@ -2268,14 +2369,18 @@ await step('the channel header opens its context, its automations, its members, 
     if (paused !== 0) throw new Error(`the switch did not pause the automation: ${JSON.stringify(paused)}`)
     await d.screenshot({ path: `${SHOTS}/44-channel-automations.png` })
 
-    // 3. Members: people and agents, searchable, with a way to add more.
+    // 3. Members: people (who is here first) and agents, searchable, with a
+    // way to add more. You are here yourself, so "Online" is never empty.
     await d.click('.slk-members-button')
     await d.waitForSelector('.slk-details [data-tab="members"][aria-selected="true"]', { timeout: 10000 })
+    await d.waitForSelector('.slk-details [data-members="online"]', { timeout: 10000 })
+      .catch(() => { throw new Error('the members panel does not list who is online') })
     const panel = await d.$eval('.slk-details', (el) => el.innerText)
     if (!/#kitchen/i.test(panel)) throw new Error('the members panel does not say which channel')
-    for (const want of ['Created on', 'People (', 'Agents (', 'Your AI', 'Add members', 'Attachments', 'Automations']) {
+    for (const want of ['Created on', 'Online — ', 'Agents (', 'Your AI', 'Add members', 'Attachments', 'Automations']) {
       if (!panel.includes(want)) throw new Error(`the members panel has no "${want}": ${panel.slice(0, 300)}`)
     }
+    if (!(await d.$('.slk-details [data-members="online"] + .slk-details-list .slk-member-row .cl-presence.on'))) throw new Error('you are not listed as online in the channel you are in')
     if (/@example\.com|\bu:|\bemail:/.test(panel)) throw new Error('the members panel shows an account id')
     await d.fill('.slk-details-search', 'zzzz-nobody')
     if ((await d.$$('.slk-details .slk-member-row:not(.static)')).length !== 0) throw new Error('searching members does not narrow them')
@@ -2849,8 +2954,14 @@ await step('a screen closed with its own button stays closed when Back is presse
   await page.goto(`${WEB}#/feed`, { waitUntil: 'load' })
   await page.goto(`${WEB}#/list`, { waitUntil: 'load' })
   await page.waitForSelector('.cl-tabs', { timeout: 20000 })
+  // The list's You tab opens your status, above the tabs; You is behind
+  // its "View profile".
   await page.click('[data-phone-tab="you"]')
+  await page.waitForSelector('[data-status-popover].from-tabs [data-view-profile]', { timeout: 10000 })
+    .catch(() => { throw new Error('the list’s You tab did not open your status') })
+  await page.click('[data-status-popover] [data-view-profile]')
   await page.waitForSelector('.profile-stats', { timeout: 10000 })
+  if (await page.$('[data-status-popover]')) throw new Error('the status popover stayed open over You')
   await page.click('.screen .back')
   await page.waitForSelector('.cl-tabs', { timeout: 10000 })
   if ((await page.evaluate(() => location.hash)) !== '#/list') throw new Error('closing You did not return to the list')
@@ -2989,6 +3100,69 @@ await step('a workspace adds its own emoji, and uses them in a message and a rea
   }
 })
 
+// Your status, one click from your avatar — on a laptop the rail's, at its
+// foot. A preset and Save, and a teammate's sidebar wears its emoji; Escape
+// shuts the popover and hands focus back to the avatar that opened it.
+await step('a status set from the avatar on a laptop shows in a teammate’s sidebar', async () => {
+  await closeEverything()
+  if (!mate) throw new Error('the teammate this step needs is not here')
+  // Kenji at a laptop, in the same browser as his phone; the owner at theirs.
+  const kdesk = await mate.newPage()
+  await kdesk.setViewportSize({ width: 1280, height: 820 })
+  const desk = await phone.newPage()
+  await desk.setViewportSize({ width: 1280, height: 820 })
+  try {
+    await kdesk.goto(`${WEB}#/feed`, { waitUntil: 'load' })
+    await kdesk.click('nav [data-tab="you"]')
+    await kdesk.waitForSelector('[data-status-popover].from-rail [data-status-preset="Focusing"]', { timeout: 15000 })
+      .catch(() => { throw new Error('the rail’s avatar did not open your status') })
+    if ((await kdesk.getAttribute('nav [data-tab="you"]', 'aria-expanded')) !== 'true') throw new Error('the avatar does not say its popover is open')
+    await kdesk.click('[data-status-preset="Focusing"]')
+    const picked = await kdesk.inputValue('[data-status-emoji]')
+    if (picked !== '🎧') throw new Error(`the Focusing preset put "${picked}" in the emoji`)
+    if (!(await kdesk.inputValue('[data-status-text]')).trim()) throw new Error('the Focusing preset left the words empty')
+    await kdesk.click('[data-status-save]')
+    await kdesk.waitForSelector('[data-status-popover]', { state: 'detached', timeout: 10000 })
+      .catch(async () => { throw new Error(`Save did not close it: ${(await kdesk.textContent('[data-status-popover] .dlg-error').catch(() => null)) || 'no reason given'}`) })
+
+    // Opened again, it says what is set now; Escape shuts it, and focus is
+    // back on the avatar.
+    await kdesk.click('nav [data-tab="you"]')
+    await kdesk.waitForSelector('[data-status-popover] [data-status-now]', { timeout: 15000 })
+      .catch(() => { throw new Error('the popover does not say the status just set') })
+    const now = await kdesk.textContent('[data-status-popover] [data-status-now]')
+    if (!now.includes('🎧')) throw new Error(`the popover says the status is: ${now}`)
+    await kdesk.screenshot({ path: `${SHOTS}/76-status-popover.png` })
+    await kdesk.keyboard.press('Escape')
+    await kdesk.waitForSelector('[data-status-popover]', { state: 'detached', timeout: 5000 })
+      .catch(() => { throw new Error('Escape did not close your status') })
+    const focused = await kdesk.evaluate(() => document.activeElement?.getAttribute('data-tab') || document.activeElement?.tagName)
+    if (focused !== 'you') throw new Error(`Escape left focus on ${focused}, not the avatar`)
+
+    // The owner's sidebar, read fresh: Kenji's row wears the emoji.
+    await desk.goto(`${WEB}#/list`, { waitUntil: 'load' })
+    const worn = desk.locator('.slk-side .cl-thread[data-view^="dm:"]', { hasText: 'Kenji' }).locator('.cl-status')
+    await worn.waitFor({ timeout: 20000 })
+      .catch(() => { throw new Error('the owner’s sidebar shows no status beside Kenji') })
+    const emoji = ((await worn.textContent()) || '').trim()
+    if (emoji !== '🎧') throw new Error(`Kenji's row wears "${emoji}", not the status he set`)
+    await desk.screenshot({ path: `${SHOTS}/77-status-sidebar.png` })
+
+    // Cleared from the same popover, for the steps after this one.
+    await kdesk.click('nav [data-tab="you"]')
+    await kdesk.click('[data-status-popover] [data-status-clear]')
+    await kdesk.waitForSelector('[data-status-popover]', { state: 'detached', timeout: 10000 })
+      .catch(() => { throw new Error('Clear status did not close it') })
+  } catch (err) {
+    await kdesk.screenshot({ path: `${SHOTS}/fail-${Date.now()}-status-kenji.png` }).catch(() => {})
+    await desk.screenshot({ path: `${SHOTS}/fail-${Date.now()}-status-owner.png` }).catch(() => {})
+    throw err
+  } finally {
+    await kdesk.close()
+    await desk.close()
+  }
+})
+
 await step('threads you are in, a message marked unread, and one forwarded as a link only', async () => {
   await closeEverything()
   if (!mate) throw new Error('the teammate this step needs is not here')
@@ -3003,7 +3177,8 @@ await step('threads you are in, a message marked unread, and one forwarded as a 
     const ask = `which supplier? ${Date.now()}`
     await desk.fill('.slk-composer .slk-input', ask)
     await desk.keyboard.press('Enter')
-    await desk.waitForSelector(`.slk-text:has-text("${ask}")`, { timeout: 10000 })
+    // The server's copy, not the one drawn the moment Enter is pressed.
+    await desk.waitForSelector(`.slk-msg:not(.pending):not(.failed) .slk-text:has-text("${ask}")`, { timeout: 10000 })
 
     await kenji.goto(`${WEB}#/list`, { waitUntil: 'load' })
     // Out of whatever conversation the phone was left in, to its list.
@@ -3017,7 +3192,7 @@ await step('threads you are in, a message marked unread, and one forwarded as a 
     await kenji.click('[data-sheet="reply"]')
     await kenji.fill('.slk-composer.thread .slk-input', 'the one from Kyoto')
     await kenji.click('.slk-composer.thread .slk-send[type="submit"]')
-    await kenji.waitForSelector('.slk-composer.thread ~ * .slk-text:has-text("the one from Kyoto"), .slk-text:has-text("the one from Kyoto")', { timeout: 10000 })
+    await kenji.waitForSelector('.slk-msg:not(.pending):not(.failed) .slk-text:has-text("the one from Kyoto")', { timeout: 10000 })
 
     // Threads: the owner's thread, unread, with Kenji's answer in it.
     await desk.waitForSelector('[data-threads] .cl-badge', { timeout: 20000 })
@@ -3102,6 +3277,17 @@ await step('a star, a section of your own, and a user group one mention reaches'
     // Kept on the server: a reload keeps it.
     await desk.reload({ waitUntil: 'load' })
     await desk.waitForSelector('.slk-side .cl-section:has(h2:has-text("Shop floor")) .cl-thread[data-view="b:front-desk"]', { timeout: 20000 })
+
+    // ⌥↑/⌥↓ walk the sidebar as it is drawn — Starred, then your sections —
+    // not the team's own order: up from the section's channel is the starred
+    // one above it, and down comes back.
+    const lit = (view) => desk.waitForSelector(`.slk-side .cl-section .cl-thread.on[data-view="${view}"]`, { timeout: 5000 })
+    await desk.click('.slk-side .cl-thread[data-view="b:front-desk"] .cl-open')
+    await lit('b:front-desk')
+    await desk.keyboard.press('Alt+ArrowUp')
+    await lit('b:kitchen').catch(() => { throw new Error('⌥↑ did not go to the starred channel drawn above') })
+    await desk.keyboard.press('Alt+ArrowDown')
+    await lit('b:front-desk').catch(() => { throw new Error('⌥↓ did not come back down the sidebar as it is drawn') })
 
     // "@crew" in the composer: offered, written, and it reaches Kenji.
     await desk.click('.slk-composer .slk-input')
@@ -3521,7 +3707,8 @@ await step('a data rule warns before a message goes, and it goes when the person
       .catch(() => { throw new Error('no warning before a message the rule is about') })
     await w.screenshot({ path: `${SHOTS}/74-data-rule-warning.png` })
     await w.click('[data-dlp-send]')
-    await w.waitForSelector(`.slk-text:has-text("${said}")`, { timeout: 15000 })
+    // Drawn at once while it goes: only the server's copy says it was sent.
+    await w.waitForSelector(`.slk-msg:not(.pending):not(.failed) .slk-text:has-text("${said}")`, { timeout: 15000 })
       .catch(() => { throw new Error('sending anyway did not send it') })
 
     // Provisioning and the SIEM have their places.

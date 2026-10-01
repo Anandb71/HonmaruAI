@@ -3,8 +3,11 @@ import { createPortal } from 'react-dom'
 import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon, type IconName } from './Icon'
-import { EmojiPicker } from './MessageParts'
+import { EmojiPicker, EmojiGlyph } from './MessageParts'
 import { Avatar } from './Avatar'
+import type { MenuEntry } from './RowMenu'
+import { messageMenuEntries, type MessageMenuActions } from '../utils/messageMenu'
+import { useQuickReactions } from '../utils/emojiSearch'
 import './Sheet.css'
 import { composing } from '../utils/keys'
 
@@ -13,18 +16,34 @@ import { composing } from '../utils/keys'
 // the bar of tools a laptop shows over a message has nowhere to be; this is
 // where they go, as every phone chat app puts them.
 
+/// Whether `from` is in something inside the sheet that scrolls by itself:
+/// between it and the sheet, a box with more in it than it shows and a
+/// scrollbar to reach it.
+export function inScroller(from: Element | null, sheet: Element | null, overflowOf: (el: Element) => string = (el) => getComputedStyle(el).overflowY): boolean {
+  for (let el = from; el && el !== sheet; el = el.parentElement) {
+    if (el.scrollHeight > el.clientHeight && /auto|scroll/.test(overflowOf(el))) return true
+  }
+  return false
+}
+
 /// The frame: a scrim, a handle, the rows. Escape, the scrim and a swipe
 /// down close it.
 export const Sheet: React.FC<{ label: string; onClose: () => void; children: React.ReactNode; className?: string }> = ({ label, onClose, children, className }) => {
   const box = useRef<HTMLDivElement>(null)
   const startY = useRef<number | null>(null)
+  // Whoever opens a sheet hands it a new onClose with every render of its
+  // own. Kept here, so the effect below runs once and not with each of them.
+  const close = useRef(onClose)
+  close.current = onClose
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) onClose() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) close.current() }
     document.addEventListener('keydown', key)
-    // The first control, so a keyboard or a screen reader lands in it.
-    requestAnimationFrame(() => box.current?.querySelector<HTMLElement>('button, input')?.focus({ preventScroll: true }))
-    return () => document.removeEventListener('keydown', key)
-  }, [onClose])
+    // The first control, so a keyboard or a screen reader lands in it — once,
+    // as the sheet opens. Placed again on a later render, it took the caret
+    // out of a search box somebody was typing in.
+    const frame = requestAnimationFrame(() => box.current?.querySelector<HTMLElement>('button, input')?.focus({ preventScroll: true }))
+    return () => { document.removeEventListener('keydown', key); cancelAnimationFrame(frame) }
+  }, [])
   return createPortal(
     <div className="msheet-scrim" onClick={onClose}>
       <div
@@ -34,7 +53,11 @@ export const Sheet: React.FC<{ label: string; onClose: () => void; children: Rea
         aria-modal="true"
         aria-label={label}
         onClick={(e) => e.stopPropagation()}
-        onTouchStart={(e) => { startY.current = e.touches[0]?.clientY ?? null }}
+        onTouchStart={(e) => {
+          // A drag that starts in a list of its own (the emoji picker) is
+          // that list being scrolled, not the sheet being pulled down.
+          startY.current = inScroller(e.target as Element, box.current) ? null : e.touches[0]?.clientY ?? null
+        }}
         onTouchEnd={(e) => {
           const from = startY.current
           startY.current = null
@@ -58,48 +81,36 @@ export const SheetRow: React.FC<{ icon: IconName; label: string; onClick: () => 
   </button>
 )
 
+/// The phone's row of reactions before you have used any: room for six,
+/// where a laptop's hover bar has three.
+const SHEET_REACTIONS = ['👍', '✅', '👀', '🙌', '🎉', '🙏']
+
 /// What a long press on a message offers: a row of reactions, then what
-/// you can do to it. Everything a laptop has on hover and behind ⋯.
-export const MessageSheet: React.FC<{
+/// you can do to it. Everything a laptop has on hover and behind ⋯, from
+/// the same list, drawn as rows with no lines between them.
+export const MessageSheet: React.FC<MessageMenuActions & {
   message: ChannelMessage
-  inThread?: boolean
   onClose: () => void
   onReact: (emoji: string) => void
-  onReply?: () => void
-  onPin?: () => void
-  onEdit?: () => void
-  onDelete?: () => void
-  onDecide?: () => void
-  onLater?: (remindAt: string | null) => void
-  onCopyLink?: () => void
-  onUnread?: () => void
-  onForward?: () => void
-}> = ({ message, inThread, onClose, onReact, onReply, onPin, onEdit, onDelete, onDecide, onLater, onCopyLink, onUnread, onForward }) => {
+}> = ({ message, onClose, onReact, ...actions }) => {
   const t = useT()
   const [picker, setPicker] = React.useState(false)
-  const run = (fn?: () => void) => () => { onClose(); fn?.() }
-  const QUICK = ['👍', '✅', '👀', '🙌', '🎉', '🙏']
+  // The ones you reacted with last first, as on the laptop's bar.
+  const quick = useQuickReactions(SHEET_REACTIONS, 6)
+  const rows = messageMenuEntries(message, { ...actions, t }).filter((e): e is Extract<MenuEntry, { kind: 'item' }> => e.kind === 'item')
   return (
     <Sheet label={t('Message actions')} onClose={onClose}>
       <div className="msheet-reactions" role="group" aria-label={t('Add reaction')}>
-        {QUICK.map((e) => (
-          <button key={e} type="button" onClick={() => { onReact(e); onClose() }} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
+        {quick.map((e) => (
+          <button key={e} type="button" onClick={() => { onReact(e); onClose() }} aria-label={t('React with {emoji}', { emoji: e })}><EmojiGlyph emoji={e} size={24} /></button>
         ))}
         <button type="button" className="more" onClick={() => setPicker((p) => !p)} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={20} /></button>
       </div>
       {picker && <div className="msheet-picker"><EmojiPicker onPick={(e) => { onReact(e); onClose() }} onClose={() => setPicker(false)} /></div>}
       <div className="msheet-rows">
-        {onReply && !inThread && <SheetRow icon="message" label={t('Reply in thread')} onClick={run(onReply)} data="reply" />}
-        {message.body && <SheetRow icon="copy" label={t('Copy text')} onClick={run(() => { void navigator.clipboard?.writeText(message.body) })} data="copy" />}
-        {onCopyLink && <SheetRow icon="link" label={t('Copy link')} onClick={run(onCopyLink)} data="link" />}
-        {onForward && <SheetRow icon="send" label={t('Forward')} onClick={run(onForward)} data="forward" />}
-        {onUnread && <SheetRow icon="bell" label={t('Mark unread')} onClick={run(onUnread)} data="unread" />}
-        {onLater && <SheetRow icon="bookmark" label={t('Save for later')} onClick={run(() => onLater(null))} data="later" />}
-        {onLater && <SheetRow icon="clock" label={t('Remind me in 1 hour')} onClick={run(() => onLater(new Date(Date.now() + 3600000).toISOString()))} />}
-        {onPin && !inThread && <SheetRow icon="pin" label={message.pinned ? t('Unpin') : t('Pin to channel')} onClick={run(onPin)} data="pin" />}
-        {onDecide && <SheetRow icon="sparkle" label={t('Make it a decision')} onClick={run(onDecide)} data="decide" />}
-        {onEdit && <SheetRow icon="edit" label={t('Edit message')} onClick={run(onEdit)} data="edit" />}
-        {onDelete && <SheetRow icon="trash" label={t('Delete message')} onClick={run(onDelete)} danger data="delete" />}
+        {rows.map((e) => (
+          <SheetRow key={e.data} icon={e.icon || 'more'} label={e.label} onClick={() => { onClose(); e.onSelect?.() }} danger={e.danger} data={e.data} />
+        ))}
       </div>
     </Sheet>
   )
@@ -116,8 +127,9 @@ export function longPress(fn: (() => void) | undefined): React.HTMLAttributes<HT
   return {
     onTouchStart: (e) => {
       const target = e.target as HTMLElement
-      // Not over something that is its own control.
-      if (target.closest('button, a, input, textarea, [contenteditable="true"]')) return
+      // Not over something that is its own control: a player's bar is
+      // inside its video or audio, and a held scrubber is not a held message.
+      if (target.closest('button, a, input, textarea, video, audio, [contenteditable="true"]')) return
       x = e.touches[0]?.clientX ?? 0
       y = e.touches[0]?.clientY ?? 0
       stop()
@@ -132,7 +144,8 @@ export function longPress(fn: (() => void) | undefined): React.HTMLAttributes<HT
     // Android's long press, and a right click where there is no hover.
     onContextMenu: (e) => {
       const target = e.target as HTMLElement
-      if (target.closest('a, input, textarea')) return
+      // A link, a field or a player keeps the menu the browser gives it.
+      if (target.closest('a, input, textarea, video, audio')) return
       e.preventDefault()
       stop()
       fn()

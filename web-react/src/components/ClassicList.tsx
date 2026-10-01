@@ -6,21 +6,36 @@ import { createPortal } from 'react-dom'
 import { awaitsPost } from '../utils/automation'
 import { hashForMessage, hashForView } from '../utils/route'
 import { RowMenu } from './RowMenu'
+import { SidebarSection } from './SidebarSection'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
-import type { DecisionCard, Business, ChannelMessage } from '../types/card'
+import type { DecisionCard, Business, ChannelMessage, FileRef, ReplyQuote } from '../types/card'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptAsYours, keptUnsent, landedCopy, markFailed, markPending, outboxKey, provenYours, readUnsent, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from '../utils/pendingSend'
+import type { Unsent } from '../utils/pendingSend'
+import { askingAboutData } from '../utils/authGuard'
+import { draftToClear, withoutDraft } from '../utils/drafts'
 import { getLocale } from '../utils/locale'
+import { fullTime } from '../utils/ago'
+import { deleteWarning, messageIdOf, messageKeyAction, othersReplied, previewText, skipsDeleteConfirm } from '../utils/messageKeys'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
+import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow, waitToSay } from '../utils/chatScroll'
+import { JumpToPresent, newBelowLabel } from './JumpToPresent'
 import { useT } from '../utils/i18n'
-import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
+import { useMembers, agentMentionables, agentsIn, mentionKind, mentionTarget } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
+import { meReader } from '../utils/mentionsMe'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
+import { messageContextEntries, messageMenuTriggers, type MessageMenuActions } from '../utils/messageMenu'
+import { rememberEmoji, useQuickReactions } from '../utils/emojiSearch'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, TypingLine, ReplyQuoteLine, ReplyingBar, UnsentNote } from './MessageParts'
+import { heard as heardTyping, said, expire, nextExpiry as nextTypingExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
+import type { Typist, TypingEvent, Outgoing as TypingOut, Place, Signal } from '../utils/typing'
+import { quoteOf, refreshQuotes } from '../utils/replies'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
 import type { DetailsTab, JournalCite } from './ChannelPanes'
 import { JamCall } from '../utils/jam'
@@ -28,11 +43,21 @@ import { JamPanel } from './JamPanel'
 import type { JamMode, JamState } from '../utils/jam'
 import { InviteDialog } from './InviteDialog'
 import { Avatar } from './Avatar'
+import { ProfileCard } from './ProfileCard'
+import { isOnline, statusShown, awayShown, nextExpiry, localTime } from '../utils/people'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
-import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
+import { playSound, setOpenView, rememberLevels, rememberLevel, startRing, stopRing } from '../utils/sound'
+import { closeMessageNotifications } from '../utils/notifications'
+import { hasOlder } from '../utils/historyPage'
+import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold, unplacedAgents } from '../utils/sidebarSections'
+import { placesFrom } from '../utils/places'
+import type { Place as Conversation } from '../utils/places'
+import { useAppearance } from '../utils/appearance'
+import { visibleOrder, step, foldedHome } from '../utils/sidebarOrder'
+import type { SidebarGroup } from '../utils/sidebarOrder'
+import { isMacPlatform, formatCombo, hasPrimaryMod, composing, enterKey } from '../utils/keys'
 import './ClassicList.css'
-import { composing, enterKey } from '../utils/keys'
 
 /// What was done, as a word rather than the verb the API uses — the same
 /// table History reads from, so one decision is not "approve" here and
@@ -70,8 +95,9 @@ interface Props {
   onTellAI: (text: string) => void
   /// Take a card back: the sender before it is decided, the recipient any time.
   onDeleteCard?: (cardId: string) => void
-  /// The conversation open now, for what shows beside it (the record).
-  onViewChange?: (view: string | null, name: string | null) => void
+  /// The conversation open now, for what shows beside it (the record), and
+  /// whether you opened it — rather than the list putting one up by itself.
+  onViewChange?: (view: string | null, name: string | null, opened: boolean) => void
   /// Open the record of the channel open now: its context and decisions.
   onOpenRecord?: () => void
   /// A conversation (or a decision) fills a phone's screen: the shell hides
@@ -90,6 +116,20 @@ interface Props {
   onDeleteChannel: (slug: string) => Promise<string | null>
   /// Another screen: the team to invite, tools to connect, you.
   onOpenScreen?: (screen: 'team' | 'tools' | 'profile' | 'agents') => void
+  /// Every conversation that can be opened, with what is unread in each,
+  /// for ⌘K to jump to by name. Told again whenever the sidebar changes.
+  onPlaces?: (places: Conversation[]) => void
+  /// Your status, from the You tab along a phone's bottom — the only
+  /// avatar a phone shows in the list, where the shell's top-bar avatar and
+  /// its tab bar are hidden. Given the tab, for the popover to sit above
+  /// and hand focus back to; the popover leads on to the You screen.
+  onStatus?: (tab: HTMLButtonElement) => void
+  /// That popover is open now, for the tab to say so.
+  statusOpen?: boolean
+  /// False while something of the shell's is over the list — the palette,
+  /// a screen, a panel, the shortcuts sheet: the list's keys wait, so ⇧Esc
+  /// typed there does not mark everything read underneath.
+  active?: boolean
 }
 
 /// One conversation in the sidebar: a channel (a business), a person, or an app.
@@ -149,6 +189,9 @@ interface Member {
   status?: { emoji: string | null; text: string | null; until: string | null } | null
   awayUntil?: string | null
 }
+/// A teammate's profile as GET /channels/member reads it: the pane shows all
+/// of it, the popout their clock.
+interface ProfileData { name: string; handle: string | null; title: string; timezone: string | null; status: Member['status']; awayUntil: string | null; joinedAt: string; mine: boolean; stats: { waiting: number; decided90d: number; medianMinutes: number | null } }
 /// `last`: the message the preview is, as it arrived live — for its preview
 /// to be put into the reader's language.
 interface Activity { channel: string; lastAt: string; preview: string; lastBy: string | null; last?: ChannelMessage }
@@ -163,6 +206,19 @@ interface Face { name: string; url?: string | null; emoji?: string | null; pictu
 interface ThreadItem { parent: ChannelMessage; replies: ChannelMessage[]; replyCount: number; lastReplyAt: string; unread: boolean }
 /// Your sidebar's own arrangement.
 interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name: string; views: string[]; collapsed?: boolean }>; order?: string[] }
+/// A group of the sidebar as it is drawn: its conversations, and what goes
+/// around them.
+interface SidebarSection extends SidebarGroup<Thread> {
+  label: string
+  /// Said when it holds nothing.
+  empty: string
+  /// Beside its heading: the "+" that adds to it, or the × that removes it.
+  action?: React.ReactNode
+  /// Under its rows: what that "+" opened.
+  below?: React.ReactNode
+  /// Its conversations, dragged into a new order.
+  reorder?: (views: string[]) => void
+}
 /// A user group: "@handle" names everyone in it.
 interface UserGroup { handle: string; name: string; refs: string[]; createdBy: string | null }
 interface ActivityItem { key?: string; type: 'mention' | 'reply' | 'reaction' | 'keyword'; message: ChannelMessage; unread: boolean; at?: string; emoji?: string; by?: string | null; byAvatar?: string | null; keyword?: string }
@@ -185,21 +241,14 @@ function closeNotifications(orgId: string, view: string) {
     .catch(() => { /* nothing shown, nothing to take down */ })
 }
 
-/// This browser's notifications for these messages, taken down: they were
-/// looked at in Activity, here or on another device.
-function closeMessageNotifications(ids: string[]) {
-  if (!ids.length || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
-  const wanted = new Set(ids)
-  navigator.serviceWorker.getRegistration()
-    .then((reg) => reg?.getNotifications())
-    .then((list) => { for (const n of list || []) if (wanted.has((n.data as { messageId?: string } | null)?.messageId || '')) n.close() })
-    .catch(() => { /* nothing shown, nothing to take down */ })
-}
 const messageIdsOf = (keys: string[]) => keys.filter((k) => k.startsWith('m:')).map((k) => k.slice(2))
 
 function seenAt(orgId: string, view: string): string {
   try { return localStorage.getItem(seenKey(orgId, view)) || '' } catch { return '' }
 }
+
+/// ⇧Esc on a Mac, Shift+Esc elsewhere, where the list prints a key.
+const isMac = isMacPlatform()
 
 const WIDE = '(min-width: 720px)'
 const isWide = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(WIDE).matches
@@ -237,9 +286,11 @@ function when(iso?: string): string {
 export const ClassicList: React.FC<Props> = ({
   userId, orgName, pending, sent, decided, businesses, presence,
   onOpen, onNudge, onDecide, api, onSearch, onCompose, onTellAI, onDeleteCard, onViewChange, onOpenRecord, onImmersive, renderCard, onWorkspace, workspaceMenu,
-  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen,
+  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, onPlaces, onStatus, statusOpen, active = true,
 }) => {
   const t = useT()
+  // Cozy or compact, as chosen on You: the stylesheet does the rest.
+  const { density } = useAppearance()
   const locale = getLocale()
   const titleOf = (c: DecisionCard) => c.localized?.[locale]?.title || c.title
   /// The summary, unless it only repeats the title — which it does for a
@@ -266,8 +317,12 @@ export const ClassicList: React.FC<Props> = ({
   // How loud each conversation may be: all (the default), mentions, mute.
   const [prefs, setPrefs] = useState<Record<string, 'mentions' | 'mute'>>({})
   // The sound for a message is decided where the socket is; it needs to
-  // know what you muted and what you are looking at.
-  useEffect(() => { rememberLevels(api.orgId, prefs) }, [api.orgId, prefs])
+  // know what you muted and what you are looking at. Written down only once
+  // the server has said what they are for this workspace: until then the
+  // levels last written down stay in force, rather than an empty map that
+  // would let a muted conversation ring (and show its words) meanwhile.
+  const prefsFor = useRef<string | null>(null)
+  useEffect(() => { if (prefsFor.current === api.orgId) rememberLevels(api.orgId, prefs) }, [api.orgId, prefs])
   // This workspace's own emoji: fetched when it opens, and again when a
   // message — live or loaded — names one not yet in the list: somebody just
   // added it. A name asked about once is not asked about again for a minute,
@@ -293,13 +348,26 @@ export const ClassicList: React.FC<Props> = ({
   // Your own sidebar: what you starred and the sections you made, kept on
   // the server so the laptop and the phone arrange things alike.
   const [layout, setLayout] = useState<SidebarLayout>({ starred: [], sections: [] })
+  // Which sections are folded: remembered by this browser for the
+  // workspace, and your own sections' on the server with the rest of it.
+  const [folded, setFolded] = useState<Record<string, boolean>>(() => readFolds(api.orgId))
+  useEffect(() => { writeFolds(api.orgId, folded) }, [api.orgId, folded])
   useEffect(() => {
     let ignore = false
     fetch(`${api.httpBase}/channels/sidebar?orgId=${encodeURIComponent(api.orgId)}`, { headers: authHeaders })
-      .then((r) => (r.ok ? r.json() : null)).then((d) => { if (!ignore && d?.sidebar) setLayout(d.sidebar) }).catch(() => {})
+      .then((r) => (r.ok ? r.json() : null)).then((d) => {
+        if (ignore || !d?.sidebar) return
+        setLayout(d.sidebar)
+        setFolded((prev) => withSectionFolds(prev, d.sidebar.sections || []))
+      }).catch(() => {})
     return () => { ignore = true }
   }, [api.httpBase, api.orgId, authHeaders])
   const saveLayout = (next: SidebarLayout) => {
+    // An agent nothing has been said to yet is listed only for being
+    // starred or in a section. Unstarred, or put back where it was, it
+    // stays listed among the agents: open, it must not vanish from under you.
+    const freed = unplacedAgents(layout, next)
+    if (freed.length) setStartedAgents((prev) => [...prev, ...freed.filter((id) => !prev.includes(id))])
     setLayout(next)
     void fetch(`${api.httpBase}/channels/sidebar`, {
       method: 'PUT', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, sidebar: next }),
@@ -341,6 +409,22 @@ export const ClassicList: React.FC<Props> = ({
     const sections = layout.sections.map((x) => ({ ...x, views: view ? x.views.filter((v) => v !== view) : x.views }))
     saveLayout({ ...layout, sections: [...sections, { id, name, views: view ? [view] : [] }] })
   }
+  /// Fold a section, or open it again. One of your own is saved folded on
+  /// the server too, so the phone and the laptop agree — that flag and
+  /// nothing else. A fold is a casual click, and this window may have been
+  /// open since the morning: it must not save the stars and sections as it
+  /// remembers them over what another window or the phone did since.
+  const toggleFold = (id: string) => {
+    const shut = !folded[id]
+    setFolded((p) => ({ ...p, [id]: shut }))
+    const own = layout.sections.find((x) => `sec:${x.id}` === id)
+    if (!own) return
+    // Here too, so the next star or move says the fold as it now is.
+    setLayout((now) => ({ ...now, sections: withFold(now.sections, own.id, shut) }))
+    void fetch(`${api.httpBase}/channels/sidebar/fold`, {
+      method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, id: own.id, collapsed: shut }),
+    }).catch(() => {})
+  }
   const [addingSection, setAddingSection] = useState<null | { view?: string }>(null)
   const [sectionName, setSectionName] = useState('')
   const [moveMenu, setMoveMenu] = useState(false)
@@ -363,7 +447,8 @@ export const ClassicList: React.FC<Props> = ({
     window.addEventListener('honmaru:agents-changed', on)
     return () => window.removeEventListener('honmaru:agents-changed', on)
   }, [api.httpBase, api.orgId, authHeaders])
-  // Somebody joined or left: the people in the sidebar are read again too.
+  // Somebody joined or left, or you set your status: the people in the
+  // sidebar are read again too.
   useEffect(() => {
     const on = () => setChannelsTick((n) => n + 1)
     window.addEventListener('honmaru:members-changed', on)
@@ -385,6 +470,7 @@ export const ClassicList: React.FC<Props> = ({
         setGroups(data.groups || [])
         setActivity(Object.fromEntries((data.activity || []).map((a: Activity) => [a.channel, a])))
         setServerReads(data.reads || {})
+        prefsFor.current = api.orgId
         setPrefs(data.prefs || {})
         if (Array.isArray(data.agents)) setAgents(data.agents)
       })
@@ -400,6 +486,16 @@ export const ClassicList: React.FC<Props> = ({
     window.addEventListener('honmaru:channel-group', on)
     return () => window.removeEventListener('honmaru:channel-group', on)
   }, [])
+
+  // A status runs out on its own: the list is drawn again when the next one
+  // does, and statusShown leaves it out from then on.
+  const [statusTick, setStatusTick] = useState(0)
+  useEffect(() => {
+    const next = nextExpiry(members, Date.now())
+    if (next === null) return
+    const id = setTimeout(() => setStatusTick((n) => n + 1), Math.min(next - Date.now() + 250, 2_147_483_647))
+    return () => clearTimeout(id)
+  }, [members, statusTick])
 
   // Which login is which member, for the logins this browser already holds.
   const [hashes, setHashes] = useState<Map<string, string>>(new Map())
@@ -501,17 +597,38 @@ export const ClassicList: React.FC<Props> = ({
       .map((th) => ({ ...th, unread: th.cards.filter((c) => isUnread(c) && (c.createdAt || '') > readAt(th.key)).length }))
 
     // Conversations with the team's agents: each one you have talked to,
-    // the one you just started, newest first.
+    // the one you just started, and one you starred or put in a section
+    // before anything was said — newest first.
+    const placed = new Set([...layout.starred, ...layout.sections.flatMap((x) => x.views)])
     const agentConvos = agents
-      .filter((a) => activity[`ag:${a.id}`] || startedAgents.includes(a.id))
+      .filter((a) => activity[`ag:${a.id}`] || startedAgents.includes(a.id) || placed.has(`ag:${a.id}`))
       .map((a) => withTalk(build('agent', `agent:${a.id}`, a.name, { view: `ag:${a.id}`, agent: a }, [], true)!))
       .sort((a, b) => latestOf(b).localeCompare(latestOf(a)) || a.name.localeCompare(b.name))
 
     return { channels, people, apps, agentConvos }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending, sent, decided, businesses, userId, locale, members, hashes, activity, seenTick, serverReads, prefs, groups, agents, startedAgents])
+  }, [pending, sent, decided, businesses, userId, locale, members, hashes, activity, seenTick, serverReads, prefs, groups, agents, startedAgents, layout])
 
   const everything = useMemo(() => [...channels, ...people, ...agentConvos, ...apps], [channels, people, agentConvos, apps])
+
+  // The sidebar's lists, top to bottom: starred first, then your sections,
+  // then the rest where they always were — what the starred and your
+  // sections hold leaves the defaults. Drawn from here, and walked by
+  // ⌥↑/⌥↓ in the same order.
+  const byView = (v: string) => everything.find((x) => x.view === v)
+  const starredRows = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
+  const ownSections = layout.sections.map((x) => ({ ...x, threads: x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)) }))
+  const channelRows = inYourOrder(channels.filter(unplaced))
+  const peopleRows = people.filter(unplaced)
+  const agentRows = agentConvos.filter(unplaced)
+  const sideLists = [
+    { id: 'starred', threads: starredRows },
+    ...ownSections.map((x) => ({ id: `sec:${x.id}`, threads: x.threads })),
+    { id: 'channels', threads: channelRows },
+    { id: 'people', threads: peopleRows },
+    ...(agents.length > 0 ? [{ id: 'agents', threads: agentRows }] : []),
+    { id: 'apps', threads: apps },
+  ]
 
   // Which conversation is open. On a laptop one always is — the first with
   // something waiting on you, else the first there is — the way a chat
@@ -530,7 +647,20 @@ export const ClassicList: React.FC<Props> = ({
   }, [])
   const current = everything.find((th) => th.key === openKey)
     || (wide ? (everything.find((th) => th.unread > 0) || everything[0]) : undefined)
+  // A conversation asked for before the list knew of it — a DM picked in ⌘K
+  // or opened from a link while the team is still loading: opened once it
+  // appears, if that is soon. Opening anything else first — another
+  // conversation, Activity, Later, Threads, Sent, a channel's settings —
+  // forgets it, so it does not take the screen from what you went to.
+  const wantedView = useRef<{ view: string; until: number } | null>(null)
+  const forgetWanted = () => { wantedView.current = null }
+  // A conversation opened by hand, until the shell has been told. The one
+  // the list puts up by itself — on a laptop, the first with something
+  // waiting — is not somewhere you went, and ⌘K does not remember it.
+  const chosenKey = useRef<string | null>(null)
   const choose = (key: string | null) => {
+    forgetWanted()
+    chosenKey.current = key
     setActivityOpen(false)
     setLaterOpen(false)
     setThreadsOpen(false)
@@ -684,7 +814,19 @@ export const ClassicList: React.FC<Props> = ({
     return out
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activityItems])
+  // What ⌘K jumps to: every conversation here with somewhere to open, each
+  // with the second name it answers to — a teammate's or an agent's @handle,
+  // a channel's slug.
+  useEffect(() => {
+    if (!onPlaces) return
+    const handleOf = new Map<string, string | null>(members.map((m) => [`dm:${m.ref}`, m.handle || null]))
+    onPlaces(placesFrom(everything.map((th) => ({
+      ...th,
+      handle: th.kind === 'channel' ? th.slug : th.kind === 'agent' ? th.agent?.handle : th.view ? handleOf.get(th.view) : null,
+    })), mentionsIn))
+  }, [everything, mentionsIn, members, onPlaces])
   const openActivity = () => {
+    forgetWanted()
     setOpenKey(null)
     setLaterOpen(false)
     setThreadsOpen(false)
@@ -731,7 +873,10 @@ export const ClassicList: React.FC<Props> = ({
   }
   const [tick, setTick] = useState(0)
 
-  const [folded, setFolded] = useState<Record<string, boolean>>({})
+  /// What a folded section goes by: the mentions waiting, the row open now
+  /// (none while Activity or another list is), and what is muted. A
+  /// function: `special` is declared further down.
+  const foldContext = () => ({ mentions: mentionsIn, currentKey: special ? null : current?.key ?? null, prefs })
   // Making a channel, renaming one: the box, its text, and what went wrong.
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
@@ -778,6 +923,9 @@ export const ClassicList: React.FC<Props> = ({
   const setPref = async (v: string, level: 'all' | 'mentions' | 'mute') => {
     const res = await fetch(`${api.httpBase}/channels/prefs`, { method: 'PUT', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, channel: v, level }) }).catch(() => null)
     if (!res?.ok) { setProblem(t('That did not save.')); return }
+    // For the sound and the notification decided at the socket, at once —
+    // also when the list's own load has not come back (or failed).
+    rememberLevel(api.orgId, v, level)
     setPrefs((prev) => { const next = { ...prev }; if (level === 'all') delete next[v]; else next[v] = level; return next })
   }
   /// A routine that writes this channel up for you every evening.
@@ -820,7 +968,7 @@ export const ClassicList: React.FC<Props> = ({
     if (th.fresh || (mentionsIn[v] || 0) > 0) {
       out.push({ kind: 'item', label: t('Mark as read'), icon: 'check', onSelect: () => markViewRead(v), data: 'mark-read' })
     }
-    if (others > 0) out.push({ kind: 'item', label: t('Mark all as read'), hint: '⇧Esc', onSelect: markEverythingRead, data: 'mark-all-read' })
+    if (others > 0) out.push({ kind: 'item', label: t('Mark all as read'), hint: formatCombo('Shift+Esc', isMac), onSelect: markEverythingRead, data: 'mark-all-read' })
     if (out.length) out.push({ kind: 'sep' })
     if (isChannel || th.kind === 'group') {
       out.push({ kind: 'item', label: isChannel ? t('Channel details') : t('Conversation details'), icon: 'users', data: 'details', submenu: [
@@ -894,30 +1042,103 @@ export const ClassicList: React.FC<Props> = ({
   }
 
   // A teammate's profile, beside the conversation.
-  const [profile, setProfile] = useState<null | { ref: string; data?: { name: string; handle: string | null; title: string; timezone: string | null; status: Member['status']; awayUntil: string | null; joinedAt: string; mine: boolean; stats: { waiting: number; decided90d: number; medianMinutes: number | null } } }>(null)
+  const [profile, setProfile] = useState<null | { ref: string; data?: ProfileData }>(null)
+  const readProfile = useCallback(async (ref: string): Promise<ProfileData | null> => {
+    const res = await fetch(`${api.httpBase}/channels/member?orgId=${encodeURIComponent(api.orgId)}&ref=${encodeURIComponent(ref)}`, { headers: authHeaders }).catch(() => null)
+    const d = res?.ok ? await res.json().catch(() => null) : null
+    return d?.member || null
+  }, [api.httpBase, api.orgId, authHeaders])
   const openProfile = async (ref: string) => {
     setDetailId(null); setThread(null)
     setProfile({ ref })
-    const res = await fetch(`${api.httpBase}/channels/member?orgId=${encodeURIComponent(api.orgId)}&ref=${encodeURIComponent(ref)}`, { headers: authHeaders }).catch(() => null)
-    const d = res?.ok ? await res.json().catch(() => null) : null
-    if (d?.member) setProfile((prev) => (prev && prev.ref === ref ? { ref, data: d.member } : prev))
+    const data = await readProfile(ref)
+    if (data) setProfile((prev) => (prev && prev.ref === ref ? { ref, data } : prev))
   }
-
-  // Keys a chat client has: ⌥↑/⌥↓ between conversations, ⌘⇧A Activity,
-  // ⌘⇧D the sidebar.
-  const [sideHidden, setSideHidden] = useState(false)
+  // Their card, popped out beside the face, name or @mention it was opened
+  // from: what the member list knows at once, their clock once the same read
+  // the pane makes is back. Over the conversation, so a thread open beside
+  // it stays open. The same face or name again closes it.
+  const [popout, setPopout] = useState<null | { ref: string; anchor: HTMLElement; name?: string; data?: ProfileData }>(null)
+  const openPopout = (ref: string, anchor: HTMLElement, name?: string) => {
+    if (popout && popout.ref === ref && popout.anchor === anchor) { setPopout(null); return }
+    setPopout({ ref, anchor, name })
+    void readProfile(ref).then((data) => { if (data) setPopout((prev) => (prev && prev.ref === ref && prev.anchor === anchor ? { ...prev, data } : prev)) })
+  }
+  /// Every @mention of a person presses like a button (MessageParts); this
+  /// one handler, on the whole list, opens the card for whichever was
+  /// pressed — in the conversation, a thread, Threads or Activity. It is
+  /// still a word of the message: dragging across it to select it is not
+  /// pressing it.
+  const onMentionClick = (e: React.MouseEvent) => {
+    const el = (e.target as Element).closest?.('[data-mention-ref]') as HTMLElement | null
+    if (!el?.dataset.mentionRef) return
+    const picked = window.getSelection()
+    if (picked && !picked.isCollapsed && picked.containsNode(el, true)) return
+    e.preventDefault()
+    openPopout(el.dataset.mentionRef, el, el.textContent?.trim())
+  }
+  /// The same from the keyboard: Enter or Space on a mention that holds
+  /// focus, as on any button. (Space would otherwise scroll the page.)
+  const onMentionKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    const el = e.target as HTMLElement
+    if (!el.dataset?.mentionRef) return
+    e.preventDefault()
+    if (!e.repeat) openPopout(el.dataset.mentionRef, el, el.textContent?.trim())
+  }
+  // A status set — yours, from your avatar — or somebody joining or
+  // leaving: the profile open beside the conversation is read again, as
+  // the sidebar is.
+  const profileRef = profile?.ref
   useEffect(() => {
+    if (!profileRef) return
+    const on = () => { void readProfile(profileRef).then((data) => { if (data) setProfile((prev) => (prev && prev.ref === profileRef ? { ref: profileRef, data } : prev)) }) }
+    window.addEventListener('honmaru:members-changed', on)
+    return () => window.removeEventListener('honmaru:members-changed', on)
+  }, [profileRef, readProfile])
+
+  // Keys a chat client has: ⌥↑/⌥↓ between conversations in the order the
+  // sidebar shows them (a folded group's are out of sight, and skipped),
+  // ⌥⇧↑/⌥⇧↓ between the ones with something new — a fold does not hide
+  // those: the jump opens the group — ⌘⇧A Activity, ⌘⇧D the sidebar. None
+  // of them while the shell has something over the list.
+  const [sideHidden, setSideHidden] = useState(false)
+  /// Set when a key, not a click, chose the conversation: its row can be past
+  /// the edge of a long sidebar, and is brought into view once it is drawn
+  /// (after the render that lights it, and unfolds its group).
+  const walked = useRef(false)
+  useLayoutEffect(() => {
+    if (!walked.current) return
+    walked.current = false
+    document.querySelector('.slk-sections .cl-section .cl-thread.on')?.scrollIntoView({ block: 'nearest' })
+  })
+  useEffect(() => {
+    if (!active) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        const list = [...channels, ...people, ...agentConvos, ...apps]
-        if (!list.length) return
+      if (e.isComposing || e.keyCode === 229) return
+      const mod = hasPrimaryMod(e, isMac)
+      if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        // With no conversation at all the keys are not the list's to take.
+        const all = visibleOrder(sidebarGroups, {})
+        if (!all.length) return
         e.preventDefault()
-        const i = list.findIndex((x) => x.key === current?.key)
-        const next = list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]
-        if (next) choose(next.key)
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+        // Under Activity or Later no row is lit: down starts at the top.
+        const here = special ? null : current?.key ?? null
+        // The unread jump looks inside folded groups too: a folded heading
+        // counts the cards waiting in it, and a dot or an @ in one shows
+        // nowhere else, so "Nothing unread" there would be untrue.
+        const list = e.shiftKey ? all : visibleOrder(sidebarGroups, folded)
+        const next = step(list, here, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey ? hasNews : undefined)
+        if (!next) { setToast(e.shiftKey ? t('Nothing unread') : t('Every section is folded')); return }
+        // The only one with something new is the one open.
+        if (next.key === here) { if (e.shiftKey) setToast(t('Nothing else unread')); return }
+        const home = foldedHome(sidebarGroups, folded, next.key)
+        if (home) setFolded((p) => ({ ...p, [home]: false }))
+        walked.current = true
+        choose(next.key)
+      } else if (mod && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault(); openActivity()
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+      } else if (mod && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault(); setSideHidden((h) => !h)
       } else if (e.shiftKey && e.key === 'Escape' && !composing(e) && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault(); markEverythingRead()
@@ -996,7 +1217,9 @@ export const ClassicList: React.FC<Props> = ({
           {thread.kind === 'person' && (() => {
             const m = members.find((x) => thread.view === `dm:${x.ref}`)
             if (!m) return null
-            return <>{m.status?.emoji && <span className="cl-status" title={m.status.text || ''}>{m.status.emoji}</span>}{m.awayUntil && <span className="cl-away" title={t('Away until {when}', { when: new Date(m.awayUntil).toLocaleDateString(locale) })}>{t('away')}</span>}</>
+            const status = statusShown(m.status, Date.now())
+            const away = awayShown(m.awayUntil, Date.now())
+            return <>{status?.emoji && <span className="cl-status" title={status.text || ''}>{status.emoji}</span>}{away && <span className="cl-away" title={t('Away until {when}', { when: new Date(away).toLocaleDateString(locale) })}>{t('away')}</span>}</>
           })()}
           {thread.view && prefs[thread.view] === 'mute' && <span className="cl-muted" role="img" aria-label={t('Muted')}><Icon name="bell-off" size={13} /></span>}
           {thread.view && (mentionsIn[thread.view] || 0) > 0 && thread.unread === 0 && <span className="cl-badge mention">@{mentionsIn[thread.view]}</span>}
@@ -1008,25 +1231,18 @@ export const ClassicList: React.FC<Props> = ({
     )
   }
 
-  const section = (id: string, label: string, threads: Thread[], empty: string, action?: React.ReactNode, below?: React.ReactNode, reorder?: (views: string[]) => void) => {
+  const section = (id: string, label: string, threads: readonly Thread[], empty: string, action?: React.ReactNode, below?: React.ReactNode, reorder?: (views: string[]) => void) => {
     const views = threads.map((th) => th.view).filter((v): v is string => Boolean(v))
     const place = reorder ? (to: { view: string; after: boolean }, from: string) => { if (views.includes(from)) reorder(moved(views, from, to)) } : undefined
     const shut = Boolean(folded[id])
-    const unread = threads.reduce((n, th) => n + th.unread, 0)
+    // Folded, it still shows the one open and what calls for you, as a chat
+    // client's collapsed category does; the header counts what that is.
+    const context = foldContext()
+    const shown = shut ? foldedRows(threads, context) : threads
+    const badge = sectionBadge(shown, mentionsIn, context.currentKey)
     return (
-      <section className={`cl-section${shut ? ' folded' : ''}`}>
-        <h2>
-          <button className="cl-fold" onClick={() => setFolded((p) => ({ ...p, [id]: !p[id] }))} aria-expanded={!shut}>
-            <span className="cl-caret" aria-hidden="true"><Icon name={shut ? 'chevron-right' : 'chevron-down'} size={12} /></span>
-            {label}
-            {shut && unread > 0 && <span className="cl-badge">{unread}</span>}
-          </button>
-          {action}
-        </h2>
-        {!shut && threads.length === 0 && <p className="cl-empty">{empty}</p>}
-        {!shut && threads.length > 0 && <ul>{threads.map((th) => row(th, place))}</ul>}
-        {!shut && below}
-      </section>
+      <SidebarSection key={id} id={id} label={label} shut={shut} onFold={() => toggleFold(id)} badge={badge}
+        rows={shown.map((th) => row(th, place))} empty={empty} action={action} below={below} />
     )
   }
 
@@ -1082,6 +1298,38 @@ export const ClassicList: React.FC<Props> = ({
     </form>
   ) : null
 
+  /// The sidebar's groups, top to bottom as drawn: Starred, your sections,
+  /// Channels in your order, direct messages, Agents, Apps. The sidebar is
+  /// drawn from this and the keys walk it, so the two cannot disagree.
+  const starredThreads = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
+  const sidebarGroups: SidebarSection[] = [
+    // Starred first, then your sections; what they hold leaves the defaults.
+    ...(starredThreads.length > 0 ? [{ id: 'starred', label: t('Starred'), items: starredThreads, empty: '', reorder: (views: string[]) => saveLayout({ ...layout, starred: views }) }] : []),
+    ...layout.sections.map((x) => ({
+      id: `sec:${x.id}`,
+      label: x.name,
+      items: x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)),
+      empty: t('Move a conversation here from its header.'),
+      action: (
+        <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
+          <Icon name="x" size={12} />
+        </button>
+      ),
+      reorder: (views: string[]) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) }),
+    })),
+    {
+      id: 'channels', label: t('Channels'), items: inYourOrder(channels.filter(unplaced)),
+      empty: t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'),
+      action: addChannel, below: addChannelForm,
+      // Drag to reorder: the channels shown here in their new order,
+      // then any placed elsewhere, as they were.
+      reorder: (views: string[]) => saveLayout({ ...layout, order: [...views, ...inYourOrder(channels).map((th) => th.view!).filter((v) => v && !views.includes(v))] }),
+    },
+    { id: 'people', label: t('Direct messages'), items: people.filter(unplaced), empty: t('Nobody has sent you a decision yet.') },
+    ...(agents.length > 0 ? [{ id: 'agents', label: t('Agents'), items: agentConvos.filter(unplaced), empty: t('Talk to one of your team’s agents: it answers you here.'), action: addAgent, below: agentPicker }] : []),
+    { id: 'apps', label: t('Apps'), items: apps, empty: t('Connect Gmail or Slack under Tools and their decisions land here.') },
+  ]
+
   // ---- What is said ----
 
   const cardsById = useMemo(() => {
@@ -1090,8 +1338,16 @@ export const ClassicList: React.FC<Props> = ({
     return map
   }, [pending, sent, decided])
   const [messages, setMessages] = useState<Record<string, ChannelMessage[]>>({})
+  /// A message sent from here stays drawn under its temporary id's key once
+  /// the server's copy has taken its place (server id → temp id): the same
+  /// element carries on, so nothing is redrawn and a picture in it is not
+  /// loaded twice.
+  const drawnAs = useRef(new Map<string, string>())
+  const keyOf = (m: ChannelMessage) => drawnAs.current.get(m.id) || m.id
   const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
+  // An inline reply being written (Discord's Reply, not a thread): the
+  // message the next one answers, in the conversation it was started in.
+  const [replyingTo, setReplyingTo] = useState<{ view: string; quote: ReplyQuote } | null>(null)
   // Files going up with the next message: the conversation's, and a thread's.
   const uploads = useUploads(api, setProblem)
   const threadUploads = useUploads(api, setProblem)
@@ -1110,18 +1366,35 @@ export const ClassicList: React.FC<Props> = ({
   }, [])
   const composer = useRef<HTMLTextAreaElement>(null)
   const view = current?.view
-  useEffect(() => { onViewChange?.(current?.view || null, current?.name || null) }, [current?.view, current?.name, onViewChange])
-  // Whether there is more above what is loaded, per conversation.
+  useEffect(() => {
+    const opened = Boolean(current && current.key === chosenKey.current)
+    chosenKey.current = null
+    onViewChange?.(current?.view || null, current?.name || null, opened)
+  // openKey too: choosing the conversation already on screen is opening it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.view, current?.name, openKey, onViewChange])
+  // Whether there is more above what is loaded, per conversation: the
+  // Worker's `more`, or, from one that does not say, a full page of PAGE.
   const [more, setMore] = useState<Record<string, boolean>>({})
   const PAGE = 150
+  /// The newest page, laid over what is loaded rather than in place of it:
+  /// it is read again on every answer from the AI and after a reconnect, and
+  /// replacing took away the older pages somebody had scrolled up to read.
+  /// Whether there is more above stays loadOlder's to say once those are
+  /// loaded; only a hole too big to join starts again from the page.
   const loadMessages = useCallback((channel: string) => {
     return fetch(`${api.httpBase}/channels/messages?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}`, { headers: authHeaders })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return
-        setMessages((prev) => ({ ...prev, [channel]: data.messages || [] }))
-        setMore((prev) => ({ ...prev, [channel]: (data.messages || []).length >= PAGE }))
-        maybeNewEmoji((data.messages || []).map((m: ChannelMessage) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
+        // What is still on its way, or did not go, is only here: kept —
+        // and what did not go before this page loaded, back where it was.
+        const page = (data.messages || []) as ChannelMessage[]
+        const had = messagesRef.current[channel]
+        const back = heldFor(channel, undefined, page)
+        setMessages((prev) => ({ ...prev, [channel]: withHeld(keepTemps(leavesGap(prev[channel], page, PAGE) ? page : mergeById(prev[channel], page), prev[channel]), back) }))
+        if (leavesGap(had, page, PAGE) || !reachesPast(had, page)) setMore((prev) => ({ ...prev, [channel]: hasOlder(data, PAGE) }))
+        maybeNewEmoji(page.map((m) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
       })
       .catch(() => { /* the decisions still show */ })
   }, [api.httpBase, api.orgId, authHeaders, maybeNewEmoji])
@@ -1137,13 +1410,18 @@ export const ClassicList: React.FC<Props> = ({
       const data = res.ok ? await res.json() : null
       if (!data) return
       const older = (data.messages || []) as ChannelMessage[]
-      keepScroll.current = logRef.current ? logRef.current.scrollHeight - logRef.current.scrollTop : null
+      // A place is kept only for a page that puts something above. One that
+      // adds nothing (the conversation had exactly a page) changes no length,
+      // and the place kept would be used by whatever arrived next — a jump
+      // back up to where the older page was asked for.
+      const had = new Set(list.map((m) => m.id))
+      if (older.some((m) => !had.has(m.id))) keepScroll.current = logRef.current ? logRef.current.scrollHeight - logRef.current.scrollTop : null
       setMessages((prev) => {
         const cur = prev[channel] || []
         const known = new Set(cur.map((m) => m.id))
         return { ...prev, [channel]: [...older.filter((m) => !known.has(m.id)), ...cur] }
       })
-      setMore((prev) => ({ ...prev, [channel]: older.length >= PAGE }))
+      setMore((prev) => ({ ...prev, [channel]: hasOlder(data, PAGE) }))
     } catch { /* try again on the next scroll */ } finally {
       loadingOlder.current = false
     }
@@ -1156,6 +1434,35 @@ export const ClassicList: React.FC<Props> = ({
     setNewSince({ view, at: readAt(view) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
+  // Where the reader is: at the bottom, reading along, or up in the history
+  // since the newest thing they had was said. Up there, what arrives waits
+  // below them — not read, and counted — until they come back down.
+  const [readingUp, setReadingUp] = useState<{ view: string; since: string } | null>(null)
+  const atBottom = !readingUp || readingUp.view !== view
+  /// The log scrolled: whether that left the bottom, or came back to it.
+  const noteWhere = (v: string, el: HTMLElement) => {
+    if (isAtBottom(el)) { if (readingUp) setReadingUp(null); return }
+    if (readingUp?.view === v) return
+    const list = messages[v] || []
+    setReadingUp({ view: v, since: list[list.length - 1]?.createdAt || '' })
+  }
+  // Whether anybody is looking at the page. What is open is read only
+  // then, and read again the moment they come back to it.
+  const [looking, setLooking] = useState(() => typeof document === 'undefined' || isLooking(document))
+  useEffect(() => {
+    const look = () => setLooking(isLooking(document))
+    // Focus going into a frame on the page blurs the window before the
+    // frame has it; asked a moment later, the page still has focus.
+    const blurred = () => { setTimeout(look, 0) }
+    document.addEventListener('visibilitychange', look)
+    window.addEventListener('focus', look)
+    window.addEventListener('blur', blurred)
+    return () => {
+      document.removeEventListener('visibilitychange', look)
+      window.removeEventListener('focus', look)
+      window.removeEventListener('blur', blurred)
+    }
+  }, [])
   // An app looked at is read: its count goes, here and on every device —
   // and again when something new arrives while it is open.
   // Only when there is something new to clear: every write counts against
@@ -1163,16 +1470,16 @@ export const ClassicList: React.FC<Props> = ({
   const appOpen = current?.kind === 'app' ? current.key : null
   const appNew = current?.kind === 'app' ? current.unread : 0
   useEffect(() => {
-    if (!appOpen || appNew === 0) return
+    if (!appOpen || appNew === 0 || !looking) return
     const now = new Date().toISOString()
     try { localStorage.setItem(seenKey(api.orgId, appOpen), now) } catch { /* the server remembers */ }
     setSeenTick((n) => n + 1)
     void fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel: appOpen }),
+      body: JSON.stringify({ orgId: api.orgId, channel: appOpen, at: now }),
     }).then(() => setServerReads((prev) => ({ ...prev, [appOpen]: now }))).catch(() => { /* this device still remembers */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appOpen, appNew, api.orgId])
+  }, [appOpen, appNew, api.orgId, looking])
   // Opened is read — here, and on the server for your other devices —
   // unless you just marked it unread and are still looking at it.
   const heldUnread = useRef<string | null>(null)
@@ -1183,7 +1490,7 @@ export const ClassicList: React.FC<Props> = ({
   const readOnServer = (v: string, now: string) => {
     fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel: v }),
+      body: JSON.stringify({ orgId: api.orgId, channel: v, at: now }),
     }).then(() => setServerReads((prev) => ({ ...prev, [v]: now }))).catch(() => { /* this device still remembers */ })
     closeNotifications(api.orgId, v)
     setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === v && !i.message.parentId && (i.at || i.message.createdAt) <= now ? { ...i, unread: false } : i)))
@@ -1196,9 +1503,14 @@ export const ClassicList: React.FC<Props> = ({
   }
   /// "Mark as read" from the sidebar, without opening it.
   const markViewRead = (v: string) => { readOnServer(v, readHere(v)) }
+  /// A dot or an @ waiting in it.
+  const isFresh = (th: Thread) => Boolean(th.view && (th.fresh || (mentionsIn[th.view] || 0) > 0))
+  /// Where ⌥⇧↑/⌥⇧↓ stop: a dot or an @, or cards waiting on you, which
+  /// reading does not clear.
+  const hasNews = (th: Thread) => th.unread > 0 || isFresh(th)
   /// Everything new, read at once — ⇧Esc, as in Slack: every conversation
   /// with a dot or an @ waiting, and Activity with them.
-  const freshViews = () => everything.filter((th) => th.view && (th.fresh || (mentionsIn[th.view] || 0) > 0)).map((th) => th.view!)
+  const freshViews = () => everything.filter(isFresh).map((th) => th.view!)
   const markEverythingRead = () => {
     const views = freshViews()
     const activityNew = (activityItems || []).some((i) => i.unread)
@@ -1207,13 +1519,33 @@ export const ClassicList: React.FC<Props> = ({
     if (activityNew) markAllActivityRead()
     setToast(views.length ? t('Marked {n} conversations as read', { n: views.length }) : t('Activity marked as read'))
   }
+  /// The server's half of a read, sent a moment after this device's. Once
+  /// this device has stored a conversation read, the server hears it too —
+  /// scrolling up in that moment, or more arriving, does not take it back
+  /// (more arriving moves it on to now). Another conversation, leaving, or
+  /// marking it unread meanwhile does.
+  const serverRead = useRef<{ view: string; now: string; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const dropServerRead = () => {
+    if (serverRead.current) clearTimeout(serverRead.current.timer)
+    serverRead.current = null
+  }
+  // Read as Discord reads it: on opening, and then as things arrive only
+  // while you are at the bottom to see them. Scrolled up in the history, it
+  // stays unread until you come back down.
   useEffect(() => {
-    if (!view || heldUnread.current === view) return
+    if (!view || heldUnread.current === view || !atBottom || !looking) return
     const now = readHere(view)
-    const id = setTimeout(() => readOnServer(view, now), 600)
-    return () => clearTimeout(id)
+    if (serverRead.current?.view === view) { serverRead.current.now = now; return }
+    dropServerRead()
+    const timer = setTimeout(() => {
+      const due = serverRead.current
+      serverRead.current = null
+      if (due && heldUnread.current !== due.view) readOnServer(due.view, due.now)
+    }, 600)
+    serverRead.current = { view, now, timer }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, api.orgId, messages[view || '']?.length])
+  }, [view, api.orgId, messages[view || '']?.length, atBottom, looking])
+  useEffect(() => dropServerRead, [view, api.orgId])
   // The composer grows with what is written, up to a point.
   useEffect(() => {
     const el = composer.current
@@ -1236,14 +1568,17 @@ export const ClassicList: React.FC<Props> = ({
       const msg = { ...m, mine, reactions }
       maybeNewEmoji(`${m.body || ''} ${reactions.map((r) => r.emoji).join(' ')}`)
       if (m.parentId) {
-        // A reply: into the thread if it is open; its parent's count comes
-        // as an event of its own.
+        // A reply: into the thread if it is open — our own, back before the
+        // answer to the send, in place of the copy on its way. Its parent's
+        // count comes as an event of its own.
         setThread((prev) => {
           if (!prev || prev.parent.id !== m.parentId) return prev
-          const has = prev.replies.some((x) => x.id === m.id)
-          const replies = m.deleted ? prev.replies.filter((x) => x.id !== m.id)
-            : has ? prev.replies.map((x) => (x.id === m.id ? msg : x)) : [...prev.replies, msg]
-          return { ...prev, replies }
+          if (m.deleted) return { ...prev, replies: prev.replies.filter((x) => x.id !== m.id) }
+          const held = echoOf(prev.replies, msg)
+          if (held) drawnAs.current.set(m.id, held.id)
+          // One that looked failed got there: not kept to send again.
+          if (held?.failed) queueMicrotask(() => settle(held.id))
+          return { ...prev, replies: arrive(prev.replies, msg) }
         })
         if (m.kind === 'ai') setThinking((prev) => ({ ...prev, [m.channel]: false }))
         if (m.kind === 'agent') agentDone(m.channel, m.agent?.id)
@@ -1256,10 +1591,18 @@ export const ClassicList: React.FC<Props> = ({
         if (!list) return prev
         const has = list.some((x) => x.id === m.id)
         isNew = !has
-        // Deleted is gone — its thread with it — never a "was deleted" line.
-        if (m.deleted) return { ...prev, [m.channel]: list.filter((x) => x.id !== m.id) }
-        return { ...prev, [m.channel]: has ? list.map((x) => (x.id === m.id ? msg : x)) : [...list, msg] }
+        // Deleted is gone — its thread with it — never a "was deleted" line;
+        // a reply quoting it says so instead, and one quoting an edit
+        // quotes the new words.
+        if (m.deleted) return { ...prev, [m.channel]: refreshQuotes(list.filter((x) => x.id !== m.id), msg) }
+        // Our own, back before the answer to the send, takes the place of
+        // the copy on its way rather than showing twice.
+        const held = echoOf(list, msg)
+        if (held) drawnAs.current.set(m.id, held.id)
+        if (held?.failed) queueMicrotask(() => settle(held.id))
+        return { ...prev, [m.channel]: refreshQuotes(arrive(list, msg), msg) }
       })
+      setReplyingTo((prev) => (prev?.quote.id === m.id ? { ...prev, quote: quoteOf(msg) } : prev))
       setThread((prev) => (prev && prev.parent.id === m.id ? (m.deleted ? null : { ...prev, parent: msg }) : prev))
       if (!m.deleted && !m.editedAt && (isNew || !messagesRef.current[m.channel])) {
         setActivity((prev) => ({ ...prev, [m.channel]: { channel: m.channel, lastAt: m.createdAt, preview: m.body.slice(0, 120), lastBy: mine ? 'me' : m.authorName, last: msg } }))
@@ -1303,10 +1646,152 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:channel-progress', on)
   }, [agentDone])
 
+  /// Who you are in this workspace, once the team has loaded: whose name
+  /// what you send goes under, and whose what is kept here must be.
+  const myRef = members.find((m) => m.mine)?.ref
+  /// A message on its way, or one that did not go, by its temporary id:
+  /// what Retry sends again, and (`landing`) the server's copy an edit begun
+  /// on it waits for. Its words are in the log with it. `abort` gives up on
+  /// it while it goes — Delete, offered once it is still going at `lateAt`.
+  /// `going`: in line or sent, with no answer yet, so a Retry pressed twice
+  /// sends it once. `said` is how it was first drawn, and `failed` and
+  /// `refused` how it stands: kept in this browser (keepOutbox) so that a
+  /// reload or a closed tab does not lose it. `restored`: kept from before
+  /// this page loaded, and not drawn yet.
+  type Outgoing = {
+    tempId: string; channel: string; body: string; decide: boolean; parentId?: string; files: FileRef[]; said: ChannelMessage
+    landing?: Promise<ChannelMessage | null>; abort?: () => void; lateAt?: number; going?: boolean
+    failed?: string; refused?: boolean; restored?: boolean
+  }
+  const outbox = useRef(new Map<string, Outgoing>())
+  /// Every message this tab has sent, or done something with — Retry,
+  /// Delete, Edit, or found it got there — gone since or not: what it keeps
+  /// in this browser is only ever these, never another tab's. One kept from
+  /// before this page loaded is not among them until then: every open tab
+  /// brings it back, and one that has not touched it must not write it back
+  /// after another tab has sent it or thrown it away.
+  const heldHere = useRef(new Set<string>())
+  /// The outbox as it is now, kept in this browser for a reload or the next
+  /// visit: this tab's messages as they stand, and any other — another
+  /// tab's, or one brought back that this tab has not touched — left as it
+  /// is kept. `tempId`: one this tab does something with now, so its own.
+  const keepOutbox = (tempId?: string) => {
+    // Signed out (or someone else signed in) while a send was still going:
+    // a failure that lands now must not write the words back to disk.
+    try { if (localStorage.getItem('userId') !== userId) return } catch { return }
+    if (tempId) heldHere.current.add(tempId)
+    const now: Unsent[] = []
+    for (const o of outbox.current.values())
+      now.push({ said: o.said, decide: o.decide, ...(o.failed ? { failed: o.failed } : {}), ...(o.refused ? { refused: true } : {}) })
+    const key = outboxKey(api.orgId, userId)
+    try {
+      const kept = keptUnsent(readUnsent(localStorage.getItem(key)), now, heldHere.current)
+      if (kept.length) localStorage.setItem(key, JSON.stringify(kept)); else localStorage.removeItem(key)
+    } catch { /* not kept: this tab still has them */ }
+  }
+  /// One kept in this browser from before this page loaded, back in the
+  /// outbox: failed, and not drawn yet — nor this tab's (heldHere) until it
+  /// does something with it.
+  const restore = (u: Unsent) => {
+    if (outbox.current.has(u.said.id)) return
+    outbox.current.set(u.said.id, {
+      tempId: u.said.id, channel: u.said.channel, body: u.said.body, decide: u.decide, parentId: u.said.parentId || undefined, files: u.said.files || [], said: u.said,
+      failed: u.failed || t('That did not send. Try again.'), refused: u.refused, restored: true,
+    })
+  }
+  // What did not go before this page loaded: back in the outbox, failed,
+  // drawn where it was sent once that conversation or thread is loaded.
+  // Only yours — kept under your own key, not the workspace's, so what
+  // someone else signed in here left unsent is never drawn as yours.
+  useEffect(() => {
+    let kept: Unsent[] = []
+    try { kept = readUnsent(localStorage.getItem(outboxKey(api.orgId, userId))) } catch { /* nothing kept */ }
+    for (const u of kept) if (keptAsYours(u.said, myRef)) restore(u)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api.orgId, userId])
+  // Once the team has loaded, who you are is known. One kept for you that
+  // names someone else as its author is let go — never drawn as yours, nor
+  // sent under your name. What was kept for the whole workspace, before it
+  // was kept per person, comes back only where it names you; the rest, and
+  // the old key with it, is dropped.
+  useEffect(() => {
+    if (!myRef) return
+    for (const o of [...outbox.current.values()]) {
+      if (keptAsYours(o.said, myRef)) continue
+      o.abort?.()
+      drop(o.tempId, o.channel, o.parentId)
+    }
+    let shared: Unsent[] = []
+    try {
+      shared = readUnsent(localStorage.getItem(sharedOutboxKey(api.orgId)))
+      localStorage.removeItem(sharedOutboxKey(api.orgId))
+    } catch { /* nothing kept there */ }
+    const yours = shared.filter((u) => provenYours(u.said, myRef))
+    // Taken from a key that is gone now: this tab keeps them, under yours.
+    for (const u of yours) { restore(u); heldHere.current.add(u.said.id) }
+    if (yours.length) keepOutbox()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRef])
+  // Leaving while something is still on its way: asked first, as it may not
+  // get there. What did not go is kept for next time, so is not asked about.
+  useEffect(() => {
+    const leaving = (e: BeforeUnloadEvent) => {
+      if (![...outbox.current.values()].some((o) => o.going)) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', leaving)
+    return () => window.removeEventListener('beforeunload', leaving)
+  }, [])
+  /// Ours for one conversation (`parentId` unset) or one thread, as they are
+  /// to be drawn: on their way or failed as they stand. One kept from before
+  /// this page loaded is let go instead when `fresh`, what the server has
+  /// there, shows it got there after all; one the socket's copy has already
+  /// taken the place of is drawn as that.
+  const heldFor = (channel: string, parentId: string | undefined, fresh: ChannelMessage[]): ChannelMessage[] => {
+    const back: ChannelMessage[] = []
+    const taken = new Set(drawnAs.current.values())
+    let settled = false
+    for (const o of [...outbox.current.values()]) {
+      const here = parentId ? o.parentId === parentId : !o.parentId && o.channel === channel
+      if (!here || taken.has(o.tempId)) continue
+      const fromBefore = o.restored
+      if (o.restored) o.restored = false
+      // Failed, and not on its way: a page that already has it means the
+      // send landed and the answer was lost. Sending it again would post it twice.
+      if (!o.going && !o.refused && (fromBefore || o.failed) && wentAfterAll(o.said, fresh)) {
+        outbox.current.delete(o.tempId); heldHere.current.add(o.tempId); settled = true; continue
+      }
+      back.push(o.failed ? unsentAgain(o, o.failed) : { ...o.said, pending: true, failed: undefined, refused: undefined })
+    }
+    if (settled) keepOutbox()
+    return back
+  }
+  /// One that looked failed but got there: the socket's copy has taken its
+  /// place, so it is no longer kept to be sent again.
+  const settle = (tempId: string) => {
+    const o = outbox.current.get(tempId)
+    if (!o || o.going) return
+    outbox.current.delete(tempId)
+    keepOutbox(tempId)
+  }
+  /// The same words to the same place a moment ago: a second Enter or a
+  /// double tap before the box has cleared does not send them twice. Said
+  /// again on purpose, they go again (isDoubleSend).
+  const justSent = useRef(new Map<string, number>())
+  /// A message for later, waiting for the server's answer: the box still
+  /// holds it until then, so Enter again meanwhile does not schedule it twice.
+  const scheduling = useRef(new Set<string>())
+  const goingKey = (o: Pick<Outgoing, 'channel' | 'parentId' | 'body' | 'files'>) => [o.channel, o.parentId || '', o.body, o.files.map((f) => f.id).join(',')].join('\n')
+  /// A conversation's messages go one after another, in the order they were
+  /// sent — as they did from the box that locked — or two sent in a blink
+  /// could reach the server, and be kept, the other way round.
+  const inLine = useRef(new Map<string, Promise<unknown>>())
+
   const send = async (channel: string, decide: boolean, parentId?: string, sendAt?: string) => {
     let body = (parentId ? threadDraft : draft).trim()
     const up = parentId ? threadUploads : uploads
-    if ((!body && !up.ids.length) || sending) return
+    if (!body && !up.ids.length) return
     if (up.busy) { setProblem(t('Wait for the files to finish uploading.')); return }
     if (sendAt && up.ids.length) { setProblem(t('A scheduled message cannot carry files yet.')); return }
     // A command, not a message: done here, with a note only you see.
@@ -1316,52 +1801,209 @@ export const ClassicList: React.FC<Props> = ({
       const done = await runCommand(channel, name.toLowerCase(), rest.trim())
       if (done === 'send-decide') { body = rest.trim(); decide = true }
       else if (done === 'send-later') return
-      else { if (done) setDraft(''); return }
+      else { if (done) clearDraftOf(channel); return }
       if (!body) return
     }
-    setSending(true); setProblem(null)
-    try {
+    const files = up.items.flatMap((i) => (i.state === 'done' && i.file ? [i.file] : []))
+    const key = goingKey({ channel, parentId, body, files })
+    if (sendAt ? scheduling.current.has(key) : isDoubleSend(justSent.current, key)) return
+    setProblem(null)
+    // Written now, sent later: nothing shows in the conversation until it
+    // goes, so this one still waits for the server's answer.
+    if (sendAt) {
+      scheduling.current.add(key)
       const res = await fetch(`${api.httpBase}/channels/messages`, {
         method: 'POST',
         headers: { ...authHeaders, 'content-type': 'application/json' },
-        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), ...(sendAt ? { sendAt } : {}), ...(up.ids.length ? { files: up.ids } : {}) }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setProblem(refusal(data)); return }
-      if (data.scheduled) {
-        setDraft('')
-        setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
-        note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
-        return
-      }
-      const msg = data.message as ChannelMessage
-      // Sent: a small confirmation, in a direct conversation — as Slack does.
-      if (channel.startsWith('dm:') || channel.startsWith('ag:')) playSound('sent')
-      up.clear()
-      if (parentId) {
-        setThreadDraft('')
-        setThread((prev) => (prev && prev.parent.id === parentId && !prev.replies.some((x) => x.id === msg.id) ? { ...prev, replies: [...prev.replies, msg] } : prev))
-        // The parent as the server now has it: its count is a fact, not
-        // one more than whatever the live event already made it.
-        const parent = data.parent as ChannelMessage | undefined
-        setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).map((x) => (x.id !== parentId ? x
-          : parent ? { ...x, replyCount: Math.max(parent.replyCount || 0, x.replyCount || 0), lastReplyAt: parent.lastReplyAt || msg.createdAt, replyRefs: parent.replyRefs || x.replyRefs }
-            : { ...x, replyCount: (x.replyCount || 0) + 1, lastReplyAt: msg.createdAt })) }))
-        if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
-        return
-      }
-      setDraft('')
-      setMessages((prev) => {
-        const list = prev[channel] || []
-        return list.some((x) => x.id === msg.id) ? prev : { ...prev, [channel]: [...list, msg] }
-      })
-      if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
-    } catch {
-      setProblem(t('That did not send. Try again.'))
-    } finally {
-      setSending(false)
-      if (parentId) threadComposer.current?.focus(); else composer.current?.focus()
+        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), sendAt }),
+      }).catch(() => null)
+      const data = res ? await res.json().catch(() => ({})) : {}
+      scheduling.current.delete(key)
+      if (!res?.ok || !data.scheduled) { setProblem(res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return }
+      if (parentId) setThreadDraft(''); else clearDraftOf(channel)
+      setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
+      note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
+      return
     }
+    // In the conversation at once, marked as on its way, and the box free
+    // for the next line while it goes — the files in it are already up.
+    // The conversation's own box answers the message it is replying to: the
+    // quote rides on the copy shown at once, and on a retry or a reload.
+    const quoting = !parentId && replyingTo?.view === channel ? replyingTo.quote : null
+    const temp = { ...tempMessage({ channel, body, parentId, files }, { name: myName || null, ref: myRef || null, avatar: myAvatar }, sendTime(parentId ? undefined : messagesRef.current[channel])), ...(quoting ? { replyTo: quoting } : {}) }
+    if (quoting) setReplyingTo(null)
+    // Sent: nobody is typing in this box any more.
+    stoppedTyping({ channel, parentId: parentId || null })
+    if (parentId) {
+      setThreadDraft('')
+      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: [...prev.replies, temp] } : prev))
+    } else {
+      clearDraftOf(channel)
+      setMessages((prev) => ({ ...prev, [channel]: [...(prev[channel] || []), temp] }))
+    }
+    up.clear()
+    if (parentId) threadComposer.current?.focus(); else composer.current?.focus()
+    const out: Outgoing = { tempId: temp.id, channel, body, decide, parentId, files, said: temp, lateAt: Date.now() + SEND_TIMEOUT }
+    outbox.current.set(temp.id, out)
+    out.landing = deliver(out)
+    keepOutbox(temp.id)
+    await out.landing
+  }
+
+  /// Send what shows as on its way, once whatever went before it in that
+  /// conversation has had its answer.
+  const deliver = (out: Outgoing): Promise<ChannelMessage | null> => {
+    out.going = true
+    const turn = (inLine.current.get(out.channel) || Promise.resolve()).then(() => post(out)).finally(() => { out.going = false })
+    inLine.current.set(out.channel, turn.catch(() => null))
+    return turn
+  }
+  /// The server's copy takes the place of ours. No answer in SEND_TIMEOUT
+  /// and it is given up on as a dropped connection would be — with Retry —
+  /// and the next in line goes; a request that hangs holds nothing up.
+  const post = async (out: Outgoing): Promise<ChannelMessage | null> => {
+    const { tempId, channel, body, decide, parentId, files } = out
+    // Deleted while it waited its turn: it never goes.
+    if (outbox.current.get(tempId) !== out) return null
+    const ctrl = new AbortController()
+    out.abort = () => ctrl.abort()
+    const stopClock = sendDeadline(ctrl, SEND_TIMEOUT, askingAboutData)
+    const res = await fetch(`${api.httpBase}/channels/messages`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ orgId: api.orgId, channel, body, decide, clientId: tempId, ...(parentId ? { parentId } : {}), ...(out.said.replyTo?.id ? { replyTo: out.said.replyTo.id } : {}), ...(files.length ? { files: files.map((f) => f.id) } : {}) }),
+      signal: ctrl.signal,
+    }).catch(() => null)
+    const data = res ? await res.json().catch(() => ({})) : {}
+    stopClock()
+    out.abort = undefined
+    const msg = res?.ok ? (data.message as ChannelMessage | undefined) : undefined
+    // Deleted while it went, and it did not land: nothing more to say.
+    if (!msg?.id && outbox.current.get(tempId) !== out) return null
+    if (!msg?.id) {
+      // Unsent while this was on its way: back in the box, to go as a plain
+      // message if it is sent again.
+      if (res && !res.ok && data.code === 'reply_gone') { out.said = { ...out.said, replyTo: null }; refuse(out, t('The message you were replying to is gone. Send again to post this on its own.')) }
+      else if (res && !res.ok && refusedOutright(res.status)) refuse(out, refusal(data))
+      else fail(out, res && !res.ok ? refusal(data) : t('That did not send. Try again.'))
+      return null
+    }
+    outbox.current.delete(tempId)
+    keepOutbox(tempId)
+    // An edit begun on it while it went carries on, on the server's copy.
+    setEditing((e) => (e && e.id === tempId ? { ...e, id: msg.id } : e))
+    // Sent: a small confirmation, in a direct conversation — as Slack does.
+    if (channel.startsWith('dm:') || channel.startsWith('ag:')) playSound('sent')
+    // Drawn on in ours' place — unless something else already took it.
+    if (parentId) {
+      setThread((prev) => {
+        if (!prev || prev.parent.id !== parentId) return prev
+        drawUnder(drawnAs.current, msg.id, tempId, prev.replies)
+        return { ...prev, replies: reconcile(prev.replies, tempId, msg) }
+      })
+      // The parent as the server now has it: its count is a fact, not
+      // one more than whatever the live event already made it.
+      const parent = data.parent as ChannelMessage | undefined
+      setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).map((x) => (x.id !== parentId ? x
+        : parent ? { ...x, replyCount: Math.max(parent.replyCount || 0, x.replyCount || 0), lastReplyAt: parent.lastReplyAt || msg.createdAt, replyRefs: parent.replyRefs || x.replyRefs }
+          : { ...x, replyCount: (x.replyCount || 0) + 1, lastReplyAt: msg.createdAt })) }))
+      if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
+      return msg
+    }
+    setMessages((prev) => {
+      const list = prev[channel] || []
+      drawUnder(drawnAs.current, msg.id, tempId, list)
+      return { ...prev, [channel]: reconcile(list, tempId, msg) }
+    })
+    if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
+    return msg
+  }
+
+  /// It did not go: it stays where it was, marked, with why. Moved on from
+  /// there since, you are told where you are now as well. A reply whose
+  /// thread has closed is kept, and is back in the thread when it is opened
+  /// again. `refused`: the server said no to the words, so it waits to be
+  /// edited, not retried.
+  const fail = (out: Outgoing, why: string, refused = false) => {
+    const { tempId, channel, parentId } = out
+    out.failed = why
+    out.refused = refused || undefined
+    keepOutbox(tempId)
+    if (parentId) {
+      if (shownNow.current.thread !== parentId) { setProblem(why); return }
+      setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: markFailed(prev.replies, tempId, why, refused) } : prev))
+      return
+    }
+    setMessages((prev) => (prev[channel] ? { ...prev, [channel]: markFailed(prev[channel], tempId, why, refused) } : prev))
+    if (shownNow.current.view !== channel) setProblem(why)
+  }
+  /// Refused for what it says — a data rule, a thread that has gone: back
+  /// into the box it was written in, files and all, with why above it, when
+  /// that box is on screen and empty. With something else written there by
+  /// now, it stays where it was with Edit, so neither is lost.
+  const refuse = (out: Outgoing, why: string) => {
+    const { tempId, channel, parentId, body, files } = out
+    const box = parentId
+      ? shownNow.current.thread === parentId && !boxes.current.thread.trim() && !boxes.current.threadFiles
+      : shownNow.current.view === channel && draftView.current === channel && !boxes.current.draft.trim() && !boxes.current.files
+    if (!box) { fail(out, why, true); return }
+    drop(tempId, channel, parentId)
+    if (parentId) { setThreadDraft(body); threadUploads.restore(files) } else { setDraft(body); uploads.restore(files) }
+    setProblem(why)
+  }
+  /// Edit, under one that was refused: its words and files back in the box
+  /// it was written in, after whatever is there already, and it goes from
+  /// the conversation — it was only ever here.
+  const writeAgain = (m: ChannelMessage) => {
+    const after = (was: string) => (was.trim() ? `${was.replace(/\s+$/, '')}\n${m.body}` : m.body)
+    if (m.parentId) { setThreadDraft(after); threadUploads.restore(m.files || []) } else { setDraft(after); uploads.restore(m.files || []) }
+    discard(m)
+    ;(m.parentId ? threadComposer : composer).current?.focus()
+  }
+  /// Retry: the same words, files and thread, on their way again from
+  /// where they are.
+  const retry = (m: ChannelMessage) => {
+    const fresh = (m.parentId
+      ? (thread?.parent.id === m.parentId ? thread.replies : [])
+      : (messages[m.channel] || [])).filter((x) => !isTemp(x))
+    const real = landedCopy(m, fresh)
+    if (real && !m.refused) {
+      if (m.parentId) setThread((prev) => (prev && prev.parent.id === m.parentId ? { ...prev, replies: reconcile(prev.replies, m.id, real) } : prev))
+      else setMessages((prev) => (prev[m.channel] ? { ...prev, [m.channel]: reconcile(prev[m.channel], m.id, real) } : prev))
+      settle(m.id)
+      return
+    }
+    const out: Outgoing = outbox.current.get(m.id) || { tempId: m.id, channel: m.channel, body: m.body, decide: false, parentId: m.parentId || undefined, files: m.files || [], said: m }
+    if (out.going) return
+    out.lateAt = Date.now() + SEND_TIMEOUT
+    out.failed = undefined
+    out.refused = undefined
+    outbox.current.set(m.id, out)
+    if (out.parentId) setThread((prev) => (prev && prev.parent.id === out.parentId ? { ...prev, replies: markPending(prev.replies, m.id) } : prev))
+    else setMessages((prev) => (prev[out.channel] ? { ...prev, [out.channel]: markPending(prev[out.channel], m.id) } : prev))
+    out.landing = deliver(out)
+    keepOutbox(m.id)
+  }
+  /// The server's id for one of yours sent from here: waited for while it
+  /// is on its way, none when it did not go.
+  const landedId = async (tempId: string) => {
+    const out = outbox.current.get(tempId)
+    if (out) return (await out.landing)?.id || null
+    for (const [id, drawn] of drawnAs.current) if (drawn === tempId) return id
+    return null
+  }
+  /// One only ever held here, gone from where it was drawn.
+  const drop = (tempId: string, channel: string, parentId?: string | null) => {
+    outbox.current.delete(tempId)
+    keepOutbox(tempId)
+    if (parentId) setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: prev.replies.filter((x) => x.id !== tempId) } : prev))
+    else setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== tempId) } : prev))
+  }
+  /// Delete: it was only ever here, so it just goes — still on its way, it
+  /// is given up on first, or dropped from the line before its turn.
+  const discard = (m: ChannelMessage) => {
+    outbox.current.get(m.id)?.abort?.()
+    drop(m.id, m.channel, m.parentId)
   }
 
   // ---- Time and gathering: drafts, scheduled sends, Later, clips, notes ----
@@ -1391,6 +2033,14 @@ export const ClassicList: React.FC<Props> = ({
     setDrafts((prev) => (Boolean(prev[v]) === Boolean(draft) ? prev : { ...prev, [v]: Boolean(draft) }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft])
+  /// What was sent leaves the box it was written in. Moved on to another
+  /// conversation while it went, only what that one kept goes — never the
+  /// draft of the conversation open now, which the box holds by then.
+  const clearDraftOf = (v: string) => {
+    if (draftToClear(v, draftView.current) === 'box') { setDraft(''); return }
+    try { localStorage.removeItem(draftKey(v)) } catch { /* nothing kept */ }
+    setDrafts((prev) => withoutDraft(prev, v))
+  }
 
   const [scheduled, setScheduled] = useState<Array<{ id: string; body: string; sendAt: string; channel: string; parentId?: string | null }>>([])
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -1457,7 +2107,7 @@ export const ClassicList: React.FC<Props> = ({
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
     if (!res?.ok) { setProblem(data.message || t('That could not become a decision. Try again.')); return }
-    setClip([]); setDraft('')
+    setClip([]); clearDraftOf(channel)
     if (data.message) setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).some((x) => x.id === data.message.id) ? prev[channel] : [...(prev[channel] || []), data.message] }))
     setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
   }
@@ -1499,13 +2149,15 @@ export const ClassicList: React.FC<Props> = ({
   const sendAtTime = async (channel: string, at: string, text?: string) => {
     const body = (text ?? draft).trim()
     if (!body) return
+    // Said, not dropped: a scheduled message would go without its quote.
+    if (replyingTo?.view === channel) { setProblem(t('A scheduled message cannot be a reply yet.')); return }
     const res = await fetch(`${api.httpBase}/channels/messages`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, channel, body, sendAt: at }),
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
     if (!res?.ok) { setProblem(refusal(data)); return }
-    setDraft('')
+    clearDraftOf(channel)
     setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
     note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
   }
@@ -1513,7 +2165,11 @@ export const ClassicList: React.FC<Props> = ({
   // ---- What you can do to a message ----
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [toolsOpen, setToolsOpen] = useState<string | null>(null)
+  // Which copy of a message the picker under it is open on: a thread's
+  // first message is drawn in the channel and in the thread, and the one
+  // whose + was pressed is the one that opens it, not both at once.
   const [pickerFor, setPickerFor] = useState<string | null>(null)
+  const pickerKey = (m: ChannelMessage, inThread: boolean) => `${inThread ? 'thread:' : ''}${m.id}`
   const [thread, setThread] = useState<{ channel: string; parent: ChannelMessage; replies: ChannelMessage[] } | null>(null)
 
   // Messages in another language, in yours: translated once on the server
@@ -1610,6 +2266,49 @@ export const ClassicList: React.FC<Props> = ({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`
   }, [threadDraft, thread?.channel, thread?.parent?.id])
+
+  // ---- Who is typing ----
+  // Others typing where this person can read, heard from the relay: ended
+  // by a stop, by their message arriving there, or by silence.
+  const [typists, setTypists] = useState<Typist[]>([])
+  // The thread on screen as last drawn, for telling a reply in it from news
+  // about one already there.
+  const threadNow = useRef(thread)
+  threadNow.current = thread
+  useEffect(() => {
+    const on = (e: Event) => setTypists((prev) => heardTyping(prev, (e as CustomEvent<TypingEvent>).detail, Date.now()))
+    const arrived = (e: Event) => {
+      const m = (e as CustomEvent<ChannelMessage>).detail
+      // Something new said, not an old message edited, reacted to, pinned
+      // or replied under.
+      if (!m?.channel || m.kind !== 'message' || m.editedAt || m.deleted) return
+      const open = threadNow.current
+      const known = m.parentId ? (open?.parent.id === m.parentId ? open.replies : undefined) : messagesRef.current[m.channel]
+      setTypists((prev) => said(prev, m, known))
+    }
+    window.addEventListener('honmaru:typing', on)
+    window.addEventListener('honmaru:channel-message', arrived)
+    return () => { window.removeEventListener('honmaru:typing', on); window.removeEventListener('honmaru:channel-message', arrived) }
+  }, [])
+  useEffect(() => {
+    const at = nextTypingExpiry(typists)
+    if (at === null) return
+    const id = setTimeout(() => setTypists((prev) => expire(prev, Date.now())), Math.max(0, at - Date.now()) + 50)
+    return () => clearTimeout(id)
+  }, [typists])
+  /// Who is typing in one place, first to start first, never yourself.
+  const typingHere = (channel: string, parentId: string | null) =>
+    typistsIn(typists, { channel, parentId }, Date.now(), members.find((m) => m.mine)?.ref).map((x) => x.name)
+  // This person's own typing, as the relay has been told it.
+  const typingOut = useRef<TypingOut | null>(null)
+  const tellTyping = useCallback((step: { next: TypingOut | null; send: Signal[] }) => {
+    typingOut.current = step.next
+    for (const s of step.send) sendTyping(s)
+  }, [])
+  const typed = (place: Place, text: string) => tellTyping(typedIn(typingOut.current, place, text, Date.now()))
+  const stoppedTyping = useCallback((place?: Place) => tellTyping(stoppedIn(typingOut.current, place)), [tellTyping])
+  // Leaving a conversation or a thread is done typing there.
+  useEffect(() => () => stoppedTyping(), [view, thread?.channel, thread?.parent?.id, stoppedTyping])
   const [pins, setPins] = useState<ChannelMessage[] | null>(null)
   // The pinned list, in your language too.
   useEffect(() => {
@@ -1622,6 +2321,16 @@ export const ClassicList: React.FC<Props> = ({
   const [flash, setFlash] = useState<string | null>(null)
   // On a phone: a long press on a message brings up what you can do to it.
   const [sheet, setSheet] = useState<{ channel: string; m: ChannelMessage; inThread: boolean } | null>(null)
+  // On a laptop: a right-click on a message, or the menu key on one with
+  // the focus, opens the same things where the pointer is, with the quick
+  // reactions along the top. `anchor` is the message's element, kept lit.
+  const [msgMenu, setMsgMenu] = useState<{ channel: string; m: ChannelMessage; inThread: boolean; x: number; y: number; anchor: string } | null>(null)
+  const closeMsgMenu = useCallback(() => setMsgMenu(null), [])
+  // The whole emoji picker, from the smile along the top of that menu:
+  // where the menu was, rather than under the message, which may be far
+  // down the page or drawn twice (a thread's first message).
+  const [reactAt, setReactAt] = useState<{ channel: string; m: ChannelMessage; x: number; y: number; anchor: string } | null>(null)
+  const closeReactAt = useCallback(() => setReactAt(null), [])
   const [forwarding, setForwarding] = useState<{ channel: string; m: ChannelMessage } | null>(null)
   /// "Mark unread from here": the conversation (or the thread) is read only
   /// up to just before this message, on every device.
@@ -1663,7 +2372,13 @@ export const ClassicList: React.FC<Props> = ({
   }
   const messagesRef = useRef(messages)
   messagesRef.current = messages
-  const myRef = members.find((m) => m.mine)?.ref
+  /// Where you are now, for a send that answers after you may have moved on.
+  const shownNow = useRef({ view: openView, thread: threadOpenParent })
+  shownNow.current = { view: openView, thread: threadOpenParent }
+  /// What is in the boxes now — words, and files going with them — for an
+  /// answer that comes after more may have been written.
+  const boxes = useRef({ draft, thread: threadDraft, files: uploads.items.length, threadFiles: threadUploads.items.length })
+  boxes.current = { draft, thread: threadDraft, files: uploads.items.length, threadFiles: threadUploads.items.length }
   const nameOfRef = (ref: string) => (ref === myRef ? t('You') : members.find((m) => m.ref === ref)?.name || t('a teammate'))
 
   /// Put a changed message wherever it shows: the log, the thread, the pins.
@@ -1676,9 +2391,10 @@ export const ClassicList: React.FC<Props> = ({
     }
     setMessages((prev) => {
       const list = prev[channel] || []
-      if (msg.deleted && !msg.replyCount) return { ...prev, [channel]: list.filter((x) => x.id !== msg.id) }
-      return { ...prev, [channel]: list.map((x) => (x.id === msg.id ? msg : x)) }
+      if (msg.deleted && !msg.replyCount) return { ...prev, [channel]: refreshQuotes(list.filter((x) => x.id !== msg.id), msg) }
+      return { ...prev, [channel]: refreshQuotes(list.map((x) => (x.id === msg.id ? msg : x)), msg) }
     })
+    setReplyingTo((prev) => (prev?.quote.id === msg.id ? { ...prev, quote: quoteOf(msg) } : prev))
     setThread((prev) => (prev && prev.parent.id === msg.id ? { ...prev, parent: msg } : prev))
     setPins((prev) => (prev ? (msg.pinned ? (prev.some((x) => x.id === msg.id) ? prev.map((x) => (x.id === msg.id ? msg : x)) : [msg, ...prev]) : prev.filter((x) => x.id !== msg.id)) : prev))
   }
@@ -1699,37 +2415,162 @@ export const ClassicList: React.FC<Props> = ({
       return null
     }
   }
-  const react = (channel: string, m: ChannelMessage, emoji: string) => void act('POST', '/channels/reactions', channel, { messageId: m.id, emoji })
+  const react = (channel: string, m: ChannelMessage, emoji: string) => {
+    // Adding one (not taking yours back) makes it a recent one.
+    if (!m.reactions?.some((r) => r.emoji === emoji && r.mine)) rememberEmoji(emoji)
+    void act('POST', '/channels/reactions', channel, { messageId: m.id, emoji })
+  }
   const saveEdit = async (channel: string) => {
     if (!editing) return
     const text = editing.text.trim()
     if (!text) return
-    const done = await act('PUT', '/channels/messages', channel, { messageId: editing.id, body: text })
+    // Begun while it was on its way: saved to the server's copy once it has
+    // landed — not at all if it did not go.
+    const id = isTemp(editing) ? await landedId(editing.id) : editing.id
+    if (!id) { setProblem(t('That did not save.')); return }
+    const done = await act('PUT', '/channels/messages', channel, { messageId: id, body: text })
     if (done) setEditing(null)
   }
-  const remove = async (channel: string, m: ChannelMessage) => {
-    // Somebody else's words in the thread go only when you say so outright.
-    const others = !m.parentId && (m.replyRefs || []).some((r) => r !== myRef)
-    const ask = others ? t('Delete this message and its thread? Replies from others will be deleted too. This cannot be undone.')
-      : m.replyCount ? t('Delete this message and its thread? This cannot be undone.') : t('Delete this message? This cannot be undone.')
-    if (!window.confirm(ask)) return
-    const done = await act('DELETE', '/channels/messages', channel, { messageId: m.id, withThread: true })
-    if (editing?.id === m.id) setEditing(null)
+  /// The message an edit is open on. Begun on one of yours still on its way,
+  /// it stays open on the server's copy that took its place.
+  const editingThis = (m: ChannelMessage) => Boolean(editing && (editing.id === m.id || editing.id === drawnAs.current.get(m.id)))
+  /// Delete a message, after asking in the app — not the browser's own box,
+  /// unstyled and in the browser's language. ⇧ skips the question, as in
+  /// Discord; somebody else's words in the thread go only when you say so
+  /// outright, so that one is always asked. `others`: the server found
+  /// replies from others that this page did not know of.
+  const [deleting, setDeleting] = useState<null | { channel: string; m: ChannelMessage; others?: boolean; busy?: boolean; error?: string | null }>(null)
+  /// The question was answered and the server is deleting: it can no longer
+  /// be taken back. A ref, for Esc — the dialog keeps the onClose it opened
+  /// with — and for a second click before the button is drawn disabled.
+  const deleteBusy = useRef(false)
+  const deleteCancel = useRef<HTMLButtonElement>(null)
+  /// Messages the server is deleting right now. A second press of the key
+  /// before it answers is not a second delete: the server would say "No
+  /// such message" of one that went as asked, and focus would be let go.
+  const unsending = useRef(new Set<string>())
+  const remove = (channel: string, m: ChannelMessage, skipConfirm = false) => {
+    // Picked by a key before the server answered the send: deleted once it
+    // has landed, under the id the server gave it — or, never landed, given up.
+    if (isTemp(m)) {
+      void landedId(m.id).then((id) => { if (id) remove(channel, { ...m, id }, skipConfirm); else discard(m) })
+      return
+    }
+    if (unsending.current.has(m.id)) return
+    if (!skipsDeleteConfirm(skipConfirm, m, myRef)) { setDeleting({ channel, m }); return }
+    // Nobody was asked, so nobody said others' replies may go: the server
+    // is asked without them, and when it finds some the question is asked
+    // after all — with the warning that names them.
+    void unsend(channel, m, false).then((r) => {
+      // (Never over a question already open about another message.)
+      if (r.others) { setDeleting((cur) => cur ?? { channel, m, others: true }); return }
+      if (r.gone) return
+      // Still here: focus stays on it rather than waiting for it to go.
+      dropKeyReturn('delete')
+      if (r.error) setProblem(r.error)
+    })
+  }
+  /// Ask the server to delete it. `withThread` lets other people's replies
+  /// go with it, and is only said once the question that names them was
+  /// answered: without it the server refuses (`others`) rather than take
+  /// them. It is the server that knows who replied — replyRefs leaves out
+  /// anyone who has since left, and is behind when a live event was missed.
+  const unsend = async (channel: string, m: ChannelMessage, withThread: boolean): Promise<{ gone: boolean; others?: boolean; error?: string }> => {
+    if (unsending.current.has(m.id)) return { gone: false }
+    unsending.current.add(m.id)
+    setProblem(null)
+    let res: Response | null = null
+    let data: { message?: unknown; code?: string } = {}
+    try {
+      res = await fetch(`${api.httpBase}/channels/messages`, {
+        method: 'DELETE',
+        headers: { ...authHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ orgId: api.orgId, channel, messageId: m.id, withThread }),
+      })
+      data = await res.json().catch(() => ({}))
+    } catch {
+      res = null
+    }
+    unsending.current.delete(m.id)
+    if (res?.status === 409 && data.code === 'thread_has_replies') return { gone: false, others: true }
+    setEditing((cur) => (cur?.id === m.id ? null : cur))
+    if (!res?.ok) return { gone: false, error: (typeof data.message === 'string' && data.message) || t('That did not work. Try again.') }
+    if (data.message && typeof data.message === 'object') replaceMessage(channel, data.message as ChannelMessage)
     // Gone here at once, and its thread with it.
-    if (done && !m.parentId) {
+    if (!m.parentId) {
       setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
       setThread((prev) => (prev && prev.parent.id === m.id ? null : prev))
     }
+    return { gone: true }
   }
+  const confirmDelete = async () => {
+    if (!deleting || deleteBusy.current) return
+    const { channel, m } = deleting
+    deleteBusy.current = true
+    setDeleting({ ...deleting, busy: true, error: null })
+    // Their replies go only when the question on show named them.
+    const r = await unsend(channel, m, Boolean(deleting.others) || othersReplied(m, myRef))
+    deleteBusy.current = false
+    // Only the question that was answered is closed, or told what went
+    // wrong — it stays open to say so, and to be answered again. Others
+    // replied and it had not said so: nothing went, and now it does.
+    setDeleting((cur) => {
+      if (cur?.m.id !== m.id) return cur
+      if (r.gone) return null
+      if (r.others) return { ...cur, busy: false, others: true, error: t('Others replied in this thread, so nothing was deleted. Delete again to delete their replies too.') }
+      return { ...cur, busy: false, error: r.error || t('That did not work. Try again.') }
+    })
+    // The buttons are live again, and focus left them when they were not:
+    // back to Cancel, where it was when the question opened.
+    if (!r.gone) requestAnimationFrame(() => deleteCancel.current?.focus())
+  }
+  /// Not while it is being deleted: the question would look withdrawn, and
+  /// the message would go all the same.
+  const cancelDelete = () => {
+    if (deleteBusy.current) return
+    dropKeyReturn('delete')
+    setDeleting(null)
+  }
+
+  /// A message a key acted on (see logKeys): focus goes back to it when the
+  /// edit box or the picker the key opened closes, and to the one beside it
+  /// once it is deleted — never taken from wherever you went meanwhile.
+  const keyReturn = useRef<{ kind: 'edit' | 'react' | 'delete'; row: HTMLElement; near: HTMLElement | null } | null>(null)
+  const dropKeyReturn = (kind: 'edit' | 'react' | 'delete') => { if (keyReturn.current?.kind === kind) keyReturn.current = null }
+  /// The message the arrow keys last picked: the one whose letters work.
+  const keyPicked = useRef<HTMLElement | null>(null)
+  // After every render: what closes it, or takes the message away, is any
+  // of several states (the edit, the picker, the list, the thread).
+  useEffect(() => {
+    const r = keyReturn.current
+    if (!r || deleting) return
+    const active = document.activeElement
+    const lost = !active || active === document.body || r.row.contains(active)
+    if (r.row.isConnected) {
+      if (r.kind === 'delete' || (r.kind === 'edit' ? editing : pickerFor)) return
+      keyReturn.current = null
+      if (lost) r.row.focus({ preventScroll: true })
+      return
+    }
+    keyReturn.current = null
+    if (lost && r.near?.isConnected) {
+      keyPicked.current = r.near
+      r.near.focus({ preventScroll: true })
+      r.near.scrollIntoView({ block: 'nearest' })
+    }
+  })
   const togglePin = (channel: string, m: ChannelMessage) => void act('POST', '/channels/pins', channel, { messageId: m.id, pinned: !m.pinned })
   const openThread = async (channel: string, m: ChannelMessage) => {
     setDetailId(null)
     setProfile(null)
-    setThread({ channel, parent: m, replies: [] })
+    setThread((prev) => ({ channel, parent: m, replies: prev && prev.parent.id === m.id ? prev.replies.filter(isTemp) : [] }))
     setThreadDraft('')
     const res = await fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(m.id)}`, { headers: authHeaders }).catch(() => null)
     const data = res?.ok ? await res.json().catch(() => null) : null
-    if (data) setThread((prev) => (prev && prev.parent.id === m.id ? { channel, parent: data.parent, replies: data.replies || [] } : prev))
+    // Replies of yours still on their way, or that did not go — sent while
+    // it was open before, or before this page loaded — back in it.
+    const back = data ? heldFor(channel, m.id, data.replies || []) : []
+    if (data) setThread((prev) => (prev && prev.parent.id === m.id ? { channel, parent: data.parent, replies: withHeld(keepTemps(data.replies || [], prev.replies), back) } : prev))
     requestAnimationFrame(() => threadComposer.current?.focus())
     markThreadRead(channel, m.id)
   }
@@ -1747,7 +2588,8 @@ export const ClassicList: React.FC<Props> = ({
     if (!data?.parent) { setThread(null); return }
     threadInActivity.current = true
     setThreadDraft('')
-    setThread({ channel, parent: data.parent, replies: data.replies || [] })
+    const back = heldFor(channel, parentId, data.replies || [])
+    setThread((prev) => ({ channel, parent: data.parent, replies: withHeld(keepTemps(data.replies || [], prev && prev.parent.id === parentId ? prev.replies : undefined), back) }))
     markThreadRead(channel, parentId)
     requestAnimationFrame(() => {
       const id = focusId === parentId ? `thread-${focusId}` : focusId
@@ -1758,12 +2600,15 @@ export const ClassicList: React.FC<Props> = ({
   /// Read this thread, here and on every other device: Threads stops
   /// calling it unread.
   const markThreadRead = (channel: string, parentId: string) => {
+    // Read up to the newest reply on screen, not the server's now: one that
+    // lands while this is on its way stays new.
+    const seenUpTo = threadItems?.find((x) => x.parent.id === parentId)?.lastReplyAt || new Date().toISOString()
     setThreadItems((prev) => prev && prev.map((x) => (x.parent.id === parentId ? { ...x, unread: false } : x)))
     // Its replies, and its first message where it named you, in Activity too.
     setActivityItems((prev) => prev && prev.map((i) => (i.unread && (i.message.parentId === parentId || (i.message.id === parentId && i.type !== 'reaction')) ? { ...i, unread: false } : i)))
     void fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel, thread: parentId }),
+      body: JSON.stringify({ orgId: api.orgId, channel, thread: parentId, at: seenUpTo }),
     }).catch(() => {})
   }
   // Read on another device (or another tab): the same here, at once —
@@ -1803,6 +2648,37 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:reads-changed', on)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.orgId])
+  // Back from a dropped connection or a sleep (Dashboard says so): what was
+  // said meanwhile never came over the socket. The sidebar, the open
+  // conversation's newest page — merged, so older pages stay — the open
+  // thread, Activity and Threads are read again. Waking can bring both
+  // signals at once; a moment's wait makes them one.
+  const resyncNow = useRef<() => void>(() => {})
+  resyncNow.current = () => {
+    setChannelsTick((n) => n + 1)
+    if (view) void loadMessages(view)
+    if (thread) {
+      const { channel, parent } = thread
+      fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(parent.id)}`, { headers: authHeaders })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (data?.parent) setThread((prev) => (prev && prev.parent.id === parent.id ? { ...prev, parent: data.parent, replies: data.replies || [] } : prev)) })
+        .catch(() => { /* the thread stays as it was */ })
+    }
+    if (activityItems) void loadActivity()
+    if (threadItems) void loadThreads()
+  }
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const on = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => resyncNow.current(), 300)
+    }
+    window.addEventListener('honmaru:resync', on)
+    return () => {
+      window.removeEventListener('honmaru:resync', on)
+      if (timer) clearTimeout(timer)
+    }
+  }, [])
   const loadPins = async (channel: string) => {
     if (pins) { setPins(null); return }
     const res = await fetch(`${api.httpBase}/channels/pins?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}`, { headers: authHeaders }).catch(() => null)
@@ -1816,7 +2692,7 @@ export const ClassicList: React.FC<Props> = ({
   }
   // Leaving a conversation closes what was open on it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); uploads.clear() }, [current?.key])
+  useEffect(() => { setEditing(null); setThread(null); setPins(null); setPickerFor(null); setReplyingTo(null); setMsgMenu(null); setReactAt(null); uploads.clear() }, [current?.key])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { threadUploads.clear() }, [thread?.parent.id])
   useEffect(() => {
@@ -1837,12 +2713,14 @@ export const ClassicList: React.FC<Props> = ({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.view, messages[current?.view || '']?.length, tick])
-  // Somebody named you, or answered in your thread: the inbox refreshes.
+  // Somebody named you, answered in your thread, or replied to you: the
+  // inbox refreshes.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null
     const on = (e: Event) => {
       const m = (e as CustomEvent<ChannelMessage>).detail
-      if (!m || m.mine || (!m.parentId && !/[@＠]/.test(m.body || ''))) return
+      const toMe = Boolean(m?.replyTo?.authorRef && m.replyTo.authorRef === membersRef.current.find((x) => x.mine)?.ref)
+      if (!m || m.mine || (!m.parentId && !toMe && !/[@＠]/.test(m.body || ''))) return
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => { void loadActivity(); if (m.parentId) void loadThreads() }, 800)
     }
@@ -1904,6 +2782,7 @@ export const ClassicList: React.FC<Props> = ({
       if (view.startsWith('ag:')) { setPhoneTab('home'); openAgent(view.slice(3)); return }
       const th = everything.find((x) => x.view === view)
       if (th) choose(th.key)
+      else wantedView.current = { view, until: Date.now() + 10_000 }
     }
     const on = (e: Event) => { try { sessionStorage.removeItem('list.openView') } catch {}; go(String((e as CustomEvent).detail || '')) }
     window.addEventListener('honmaru:open-view', on)
@@ -1914,6 +2793,14 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:open-view', on)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [everything.length])
+  useEffect(() => {
+    const want = wantedView.current
+    if (!want) return
+    if (Date.now() > want.until) { wantedView.current = null; return }
+    const th = everything.find((x) => x.view === want.view)
+    if (th) choose(th.key)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [everything])
   const decideMessage = async (channel: string, m: ChannelMessage) => {
     setProblem(null)
     const res = await fetch(`${api.httpBase}/channels/decide`, {
@@ -1962,6 +2849,8 @@ export const ClassicList: React.FC<Props> = ({
   // sidebar's right-click menu): set before choosing, applied once it opens.
   const sideOnOpen = useRef<null | { kind: 'details'; tab: DetailsTab }>(null)
   useEffect(() => { setSide(sideOnOpen.current); sideOnOpen.current = null }, [current?.key])
+  // A card stands beside something in the conversation that was left.
+  useEffect(() => { setPopout(null) }, [current?.key])
   // Back closes what was opened last, not the list (utils/backStack): on a
   // phone the conversation itself, then whatever is open over it.
   useBackStack([
@@ -1971,6 +2860,8 @@ export const ClassicList: React.FC<Props> = ({
     [!!profile, () => setProfile(null)],
     [!!thread, () => setThread(null)],
     [!!detailId, () => setDetailId(null)],
+    // A teammate's card stands over all of these.
+    [!!popout, () => setPopout(null)],
   ])
   // How many automations run into each channel, for the header's count.
   const [automationCount, setAutomationCount] = useState<Record<string, number>>({})
@@ -1986,13 +2877,14 @@ export const ClassicList: React.FC<Props> = ({
   }, [view, api.httpBase, api.orgId, authHeaders])
   /// A journal line's citation: the message, in its conversation — loading
   /// back to it when it is further up than what is loaded — or its thread.
-  const goToCite = async (channel: string, cite: JournalCite) => {
+  /// Whether the message was found.
+  const goToCite = async (channel: string, cite: JournalCite): Promise<boolean> => {
     if (cite.parentId) {
       const list = messagesRef.current[channel] || []
       const parent = list.find((m) => m.id === cite.parentId) || ({ id: cite.parentId, channel, kind: 'message', body: '', authorName: null, authorRef: null, mine: false, cardId: null, createdAt: '' } as ChannelMessage)
       setSide(null)
       void openThread(channel, parent)
-      return
+      return true
     }
     let list = messagesRef.current[channel] || []
     let older = more[channel]
@@ -2003,12 +2895,21 @@ export const ClassicList: React.FC<Props> = ({
       const got = (data.messages || []) as ChannelMessage[]
       const known = new Set(list.map((m) => m.id))
       list = [...got.filter((m) => !known.has(m.id)), ...list]
-      older = got.length >= PAGE
+      older = hasOlder(data, PAGE)
     }
-    const merged = list
-    setMessages((prev) => ({ ...prev, [channel]: merged }))
+    // Pages loaded around what was held; what is only here is as it is now.
+    const merged = list.filter((m) => !isTemp(m))
+    setMessages((prev) => ({ ...prev, [channel]: keepTemps(merged, prev[channel]) }))
     setMore((prev) => ({ ...prev, [channel]: Boolean(older) }))
     setTimeout(() => jumpTo(cite.id), 80)
+    return list.some((m) => m.id === cite.id)
+  }
+  /// An inline reply's quote, pressed: to the original where it is on
+  /// screen, loading back to it when it is further up — and a word, not
+  /// nothing, when it cannot be found.
+  const goToQuoted = async (channel: string, id: string) => {
+    if (document.getElementById(`msg-${id}`)) { jumpTo(id); return }
+    if (!(await goToCite(channel, { id, parentId: null, at: '' }))) setToast(t('Could not find the original message.'))
   }
 
   // ---- Jam ----
@@ -2124,14 +3025,18 @@ export const ClassicList: React.FC<Props> = ({
     }
     setJamBusy(false)
   }
+  // Escape closes the pane — unless the shell has something over the list:
+  // that Escape is for the screen or panel on top, not the pane under it.
   useEffect(() => {
-    if (!detailId && !thread) return
+    if (!active || (!detailId && !thread)) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !composing(e) && !(e.target as HTMLElement)?.closest('textarea, input')) { setDetailId(null); setThread(null) }
+      // An Escape a menu has already taken (a right-click menu over a
+      // reply) closes that menu, not the thread under it as well.
+      if (e.key === 'Escape' && !e.defaultPrevented && !composing(e) && !(e.target as HTMLElement)?.closest('textarea, input')) { setDetailId(null); setThread(null) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [detailId, thread])
+  }, [active, detailId, thread])
   // A phone gives a conversation, or a decision, the whole screen.
   // A conversation, a card or a thread takes the whole phone; Activity and
   // Later are tabs, with the tab bar under them.
@@ -2156,6 +3061,8 @@ export const ClassicList: React.FC<Props> = ({
     for (const [login, state] of Object.entries(presence)) if (state === 'online' && hashes.get(login)) on.add(hashes.get(login)!)
     return on
   }, [presence, hashes])
+  // The same people by ref, for a channel's member list.
+  const onlineRefs = useMemo(() => new Set(members.filter((m) => isOnline(m, onlineKeys)).map((m) => m.ref)), [members, onlineKeys])
   const withAI = useMemo(() => {
     const view = current?.view || ''
     // Who is in the conversation being written in: everyone, in a public
@@ -2185,33 +3092,61 @@ export const ClassicList: React.FC<Props> = ({
   }, [mentionable, userGroups, agents, current, businesses, onlineKeys, t])
   const mention = useMentionMenu(composer, draft, setDraft, withAI)
   const threadMention = useMentionMenu(threadComposer, threadDraft, setThreadDraft, withAI)
-  // @names that reach somebody light up as they are typed.
-  const draftHl = useMentionHighlight(composer, draft, withAI)
-  const threadHl = useMentionHighlight(threadComposer, threadDraft, withAI)
+  // @names that reach somebody light up as they are typed. What sits over
+  // the box — the "Replying to" bar, files waiting to go — moves it when it
+  // comes or goes, and the colour moves with it.
+  const draftHl = useMentionHighlight(composer, draft, withAI, `${replyingTo?.quote.id || ''}|${uploads.items.length}`)
+  const threadHl = useMentionHighlight(threadComposer, threadDraft, withAI, threadUploads.items.length)
+  // Whether a message calls you and whether an @name is yours, asked of
+  // every message each time the conversation is drawn — every keystroke in
+  // the composer — so each answer is kept until the team or its groups
+  // change.
+  const readsMe = useMemo(() => meReader({ people: mentionable, groups: userGroups }), [mentionable, userGroups])
+  // A right-click's row of reactions: the ones you used last, as on the bar.
+  const quickReactions = useQuickReactions()
 
   // The newest message in view when a conversation opens, as in any chat —
   // and kept in view while what is above it settles: the conversation drawn
   // again once it has loaded, pictures arriving, a translation taking the
   // place of the words, a link growing a preview. Scrolled to once, it was
   // pushed out of sight by all of that. Scrolling up yourself lets go; back
-  // at the bottom, it holds again.
+  // at the bottom, it holds again. Something new arriving follows the same
+  // rule: up in the history, a teammate's message waits below; your own
+  // takes you to it.
   const logRef = useRef<HTMLDivElement | null>(null)
   const [logEl, setLogEl] = useState<HTMLDivElement | null>(null)
   const logAt = useCallback((el: HTMLDivElement | null) => { logRef.current = el; setLogEl(el) }, [])
   const pinned = useRef(true)
-  useEffect(() => { pinned.current = true }, [current?.key])
+  useEffect(() => { pinned.current = true; setReadingUp(null) }, [current?.key])
+  // What the log was last drawn for: another log or another conversation is
+  // one just opened, and a newest message later than the newest then just
+  // arrived (not one left newest by a deletion).
+  const followed = useRef<{ el: HTMLDivElement | null; key?: string; newestAt: string }>({ el: null, newestAt: '' })
   useEffect(() => {
     const el = logRef.current
     if (!el) return
-    if (keepScroll.current !== null) { el.scrollTop = el.scrollHeight - keepScroll.current; keepScroll.current = null; return }
-    el.scrollTop = el.scrollHeight
-    pinned.current = true
+    const list = messages[current?.view || ''] || []
+    const newest = list[list.length - 1]
+    const last = followed.current
+    const opened = last.el !== el || last.key !== current?.key
+    const newestIsMine = Boolean(newest?.mine && newest.createdAt > last.newestAt)
+    followed.current = { el, key: current?.key, newestAt: newest?.createdAt || '' }
+    const restoring = keepScroll.current !== null
+    if (shouldFollow({ opened, atBottom: pinned.current, restoring, newestIsMine })) {
+      keepScroll.current = null
+      el.scrollTop = el.scrollHeight
+      pinned.current = true
+    } else if (restoring) {
+      el.scrollTop = el.scrollHeight - keepScroll.current!
+      keepScroll.current = null
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logEl, current?.key, current?.cards.length, messages[current?.view || '']?.length, thinking[current?.view || '']])
   useEffect(() => {
     const el = logEl
     if (!el) return
     const settle = () => { if (pinned.current && keepScroll.current === null) el.scrollTop = el.scrollHeight }
-    const onScroll = () => { pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48 }
+    const onScroll = () => { pinned.current = isAtBottom(el) }
     const changed = new MutationObserver(settle)
     changed.observe(el, { childList: true, subtree: true, characterData: true })
     const sized = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(settle) : null
@@ -2226,6 +3161,43 @@ export const ClassicList: React.FC<Props> = ({
       el.removeEventListener('load', settle, true)
     }
   }, [logEl])
+  /// "Jump to present": down to the newest, which reads it on arriving.
+  /// Smoothly, unless the reader asked for less motion. The focus goes on to
+  /// the composer when focusAfterJump says, since the pill goes away under it.
+  const goToPresent = (handOn: boolean) => {
+    const el = logRef.current
+    if (!el) return
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    el.scrollTo({ top: el.scrollHeight, behavior: still ? 'auto' : 'smooth' })
+    if (handOn) composer.current?.focus({ preventScroll: true })
+  }
+  // What waits below, told to a screen reader in the pill's own words: the
+  // pill is out of sight of one, and its count changes silently. Politely,
+  // and no more often than waitToSay allows.
+  const newBelow = readingUp && readingUp.view === view ? countNewBelow(messages[view] || [], readingUp.since) : 0
+  const [heard, setHeard] = useState(0)
+  const heardAt = useRef(0)
+  useEffect(() => {
+    if (newBelow === 0) { setHeard(0); return }
+    const id = setTimeout(() => { heardAt.current = Date.now(); setHeard(newBelow) }, waitToSay(heardAt.current, Date.now()))
+    return () => clearTimeout(id)
+  }, [newBelow])
+  // ⇧PageDown goes to the present from anywhere the keys are not writing —
+  // an empty composer included, where there is nothing for it to select.
+  // (Esc already closes what is open, and ⇧Esc reads everything.)
+  useEffect(() => {
+    if (atBottom) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'PageDown' || !e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return
+      const field = (e.target as HTMLElement | null)?.closest?.('textarea, input, select, [contenteditable="true"]')
+      if (field && !(field === composer.current && composer.current.value === '')) return
+      e.preventDefault()
+      goToPresent(Boolean(document.activeElement?.closest('.slk-present')))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atBottom])
 
   // ---- The conversation ----
 
@@ -2254,6 +3226,18 @@ export const ClassicList: React.FC<Props> = ({
   const whoSaid = (m: ChannelMessage) => (m.kind === 'ai' ? t('Your AI')
     : m.kind === 'agent' ? (m.agent?.name || m.authorName || t('Agent'))
     : m.mine ? t('You') : (m.authorName || t('a teammate')))
+  /// Who an inline reply answers, as this reader calls them: your AI, you
+  /// by your own name (Discord's way), a teammate or an agent by theirs.
+  const quoteName = (q: ReplyQuote) => (q.kind === 'ai' ? t('Your AI')
+    : q.authorRef && q.authorRef === myRef ? (myName || t('You'))
+    : (q.authorName || t('a teammate')))
+  /// Reply, pressed: the bar over the composer, and the caret in the box.
+  /// An edit open on another message stays open — its words live nowhere
+  /// else, and answering one message is no reason to lose them.
+  const startReply = (channel: string, m: ChannelMessage) => {
+    setReplyingTo({ view: channel, quote: quoteOf(m) })
+    requestAnimationFrame(() => composer.current?.focus())
+  }
   /// The face beside a message: yours, or whoever wrote it.
   const faceOfMessage = (m: ChannelMessage): Face => (m.kind === 'agent'
     ? { name: whoSaid(m), emoji: m.agent?.emoji || '🤖', picture: m.agent?.avatarUrl || null }
@@ -2344,26 +3328,43 @@ export const ClassicList: React.FC<Props> = ({
     : <span className="slk-avatar face"><Avatar name={face?.name || '?'} url={face?.url} size={36} /></span>
 
   /// One block of a conversation: a gutter, a name and a time — or, joined
-  /// to the one before, just the words — then what was said.
-  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void }, body: React.ReactNode) => (
+  /// to the one before, just the words — then what was said. Somebody
+  /// else's face and name open their card, and their face says whether
+  /// they are here. (Yours says nothing: the relay never tells you of you.)
+  /// One that calls you (`mentionsMe`) is tinted and barred, to be found in
+  /// a busy channel, and says so to a screen reader, which sees no tint.
+  /// `quote`: the line an inline reply shows above its author, as a pin's
+  /// mark sits there. `state`: yours, shown before the server has it — on
+  /// its way, or failed.
+  const block = (key: string, opts: { joined: boolean; at: string; app: string; name: string; face?: Face | null; badge?: string; to?: string; unread?: boolean; tools?: React.ReactNode; msgId?: string; pinned?: boolean; authorRef?: string | null; onHold?: () => void; onMenu?: (at: { x: number; y: number }, anchor: string) => void; mentionsMe?: boolean; quote?: React.ReactNode; state?: 'pending' | 'failed' }, body: React.ReactNode) => (
     <article key={key} id={opts.msgId ? `msg-${opts.msgId}` : undefined} tabIndex={opts.msgId ? -1 : undefined}
-      {...(!wide ? longPress(opts.onHold) : {})}
-      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}`}>
-      <div className="slk-gutter" aria-hidden="true">
-        {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span> : avatarFor(opts.app, opts.face || { name: opts.name })}
+      {...(!wide ? longPress(opts.onHold) : messageMenuTriggers(opts.onMenu))}
+      className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && [msgMenu?.anchor, reactAt?.anchor].includes(`msg-${opts.msgId}`) ? ' menu-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.mentionsMe ? ' mentions-me' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}${opts.state ? ` ${opts.state}` : ''}`}>
+      <div className="slk-gutter" aria-hidden={opts.joined || !opts.authorRef ? 'true' : undefined}>
+        {opts.joined ? <span className="slk-hover-time" title={fullTime(opts.at, locale)}>{clock(opts.at)}</span>
+          : opts.authorRef ? (
+            <button type="button" className="slk-face-button" aria-label={t('Profile of {name}', { name: opts.name })} aria-haspopup="dialog"
+              onClick={(e) => openPopout(opts.authorRef!, e.currentTarget, opts.name)}>
+              {avatarFor(opts.app, opts.face || { name: opts.name })}
+              <span className={`cl-presence${isOnline(memberByRef(opts.authorRef), onlineKeys) ? ' on' : ''}`} aria-hidden="true" />
+            </button>
+          )
+          : avatarFor(opts.app, opts.face || { name: opts.name })}
       </div>
       <div className="slk-body">
         {opts.pinned && <div className="slk-pin-mark"><Icon name="pin" size={12} /> {t('Pinned')}</div>}
+        {opts.quote}
         {!opts.joined && (
           <div className="slk-meta">
             {opts.authorRef
-              ? <button type="button" className="slk-author link" onClick={() => void openProfile(opts.authorRef!)}>{opts.name}</button>
+              ? <button type="button" className="slk-author link" aria-haspopup="dialog" onClick={(e) => openPopout(opts.authorRef!, e.currentTarget, opts.name)}>{opts.name}</button>
               : <span className="slk-author">{opts.name}</span>}
             {opts.badge && <span className={`slk-app-badge${opts.face?.emoji ? ' agent' : ''}`}>{opts.badge}</span>}
             {opts.to && <span className="slk-to">→ {opts.to}</span>}
-            <time className="slk-time" dateTime={opts.at}>{clock(opts.at)}</time>
+            <time className="slk-time" dateTime={opts.at} title={fullTime(opts.at, locale)}>{clock(opts.at)}</time>
           </div>
         )}
+        {opts.mentionsMe && <span className="sr-only slk-calls-me">{t('Mentions you')}</span>}
         {body}
       </div>
       {opts.tools && <div className="slk-tools">{opts.tools}</div>}
@@ -2375,13 +3376,23 @@ export const ClassicList: React.FC<Props> = ({
   const agentHandles = new Set(agents.map((a) => a.handle.normalize('NFKC').toLowerCase()))
   // Only an @name that reaches somebody is drawn as a mention; one that
   // names nobody stays a word, so a typo reads as one.
+  // A person's opens their card: the ref goes with it, for onMentionClick.
   const rich = (text: string) => renderRich(text, (part) => {
     const kind = mentionKind(part, withAI)
     if (!kind) return ''
     if (kind === 'ai') return 'slk-mention ai'
     if (kind === 'agent' || agentHandles.has(part.replace(/^[@＠]/, '').replace(/[にへ]$/, '').normalize('NFKC').toLowerCase())) return 'slk-mention agent'
+    // Your own name, stronger than anyone else's.
+    if (kind === 'person' && readsMe.namesMe(part)) return 'slk-mention me'
+    // "@agents" and the like read as a person to mentionKind; only somebody
+    // on the team has a card.
+    const who = kind === 'person' ? memberByRef(mentionTarget(part, withAI)?.ref) : undefined
+    if (who) return { className: 'slk-mention', ref: who.ref }
     return `slk-mention${kind === 'group' ? ' group' : ''}`
   })
+  /// Whether a message calls you (utils/mentionsMe.ts): read from what was
+  /// written, not a translation of it; an unsent one calls nobody.
+  const callsMe = (m: ChannelMessage) => !m.deleted && readsMe.mentionsMe(m)
 
   /// One face beside "3 replies": the AI's mark, an agent's emoji, your own
   /// photo, or a teammate's.
@@ -2395,17 +3406,21 @@ export const ClassicList: React.FC<Props> = ({
     return <Avatar key={r} className="slk-face" name={mine ? (myName || t('You')) : nameOfRef(r)} url={mine ? myAvatar : memberByRef(r)?.avatarUrl} size={20} />
   }
 
-  /// What sits under a message's words: its reactions and its thread.
+  /// What sits under a message's words: its reactions and its thread — or,
+  /// one of yours the server does not have yet, that it is on its way or
+  /// why it did not go (from the keyboard, back to the box it came from).
   const underneath = (channel: string, m: ChannelMessage, inThread = false) => (
     <>
-      {!m.deleted && m.kind === 'message' && !m.previewsHidden && (
+      <UnsentNote message={m} onRetry={() => retry(m)} onDelete={() => discard(m)} onEdit={() => writeAgain(m)} lateAt={outbox.current.get(m.id)?.lateAt}
+        refocus={() => (m.parentId ? threadComposer : composer).current?.focus()} />
+      {!m.deleted && m.kind === 'message' && !m.previewsHidden && !isTemp(m) && (
         <LinkCards text={m.body} httpBase={api.httpBase} orgId={api.orgId} token={api.sessionToken}
           onHide={m.mine ? () => void act('POST', '/channels/previews', channel, { messageId: m.id, hidden: true }) : undefined} />
       )}
       {!m.deleted && (
-        <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(m.id)} />
+        <Reactions message={m} nameOf={nameOfRef} onToggle={(e) => react(channel, m, e)} onAdd={() => setPickerFor(pickerKey(m, inThread))} />
       )}
-      {pickerFor === m.id && <div className="slk-picker-anchor"><EmojiPicker onPick={(e) => react(channel, m, e)} onClose={() => setPickerFor(null)} /></div>}
+      {pickerFor === pickerKey(m, inThread) && <div className="slk-picker-anchor"><EmojiPicker onPick={(e) => react(channel, m, e)} onClose={() => setPickerFor(null)} /></div>}
       {!inThread && (m.replyCount || 0) > 0 && (
         <button type="button" className="slk-thread-link" onClick={() => void openThread(channel, m)}>
           <span className="slk-thread-faces" aria-hidden="true">
@@ -2421,7 +3436,7 @@ export const ClassicList: React.FC<Props> = ({
   /// A person's message: the words (or the box to change them), what is
   /// under them, and on hover everything you can do to it.
   const words = (channel: string, m: ChannelMessage) => {
-    if (editing?.id === m.id) {
+    if (editing && editingThis(m)) {
       return (
         <form className="slk-edit" onSubmit={(e) => { e.preventDefault(); void saveEdit(channel) }}>
           <textarea
@@ -2459,30 +3474,138 @@ export const ClassicList: React.FC<Props> = ({
       </>
     )
   }
-  const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id) ? undefined : (
+  /// What this reader may do to one message, said once: the ⋯ menu over
+  /// it, a phone's long press and a right-click all offer exactly this.
+  const actionsFor = (channel: string, m: ChannelMessage, inThread: boolean): MessageMenuActions => ({
+    inThread,
+    onQuote: inThread ? undefined : () => startReply(channel, m),
+    onReply: () => void openThread(channel, m),
+    onPin: () => togglePin(channel, m),
+    onEdit: m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined,
+    onDelete: m.mine && m.kind === 'message' ? (skipConfirm?: boolean) => remove(channel, m, skipConfirm) : undefined,
+    onDecide: !m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined,
+    onLater: (at) => void saveLater(channel, m, at),
+    onClip: () => toggleClip(channel, m),
+    clipped: clip.some((x) => x.id === m.id),
+    onUnread: m.mine ? undefined : () => void markUnread(channel, m),
+    onForward: m.kind === 'message' || m.kind === 'ai' ? () => setForwarding({ channel, m }) : undefined,
+    onCopyLink: () => copyLink(m),
+  })
+  // Nothing to do to a message only held here: the server has no such id.
+  const toolsFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editingThis(m) || isTemp(m)) ? undefined : (
     <MessageActions
       message={m}
-      inThread={inThread}
+      {...actionsFor(channel, m, inThread)}
       onReact={(e) => react(channel, m, e)}
-      onReply={() => void openThread(channel, m)}
-      onPin={() => togglePin(channel, m)}
-      onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
-      onDelete={m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined}
-      onDecide={!m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined}
-      onLater={(at) => void saveLater(channel, m, at)}
-      onClip={() => toggleClip(channel, m)}
-      clipped={clip.some((x) => x.id === m.id)}
-      onUnread={m.mine ? undefined : () => void markUnread(channel, m)}
-      onForward={m.kind === 'message' || m.kind === 'ai' ? () => setForwarding({ channel, m }) : undefined}
-      onCopyLink={() => copyLink(m)}
       onOpenChange={(open) => setToolsOpen((cur) => (open ? m.id : cur === m.id ? null : cur))}
     />
   )
 
   /// A long press, on a phone: the same things, in a sheet from the bottom.
-  const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id)
+  const holdFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editingThis(m) || isTemp(m))
     ? undefined
     : () => setSheet({ channel, m, inThread })
+  /// A right-click, on a laptop: the same things again, at the pointer.
+  const menuFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id || isTemp(m))
+    ? undefined
+    : (at: { x: number; y: number }, anchor: string) => setMsgMenu({ channel, m, inThread, ...at, anchor })
+  /// Keys on a log, as in Discord. On the log itself ↑ picks its last
+  /// message; on a message, ↑ ↓ move to the one beside it, E T P + ⌫ do
+  /// what its ⋯ menu does (⇧⌫ without asking), and Esc goes back to the box
+  /// to write in. Only a message itself answers: a key typed in its edit
+  /// box, or pressed on one of its buttons, is that box's or button's.
+  /// A click focuses a message too, but its letters wait until an arrow
+  /// has picked it (keyPicked, which a press of the mouse in the log lets
+  /// go): what is typed after a click was meant for the composer, and a "p"
+  /// in it would pin the message for everyone. Esc waits the same way: on
+  /// what was only clicked it is still the app's, which closes the thread
+  /// or the decision beside the conversation, as it did before a message
+  /// had keys — and it closes a menu or a picker open on the message first.
+  const unpick = () => { keyPicked.current = null }
+  /// Tab onto a log picks the log, as an arrow picks a message: it shows
+  /// the ring, and Esc goes to the box to write in. A click on its blank
+  /// space focuses it too and picks nothing. Asked as focus arrives: once a
+  /// key is down a browser may show the ring on what the mouse focused.
+  const pickLog = (e: React.FocusEvent<HTMLElement>) => {
+    if (e.target !== e.currentTarget) return
+    try {
+      if (e.currentTarget.matches(':focus-visible')) keyPicked.current = e.currentTarget
+    } catch {
+      // A browser without :focus-visible shows no ring: nothing is picked.
+    }
+  }
+  /// A key that did something to a message, still held down: its repeats
+  /// are nobody's until it comes up, or another key goes down. Focus has
+  /// often moved by then — a held E would type "eee" into the edit box it
+  /// opened, a held T into the thread's box, and ⇧⌫ would reach the message
+  /// focus went to when this one was deleted.
+  const holdKey = () => {
+    const swallow = (ev: KeyboardEvent) => {
+      if (!ev.repeat) { release(); return }
+      ev.preventDefault()
+      ev.stopPropagation()
+    }
+    const release = () => {
+      window.removeEventListener('keydown', swallow, true)
+      window.removeEventListener('keyup', release, true)
+      window.removeEventListener('blur', release)
+    }
+    window.addEventListener('keydown', swallow, true)
+    window.addEventListener('keyup', release, true)
+    window.addEventListener('blur', release)
+  }
+  const logKeys = (channel: string, list: ChannelMessage[], box: React.RefObject<HTMLTextAreaElement>, inThread = false) => (e: React.KeyboardEvent<HTMLElement>) => {
+    const log = e.currentTarget
+    const target = e.target as HTMLElement
+    const rows = () => Array.from(log.querySelectorAll<HTMLElement>('article.slk-msg[id^="msg-"]'))
+    const show = (el: HTMLElement | undefined) => {
+      if (!el) return
+      keyPicked.current = el
+      el.focus({ preventScroll: true })
+      el.scrollIntoView({ block: 'nearest' })
+    }
+    if (target === log) {
+      const action = messageKeyAction(e.nativeEvent, null)
+      if (action === 'prev') { const all = rows(); if (all.length) { e.preventDefault(); show(all[all.length - 1]) } }
+      if (action === 'composer' && box.current && keyPicked.current === log) { e.preventDefault(); e.stopPropagation(); box.current.focus() }
+      return
+    }
+    if (target.closest('input, textarea, select, button, a, audio, video, iframe, [contenteditable], [role="button"]')) return
+    const row = target.closest<HTMLElement>('article.slk-msg[id^="msg-"]')
+    if (!row || !log.contains(row)) return
+    const id = messageIdOf(row.id)
+    const found = list.find((x) => x.id === id)
+    // A card, or a message with its edit box open, is only moved past.
+    const m = found && editing?.id !== found.id ? found : null
+    const action = messageKeyAction(e.nativeEvent, m, inThread)
+    if (!action) return
+    const moving = action === 'prev' || action === 'next'
+    if (!moving && keyPicked.current !== row) return
+    // Esc closes what is open over the messages before it leaves them: the
+    // ⋯ menu and the pickers listen on the document, further out than this.
+    if (action === 'composer' && (toolsOpen || pickerFor)) return
+    e.preventDefault()
+    // Esc on a picked message is not the window's too, which closes the thread.
+    e.stopPropagation()
+    const all = rows()
+    const at = all.indexOf(row)
+    if (action === 'prev') { show(all[at - 1]); return }
+    if (action === 'next') { show(all[at + 1]); return }
+    if (action === 'composer') { box.current?.focus(); return }
+    if (!m) return
+    holdKey()
+    if (action === 'edit') { keyReturn.current = { kind: 'edit', row, near: null }; setEditing({ id: m.id, text: m.body }) }
+    else if (action === 'thread') void openThread(channel, m)
+    else if (action === 'pin') togglePin(channel, m)
+    else if (action === 'react') {
+      keyReturn.current = { kind: 'react', row, near: null }
+      setPickerFor(m.id)
+      requestAnimationFrame(() => row.querySelector<HTMLElement>('.slk-picker .slk-picker-emoji')?.focus())
+    } else if (action === 'delete') {
+      keyReturn.current = { kind: 'delete', row, near: all[at + 1] || all[at - 1] || null }
+      remove(channel, m, e.shiftKey)
+    }
+  }
   /// A link to one message that opens it for anyone who can read it — the
   /// message's id, not the conversation's name, which differs per reader.
   const copyLink = (m: ChannelMessage) => {
@@ -2709,7 +3832,8 @@ export const ClassicList: React.FC<Props> = ({
     const isChannel = (v: string) => everything.find((x) => x.view === v)?.kind === 'channel'
     const keyOf = activityKey
     const whoOf = (i: ActivityItem) => (i.type === 'reaction' ? (i.by || t('a teammate')) : i.message.kind === 'ai' ? t('Your AI') : (i.message.authorName || t('a teammate')))
-    const verb = (i: ActivityItem) => (i.type === 'reaction' ? t('reacted') : i.type === 'reply' ? t('replied in a thread') : i.type === 'keyword' ? t('said “{word}”', { word: i.keyword || '' }) : t('mentioned you'))
+    // A reply is in a thread, or inline to what you wrote.
+    const verb = (i: ActivityItem) => (i.type === 'reaction' ? t('reacted') : i.type === 'reply' ? (i.message.parentId ? t('replied in a thread') : t('replied to you')) : i.type === 'keyword' ? t('said “{word}”', { word: i.keyword || '' }) : t('mentioned you'))
     const items = (activityItems || []).filter((i) => activityTab === 'all' || i.unread || unreadShown.has(keyOf(i)))
     const picked = (activityItems || []).find((i) => keyOf(i) === activityPick) || null
     const open = (i: ActivityItem) => {
@@ -2838,15 +3962,17 @@ export const ClassicList: React.FC<Props> = ({
   /// conversation, and in Activity when what you picked is part of one.
   const threadBody = (thread: { channel: string; parent: ChannelMessage; replies: ChannelMessage[] }) => (
     <>
-          <div className="slk-thread-log">
+          <div className="slk-thread-log" tabIndex={0} role="region" aria-label={t('Messages')}
+            onKeyDown={logKeys(thread.channel, [thread.parent, ...thread.replies], threadComposer, true)} onMouseDown={unpick} onFocus={pickLog}>
             {[thread.parent, ...thread.replies].map((m, i) => (
-              <React.Fragment key={m.id}>
-                {block(m.id, {
+              <React.Fragment key={keyOf(m)}>
+                {block(keyOf(m), {
                   joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
                   name: whoSaid(m),
                   face: m.kind !== 'ai' ? faceOfMessage(m) : null,
-                  msgId: i === 0 ? `thread-${m.id}` : m.id,
-                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true),
+                  authorRef: m.mine ? null : m.authorRef,
+                  msgId: i === 0 ? `thread-${m.id}` : m.id, mentionsMe: callsMe(m),
+                  tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true), onMenu: menuFor(thread.channel, m, true), state: tempState(m),
                 }, (
                   <>
                     {words(thread.channel, m)}
@@ -2864,6 +3990,7 @@ export const ClassicList: React.FC<Props> = ({
             {aiSteps(thinking[thread.channel])}
             {agentLines(thread.channel, { parentId: thread.parent.id })}
           </div>
+          <TypingLine names={typingHere(thread.channel, thread.parent.id)} />
           <form className="slk-composer thread" onSubmit={(e) => { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }}>
             <PendingUploads items={threadUploads.items} onRemove={threadUploads.remove} />
             {threadHl.layer}
@@ -2876,7 +4003,8 @@ export const ClassicList: React.FC<Props> = ({
               maxLength={4000}
               placeholder={t('Reply… — @AI to ask the AI')}
               aria-label={t('Reply in thread')}
-              onChange={(e) => { setThreadDraft(e.target.value); threadMention.track() }}
+              onChange={(e) => { setThreadDraft(e.target.value); threadMention.track(); typed({ channel: thread.channel, parentId: thread.parent.id }, e.target.value) }}
+              onBlur={() => stoppedTyping({ channel: thread.channel, parentId: thread.parent.id })}
               onKeyUp={threadMention.track}
               onClick={threadMention.track}
               onKeyDown={(e) => {
@@ -2884,7 +4012,6 @@ export const ClassicList: React.FC<Props> = ({
                 if (enterKey(e) && !e.metaKey && !e.ctrlKey && (e.shiftKey || !wide) && continueBlock(e.currentTarget, threadDraft, setThreadDraft)) { e.preventDefault(); return }
                 if (enterKey(e) && !e.shiftKey && wide) { e.preventDefault(); void send(thread.channel, false, thread.parent.id) }
               }}
-              disabled={sending}
             />
             {threadMention.menu}
             <div className="slk-composer-bar">
@@ -2892,7 +4019,7 @@ export const ClassicList: React.FC<Props> = ({
               <input ref={threadAttachInput} type="file" multiple hidden onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) threadUploads.add(files, thread.channel) }} />
               <FormatBar target={threadComposer} value={threadDraft} set={setThreadDraft} />
               <span className="slk-composer-hint" />
-              <button type="submit" className="slk-send" disabled={sending || threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
+              <button type="submit" className="slk-send" disabled={threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
                 <Icon name="send" size={16} />
               </button>
             </div>
@@ -2905,6 +4032,7 @@ export const ClassicList: React.FC<Props> = ({
   /// A card in a conversation: react to it, open it, take it back.
   const [cardReacted, setCardReacted] = useState<Record<string, Array<{ emoji: string; count: number; mine?: boolean }>>>({})
   const reactCard = async (c: DecisionCard, emoji: string) => {
+    if (!cardReacted[c.id]?.some((r) => r.emoji === emoji && r.mine)) rememberEmoji(emoji)
     const res = await fetch(`${api.httpBase}/cards/${encodeURIComponent(c.id)}/reactions`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, emoji }),
@@ -2967,7 +4095,7 @@ export const ClassicList: React.FC<Props> = ({
         out.push(<div key={`day-${d}`} className="slk-day" role="separator"><span>{dayLabel(item.at)}</span></div>)
       }
       const at = Date.parse(item.at)
-      if (!lined && item.kind === 'msg' && !item.msg.mine && item.at > since) {
+      if (!lined && item.kind === 'msg' && isNewSince(item.msg, since)) {
         lined = true
         out.push(<div key="new-line" className="slk-new-line" role="separator"><span>{t('New')}</span></div>)
       }
@@ -2976,7 +4104,8 @@ export const ClassicList: React.FC<Props> = ({
         const who = author(c)
         const joined = prevWho === `card:${who.name}` && at - prevAt < 5 * 60000
         const to = c.senderUserID === userId && c.recipientUserID !== userId ? nameOfRecipient(c) : ''
-        out.push(block(c.id, { joined, at: c.createdAt, app: who.app, name: who.name, face: who.face, to, unread: isUnread(c), msgId: c.id, tools: cardTools(c) }, (
+        const from = !who.app && c.senderUserID !== userId ? memberOfLogin(c.senderUserID)?.ref : null
+        out.push(block(c.id, { joined, at: c.createdAt, app: who.app, name: who.name, face: who.face, to, unread: isUnread(c), msgId: c.id, authorRef: from, tools: cardTools(c) }, (
           <>
             {attachment(c)}
             {cardReactions(c)}
@@ -2999,7 +4128,7 @@ export const ClassicList: React.FC<Props> = ({
         }
         if (m.kind === 'ai') {
           const card = m.cardId ? cardsById.get(m.cardId) : undefined
-          out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m) },
+          out.push(block(m.id, { joined: false, at: m.createdAt, app: 'ai', name: t('Your AI'), badge: t('AI'), msgId: m.id, pinned: m.pinned, mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m), onMenu: menuFor(thread.view!, m) },
             <>
               <div className="slk-text">{rich(shownBody(m).text)}</div>
               {translationNote(m)}
@@ -3012,9 +4141,12 @@ export const ClassicList: React.FC<Props> = ({
           const whoKey = `msg:${m.authorRef || m.authorName}`
           const joined = prevWho === whoKey && at - prevAt < 5 * 60000
           const name = whoSaid(m)
-          out.push(block(m.id, {
-            joined: joined && !m.pinned, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
-            tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m),
+          // A reply always shows whose it is, under the line it quotes.
+          const quote = m.replyTo && !m.deleted ? m.replyTo : null
+          out.push(block(keyOf(m), {
+            joined: joined && !m.pinned && !quote, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
+            mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m), onMenu: menuFor(thread.view!, m), state: tempState(m),
+            quote: quote && <ReplyQuoteLine quote={quote} name={quoteName(quote)} onJump={() => void goToQuoted(thread.view!, quote.id)} />,
           }, (
             <>
               {words(thread.view!, m)}
@@ -3033,6 +4165,8 @@ export const ClassicList: React.FC<Props> = ({
       : thread.kind === 'agent'
         ? t('Message {name}', { name: thread.name })
         : t('Message {name} — @AI to ask the AI', { name: thread.name })
+    // The message the box is answering, when a reply was started here.
+    const replying = replyingTo && replyingTo.view === thread.view ? replyingTo.quote : null
     return (
       <>
         <header className="slk-head">
@@ -3043,8 +4177,8 @@ export const ClassicList: React.FC<Props> = ({
           <div className="slk-head-text" onClick={!wide && thread.kind === 'channel' && thread.view ? () => openSide({ kind: 'details', tab: 'members' }) : undefined}>
             {thread.kind === 'person' && thread.view
               ? <h1><button type="button" className="slk-author link" onClick={() => void openProfile(thread.view!.slice(3))}>{thread.name}</button>
-                  {(() => { const m = members.find((x) => thread.view === `dm:${x.ref}`); return m?.status ? <span className="slk-head-status"> {m.status.emoji} {m.status.text}</span> : null })()}
-                  {(() => { const m = members.find((x) => thread.view === `dm:${x.ref}`); return m?.awayUntil ? <span className="slk-head-away"> · {t('Away until {when}', { when: new Date(m.awayUntil).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</span> : null })()}
+                  {(() => { const s = statusShown(members.find((x) => thread.view === `dm:${x.ref}`)?.status, Date.now()); return s ? <span className="slk-head-status"> {s.emoji} {s.text}</span> : null })()}
+                  {(() => { const away = awayShown(members.find((x) => thread.view === `dm:${x.ref}`)?.awayUntil, Date.now()); return away ? <span className="slk-head-away"> · {t('Away until {when}', { when: new Date(away).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</span> : null })()}
                 </h1>
               : <h1>{thread.name}</h1>}
             {thread.view && (
@@ -3156,7 +4290,7 @@ export const ClassicList: React.FC<Props> = ({
           {thread.kind === 'channel' && thread.slug && (
             <button
               className="slk-more"
-              onClick={() => { setSettings((v) => !v); setRenaming(null) }}
+              onClick={() => { forgetWanted(); setSettings((v) => !v); setRenaming(null) }}
               aria-label={t('Channel settings')}
               aria-expanded={settings}
             >
@@ -3288,7 +4422,13 @@ export const ClassicList: React.FC<Props> = ({
             })}
           </div>
         ) : (
-        <div className="slk-log" ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
+        <div className={thread.view ? 'slk-log with-typing' : 'slk-log'} ref={logAt} onScroll={(e) => {
+          if (!thread.view) return
+          noteWhere(thread.view, e.currentTarget)
+          if (e.currentTarget.scrollTop < 120) void loadOlder(thread.view)
+        }}
+          tabIndex={0} role="region" aria-label={t('Messages in {name}', { name: thread.kind === 'channel' ? `#${thread.name}` : thread.name })}
+          onKeyDown={thread.view ? logKeys(thread.view, said, composer) : undefined} onMouseDown={unpick} onFocus={pickLog}>
           {thread.view && more[thread.view] && <div className="slk-older" role="status">{t('Loading earlier messages…')}</div>}
           {!(thread.view && more[thread.view]) && <div className="slk-start">
             {lead(thread, 'head')}
@@ -3330,7 +4470,14 @@ export const ClassicList: React.FC<Props> = ({
           ))}
           {thread.view && aiSteps(thinking[thread.view])}
           {thread.view && agentLines(thread.view, { except: threadOpenParent })}
+          {/* Up in the history: the way back down, and what waits there. */}
+          {readingUp && readingUp.view === thread.view && <JumpToPresent count={countNewBelow(said, readingUp.since)} onJump={goToPresent} />}
         </div>
+        )}
+        {thread.view && (
+          <div className="sr-only" role="status" aria-live="polite">
+            {heard === 0 ? '' : newBelowLabel(heard, t)}
+          </div>
         )}
         {thread.view && (() => {
           const here = scheduled.filter((x) => x.channel === thread.view)
@@ -3371,8 +4518,11 @@ export const ClassicList: React.FC<Props> = ({
             <DailyReportDraft card={card} api={api} inChannel />
           </div>
         ))}
+        {/* Right above the box, under whatever else sits between it and the log. */}
+        {thread.view && <TypingLine names={typingHere(thread.view, null)} />}
         {thread.view ? (
           <form className="slk-composer" onSubmit={(e) => { e.preventDefault(); void send(thread.view!, false) }}>
+            {replying && <ReplyingBar quote={replying} name={quoteName(replying)} textId="slk-replying-text" onCancel={() => { setReplyingTo(null); composer.current?.focus() }} />}
             <PendingUploads items={uploads.items} onRemove={uploads.remove} />
             {draftHl.layer}
             <textarea
@@ -3384,15 +4534,21 @@ export const ClassicList: React.FC<Props> = ({
               maxLength={4000}
               placeholder={placeholder}
               aria-label={placeholder}
-              onChange={(e) => { setDraft(e.target.value); mention.track() }}
+              aria-describedby={replying ? 'slk-replying-text' : undefined}
+              onChange={(e) => { setDraft(e.target.value); mention.track(); typed({ channel: thread.view!, parentId: null }, e.target.value) }}
+              onBlur={() => stoppedTyping({ channel: thread.view!, parentId: null })}
               onKeyUp={mention.track}
               onClick={mention.track}
               onKeyDown={(e) => {
                 if (mention.onKeyDown(e)) return
-                // ↑ in an empty box edits what you last said, as in Slack.
+                // Escape takes the reply back, and leaves the words.
+                if (e.key === 'Escape' && replying && !e.shiftKey && !composing(e)) { e.preventDefault(); setReplyingTo(null); return }
+                // ↑ in an empty box edits what you last said, as in Slack —
+                // on its way still, the edit waits for it to land; one that
+                // did not go has its own Retry and Delete instead.
                 if (e.key === 'ArrowUp' && !draft && !composing(e)) {
                   const last = [...(messages[thread.view!] || [])].reverse().find((m) => m.mine && m.kind === 'message' && !m.deleted)
-                  if (last) { e.preventDefault(); setEditing({ id: last.id, text: last.body }) }
+                  if (last && !last.failed) { e.preventDefault(); setEditing({ id: last.id, text: last.body }) }
                   return
                 }
                 // Bold, italic, strike, as everywhere.
@@ -3415,7 +4571,6 @@ export const ClassicList: React.FC<Props> = ({
                 // from "@AI" or the ✦ button, never from a key pressed by habit.
                 if (enterKey(e) && !e.shiftKey && wide) { e.preventDefault(); void send(thread.view!, false) }
               }}
-              disabled={sending}
             />
             {mention.menu}
             <SlashMenu draft={draft} onPick={(name) => { setDraft(`/${name} `); composer.current?.focus() }} />
@@ -3424,14 +4579,14 @@ export const ClassicList: React.FC<Props> = ({
               <input ref={attachInput} type="file" multiple hidden data-attach="1" onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) uploads.add(files, thread.view!) }} />
               <FormatBar target={composer} value={draft} set={setDraft} />
               <span className="slk-composer-hint">{t('Enter to send · @AI to ask · ✦ makes it a decision · / for commands')}</span>
-              <button type="button" className="slk-send ai" disabled={sending || !draft.trim()} onClick={() => void send(thread.view!, true)} aria-label={t('Send as a decision')} title={t('Send as a decision')}>
+              <button type="button" className="slk-send ai" disabled={!draft.trim()} onClick={() => void send(thread.view!, true)} aria-label={t('Send as a decision')} title={t('Send as a decision')}>
                 <Icon name="sparkle" size={15} /><span className="slk-send-label">{t('Send as a decision')}</span>
               </button>
               <span className="slk-send-group">
-                <button type="submit" className="slk-send" disabled={sending || uploads.busy || (!draft.trim() && !uploads.ids.length)} aria-label={t('Send')}>
+                <button type="submit" className="slk-send" disabled={uploads.busy || (!draft.trim() && !uploads.ids.length)} aria-label={t('Send')}>
                   <Icon name="send" size={16} />
                 </button>
-                <button type="button" className="slk-send more" disabled={sending || !draft.trim() || draft.trim().startsWith('/')} onClick={() => setScheduleOpen((o) => !o)} aria-label={t('Schedule message')} title={t('Schedule message')} aria-expanded={scheduleOpen}>
+                <button type="button" className="slk-send more" disabled={!draft.trim() || draft.trim().startsWith('/')} onClick={() => setScheduleOpen((o) => !o)} aria-label={t('Schedule message')} title={t('Schedule message')} aria-expanded={scheduleOpen}>
                   <Icon name="chevron-down" size={14} />
                 </button>
                 {scheduleOpen && <SchedulePicker onPick={(at) => void sendAtTime(thread.view!, at)} onClose={() => setScheduleOpen(false)} />}
@@ -3556,9 +4711,9 @@ export const ClassicList: React.FC<Props> = ({
   const dmUnread = [...people, ...agentConvos].filter((th) => th.unread > 0 || th.fresh).length
   const phoneRoot = !wide && !current && !detail && !thread && !profile
   const tabOn = (which: 'home' | 'dms' | 'activity' | 'later') => (activityOpen ? 'activity' : laterOpen ? 'later' : phoneTab) === which
-  const openLater = () => { setOpenKey(null); setActivityOpen(false); setThreadsOpen(false); setSentOpen(false); setLaterOpen(true); void loadLater() }
-  const openThreads = () => { setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setSentOpen(false); setThreadsOpen(true); void loadThreads() }
-  const openSent = () => { setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false); setSentOpen(true); void loadSent() }
+  const openLater = () => { forgetWanted(); setOpenKey(null); setActivityOpen(false); setThreadsOpen(false); setSentOpen(false); setLaterOpen(true); void loadLater() }
+  const openThreads = () => { forgetWanted(); setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setSentOpen(false); setThreadsOpen(true); void loadThreads() }
+  const openSent = () => { forgetWanted(); setOpenKey(null); setActivityOpen(false); setLaterOpen(false); setThreadsOpen(false); setSentOpen(true); void loadSent() }
   /// Somebody to write to, from "New message": one person is a DM.
   const startWith = async (refs: string[]) => {
     setStarting(null)
@@ -3600,7 +4755,7 @@ export const ClassicList: React.FC<Props> = ({
   }
 
   return (
-    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}`}>
+    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}${density === 'compact' ? ' compact' : ''}`} onClick={onMentionClick} onKeyDown={onMentionKey}>
       <aside className="slk-side" aria-label={t('Conversations')}>
         {!wide && phoneTab === 'dms' ? dmsView() : <>
         <header className="cl-top">
@@ -3653,31 +4808,17 @@ export const ClassicList: React.FC<Props> = ({
               </button>
             </li>
           </ul>
-          {(() => {
-            // Starred first, then your sections; what they hold leaves the defaults.
-            const byView = (v: string) => everything.find((x) => x.view === v)
-            const starred = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
-            return (
-              <>
-                {starred.length > 0 && section('starred', t('Starred'), starred, '', undefined, undefined, (views) => saveLayout({ ...layout, starred: views }))}
-                {layout.sections.map((x) => section(`sec:${x.id}`, x.name, x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)), t('Move a conversation here from its header.'), (
-                  <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
-                    <Icon name="x" size={12} />
-                  </button>
-                ), undefined, (views) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) })))}
-              </>
-            )
-          })()}
-          {section('channels', t('Channels'), inYourOrder(channels.filter(unplaced)), t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm,
-            // Drag to reorder: the channels shown here in their new order,
-            // then any placed elsewhere, as they were.
-            (views) => saveLayout({ ...layout, order: [...views, ...inYourOrder(channels).map((th) => th.view!).filter((v) => v && !views.includes(v))] }))}
-          {section('people', t('Direct messages'), people.filter(unplaced), t('Nobody has sent you a decision yet.'))}
-          {agents.length > 0 && section('agents', t('Agents'), agentConvos.filter(unplaced), t('Talk to one of your team’s agents: it answers you here.'), addAgent, agentPicker)}
-          <button type="button" className="cl-add-section" onClick={() => { setSectionName(''); setAddingSection({}) }} data-add-section="1">
-            <Icon name="plus" size={13} /> {t('Add a section')}
-          </button>
-          {section('apps', t('Apps'), apps, t('Connect Gmail or Slack under Tools and their decisions land here.'))}
+          {sidebarGroups.map((g) => (
+            <React.Fragment key={g.id}>
+              {/* Sections of your own are added just above Apps, which stays last. */}
+              {g.id === 'apps' && (
+                <button type="button" className="cl-add-section" onClick={() => { setSectionName(''); setAddingSection({}) }} data-add-section="1">
+                  <Icon name="plus" size={13} /> {t('Add a section')}
+                </button>
+              )}
+              {section(g.id, g.label, g.items, g.empty, g.action, g.below, g.reorder)}
+            </React.Fragment>
+          ))}
         </nav>
         </>}
       </aside>
@@ -3708,7 +4849,13 @@ export const ClassicList: React.FC<Props> = ({
           <button type="button" className={tabOn('later') ? 'on' : ''} aria-current={tabOn('later') ? 'page' : undefined} onClick={openLater} data-phone-tab="later">
             <Icon name="bookmark" size={22} /><span>{t('Later')}</span>
           </button>
-          <button type="button" onClick={() => onOpenScreen?.('profile')} data-phone-tab="you">
+          <button
+            type="button"
+            onClick={(e) => (onStatus ? onStatus(e.currentTarget) : onOpenScreen?.('profile'))}
+            aria-haspopup={onStatus ? 'dialog' : undefined}
+            aria-expanded={onStatus ? Boolean(statusOpen) : undefined}
+            data-phone-tab="you"
+          >
             <Avatar name={myName || '?'} url={myAvatar} size={24} round /><span>{t('You')}</span>
           </button>
         </nav>
@@ -3729,18 +4876,9 @@ export const ClassicList: React.FC<Props> = ({
         return (
           <MessageSheet
             message={m}
-            inThread={inThread}
+            {...actionsFor(channel, m, inThread)}
             onClose={() => setSheet(null)}
             onReact={(e) => react(channel, m, e)}
-            onReply={() => void openThread(channel, m)}
-            onPin={() => togglePin(channel, m)}
-            onEdit={m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined}
-            onDelete={m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined}
-            onDecide={!m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined}
-            onLater={(at) => void saveLater(channel, m, at)}
-            onCopyLink={() => copyLink(m)}
-            onUnread={m.mine ? undefined : () => void markUnread(channel, m)}
-            onForward={() => setForwarding({ channel, m })}
           />
         )
       })()}
@@ -3797,7 +4935,7 @@ export const ClassicList: React.FC<Props> = ({
               {th.kind === 'channel' && th.slug && onOpenRecord && <SheetRow icon="record" label={t('Record (Markdown)')} onClick={close(() => onOpenRecord())} data="record" />}
               <SheetRow icon="pin" label={t('Pinned messages')} onClick={close(() => void loadPins(th.view!))} data="pins" />
               {th.kind === 'channel' && <SheetRow icon="repeat" label={t('Automations')} hint={String(automationCount[th.view!] ?? 0)} onClick={close(() => openSide({ kind: 'details', tab: 'automations' }))} data="automations" />}
-              {th.kind === 'channel' && th.slug && <SheetRow icon="settings" label={t('Channel settings')} onClick={close(() => { setSettings(true); setRenaming(null) })} data="settings" />}
+              {th.kind === 'channel' && th.slug && <SheetRow icon="settings" label={t('Channel settings')} onClick={close(() => { forgetWanted(); setSettings(true); setRenaming(null) })} data="settings" />}
               {th.private && <SheetRow icon="invite" label={t('Add people')} onClick={close(() => setAddingTo(th.view!))} data="add-people" />}
               {th.private && <SheetRow icon="x" label={t('Leave channel')} onClick={close(() => void leaveChannel(th))} danger data="leave" />}
             </div>
@@ -3806,6 +4944,18 @@ export const ClassicList: React.FC<Props> = ({
       })()}
       {rowMenu && rowMenu.thread.view && (
         <RowMenu at={{ x: rowMenu.x, y: rowMenu.y }} label={rowMenu.thread.name} entries={rowMenuEntries(rowMenu.thread)} onClose={closeRowMenu} />
+      )}
+      {msgMenu && (() => {
+        const { channel, m, inThread, x, y, anchor } = msgMenu
+        return (
+          <RowMenu at={{ x, y }} label={t('Message actions')} onClose={closeMsgMenu} entries={messageContextEntries(m, {
+            ...actionsFor(channel, m, inThread), t,
+            reactions: quickReactions, onReact: (e) => react(channel, m, e), onMoreReactions: () => setReactAt({ channel, m, x, y, anchor }),
+          })} />
+        )
+      })()}
+      {reactAt && (
+        <EmojiPickerAt at={{ x: reactAt.x, y: reactAt.y }} onPick={(e) => react(reactAt.channel, reactAt.m, e)} onClose={closeReactAt} />
       )}
       {renameDialog && (
         <Dialog
@@ -3848,6 +4998,43 @@ export const ClassicList: React.FC<Props> = ({
           {archiveDialog.error && <p className="dlg-error" role="alert">{archiveDialog.error}</p>}
         </Dialog>
       )}
+      {deleting && (() => {
+        const { m, busy, error } = deleting
+        const others = Boolean(deleting.others) || othersReplied(m, myRef)
+        const face = faceOfMessage(m)
+        return (
+          <Dialog
+            title={t('Delete message')}
+            lede={t(deleteWarning(m, myRef, others))}
+            describedBy="cl-delete-preview"
+            className="cl-delete-dialog"
+            onClose={cancelDelete}
+            footer={(
+              <>
+                <button type="button" className="dlg-btn" ref={deleteCancel} disabled={busy} onClick={cancelDelete}>{t('Cancel')}</button>
+                <button type="button" className="dlg-btn danger" data-delete-confirm disabled={busy} onClick={() => void confirmDelete()}>
+                  {busy ? t('Deleting…') : t('Delete')}
+                </button>
+              </>
+            )}
+          >
+            <div id="cl-delete-preview" className="cl-delete-preview" data-delete-preview>
+              <div className="cl-delete-meta">
+                <Avatar name={face.name} url={face.url} size={24} />
+                <b>{face.name}</b>
+                <time dateTime={m.createdAt}>{fullTime(m.createdAt, locale)}</time>
+              </div>
+              {m.body && <div className="slk-text cl-delete-text">{rich(previewText(m.body))}</div>}
+              {(m.files || []).length > 0 && (
+                <div className="cl-delete-files"><Icon name="paperclip" size={12} /> {(m.files || []).map((f) => f.name).join(', ')}</div>
+              )}
+            </div>
+            {/* A phone has no ⇧ to hold. */}
+            {wide && !others && <p className="dlg-hint">{t('Tip: hold Shift when you delete to skip this question.')}</p>}
+            {error && <p className="dlg-error" role="alert">{error}</p>}
+          </Dialog>
+        )
+      })()}
       {moveSheet && (
         <Sheet label={t('Move to a section')} onClose={() => setMoveSheet(null)}>
           <p className="msheet-title">{t('Move to a section')}</p>
@@ -3913,16 +5100,17 @@ export const ClassicList: React.FC<Props> = ({
           </header>
           {!profile.data ? <p className="slk-empty">{t('Loading…')}</p> : (() => {
             const p = profile.data
-            let local = ''
-            try { if (p.timezone) local = new Date().toLocaleTimeString(locale, { timeZone: p.timezone, hour: 'numeric', minute: '2-digit' }) } catch { /* unknown zone */ }
+            const local = localTime(p.timezone, Date.now(), locale)
+            const status = statusShown(p.status, Date.now())
+            const away = awayShown(p.awayUntil, Date.now())
             return (
               <div className="slk-profile-body">
-                <div className="slk-profile-avatar" aria-hidden="true">{p.name.charAt(0).toUpperCase()}</div>
+                <div className="slk-profile-avatar" aria-hidden="true"><Avatar name={p.name} url={memberByRef(profile.ref)?.avatarUrl} size={96} /></div>
                 <h3>{p.name}</h3>
                 {p.handle && <p className="slk-profile-handle">@{p.handle}</p>}
                 <p className="slk-profile-title">{t(p.title.charAt(0).toUpperCase() + p.title.slice(1))}</p>
-                {p.status && <p className="slk-profile-status">{p.status.emoji} {p.status.text}</p>}
-                {p.awayUntil && <p className="slk-profile-away">{t('Away until {when}', { when: new Date(p.awayUntil).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</p>}
+                {status && <p className="slk-profile-status">{status.emoji} {status.text}</p>}
+                {away && <p className="slk-profile-away">{t('Away until {when}', { when: new Date(away).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</p>}
                 {local && <p className="slk-profile-local"><Icon name="clock" size={13} /> {t('{time} local time', { time: local })}</p>}
                 <dl className="slk-profile-stats">
                   <div><dt>{t('Waiting on them')}</dt><dd>{p.stats.waiting}</dd></div>
@@ -3965,9 +5153,10 @@ export const ClassicList: React.FC<Props> = ({
               onTab={(tab) => setSide({ kind: 'details', tab })}
               level={prefs[current.view] || 'all'}
               onLevel={(lv) => void setPref(current.view!, lv)}
-              onSettings={current.kind === 'channel' && current.slug ? () => { setSettings(true); setRenaming(null) } : null}
+              onSettings={current.kind === 'channel' && current.slug ? () => { forgetWanted(); setSettings(true); setRenaming(null) } : null}
               onInvite={() => (current.private ? setAddingTo(current.view!) : setInviting('people'))}
               onProfile={(ref) => void openProfile(ref)}
+              onlineRefs={onlineRefs}
               onJump={(id) => void goToCite(current.view!, { id, parentId: null, at: '' })}
               onCounts={(n) => setAutomationCount((prev) => ({ ...prev, [current.view!]: n.automations }))}
               onClose={() => setSide(null)}
@@ -3988,6 +5177,31 @@ export const ClassicList: React.FC<Props> = ({
       {inviting && (
         <InviteDialog httpBase={api.httpBase} orgId={api.orgId} sessionToken={api.sessionToken} orgName={orgName} initialTab={inviting} onClose={() => setInviting(null)} />
       )}
+      {popout && (() => {
+        const m = memberByRef(popout.ref)
+        const d = popout.data
+        const dm = everything.find((x) => x.view === `dm:${popout.ref}`)
+        const mine = d ? d.mine : Boolean(m?.mine)
+        return (
+          <ProfileCard
+            person={{
+              ref: popout.ref, name: d?.name || m?.name || popout.name || t('a teammate'), avatarUrl: m?.avatarUrl,
+              handle: d ? d.handle : m?.handle, title: d?.title || m?.title, status: d ? d.status : m?.status,
+              awayUntil: d ? d.awayUntil : m?.awayUntil, timezone: d?.timezone, mine,
+            }}
+            // You are here, though the relay never says so (byPresence).
+            online={mine || isOnline(m, onlineKeys)}
+            anchor={popout.anchor}
+            // Their conversation, with nothing left over it: when it is already
+            // the open one, choosing it again closes nothing, and a thread the
+            // card was opened from would stay on top of the composer (on a
+            // phone, of the whole conversation).
+            onMessage={!mine && dm ? () => { setPopout(null); setThread(null); setDetailId(null); setProfile(null); choose(dm.key); setTimeout(() => composer.current?.focus(), 50) } : undefined}
+            onFullProfile={() => { setPopout(null); void openProfile(popout.ref) }}
+            onClose={() => setPopout(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

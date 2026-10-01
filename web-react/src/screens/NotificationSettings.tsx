@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { enableWebPush, disableWebPush, pushSupport, currentSubscription } from '../utils/push'
+import { enableWebPush, disableWebPush, pushSupport, currentSubscription, prefetchVapidKey } from '../utils/push'
 import { useT } from '../utils/i18n'
 import { Icon } from '../components/Icon'
 import { setQuietState, DEFAULT_SCHEDULE, tomorrowAt, type NotifySchedule } from '../utils/quiet'
@@ -43,6 +43,8 @@ export const NotificationSettings: React.FC<Props> = ({ httpBase, sessionToken, 
       .then((data) => { setMe(data); setEmail(data.email || '') })
       .catch(() => setError(t('Could not read your settings.')))
     currentSubscription().then((sub) => setPushOn(Boolean(sub)))
+    // The switch's click should have nothing to wait for but the prompt.
+    if (pushSupport() === 'ready') void prefetchVapidKey(httpBase)
   }, [httpBase, sessionToken])
 
   const togglePush = async () => {
@@ -54,9 +56,12 @@ export const NotificationSettings: React.FC<Props> = ({ httpBase, sessionToken, 
       } else {
         const result = await enableWebPush(httpBase, sessionToken)
         if (result === 'denied') { setError(t('Your browser refused. Allow notifications for this site, then try again.')); return }
+        if (result === 'dismissed') { setError(t('Notifications are still off. You can turn them on whenever you like.')); return }
         if (result === 'unavailable') { setError(t('This browser cannot receive push notifications here.')); return }
         setPushOn(true)
       }
+    } catch {
+      setError(t('Could not turn notifications on. Try again in a moment.'))
     } finally { setBusy(false) }
   }
 

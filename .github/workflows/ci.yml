@@ -74,6 +74,28 @@ jobs:
       - run: npm run build
       - run: npx vitest run
 
+  # The desktop shell (apps/desktop): its rules — where the window may go,
+  # what a honmaru:// link opens, the unread count, window placement — are
+  # plain modules, tested without downloading Electron itself.
+  desktop:
+    name: Desktop
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: node --check src/main.js && node --check src/preload.cjs
+
   # What every client shares (packages/core, packages/protocol) and the Expo
   # app built on it (apps/mobile): the shared tests, both typechecks, and the
   # app bundled for iOS and Android — so a change to the shared code that

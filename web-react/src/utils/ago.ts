@@ -14,3 +14,12 @@ export function ago(iso: string): string {
   if (days <= 7) return t('{n}d ago', { n: days })
   return new Date(then).toLocaleDateString()
 }
+
+/// A moment in full, for the title on a message's time: the weekday, the
+/// date with its year and the time — all that the short "3:04 PM" beside
+/// a message leaves out.
+export function fullTime(iso: string, locale?: string): string {
+  const then = Date.parse(iso)
+  if (!Number.isFinite(then)) return ''
+  return new Date(then).toLocaleString(locale, { dateStyle: 'full', timeStyle: 'short' })
+}

@@ -10,11 +10,13 @@ import { PickRepository } from './screens/PickRepository'
 import { githubWebConfig, beginGitHubSignIn, readCallback, finishGitHubSignIn } from './utils/githubAuth'
 import type { GitHubWebConfig } from './utils/githubAuth'
 import { clearCardCache, clearAccountData } from './utils/cardCache'
+import { resetEmojiAccount } from './utils/emojiSearch'
 import { parseRoute } from './utils/route'
 import { onboardingKey, needsOnboarding, completeOnboarding } from './utils/onboardingProgress'
 import { t, adoptAccountLocale } from './utils/i18n'
 import type { InvitePeek } from './screens/SignIn'
 import { disableWebPush } from './utils/push'
+import { forgetOwnOutbox } from './utils/pendingSend'
 import './theme.css'
 import './App.css'
 
@@ -121,6 +123,10 @@ function App() {
       .then(async (response) => {
         if (controller.signal.aborted) return
         if (response.status === 401 || response.status === 409) {
+          // The session is over: this browser stops taking its pushes too.
+          // The Worker refuses the dead token, but the endpoint, unsubscribed
+          // here, fails its next push and is pruned.
+          disableWebPush(httpBase(savedHost), savedToken).catch(() => {})
           for (const key of ['sessionToken', 'userId', 'orgId']) localStorage.removeItem(key)
           clearCardCache()
           setUserId(null); setSessionToken(''); setOrgId(''); setStage('welcome'); setRestoring(false)
@@ -343,6 +349,9 @@ function App() {
   // Signed out by a workspace's login rules: said on the way out.
   const [signedOutWhy, setSignedOutWhy] = useState<string | null>(null)
   const handleLogout = () => {
+    // Who this browser belongs to now. A tab left open from before someone
+    // else signed in (in another tab) must not wipe that person's things.
+    const stillOurs = localStorage.getItem('userId') === userId
     // This browser stops receiving this account's decisions before the
     // session is dropped — the Worker needs the token to forget the subscription.
     // Then the session itself ends on the server, so the token left in this
@@ -357,8 +366,12 @@ function App() {
     setStage('welcome')
     localStorage.removeItem('sessionToken')
     localStorage.removeItem('userId')
-    // The workspace's cards, drafts and notes stay readable on this machine otherwise.
-    clearAccountData()
+    // The workspace's cards, drafts, notes and unsent messages (outbox:*)
+    // stay readable on this machine otherwise.
+    if (stillOurs) clearAccountData()
+    else if (userId) forgetOwnOutbox(localStorage, userId)
+    // Recently used emoji, kept and in memory, are this person's too.
+    resetEmojiAccount()
   }
 
   // A workspace's login rules ended this sign-in (utils/authGuard): out,
@@ -465,7 +478,10 @@ function App() {
           cache all restart, so nothing of one workspace is ever held — or
           written to the cache — under the name of another. */}
       <Dashboard
-        key={orgId}
+        // A new person in the same workspace (an SSO sign-in that came back
+        // as someone else) starts a new Dashboard: nothing of the last one's —
+        // its unsent messages above all — may carry over.
+        key={`${orgId}:${userId}`}
         userId={userId}
         orgId={orgId}
         relayUrl={wsBase(host)}

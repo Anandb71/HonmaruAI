@@ -9,7 +9,7 @@ import { isOrgId, parseAppLink, webHashFor } from '@honmaru/core/links'
 // string, which this never touches.
 //
 //   #/feed            the cards, whichever is first
-//   #/feed/<cardId>   this card
+//   #/feed/<cardId>[/<orgId>]   this card — in that workspace, switched to
 //   #/list            the same cards as a list
 //   #/m/<messageId>[/<orgId>]   one message in the list, for whoever can read
 //                     it — in the workspace it was said in, switched to
@@ -35,6 +35,8 @@ export interface Route {
   /// back to the remembered one.
   mode: Mode | null
   cardId: string | null
+  /// The workspace that card is in, when the address says (a notification's).
+  cardOrg?: string | null
   /// An invite code carried by the URL — the link a teammate was sent.
   join: string | null
   /// A message, from "Copy link": the list finds where it is for you.
@@ -67,7 +69,9 @@ export function parseRoute(hash: string): Route {
   if (head === 'feed') {
     let cardId: string | null = null
     if (rest[0]) { try { cardId = decodeURIComponent(rest[0]) } catch { cardId = rest[0] } }
-    return { screen: null, mode: 'cards', cardId, join: null }
+    let org = rest[1] || ''
+    try { org = decodeURIComponent(org) } catch { /* as written */ }
+    return { screen: null, mode: 'cards', cardId, join: null, ...(cardId && org && isOrgId(org) ? { cardOrg: org } : {}) }
   }
   if (head === 'list') return { screen: null, mode: 'classic', cardId: null, join: null }
   if (head === 'm') {
@@ -101,7 +105,9 @@ export function parseRoute(hash: string): Route {
 }
 
 export function hashForScreen(screen: Screen): string { return `#/${PATH_BY_SCREEN[screen]}` }
-export function hashForCard(cardId: string): string { return `#/feed/${encodeURIComponent(cardId)}` }
+export function hashForCard(cardId: string, orgId?: string | null): string {
+  return `#/feed/${encodeURIComponent(cardId)}${orgId ? `/${encodeURIComponent(orgId)}` : ''}`
+}
 export function hashForMode(mode: Mode): string { return mode === 'classic' ? '#/list' : '#/feed' }
 /// A conversation, opened in the list: `#/c/ag%3A<id>` for one with an agent.
 export function hashForView(view: string): string { return `#/c/${encodeURIComponent(view)}` }
@@ -143,18 +149,25 @@ export function useRoute(): { route: Route; navigate: (hash: string, replace?: b
   return { route: parseRoute(hash), navigate }
 }
 
-/// A laptop, by the same line the stylesheet draws: the workbench — the
-/// inbox beside the card — begins at 1024px. (The rail and the queue begin
-/// at 720px; they need no JavaScript.)
-export function useDesktop(): boolean {
-  const query = '(min-width: 1024px)'
+/// At least this wide, by the same line the stylesheet draws, and kept
+/// current as the window changes.
+export function useMinWidth(px: number): boolean {
+  const query = `(min-width: ${px}px)`
   const [wide, setWide] = useState(() => typeof matchMedia !== 'undefined' && matchMedia(query).matches)
   useEffect(() => {
     if (typeof matchMedia === 'undefined') return
     const mq = matchMedia(query)
     const onChange = () => setWide(mq.matches)
+    onChange()
     mq.addEventListener('change', onChange)
     return () => mq.removeEventListener('change', onChange)
-  }, [])
+  }, [query])
   return wide
+}
+
+/// A laptop: the workbench — the inbox beside the card — begins at 1024px.
+/// (The rail and the queue begin at 720px, and need JavaScript only where
+/// the rail's avatar opens your status instead of the You screen.)
+export function useDesktop(): boolean {
+  return useMinWidth(1024)
 }

@@ -559,16 +559,26 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   body          TEXT NOT NULL,
   card_id       TEXT,
   created_at    TEXT NOT NULL,
-  /* Slack's verbs on a message: edited in place, deleted (a tombstone
-     while it has replies), a reply in a thread under another, pinned. */
+  /* Slack's verbs on a message: edited in place, deleted (unsent: the row
+     stays with its words gone, its thread is deleted with it, and no page
+     of history shows it), a reply in a thread under another, pinned. */
   edited_at     TEXT,
   deleted_at    TEXT,
   parent_id     TEXT,
   pinned_at     TEXT,
   pinned_by     TEXT,
   /* The author took the link cards off this message. */
-  previews_hidden INTEGER NOT NULL DEFAULT 0
+  previews_hidden INTEGER NOT NULL DEFAULT 0,
+  /* An inline reply, as Discord has: the message this one answers, in the
+     same conversation. Its words are looked up when read, never copied, so
+     an edit or an unsend shows in the quote too. */
+  reply_to_id   TEXT,
+  /* The sender's own id for this post (`tmp-…`). A retry of a send that
+     already landed returns this row instead of writing another. */
+  client_id     TEXT
 );
+/* The index for `client_id` is in migrations.sql, after the ALTER that adds
+   it, for the same reason as `ref` above. */
 CREATE INDEX IF NOT EXISTS idx_channel_messages ON channel_messages(org_id, channel, created_at);
 
 /* One emoji from one person on one message. A browser is told who reacted
@@ -1473,7 +1483,6 @@ CREATE TABLE IF NOT EXISTS app_connection_tombstones (
 /* Lookups by person across workspaces, and the sweeps that run every
    minute, without reading whole tables as the data grows. */
 CREATE INDEX IF NOT EXISTS idx_sessions_github ON sessions(github_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_sso_connection ON sessions(sso_connection_id);
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_github_id);
 CREATE INDEX IF NOT EXISTS idx_cards_org_created ON cards(org_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_channel_messages_author ON channel_messages(org_id, author_login, created_at);

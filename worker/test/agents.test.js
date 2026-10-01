@@ -3,7 +3,7 @@ import { fetchMock } from "./helpers/fetch-mock.js";
 import { beforeEach, afterEach, expect, test } from "vitest";
 import schemaSql from "../schema.sql?raw";
 import worker from "../src/index.js";
-import { agentTalkFilter, agentsCalled, requestFor, parseAgentMarkdown, agentMarkdown, cleanAgentHandle, PRESETS, presetsFor, readResponse, forChat } from "../src/customAgents.js";
+import { agentTalkFilter, agentsCalled, requestFor, parseAgentMarkdown, agentMarkdown, cleanAgentHandle, PRESETS, presetsFor, readResponse, forChat, MAX_CALLED } from "../src/customAgents.js";
 
 // Agents a team writes for itself: "@hayao" answers in the thread under the
 // message that named it, as its Markdown instructions say. A team agent is
@@ -70,6 +70,15 @@ test("a .md file is the agent: front matter for its face, the rest its instructi
   expect(parseAgentMarkdown("# 経理の鬼\n\n経費を厳しく見る。")).toMatchObject({ name: "経理の鬼", instructions: "# 経理の鬼\n\n経費を厳しく見る。" });
   // A description with a colon survives the trip.
   expect(parseAgentMarkdown(agentMarkdown({ name: "A", handle: "aa", description: "Note: be brief", instructions: "x" })).description).toBe("Note: be brief");
+});
+
+test("one message may call five agents at a time, and no more", () => {
+  expect(MAX_CALLED).toBe(5);
+  const agents = ["a1", "a2", "a3", "a4", "a5", "a6"].map((handle, i) => ({ id: String(i + 1), handle, scope: "team" }));
+  expect(agentsCalled("@a1 @a2 @a3 @a4 @a5 plan the launch", agents).map((a) => a.id)).toEqual(["1", "2", "3", "4", "5"]);
+  expect(agentsCalled("@a1 @a2 @a3 @a4 @a5 @a6 all of you", agents)).toHaveLength(5);
+  // The same agent named twice is still one agent.
+  expect(agentsCalled("@a1 @a1 @a2", agents).map((a) => a.id)).toEqual(["1", "2"]);
 });
 
 test("a message calls the agents it names, the particle going with the name", () => {
@@ -163,6 +172,55 @@ test("@hayao answers in the thread under the message, as itself, from its instru
   expect((await send("DELETE", "/channels/agents", toru, { orgId: ORG, id: agents[0].id })).status).toBe(200);
   const later = await (await get(`/channels/thread?${q({ orgId: ORG, channel: "b:cafe", messageId: asked.id })}`, kenji)).json();
   expect(later.replies[0]).toMatchObject({ authorName: "Hayao", agent: expect.objectContaining({ emoji: "🎨" }) });
+});
+
+test("five agents called in one message all answer, side by side rather than one after another", async () => {
+  for (const n of [1, 2, 3, 4, 5]) {
+    expect((await send("POST", "/channels/agents", toru, { orgId: ORG, name: `Agent ${n}`, handle: `helper${n}`, instructions: `You are helper ${n}.` })).status).toBe(201);
+  }
+  // Each agent tries research twice (refused), then answers with a plain
+  // call that takes 400 ms: one after another, five would take two seconds.
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/responses", method: "POST" }).reply(400, { error: { message: "web_search not supported" } }).times(10);
+  // Peak overlapping model calls, not wall-clock time: five in parallel
+  // reach 5; one after another never leaves 1. CI clock speed does not matter.
+  let active = 0;
+  let peak = 0;
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/chat/completions", method: "POST" }).reply(200, async (opts) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    active -= 1;
+    const system = JSON.parse(opts.body).messages.find((m) => m.role === "system").content;
+    const who = /helper (\d)/.exec(system)?.[1] || "?";
+    return { choices: [{ message: { content: `Answer from helper ${who}` } }], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+  }).times(5);
+  const sent = await send("POST", "/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "@helper1 @helper2 @helper3 @helper4 @helper5 plan the launch" }, { OPENAI_API_KEY: "sk-test" });
+  expect(sent.status).toBe(201);
+  const asked = (await sent.json()).message;
+  const thread = await (await get(`/channels/thread?${q({ orgId: ORG, channel: "b:cafe", messageId: asked.id })}`, kenji)).json();
+  expect(thread.replies.map((r) => r.body).sort()).toEqual([1, 2, 3, 4, 5].map((n) => `Answer from helper ${n}`));
+  expect(peak).toBe(5);
+});
+
+test("a metered allowance left at one call answers one agent and tells the rest they are out", async () => {
+  for (const n of [1, 2, 3, 4, 5]) {
+    expect((await send("POST", "/channels/agents", toru, { orgId: ORG, name: `Agent ${n}`, handle: `helper${n}`, instructions: `You are helper ${n}.` })).status).toBe(201);
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  await env.DB.prepare("INSERT INTO ai_usage (user_github_id, day, used) VALUES (?1, ?2, 199)").bind("8802", day).run();
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/responses", method: "POST" }).reply(400, { error: { message: "web_search not supported" } }).times(2);
+  fetchMock.get("https://api.openai.com").intercept({ path: "/v1/chat/completions", method: "POST" }).reply(200, () => (
+    { choices: [{ message: { content: "Answer from helper 1" } }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+  )).times(1);
+  const sent = await send("POST", "/channels/messages", mika, { orgId: ORG, channel: "b:cafe", body: "@helper1 @helper2 @helper3 @helper4 @helper5 go" }, { OPENAI_API_KEY: "sk-test" });
+  expect(sent.status).toBe(201);
+  const asked = (await sent.json()).message;
+  const thread = await (await get(`/channels/thread?${q({ orgId: ORG, channel: "b:cafe", messageId: asked.id })}`, kenji)).json();
+  const bodies = thread.replies.map((r) => r.body).sort();
+  expect(bodies.filter((b) => b === "Answer from helper 1")).toHaveLength(1);
+  expect(bodies.filter((b) => b.includes("today's AI answers"))).toHaveLength(4);
+  const used = await env.DB.prepare("SELECT used FROM ai_usage WHERE user_github_id = ?1 AND day = ?2").bind("8802", day).first();
+  expect(used.used).toBe(200);
 });
 
 test("a personal agent answers only its owner; with no model, the agent says so rather than staying silent", async () => {

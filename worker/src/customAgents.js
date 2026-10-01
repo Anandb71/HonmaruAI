@@ -22,8 +22,9 @@ export { readResponse };
 
 export const MAX_INSTRUCTIONS = 20000;
 export const MAX_AGENTS = 60;
-/// How many agents one message may call. More is a message to everybody.
-export const MAX_CALLED = 3;
+/// How many agents one message may call — they answer side by side, so a
+/// room of five is no slower than one. More is a message to everybody.
+export const MAX_CALLED = 5;
 const MAX_ANSWER = 3900;
 const HANDLE = /^[\p{L}\p{N}_.-]{2,30}$/u;
 /// Words a mention already means something else by.

@@ -28,9 +28,13 @@ const SHOWN = new Set([
   "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/heic",
   "video/mp4", "video/webm", "video/quicktime",
   "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm",
+  // What Chrome and Safari call an .m4a (a phone's voice memo), and the
+  // other names browsers give .aac, .flac and .wav.
+  "audio/x-m4a", "audio/aac", "audio/flac", "audio/x-wav",
   "text/plain",
 ]);
 export const isPicture = (type) => /^image\/(png|jpeg|gif|webp|avif)$/.test(type);
+const isVideo = (type) => /^video\/(mp4|webm|quicktime)$/.test(type);
 
 /// A file's name as it may be stored and shown: no path, no control
 /// characters, not endless.
@@ -152,9 +156,10 @@ export async function claimable(db, { orgId, key, login, ids }) {
 export const fileKey = (orgId, id) => `org/${encodeURIComponent(orgId)}/files/${id}`;
 const legacyFileKey = (id) => `file-${id}`;
 
-export async function getFileObject(env, orgId, id) {
+/// `options` are R2's own, as `{ range }` to read one span of the bytes.
+export async function getFileObject(env, orgId, id, options) {
   if (!env.MEDIA) return null;
-  return (await env.MEDIA.get(fileKey(orgId, id))) || env.MEDIA.get(legacyFileKey(id));
+  return (await env.MEDIA.get(fileKey(orgId, id), options)) || env.MEDIA.get(legacyFileKey(id), options);
 }
 
 export async function deleteFileObject(env, orgId, id) {
@@ -182,6 +187,30 @@ export async function sweepUnsent(env, now = Date.now()) {
 
 // ---- Upload and fetch ----
 
+export const UNSATISFIABLE = "unsatisfiable";
+
+/// The one span of a file `size` bytes long that a Range header asks for:
+/// `{ offset, length }` to answer in part, UNSATISFIABLE when it starts past
+/// the end, or null to send the whole file — no header, several ranges, or
+/// one that does not read as bytes, which RFC 9110 lets a server ignore.
+/// Safari will not play a video from a server that never answers in part.
+export function byteRange(header, size) {
+  const m = /^bytes=(\d*)-(\d*)$/i.exec(String(header || "").trim());
+  if (!m || (!m[1] && !m[2])) return null;
+  if (!m[1]) {
+    // bytes=-n: the last n bytes, or all of them when n is more.
+    const suffix = Number(m[2]);
+    if (!suffix || !size) return UNSATISFIABLE;
+    const length = Math.min(suffix, size);
+    return { offset: size - length, length };
+  }
+  const first = Number(m[1]);
+  const last = m[2] ? Number(m[2]) : size - 1;
+  if (m[2] && last < first) return null;
+  if (first >= size) return UNSATISFIABLE;
+  return { offset: first, length: Math.min(last, size - 1) - first + 1 };
+}
+
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "content-type": "application/json", "cache-control": "no-store", "access-control-allow-origin": "*" },
 });
@@ -200,18 +229,22 @@ export async function uploadFile(request, env, url, { orgId, resolved, login }) 
   const id = `f_${[...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
   const name = cleanName(url.searchParams.get("name"));
   const dim = (k) => { const n = Number(url.searchParams.get(k)); return Number.isInteger(n) && n > 0 && n < 100000 ? n : null; };
-  const picture = isPicture(type);
+  // A picture's or a video's shape, as the uploader measured it, so the
+  // message is drawn at that shape before the bytes arrive.
+  const shaped = isPicture(type) || isVideo(type);
   await env.MEDIA.put(fileKey(orgId, id), bytes, { httpMetadata: { contentType: type } });
   await env.DB
     .prepare(`INSERT INTO message_files (id, org_id, channel, message_id, uploader, name, type, size, width, height, created_at)
               VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`)
-    .bind(id, orgId, resolved.key, login, name, type, bytes.byteLength, picture ? dim("width") : null, picture ? dim("height") : null, new Date().toISOString())
+    .bind(id, orgId, resolved.key, login, name, type, bytes.byteLength, shaped ? dim("width") : null, shaped ? dim("height") : null, new Date().toISOString())
     .run();
   const row = await env.DB.prepare("SELECT * FROM message_files WHERE id = ?1").bind(id).first();
   return json({ file: await toFile(env.DB, row) }, 201);
 }
 
-/// GET /files/:id?e=…&s=… — the bytes, for a signed address still good.
+/// GET /files/:id?e=…&s=… — the bytes, for a signed address still good:
+/// all of them, or the one span a Range asks for, which is how a video or
+/// a song is played and a long download picks up where it stopped.
 export async function serveFile(request, env, url) {
   const m = url.pathname.match(/^\/files\/(f_[0-9a-f]{24})$/);
   if (!m) return null;
@@ -223,19 +256,35 @@ export async function serveFile(request, env, url) {
     return new Response("Not found", { status: 404 });
   }
   const row = await env.DB.prepare("SELECT * FROM message_files WHERE id = ?1").bind(id).first();
-  const obj = row ? await getFileObject(env, row.org_id, id) : null;
+  if (!row) return new Response("Not found", { status: 404 });
+  const guard = {
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+    "cross-origin-resource-policy": "cross-origin",
+    "access-control-allow-origin": "*",
+    "accept-ranges": "bytes",
+  };
+  // No validator is ever sent, so an If-Range cannot match one: the whole
+  // file, as RFC 9110 asks.
+  const range = request.headers.has("if-range") ? null : byteRange(request.headers.get("range"), row.size);
+  if (range === UNSATISFIABLE) {
+    return new Response(null, { status: 416, headers: { ...guard, "content-range": `bytes */${row.size}` } });
+  }
+  const obj = await getFileObject(env, row.org_id, id, range ? { range } : undefined);
   if (!obj) return new Response("Not found", { status: 404 });
   const shown = SHOWN.has(row.type);
+  // &download=1: saved, not shown, whatever it is — a link across origins
+  // cannot ask for that itself, since the download attribute is ignored.
+  const saving = url.searchParams.get("download") === "1";
   const encoded = encodeURIComponent(row.name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   return new Response(obj.body, {
+    status: range ? 206 : 200,
     headers: {
       "content-type": shown ? (row.type === "text/plain" ? "text/plain; charset=utf-8" : row.type) : "application/octet-stream",
-      "content-disposition": `${shown ? "inline" : "attachment"}; filename*=UTF-8''${encoded}`,
-      "content-length": String(row.size),
-      "x-content-type-options": "nosniff",
-      "content-security-policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
-      "cross-origin-resource-policy": "cross-origin",
-      "access-control-allow-origin": "*",
+      "content-disposition": `${shown && !saving ? "inline" : "attachment"}; filename*=UTF-8''${encoded}`,
+      "content-length": String(range ? range.length : row.size),
+      ...(range ? { "content-range": `bytes ${range.offset}-${range.offset + range.length - 1}/${row.size}` } : {}),
+      ...guard,
       "cache-control": `private, max-age=${Math.max(0, until - now)}`,
     },
   });

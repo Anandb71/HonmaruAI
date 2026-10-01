@@ -35,7 +35,10 @@ Workers + Durable Objects + D1. Ported from the old localhost Node relay
 
 WebSocket messages (AG-UI over `join {protocol:"agui/1"}`): `join`, `tool_result`,
 `card_created`, `card_updated`, `card_deleted`, `context_updated`, `rollback`,
-`nudge`, `set_business`.
+`nudge`, `set_business`, `typing` / `typing_stop` (`{channel, parentId}`:
+passed on as `CUSTOM typing` to whoever else can read that conversation, under
+their name for it; nothing is stored, and past its own allowance it is dropped
+without an error).
 
 ### The relay's access rules
 

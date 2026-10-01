@@ -25,7 +25,7 @@ const en: Dict = {
   'channels (count)': 'channels',
   'canvas.empty':
     'A shared document for this conversation: how things are done, what was decided, who owns what, what is still open. Anyone here can edit it, and your AI can draft it from the conversation.',
-  'canvas.syntax': '## Heading · - list · - [ ] to-do · **bold** · ⌘Enter to save',
+  'canvas.syntax': '## Heading · - list · - [ ] to-do · **bold** · {key} to save',
   'studio.apps.lede':
     'Gmail, Slack and Notion are connected by each person, with their own account. What they bring in reaches only your feed and is not shared with anyone else. GitHub is shared by the whole workspace.',
   'webhooks.lede':

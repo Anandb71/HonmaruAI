@@ -6,7 +6,7 @@ import { translateMessages } from "./translate.js";
 import { getSession, isMember, getUserByGithubId, getUserByLogin, saveCard, getCard, listBusinesses } from "./db.js";
 import { claimDraft, releaseDraft, postedCard, refineDailyReport, saveDraftText, discardDraft, dailyChannelFor } from "./dailyReport.js";
 import { providerFor, readerEnvFor } from "./orgAI.js";
-import { groupsIn, toClientGroup, saveGroup, deleteGroup, getSidebar, saveSidebar } from "./people-groups.js";
+import { groupsIn, toClientGroup, saveGroup, deleteGroup, getSidebar, saveSidebar, foldSection } from "./people-groups.js";
 import { allowanceFor } from "./gate.js";
 import { enforce } from "./ratelimit.js";
 import { listMembers } from "./team.js";
@@ -21,7 +21,7 @@ import { serverText } from "./serverCopy.js";
 import { notifyCard, anyChannelConfigured } from "./notify.js";
 import { custom as customEvent } from "./agui/events.js";
 import {
-  resolveChannel, listMessages, postMessage, getMessage, linkCard, transcriptUpTo, channelActivity,
+  resolveChannel, listMessages, postMessage, getMessage, linkCard, transcriptUpTo, channelActivity, clientIdOk,
   viewOf, asksTheAI, asksForDecision, withoutAI, MAX_MESSAGE_CHARS,
   present, listThread, listPins, editMessage, deleteMessage, toggleReaction, setPinned, setPreviewsHidden,
   markRead, markUnreadFrom, markActivitySeen, readThreadsSeenInActivity, readsFor, activityFeed, searchMessages, threadsFor,
@@ -42,7 +42,7 @@ import { audit, person } from "./audit.js";
 import { getCanvas, toClientCanvas, listRevisions, getRevision, saveCanvas, draftCanvas } from "./canvas.js";
 import { listBookmarks, toClientBookmark, addBookmark, editBookmark, removeBookmark } from "./bookmarks.js";
 import {
-  listAgents, saveAgent, deleteAgent, toClientAgent, agentsHere, channelAgents, agentChannels, agentTalkFilter, addChannelAgent, removeChannelAgent, presetsFor, agentsCalled, requestFor, askAgent, contextFor, playbookFor, setAgentAvatar,
+  listAgents, saveAgent, deleteAgent, toClientAgent, agentsHere, channelAgents, agentChannels, agentTalkFilter, addChannelAgent, removeChannelAgent, presetsFor, agentsCalled, requestFor, askAgent, contextFor, playbookFor, setAgentAvatar, MAX_CALLED,
 } from "./customAgents.js";
 import { readImage } from "./userAvatar.js";
 import { connectedSources, searchNotion, searchGithubIssues, formatSourcesForModel } from "./context.js";
@@ -366,7 +366,7 @@ export async function answerAsAgents(env, { orgId, session, user, resolved, row,
     // answers without being named, in the conversation, not a thread.
     if (resolved.kind === "agent" && !agents.some((a) => a.id === resolved.agent.id)) {
       const own = (await listAgents(env.DB, orgId, user.login)).find((a) => a.id === resolved.agent.id);
-      if (own) agents = [own, ...agents].slice(0, 3);
+      if (own) agents = [own, ...agents].slice(0, MAX_CALLED);
     }
   } catch (err) {
     console.error("agents lookup failed", safe(err?.message));
@@ -392,8 +392,8 @@ export async function answerAsAgents(env, { orgId, session, user, resolved, row,
   return runAgents(env, { orgId, session, user, resolved, row, members, locale, agents });
 }
 
-/// The agents' answers, one after another: each reads the conversation,
-/// researches with its tools, and answers as itself.
+/// The agents' answers, side by side: each reads the conversation,
+/// researches with its tools, and answers as itself when it is ready.
 export async function runAgents(env, { orgId, session, user, resolved, row, members, locale, agents }) {
   locale = await loadCopy(env, locale || "en", { orgId });
   const parentId = row.parent_id || (resolved.kind === "agent" ? null : row.id);
@@ -456,7 +456,21 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
     }).catch(() => ({}))
     : {};
   let answered = 0;
-  for (const agent of agents) {
+  // A metered day is one budget for the whole message. `remaining` was read
+  // once above; spending it here stops five parallel answers from running
+  // past the last call the person has left. Teammates bill their own
+  // service, so they do not take a slot.
+  let modelLeft = !allowance?.metered ? Infinity : Math.max(0, allowance.remaining ?? 0);
+  const spend = agents.map((agent) => {
+    if (agent.provider) return "teammate";
+    if (!allowance?.metered) return allowance?.allowed ? "model" : "quota";
+    if (modelLeft <= 0) return "quota";
+    modelLeft -= 1;
+    return "model";
+  });
+  // Every agent called works at once, each answering as soon as it is done:
+  // five agents take as long as the slowest, not the sum of all five.
+  const answerOne = async (agent, index) => {
     // An AI teammate works through its own service, not the workspace's
     // model: it starts, says so, and answers when it is done.
     if (agent.provider) {
@@ -465,13 +479,13 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
       await runTeammate(env, { orgId, user, resolved, row, members, locale, agent, t, deadline: Date.now() + (env.TEAMMATE_WATCH_MS !== undefined ? Number(env.TEAMMATE_WATCH_MS) : env.AGENT_INLINE === "1" || !env.AGENT_RUNNER ? 20000 : 240000) })
         .catch((err) => console.error("teammate failed", safe(err?.message)));
       await progress(agent, "done");
-      continue;
+      return;
     }
     await progress(agent, "agent");
     let text;
     try {
       if (!provider) text = serverText(locale, "agent.noModel");
-      else if (!allowance.allowed) text = serverText(locale, "agent.quota");
+      else if (spend[index] !== "model") text = serverText(locale, "agent.quota");
       else {
         const result = await askAgent({
           provider, agent, request: requestFor(row.body, agent), transcript, playbook, where, research, links, tools, env,
@@ -500,7 +514,8 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
       } catch { /* the database itself is down: nothing more to say */ }
     }
     await progress(agent, "done");
-  }
+  };
+  await Promise.all(agents.map((agent, index) => answerOne(agent, index).catch((err) => console.error("agent turn failed", safe(err?.message)))));
   if (provider) await settleUsage(env.DB, provider, { orgId, githubId: session.github_id });
   return answered;
 }
@@ -629,7 +644,7 @@ export async function handleChannels(request, env, url, { route, after }) {
       // `loginHash` lets a browser tell which member a card it already holds
       // is from — cards carry logins — without being handed anyone's login.
       members: await Promise.all(members.map(async (m) => ({
-        ref: m.ref, name: m.name, title: m.title || m.role, mine: m.mine,
+        ref: m.ref, name: m.name, title: m.title || m.role, mine: m.mine, ...(m.role === "guest" ? { guest: true } : {}),
         handle: m.handle || null, status: m.status || null, awayUntil: m.awayUntil || null, avatarUrl: m.avatarUrl || null,
         loginHash: (await sha256Hex(m.login)).slice(0, 16),
       }))),
@@ -853,6 +868,18 @@ export async function handleChannels(request, env, url, { route, after }) {
     return json({ sidebar: await saveSidebar(env.DB, orgId, who.user.login, body.sidebar || body) });
   }
 
+  // One of your sections folded, or opened again. Only that is written: a
+  // window open since the morning says nothing here about your stars.
+  if (path === "/channels/sidebar/fold" && request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") return json({ message: "Invalid JSON body." }, 400);
+    const who = await caller(env, request, body.orgId);
+    if (who.denied) return who.denied;
+    const sidebar = await foldSection(env.DB, body.orgId, who.user.login, body.id, body.collapsed === true);
+    if (!sidebar) return json({ message: "No such section." }, 404);
+    return json({ sidebar });
+  }
+
   // Threads: every thread you are in, the newest reply first.
   if (path === "/channels/threads" && request.method === "GET") {
     const orgId = url.searchParams.get("orgId");
@@ -897,9 +924,14 @@ export async function handleChannels(request, env, url, { route, after }) {
     const view = viewOf(resolved.key, who.user.login, members);
     if (request.method === "GET") {
       const before = url.searchParams.get("before") || undefined;
-      return json({ messages: await listMessages(env.DB, orgId, resolved, who.user.login, view, members, { before }) });
+      // `{ messages, more }`: `more` says whether older messages are there
+      // to page back to, so a client need not guess it from the count.
+      return json(await listMessages(env.DB, orgId, resolved, who.user.login, view, members, { before }));
     }
     const parentId = typeof body.parentId === "string" && body.parentId ? body.parentId : null;
+    // An inline reply: the message it answers (postMessage checks it is here).
+    const replyTo = typeof body.replyTo === "string" && body.replyTo ? body.replyTo : null;
+    if (replyTo && body.sendAt) return json({ message: "A scheduled message cannot be a reply yet." }, 400);
     // The workspace's data rules read it before it is kept, sent now or later.
     const attached = Array.isArray(body.files) && body.files.length
       ? await attachedTexts(env, { orgId, key: resolved.key, login: who.user.login, ids: body.files, githubId: who.session.github_id }).catch(() => [])
@@ -915,8 +947,16 @@ export async function handleChannels(request, env, url, { route, after }) {
     // Files uploaded for this message come with it — yours, uploaded here.
     const fileIds = Array.isArray(body.files) ? body.files : [];
     const withFiles = fileIds.length > 0 && (await claimable(env.DB, { orgId, key: resolved.key, login: who.user.login, ids: fileIds })) > 0;
-    const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: who.user.login, body: typeof body.body === "string" ? body.body : "", parentId, withFiles });
-    if (out.error) return json({ message: out.error }, 400);
+    if (body.clientId != null && body.clientId !== "" && (typeof body.clientId !== "string" || !clientIdOk(body.clientId))) {
+      return json({ message: "That send cannot be tried again." }, 400);
+    }
+    const clientId = typeof body.clientId === "string" && body.clientId ? body.clientId : null;
+    const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: who.user.login, body: typeof body.body === "string" ? body.body : "", parentId, replyTo, withFiles, clientId });
+    if (out.error) return json({ message: out.error, ...(out.code ? { code: out.code } : {}) }, out.status || 400);
+    if (out.replay) {
+      const [message] = await present(env.DB, orgId, [out.row], who.user.login, view, members);
+      return json({ message });
+    }
     if (withFiles) await attachFiles(env.DB, { orgId, key: resolved.key, login: who.user.login, messageId: out.row.id, ids: fileIds });
     // A message to an agent is the agent's to do: it never becomes a card
     // for a person, whatever else it says.
@@ -1437,6 +1477,9 @@ export async function handleChannels(request, env, url, { route, after }) {
     if (body.awayUntil && body.delegateRef) {
       const d = members.find((m) => m.ref === body.delegateRef);
       if (!d || d.login === who.user.login) return json({ message: "Pick somebody else in this workspace." }, 400);
+      // Decisions meant for you go to them while you are away — about any
+      // channel, private ones too — so not to a guest, who sees only theirs.
+      if (d.role === "guest") return json({ message: "A guest cannot decide for you. Pick a member of this workspace." }, 400);
       delegateLogin = d.login;
     }
     const out = await setStatus(env.DB, { orgId: body.orgId, githubId: who.session.github_id, emoji: body.emoji, text: body.text, until: body.until, awayUntil: body.awayUntil, delegateLogin });

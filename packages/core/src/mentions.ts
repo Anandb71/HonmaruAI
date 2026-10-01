@@ -210,8 +210,7 @@ export function mentionKind(token: string, list: Mentionable[]): MentionKind | n
   const raw = token.replace(/^[@＠]/, '')
   // Everyone in the conversation: drawn like a group.
   if (broadcastOf(raw)) return 'group'
-  for (const want of new Set([fold(raw), fold(raw.replace(/[にへ]$/, ''))])) {
-    if (!want) continue
+  for (const want of wantsOf(raw)) {
     if (want === 'ai') return 'ai'
     const hit = list.find((mem) => namesOf(mem).includes(want))
     if (hit) {
@@ -222,6 +221,25 @@ export function mentionKind(token: string, list: Mentionable[]): MentionKind | n
     }
   }
   return null
+}
+
+/// Whom an `@token` names, as the entry in the list — for a client that
+/// opens their profile from it — found the way mentionKind finds them.
+/// Null for nobody, and for "@channel", which is not one person.
+export function mentionTarget(token: string, list: Mentionable[]): Mentionable | null {
+  const raw = token.replace(/^[@＠]/, '')
+  if (broadcastOf(raw)) return null
+  for (const want of wantsOf(raw)) {
+    const hit = list.find((mem) => namesOf(mem).includes(want))
+    if (hit) return hit
+  }
+  return null
+}
+
+/// What an `@token` may be read as, folded: as written, then without the
+/// particle a Japanese sentence puts after a name.
+function wantsOf(raw: string): string[] {
+  return [...new Set([fold(raw), fold(raw.replace(/[にへ]$/, ''))])].filter(Boolean)
 }
 
 /// A text cut into plain runs and `@mentions`, each mention with what it

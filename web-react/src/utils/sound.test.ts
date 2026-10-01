@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { soundForMessage } from './sound'
+import { describe, expect, it, vi, afterEach } from 'vitest'
+import { soundForMessage, rememberLevel, rememberLevels, levelOf } from './sound'
 
 // When a message arriving makes a sound, and which.
 describe('soundForMessage', () => {
@@ -23,5 +23,30 @@ describe('soundForMessage', () => {
   })
   it('only ticks in the conversation you are looking at', () => {
     expect(soundForMessage({ ...channel, channel: 'dm:abc' }, { level: 'all', open: true })).toBe('inConversation')
+  })
+})
+
+// What the socket reads to decide on a sound or a notification.
+describe('conversation levels, as this browser remembers them', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const storage = () => {
+    const store = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v) } })
+  }
+
+  it('writes one conversation without touching the others', () => {
+    storage()
+    rememberLevels('org', { 'b:a': 'mute', 'b:b': 'mentions' })
+    rememberLevel('org', 'b:c', 'mute')
+    rememberLevel('org', 'b:a', 'all')
+    expect(levelOf('org', 'b:a')).toBe('all')
+    expect(levelOf('org', 'b:b')).toBe('mentions')
+    expect(levelOf('org', 'b:c')).toBe('mute')
+  })
+
+  it('works before anything was remembered', () => {
+    storage()
+    rememberLevel('org', 'dm:x', 'mute')
+    expect(levelOf('org', 'dm:x')).toBe('mute')
   })
 })

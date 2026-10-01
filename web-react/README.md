@@ -12,6 +12,13 @@ everything else (sign-in, the team, tools, the record).
 - **Installable** as a PWA; on an iPhone that is what makes Web Push possible.
 - **Two languages**, English and Japanese, for the interface (`src/utils/i18n.ts`)
   and — via the Worker — for every card and notification.
+- **Light, dark or the system's**, and a cozy or compact chat, chosen under
+  *You → Appearance* and kept in the browser (`src/utils/appearance.ts`);
+  `index.html` puts the theme on `<html data-theme>` before the first paint.
+  A dark rule is written twice: inside `prefers-color-scheme: dark` asking
+  `:root:not([data-theme="light"])`, and outside it asking
+  `:root[data-theme="dark"]`, each wrapped in `:where()` unless the extra
+  weight is wanted — `src/index.css` says why.
 
 ## Run it
 
@@ -56,6 +63,7 @@ and evicts — 28 steps, screenshots at phone and laptop sizes, every screen.
 | `src/screens/*.tsx` | Welcome, SignIn, Otp, Onboarding, Profile, History, Tools, Team, Notifications, Plans |
 | `src/services/WebSocketClient.ts` | AG-UI over WebSocket: events in, `tool_result` etc. out, reconnect, outbox |
 | `src/utils/i18n.ts` | The interface's words, keyed by their English |
+| `src/utils/appearance.ts` | Theme (System / Light / Dark) and message display (Cozy / Compact), kept in this browser |
 | `src/utils/push.ts`, `public/sw.js` | Web Push: subscribe, and show a notification with the tab closed |
 | `src/theme.css` | Design tokens and the laptop layout ([docs/design-system.md](../docs/design-system.md)) |
 
@@ -77,12 +85,14 @@ and evicts — 28 steps, screenshots at phone and laptop sizes, every screen.
 
 Inbound: `STATE_SNAPSHOT`, `STATE_DELTA` (RFC 6902 patches on `cardsById`),
 `TOOL_CALL_START/ARGS/END` (a `request_decision` becomes a card),
-`TOOL_CALL_RESULT`, `CUSTOM presence`, `RUN_ERROR` (with a `code` when the
-relay is refusing: `not-a-member`, `sign-in-required`, `client-too-old`).
+`TOOL_CALL_RESULT`, `CUSTOM presence`, `CUSTOM typing` (who is typing in a
+conversation or a thread; `stop` when done), `RUN_ERROR` (with a `code` when
+the relay is refusing: `not-a-member`, `sign-in-required`, `client-too-old`).
 
 Outbound: `join` (with the session token; identity comes off the session, not
 the payload), `tool_result` (a decision, carrying the `toolCallId` of the
-request it answers), `card_created`, `rollback`, `nudge`, `set_business`.
+request it answers), `card_created`, `rollback`, `nudge`, `set_business`,
+`typing` / `typing_stop` (sent now or not at all, never queued).
 
 Details: [docs/agui-protocol.md](../docs/agui-protocol.md) and the relay in
 [worker/src/relay.js](../worker/src/relay.js).

@@ -82,6 +82,21 @@ test("a deploy onto a database predating the invite ref still succeeds", async (
   expect(idx).toBeTruthy();
 });
 
+test("schema.sql builds no index on a column migrations.sql adds", () => {
+  // The order a deploy runs them in: an index here on a column an ALTER adds
+  // there fails on every database older than the column, and D1 drops the
+  // rest of schema.sql with it.
+  const added = [...migrationsSql.matchAll(/^ALTER TABLE (\w+) ADD COLUMN (\w+)/gm)].map(([, table, column]) => ({ table, column }));
+  const indexes = [...schemaSql.matchAll(/^CREATE (?:UNIQUE )?INDEX IF NOT EXISTS (\w+) ON (\w+)\(([^)]*)\)(.*)$/gm)];
+  const wrong = [];
+  for (const [, name, table, cols, rest] of indexes) {
+    for (const { table: t, column } of added) {
+      if (t === table && new RegExp(`\\b${column}\\b`).test(cols + rest)) wrong.push(`${name} (${table}.${column})`);
+    }
+  }
+  expect(wrong).toEqual([]);
+});
+
 test("replaying the deploy is safe", async () => {
   // It runs on every push, so a second pass must not throw.
   await applyDeploy(env.DB);

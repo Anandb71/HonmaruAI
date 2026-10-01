@@ -1,66 +1,188 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getLocale } from '../utils/locale'
 import { useT } from '../utils/i18n'
-import type { ChannelMessage } from '../types/card'
+import type { ChannelMessage, ReplyQuote } from '../types/card'
 import { Icon } from './Icon'
 import { customEmojiUrl, useCustomEmoji, CUSTOM_EMOJI } from '../utils/customEmoji'
+import { typingLine, announce, ANNOUNCE_GAP_MS } from '../utils/typing'
+import type { Announced } from '../utils/typing'
+import { excerptParts } from '../utils/replies'
+import { messageMenuEntries, type MessageMenuActions } from '../utils/messageMenu'
+import { keepOnScreen, focusGoesBack } from './RowMenu'
+import { emojiDataState, gridStep, isEmojiOnly, loadEmojiData, pickerSections, rememberEmoji, useEmojiData, useEmojiDataState, useQuickReactions, useRecentEmoji } from '../utils/emojiSearch'
 import { composing } from '../utils/keys'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
 // to a message on hover. ClassicList puts them together.
 
-/// The reactions most people reach for, first in the bar as in Slack.
-export const QUICK_REACTIONS = ['✅', '👀', '🙌']
+/// Cells to a row in the picker's grids, as ClassicList.css lays them out.
+const PICKER_COLS = 8
+const PICKER_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'])
 
-/// A small, fixed set rather than the whole Unicode table: enough to answer
-/// with, and it opens instantly.
-const EMOJI_SETS: Array<{ label: string; list: string[] }> = [
-  { label: 'Frequently used', list: ['👍', '✅', '👀', '🙌', '🎉', '🙏', '❤️', '😂', '🔥', '💯', '👏', '🚀'] },
-  { label: 'Work', list: ['📌', '📎', '📅', '⏰', '💡', '❓', '❗', '⚠️', '🛑', '✍️', '📈', '💰', '🧾', '📦', '🤝', '🗳️'] },
-  { label: 'Feelings', list: ['😀', '😊', '😅', '🤔', '😮', '😢', '😬', '🙃', '😎', '🥳', '😴', '🤯'] },
-  { label: 'Answers', list: ['⭕', '❌', '🆗', '🆖', '👌', '👎', '🤞', '💪', '☕', '🍣', '🍺', '🌱'] },
-]
-
+/// Every emoji to react with: a search box on top, this workspace's own
+/// first, the ones you used lately, then the list by group. Typing turns it
+/// into one grid of what matches, and Enter takes the first. The arrows move
+/// through the grids, and Tab leaves them in one step. Until the list is
+/// here it says so, and offers to fetch it again if it did not come.
 export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: () => void }> = ({ onPick, onClose }) => {
   const t = useT()
   const box = useRef<HTMLDivElement>(null)
+  const search = useRef<HTMLInputElement>(null)
   const custom = useCustomEmoji()
+  const recent = useRecentEmoji()
+  const data = useEmojiData()
+  const listState = useEmojiDataState()
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const id = useId()
+  // Closed by a key or a pick, focus goes back to what opened the picker; a
+  // click somewhere else leaves it where the click put it.
+  const giveBack = useRef(false)
+  const sections = useMemo(() => pickerSections(query, custom, recent, data), [query, custom, recent, data])
+  const sizes = sections.map((s) => s.cells.length)
+  const starts = sizes.map((_, i) => sizes.slice(0, i).reduce((a, b) => a + b, 0))
+  const total = sizes.reduce((a, b) => a + b, 0)
+  const current = Math.min(active, Math.max(0, total - 1))
+  const searching = Boolean(query.trim())
   useEffect(() => {
     const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) onClose() }
+    // Esc closes the picker and nothing under it: not the thread beside the
+    // message (the window's Esc), which a picker opened with + sits over —
+    // and not while an input method is composing, where Esc cancels that.
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) { e.preventDefault(); e.stopPropagation(); onClose() } }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
   }, [onClose])
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    // Not on a phone, whose keyboard would come up over the picker.
+    if (!window.matchMedia?.('(pointer: coarse)').matches) search.current?.focus({ preventScroll: true })
+    return () => { if (giveBack.current && opener?.isConnected) opener.focus({ preventScroll: true }) }
+  }, [])
+  useEffect(() => { setActive(0); if (box.current) box.current.scrollTop = 0 }, [query])
+  // A list that did not come — offline, or a deploy replaced its chunk — is
+  // asked for again as the search changes, not only when the picker reopens.
+  useEffect(() => { if (emojiDataState() === 'failed') void loadEmojiData() }, [query])
+  const pick = (emoji: string) => {
+    rememberEmoji(emoji)
+    giveBack.current = true
+    onPick(emoji)
+    onClose()
+  }
+  const focusCell = (i: number) => box.current?.querySelector<HTMLElement>(`[data-cell="${i}"]`)?.focus()
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    // Keys that are choosing a word in an input method are its own.
+    if (composing(e)) return
+    if (e.key === 'Escape') {
+      // The picker's, not the pane's behind it: a search clears first.
+      e.stopPropagation()
+      if (query) { setQuery(''); search.current?.focus() } else { giveBack.current = true; onClose() }
+      return
+    }
+    if (e.target === search.current) {
+      if (e.key === 'ArrowDown' && total) { e.preventDefault(); focusCell(current) }
+      if (e.key === 'Enter' && searching) {
+        e.preventDefault()
+        const first = sections[0]?.cells[0]
+        if (first) pick(first.emoji)
+      }
+      return
+    }
+    const at = Number((e.target as HTMLElement).dataset.cell)
+    // ⌥↑ and the like are still the chat's (between conversations).
+    if (!Number.isInteger(at) || !PICKER_KEYS.has(e.key) || e.altKey || e.metaKey || e.ctrlKey) return
+    // An arrow that moved in the grid does not also move the list behind it.
+    e.preventDefault()
+    e.stopPropagation()
+    const next = gridStep(sizes, at, e.key, PICKER_COLS)
+    if (next < 0) search.current?.focus()
+    else focusCell(next)
+  }
   return (
-    <div className="slk-picker" ref={box} role="dialog" aria-label={t('Add reaction')}>
-      <div className="slk-picker-set workspace">
-        <div className="slk-picker-label">
-          {t('This workspace')}
-          <a className="slk-picker-add" href="#/tools/emoji" onClick={() => onClose()} data-add-emoji="1"><Icon name="plus" size={12} /> {t('Add emoji')}</a>
-        </div>
-        {custom.length > 0 && (
-          <div className="slk-picker-grid">
-            {custom.map((e) => (
-              <button key={e.name} type="button" className="slk-picker-emoji custom" onClick={() => { onPick(`:${e.name}:`); onClose() }} aria-label={`:${e.name}:`} title={`:${e.name}:`} data-custom-emoji={e.name}>
-                <img src={e.url} alt={`:${e.name}:`} loading="lazy" draggable={false} />
-              </button>
-            ))}
-          </div>
-        )}
+    <div className="slk-picker" ref={box} role="dialog" aria-label={t('Add reaction')} onKeyDown={onKeyDown}>
+      <div className="slk-picker-head">
+        <input
+          ref={search}
+          className="slk-picker-search"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('Search emoji')}
+          aria-label={t('Search emoji')}
+          autoComplete="off"
+          spellCheck={false}
+          data-emoji-search
+        />
       </div>
-      {EMOJI_SETS.map((set) => (
-        <div key={set.label} className="slk-picker-set">
-          <div className="slk-picker-label">{t(set.label)}</div>
-          <div className="slk-picker-grid">
-            {set.list.map((e) => (
-              <button key={e} type="button" className="slk-picker-emoji" onClick={() => { onPick(e); onClose() }} aria-label={e}>{e}</button>
-            ))}
+      {sections.map((s, si) => (s.cells.length > 0 || s.workspace) && (
+        <div key={s.label} className={`slk-picker-set${s.workspace ? ' workspace' : ''}`} role="group" aria-labelledby={`${id}-${si}`}>
+          <div className="slk-picker-label">
+            <span id={`${id}-${si}`}>{t(s.label)}</span>
+            {s.workspace && <a className="slk-picker-add" href="#/tools/emoji" onClick={() => onClose()} data-add-emoji="1"><Icon name="plus" size={12} /> {t('Add emoji')}</a>}
           </div>
+          {s.cells.length > 0 && (
+            <div className="slk-picker-grid">
+              {s.cells.map((c, ci) => {
+                const i = starts[si] + ci
+                return (
+                  <button
+                    key={c.emoji}
+                    type="button"
+                    className={`slk-picker-emoji${c.url ? ' custom' : ''}`}
+                    onClick={() => pick(c.emoji)}
+                    onFocus={() => setActive(i)}
+                    tabIndex={i === current ? 0 : -1}
+                    aria-label={c.emoji}
+                    title={c.name ? `:${c.name}:` : undefined}
+                    data-cell={i}
+                    data-custom-emoji={c.url ? c.name : undefined}
+                  >
+                    {c.url ? <img src={c.url} alt={c.emoji} loading="lazy" draggable={false} /> : c.emoji}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       ))}
+      {/* Nothing matches only once there is a list to match against. */}
+      {listState === 'ready' && searching && !total && <p className="slk-picker-empty" role="status">{t('Nothing matches that.')}</p>}
+      {listState === 'loading' && <p className="slk-picker-empty" role="status" data-emoji-list="loading">{t('Loading…')}</p>}
+      {listState === 'failed' && (
+        <p className="slk-picker-empty" role="alert" data-emoji-list="failed">
+          {t('The emoji list did not load.')} <button type="button" className="slk-picker-retry" onClick={() => void loadEmojiData()}>{t('Try again')}</button>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/// The whole picker by itself at a point: where a message's right-click
+/// menu was, opened from the smile along its top. It is fixed to the window
+/// there and kept on screen, and drawn once, not under the message, which
+/// may be far down the page or drawn twice (a thread's first message is in
+/// the channel and in the thread, and two pickers shut each other). The
+/// focus goes to its first emoji, so a keyboard that opened the menu
+/// carries on into it, and back to the message when it shuts.
+export const EmojiPickerAt: React.FC<{ at: { x: number; y: number }; onPick: (emoji: string) => void; onClose: () => void }> = ({ at, onPick, onClose }) => {
+  const ref = useRef<HTMLDivElement>(null)
+  const [place, setPlace] = useState<{ left: number; top: number }>({ left: at.x, top: at.y })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el) setPlace(keepOnScreen(at, el.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight }))
+  }, [at.x, at.y])
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null
+    const box = ref.current
+    box?.querySelector<HTMLButtonElement>('.slk-picker-emoji')?.focus({ preventScroll: true })
+    return () => { if (focusGoesBack(before, document.activeElement, document.body, box)) before!.focus({ preventScroll: true }) }
+  }, [])
+  return (
+    <div ref={ref} className="slk-picker-at" style={place}>
+      <EmojiPicker onPick={onPick} onClose={onClose} />
     </div>
   )
 }
@@ -150,28 +272,33 @@ export const Reactions: React.FC<{
   )
 }
 
-/// Everything you can do to one message, on hover — reactions, a thread,
-/// a pin, and behind ⋯ the rest: edit, delete, copy, make it a decision.
-export const MessageActions: React.FC<{
-  message: ChannelMessage
-  inThread?: boolean
-  onReact: (emoji: string) => void
-  onReply?: () => void
-  onPin?: () => void
-  onEdit?: () => void
-  onDelete?: () => void
-  onDecide?: () => void
-  /// Save for later; with a time, come back as a card then.
-  onLater?: (remindAt: string | null) => void
-  /// Add to the clip being gathered for one decision.
-  onClip?: () => void
-  onUnread?: () => void
-  onForward?: () => void
-  onCopyLink?: () => void
-  clipped?: boolean
-  onOpenChange: (open: boolean) => void
-}> = ({ message, inThread, onReact, onReply, onPin, onEdit, onDelete, onDecide, onLater, onClip, clipped, onOpenChange, onUnread, onForward, onCopyLink }) => {
+/// First in the hover bar, as in Slack: the three emoji you reacted with
+/// last, or the usual three until you have.
+export const QuickReactions: React.FC<{ onReact: (emoji: string) => void }> = ({ onReact }) => {
   const t = useT()
+  const quick = useQuickReactions()
+  return (
+    <>
+      {quick.map((e) => (
+        <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>
+          <EmojiGlyph emoji={e} size={18} />
+        </button>
+      ))}
+    </>
+  )
+}
+
+/// Everything you can do to one message, on hover — reactions, a reply, a
+/// thread, a pin, and behind ⋯ the rest: edit, delete, copy, make it a
+/// decision. What is behind ⋯ is the one list the right-click menu and a
+/// phone's long press draw too.
+export const MessageActions: React.FC<MessageMenuActions & {
+  message: ChannelMessage
+  onReact: (emoji: string) => void
+  onOpenChange: (open: boolean) => void
+}> = ({ message, onReact, onOpenChange, ...actions }) => {
+  const t = useT()
+  const { inThread, onQuote, onReply, onPin } = actions
   const [picker, setPicker] = useState(false)
   const [menu, setMenu] = useState(false)
   const menuBox = useRef<HTMLDivElement>(null)
@@ -184,13 +311,13 @@ export const MessageActions: React.FC<{
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
   }, [menu])
-  const copy = () => { void navigator.clipboard?.writeText(message.body); setMenu(false) }
   return (
     <>
-      {QUICK_REACTIONS.map((e) => (
-        <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
-      ))}
+      <QuickReactions onReact={onReact} />
       <button type="button" className="slk-tool" onClick={() => setPicker((p) => !p)} title={t('Add reaction')} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={16} /></button>
+      {onQuote && (
+        <button type="button" className="slk-tool" onClick={onQuote} title={t('Reply')} aria-label={t('Reply')} data-tool="quote"><Icon name="reply" size={16} /></button>
+      )}
       {onReply && !inThread && (
         <button type="button" className="slk-tool" onClick={onReply} title={t('Reply in thread')} aria-label={t('Reply in thread')}><Icon name="message" size={16} /></button>
       )}
@@ -201,26 +328,13 @@ export const MessageActions: React.FC<{
         <button type="button" className="slk-tool" onClick={() => setMenu((m) => !m)} aria-label={t('More actions')} aria-expanded={menu} aria-haspopup="menu"><Icon name="more" size={16} /></button>
         {menu && (
           <div className="slk-menu" role="menu">
-            {onEdit && <button type="button" role="menuitem" onClick={() => { setMenu(false); onEdit() }}>{t('Edit message')}<kbd>E</kbd></button>}
-            {onReply && !inThread && <button type="button" role="menuitem" onClick={() => { setMenu(false); onReply() }}>{t('Reply in thread')}<kbd>T</kbd></button>}
-            {onDecide && <button type="button" role="menuitem" onClick={() => { setMenu(false); onDecide() }}>{t('Make it a decision')}</button>}
-            {onPin && !inThread && <button type="button" role="menuitem" onClick={() => { setMenu(false); onPin() }}>{message.pinned ? t('Unpin') : t('Pin to channel')}<kbd>P</kbd></button>}
-            {onClip && <button type="button" role="menuitem" onClick={() => { setMenu(false); onClip() }}>{clipped ? t('Remove from clip') : t('Add to clip')}</button>}
-            {onUnread && <button type="button" role="menuitem" onClick={() => { setMenu(false); onUnread() }} data-menu="unread">{t('Mark unread')}</button>}
-            {onForward && <button type="button" role="menuitem" onClick={() => { setMenu(false); onForward() }} data-menu="forward">{t('Forward')}</button>}
-            {onCopyLink && <button type="button" role="menuitem" onClick={() => { setMenu(false); onCopyLink() }}>{t('Copy link')}</button>}
-            {onLater && (
-              <>
-                <div className="slk-menu-sep" />
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); onLater(null) }}>{t('Save for later')}</button>
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); onLater(new Date(Date.now() + 3600000).toISOString()) }}>{t('Remind me in 1 hour')}</button>
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); onLater(tomorrowAt(9)) }}>{t('Remind me tomorrow at 9:00')}</button>
-                <div className="slk-menu-sep" />
-              </>
-            )}
-            {message.body && <button type="button" role="menuitem" onClick={copy}>{t('Copy text')}</button>}
-            {onDelete && <div className="slk-menu-sep" />}
-            {onDelete && <button type="button" role="menuitem" className="danger" onClick={() => { setMenu(false); onDelete() }}>{t('Delete message')}<kbd>⌫</kbd></button>}
+            {messageMenuEntries(message, { ...actions, t }).map((e, i) => (e.kind === 'sep'
+              ? <div key={i} className="slk-menu-sep" />
+              : e.kind === 'item' && (
+                <button key={i} type="button" role="menuitem" className={e.danger ? 'danger' : undefined} data-menu={e.data} onClick={(ev) => { setMenu(false); if (e.data === 'delete') actions.onDelete?.(ev.shiftKey); else e.onSelect?.() }}>
+                  {e.label}{e.hint && <kbd>{e.hint}</kbd>}
+                </button>
+              )))}
           </div>
         )}
       </div>
@@ -252,9 +366,7 @@ export const CardActions: React.FC<{
   }, [menu])
   return (
     <>
-      {QUICK_REACTIONS.map((e) => (
-        <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
-      ))}
+      <QuickReactions onReact={onReact} />
       <button type="button" className="slk-tool" onClick={() => setPicker((p) => !p)} title={t('Add reaction')} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={16} /></button>
       <div className="slk-tool-menu-wrap" ref={menuBox}>
         <button type="button" className="slk-tool" onClick={() => setMenu((m) => !m)} aria-label={t('More actions')} aria-expanded={menu} aria-haspopup="menu" data-card-more="1"><Icon name="more" size={16} /></button>
@@ -269,6 +381,111 @@ export const CardActions: React.FC<{
       {picker && <EmojiPicker onPick={(e) => { setPicker(false); onReact(e) }} onClose={() => setPicker(false)} />}
     </>
   )
+}
+
+// ---- Inline replies ----
+//
+// Discord's Reply, not a thread: the answer goes in the conversation with a
+// line above it quoting who said what. The quote comes from the Worker
+// (utils/replies.ts says how it is made); these only draw it.
+
+/// A quote's words, a hidden spoiler drawn as a bar that says what it is.
+const QuoteWords: React.FC<{ excerpt: string }> = ({ excerpt }) => {
+  const t = useT()
+  return <>{excerptParts(excerpt).map((p, i) => (p === null
+    ? <span key={i} className="slk-reply-spoiler" role="img" aria-label={t('Spoiler')} />
+    : <React.Fragment key={i}>{p}</React.Fragment>))}</>
+}
+
+/// The line above an inline reply: who it answers and how that began —
+/// pressed, it goes to the original — or only that the original is gone.
+/// `name` is the author as this reader calls them.
+export const ReplyQuoteLine: React.FC<{ quote: ReplyQuote; name: string; onJump: () => void }> = ({ quote, name, onJump }) => {
+  const t = useT()
+  if (quote.deleted) {
+    return (
+      <div className="slk-reply-quote gone" data-reply-to={quote.id}>
+        <Icon name="reply" size={12} />
+        <span className="slk-reply-excerpt">{t('Original message was deleted')}</span>
+      </div>
+    )
+  }
+  return (
+    <button type="button" className="slk-reply-quote" onClick={onJump} title={t('Go to the message')} data-reply-to={quote.id}>
+      <Icon name="reply" size={12} />
+      <span className="sr-only">{t('In reply to')} </span>
+      <b className="slk-reply-who">{name}</b>
+      <span className="slk-reply-excerpt"><QuoteWords excerpt={quote.excerpt} /></span>
+    </button>
+  )
+}
+
+/// Over the composer while a reply is being written: what it answers, and
+/// the × (or Escape) that makes it a plain message again. `textId` names
+/// the words, for the composer to be described by them.
+export const ReplyingBar: React.FC<{ quote: ReplyQuote; name: string; textId: string; onCancel: () => void }> = ({ quote, name, textId, onCancel }) => {
+  const t = useT()
+  return (
+    <div className="slk-replying" data-replying={quote.id}>
+      <Icon name="reply" size={13} />
+      <span className="slk-replying-text" id={textId}>
+        {quote.deleted ? t('Original message was deleted') : <>{t('Replying to {name}', { name })} <span className="slk-replying-excerpt"><QuoteWords excerpt={quote.excerpt} /></span></>}
+      </span>
+      <button type="button" className="slk-replying-cancel" onClick={onCancel} aria-label={t('Cancel reply')} title={`${t('Cancel reply')} (Esc)`}>
+        <Icon name="x" size={13} />
+      </button>
+    </div>
+  )
+}
+
+/// Under one of yours the server does not have yet: that it is on its way
+/// (said, not shown — it is drawn dimmed), or why it did not go, with Retry
+/// and Delete — or, refused for what it says, Edit in place of Retry, since
+/// the same words would only be refused again. Still on its way at
+/// `lateAt` (ms), longer than a send should take, it says so with Delete, so
+/// it can be let go of rather than waited on. Any button goes once pressed;
+/// pressed from the keyboard, `refocus` says where focus goes instead of
+/// nowhere.
+export const UnsentNote: React.FC<{
+  message: ChannelMessage
+  onRetry: () => void
+  onDelete: () => void
+  /// Back into the box it was written in, to be changed and sent again.
+  onEdit?: () => void
+  lateAt?: number
+  refocus?: () => void
+}> = ({ message, onRetry, onDelete, onEdit, lateAt, refocus }) => {
+  const t = useT()
+  const pressed = (act: () => void) => (e: React.MouseEvent) => { act(); if (e.detail === 0) refocus?.() }
+  // Drawn again when it becomes late, if it is still on its way by then.
+  const [, turnedLate] = useState(0)
+  const waiting = message.pending && lateAt !== undefined ? lateAt - Date.now() : 0
+  useEffect(() => {
+    if (waiting <= 0) return
+    const id = setTimeout(() => turnedLate((n) => n + 1), waiting)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message.pending, lateAt])
+  if (message.pending && lateAt !== undefined && waiting <= 0) {
+    return (
+      <div className="slk-unsent late" data-unsent={message.id}>
+        <span className="slk-unsent-why">{t('Sending…')}</span>
+        <button type="button" className="slk-unsent-act" onClick={pressed(onDelete)} data-unsent-delete="1"><Icon name="trash" size={12} />{t('Delete')}</button>
+      </div>
+    )
+  }
+  if (message.failed) {
+    return (
+      <div className="slk-unsent" role="alert" data-unsent={message.id}>
+        <span className="slk-unsent-why">{message.failed}</span>
+        {message.refused
+          ? onEdit && <button type="button" className="slk-unsent-act" onClick={pressed(onEdit)} data-unsent-edit="1"><Icon name="edit" size={12} />{t('Edit')}</button>
+          : <button type="button" className="slk-unsent-act" onClick={pressed(onRetry)} data-unsent-retry="1"><Icon name="refresh" size={12} />{t('Retry')}</button>}
+        <button type="button" className="slk-unsent-act" onClick={pressed(onDelete)} data-unsent-delete="1"><Icon name="trash" size={12} />{t('Delete')}</button>
+      </div>
+    )
+  }
+  return message.pending ? <span className="sr-only">{t('Sending…')}</span> : null
 }
 
 /// Wrap what is selected in a textarea with a mark — the composer's B, I,
@@ -369,9 +586,17 @@ export const FormatBar: React.FC<{ target: React.RefObject<HTMLTextAreaElement>;
   )
 }
 
+/// How an @name is drawn: its class — and, for a person, their ref, which
+/// makes it press like a button and open their card. It stays a word of the
+/// message all the same (a span with the button's role, not a <button>,
+/// whose text a browser leaves out of what is selected and copied). The
+/// conversation listens for every one at once (`data-mention-ref`) — a
+/// click, or Enter or Space on it — not with one handler each.
+export type MentionLook = string | { className: string; ref?: string | null }
+
 /// Slack's formatting, read back: *bold*, _italic_, ~strike~, `code`,
 /// ```blocks```, "> " quotes, "- " and "1. " lists — plus links and @names.
-export function renderRich(text: string, mentionClass: (name: string) => string): React.ReactNode {
+export function renderRich(text: string, mentionClass: (name: string) => MentionLook): React.ReactNode {
   const out: React.ReactNode[] = []
   const parts = text.split(/```/)
   parts.forEach((chunk, ci) => {
@@ -408,6 +633,18 @@ export function renderRich(text: string, mentionClass: (name: string) => string)
         return
       }
       flushQuote(key)
+      // Discord's headings ("# ", "## ", "### ") and subtext ("-# "): a line
+      // of their own, so they end whatever list was open.
+      const heading = /^(#{1,3})\s+(\S.*)$/.exec(line)
+      const subtext = /^-#\s+(\S.*)$/.exec(line)
+      if (heading || subtext) {
+        flushList(key)
+        out.push(heading
+          ? <div key={key} className={`slk-h slk-h${heading[1].length}`} role="heading" aria-level={heading[1].length + 2}>{inline(heading[2], mentionClass)}</div>
+          : <div key={key} className="slk-subtext">{inline(subtext![1], mentionClass)}</div>)
+        afterBlock = true
+        return
+      }
       const bullet = /^\s*[-•*]\s+(.*)$/.exec(line)
       const number = /^\s*(\d+)[.)]\s+(.*)$/.exec(line)
       if (bullet && !/^\*[^*]+\*/.test(line.trim())) {
@@ -432,12 +669,32 @@ export function renderRich(text: string, mentionClass: (name: string) => string)
   return out
 }
 
+/// Discord's ||spoiler||: hidden under a bar until clicked (or Enter/Space),
+/// then it stays shown. Screen readers are told it is hidden, not the text.
+const Spoiler: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const t = useT()
+  const [shown, setShown] = useState(false)
+  if (shown) return <span className="slk-spoiler shown">{children}</span>
+  const reveal = (e: React.SyntheticEvent) => { e.preventDefault(); e.stopPropagation(); setShown(true) }
+  return (
+    <span className="slk-spoiler" role="button" tabIndex={0} aria-label={t('Spoiler, press to reveal')}
+      onClick={reveal} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') reveal(e) }}>
+      <span aria-hidden="true">{children}</span>
+    </span>
+  )
+}
+
 const JAM_AUDIO = /^https?:\/\/[^\s]+\/channels\/jam\/audio\/[0-9a-f-]{36}$/
 
-function inline(line: string, mentionClass: (name: string) => string): React.ReactNode[] {
-  const tokens = line.split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;]+|\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g)
-  // A line that is nothing but this workspace's emoji draws them large.
-  const onlyEmoji = tokens.every((p) => !p || !p.trim() || (CUSTOM_EMOJI.test(p) && Boolean(customEmojiUrl(p))))
+/// `nested`: the words inside a *bold* or an _italic_, which are never a
+/// line of their own however few emoji they are.
+function inline(line: string, mentionClass: (name: string) => MentionLook, nested = false): React.ReactNode[] {
+  // Doubled marks (Discord's ||spoiler||, __underline__, ~~strike~~) come
+  // before their single forms so "__a__" is not read as "_" + "_a_" + "_".
+  const tokens = line.split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」|]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;|]+|\|\|[^|\n]+\|\||\*\*[^*\n]+\*\*|\*[^*\n]+\*|__[^_\n]+__|_[^_\n]+_|~~[^~\n]+~~|~[^~\n]+~)/g)
+  // A line that is nothing but emoji — characters, or this workspace's own
+  // — draws them large.
+  const onlyEmoji = !nested && isEmojiOnly(line, (token) => Boolean(customEmojiUrl(token)))
   return tokens.map((part, i) => {
     if (!part) return null
     if (/^`[^`]+`$/.test(part)) return <code key={i} className="slk-code">{part.slice(1, -1)}</code>
@@ -449,11 +706,21 @@ function inline(line: string, mentionClass: (name: string) => string): React.Rea
     // A Jam's recording plays where it was posted.
     if (JAM_AUDIO.test(part)) return <audio key={i} className="slk-jam-audio" controls preload="none" src={part} />
     if (/^https?:\/\//.test(part)) return <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a>
-    if (/^[@＠]/.test(part)) return <span key={i} className={mentionClass(part)}>{part}</span>
-    if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass)}</b>
-    if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{inline(part.slice(1, -1), mentionClass)}</b>
-    if (/^_[^_]+_$/.test(part)) return <i key={i}>{inline(part.slice(1, -1), mentionClass)}</i>
-    if (/^~[^~]+~$/.test(part)) return <s key={i}>{inline(part.slice(1, -1), mentionClass)}</s>
+    if (/^[@＠]/.test(part)) {
+      const look = mentionClass(part)
+      const { className, ref } = typeof look === 'string' ? { className: look, ref: null } : look
+      return ref
+        ? <span key={i} role="button" tabIndex={0} className={`${className} link`} data-mention-ref={ref} aria-haspopup="dialog">{part}</span>
+        : <span key={i} className={className}>{part}</span>
+    }
+    if (/^\|\|[^|]+\|\|$/.test(part)) return <Spoiler key={i}>{inline(part.slice(2, -2), mentionClass, true)}</Spoiler>
+    if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass, true)}</b>
+    if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{inline(part.slice(1, -1), mentionClass, true)}</b>
+    if (/^__[^_]+__$/.test(part)) return <u key={i}>{inline(part.slice(2, -2), mentionClass, true)}</u>
+    if (/^_[^_]+_$/.test(part)) return <i key={i}>{inline(part.slice(1, -1), mentionClass, true)}</i>
+    if (/^~~[^~]+~~$/.test(part)) return <s key={i}>{inline(part.slice(2, -2), mentionClass, true)}</s>
+    if (/^~[^~]+~$/.test(part)) return <s key={i}>{inline(part.slice(1, -1), mentionClass, true)}</s>
+    if (onlyEmoji && part.trim()) return <span key={i} className="slk-emoji big">{part}</span>
     return <React.Fragment key={i}>{part}</React.Fragment>
   })
 }
@@ -540,6 +807,39 @@ export const SchedulePicker: React.FC<{ onPick: (at: string) => void; onClose: (
         <input type="datetime-local" value={custom} onChange={(e) => setCustom(e.target.value)} aria-label={t('Custom time')} />
         <button type="submit" disabled={!custom}>{t('Schedule')}</button>
       </form>
+    </div>
+  )
+}
+
+/// "Aki is typing…" just above a box, in a row kept for it whether or not
+/// anyone is typing: it comes and goes without moving anything and is never
+/// on top of what was said. A screen reader hears it through a region of its
+/// own, at most once every few seconds: who is typing changes far more often
+/// than anyone wants it read out.
+export const TypingLine: React.FC<{ names: string[] }> = ({ names }) => {
+  useT()
+  const line = typingLine(names)
+  const [told, setTold] = useState<Announced>({ text: '', at: 0 })
+  useEffect(() => {
+    const next = announce(told, line, Date.now())
+    if (next !== told) { setTold(next); return }
+    if (!line || line === told.text) return
+    // Too soon after the last thing said: said once the gap is over, if
+    // it is still true then. A little past it: a timer can wake a
+    // millisecond before Date.now() agrees the gap is over, and one that
+    // changes nothing is not run again.
+    const id = setTimeout(() => setTold((prev) => announce(prev, line, Date.now())), told.at + ANNOUNCE_GAP_MS - Date.now() + 50)
+    return () => clearTimeout(id)
+  }, [line, told])
+  return (
+    <div className="slk-typing-people" data-typing={line ? '1' : undefined}>
+      {line && (
+        <span className="slk-typing-now" aria-hidden="true">
+          <span className="slk-dots"><i /><i /><i /></span>
+          <span className="slk-typing-text">{line}</span>
+        </span>
+      )}
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{told.text}</span>
     </div>
   )
 }

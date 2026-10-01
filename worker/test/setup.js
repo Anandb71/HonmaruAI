@@ -1,6 +1,7 @@
 import { reset, env } from "cloudflare:test";
 import { beforeEach } from "vitest";
 import schemaSql from "../schema.sql?raw";
+import migrationsSql from "../migrations.sql?raw";
 
 // vitest-pool-workers 0.22 isolates storage per FILE — the suite was written
 // against per-test isolation, where a test's writes never reached the next
@@ -10,4 +11,9 @@ import schemaSql from "../schema.sql?raw";
 beforeEach(async () => {
   await reset();
   await env.DB.exec(schemaSql.replace(/\n/g, " "));
+  // The indexes that live in migrations.sql, as a deploy builds them: the
+  // columns are already in the fresh tables, so only those statements count.
+  for (const sql of migrationIndexes) await env.DB.exec(sql);
 });
+
+const migrationIndexes = migrationsSql.split("\n").filter((line) => /^CREATE (UNIQUE )?INDEX IF NOT EXISTS/.test(line));

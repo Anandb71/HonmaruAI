@@ -179,7 +179,10 @@ export interface ChannelMessage {
   createdAt: string
   /// Changed after it was sent, and when.
   editedAt?: string | null
-  /// Unsent. Kept only while a thread hangs off it; the words are gone.
+  /// Unsent; the words are gone. A page of history leaves it out, thread
+  /// and all; one comes to take away a message already shown, or as the
+  /// head of a thread opened by its link, which reads "This message was
+  /// deleted." above no replies.
   deleted?: boolean
   /// A reply in the thread under this message.
   parentId?: string | null
@@ -194,4 +197,31 @@ export interface ChannelMessage {
   files?: FileRef[]
   /// Who wrote it, when an agent did: its name and face.
   agent?: { id: string; handle: string; name: string; emoji: string | null; avatarUrl?: string | null } | null
+  /// Only on this device, under a temporary id (utils/pendingSend.ts): on
+  /// its way to the server, shown before the server has it.
+  pending?: boolean
+  /// Only on this device: it did not go, and why. Its words stay where they
+  /// were, to send again or throw away.
+  failed?: string
+  /// Only on this device: the server said no to the words themselves (a
+  /// data rule, a thread that has gone). Sent again as they are they would
+  /// only be refused again, so they are edited or thrown away, not retried.
+  refused?: boolean
+  /// An inline reply (Discord's, not a thread): the message it answers, as
+  /// that message is now.
+  replyTo?: ReplyQuote | null
+}
+
+/// What a reply shows of the message it answers: who, and how it began —
+/// spoilers already hidden — or only that it is gone.
+export interface ReplyQuote {
+  id: string
+  /// Null once it is gone.
+  kind: ChannelMessage['kind'] | null
+  /// Null for the AI, and once it is gone.
+  authorName: string | null
+  authorRef: string | null
+  /// Its first words on one line, at most 120 characters.
+  excerpt: string
+  deleted: boolean
 }

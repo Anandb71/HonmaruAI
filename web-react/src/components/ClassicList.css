@@ -211,6 +211,21 @@
 .classic.slk.slk .slk-avatar.app { background: var(--slk-field); color: var(--slk-dim); }
 .classic.slk.slk .slk-avatar.app:has(.brand) { background: #fff; }
 .classic.slk.slk .slk-avatar img { width: 100%; height: 100%; display: block; }
+/* Somebody else's face opens their card. */
+.classic.slk.slk .slk-face-button {
+  position: relative; display: block; width: 36px; height: 36px; padding: 0; margin: 0;
+  border: none; border-radius: 8px; background: none; cursor: pointer;
+}
+.classic.slk.slk .slk-face-button:hover .slk-avatar { filter: brightness(.94); }
+.classic.slk.slk .slk-face-button:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 2px; }
+/* Here or not, cut out of whatever the message sits on. */
+.classic.slk.slk .slk-face-button .cl-presence {
+  width: 11px; height: 11px; right: -3px; bottom: -3px; border-width: 2px;
+  background: var(--slk-bg); border-color: var(--slk-dim); box-shadow: 0 0 0 2px var(--slk-bg);
+}
+.classic.slk.slk .slk-face-button .cl-presence.on { background: var(--slk-green); border-color: var(--slk-green); }
+.classic.slk.slk .slk-msg:hover .slk-face-button .cl-presence { box-shadow: 0 0 0 2px var(--slk-msg-hover); }
+.classic.slk.slk .slk-msg:hover .slk-face-button .cl-presence:not(.on) { background: var(--slk-msg-hover); }
 .classic.slk.slk .slk-hover-time {
   display: block; padding-top: 3px; text-align: right;
   font-size: 10.5px; color: var(--slk-faint); visibility: hidden; font-variant-numeric: tabular-nums;
@@ -318,6 +333,11 @@
 .classic.slk.slk .slk-text a:hover { text-decoration: underline; }
 .classic.slk.slk .slk-mention { color: var(--slk-accent); background: rgba(29, 155, 209, 0.10); border-radius: 4px; padding: 0 2px; font-weight: 600; }
 .classic.slk.slk .slk-mention.ai { color: #7c3aed; background: rgba(124, 58, 237, 0.12); }
+/* A person's @name opens their card: it presses like a button and is still a
+   word of the message, selected and copied with the rest of it. */
+.classic.slk.slk .slk-mention.link { cursor: pointer; }
+.classic.slk.slk .slk-mention.link:hover { text-decoration: underline; }
+.classic.slk.slk .slk-mention.link:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 1px; }
 .classic.slk.slk .slk-app-badge {
   font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   padding: 1px 5px; border-radius: 4px; background: var(--slk-field); color: var(--slk-dim);
@@ -372,6 +392,32 @@
 .classic.slk.slk .slk-dots i:nth-child(3) { animation-delay: .3s; }
 @keyframes slk-dot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .classic.slk.slk .slk-dots i { animation: none; } }
+
+/* People typing: "Aki is typing…" just above the box, in a row of its own
+   that is kept whether or not anyone is typing. It comes and goes without
+   moving anything, and is never on top of what was said, however far up
+   the reader has scrolled. The log above it ends without padding: the row
+   is the space that was there. */
+.classic.slk.slk .slk-typing-people { position: relative; flex: none; height: 18px; margin: 0 16px; }
+.classic.slk.slk .slk-log.with-typing { padding-bottom: 0; }
+/* What is clipped, scheduled or drafted sits between the two, and keeps the
+   log's distance from the newest message. */
+.classic.slk.slk .slk-log.with-typing + :not(.slk-typing-people) { margin-top: 12px; }
+.classic.slk.slk .slk-typing-now {
+  position: absolute; left: 6px; bottom: 2px; max-width: calc(100% - 12px); box-sizing: border-box;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 8px 0 6px;
+  color: var(--slk-dim); font-size: 12px; line-height: 16px;
+  animation: slk-typing-in .15s ease-out;
+}
+.classic.slk.slk .slk-typing-now .slk-dots i { width: 4px; height: 4px; }
+.classic.slk.slk .slk-typing-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes slk-typing-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .classic.slk.slk .slk-typing-now { animation: none; } }
+@media (min-width: 720px) { .classic.slk.slk .slk-typing-people { margin: 0 20px; } }
+@media (max-width: 719px) { .classic.slk.slk .slk-typing-people { margin: 0 10px; } }
+.classic.slk.slk .slk-thread-pane .slk-typing-people,
+.classic.slk.slk .slk-inbox-thread .slk-typing-people { margin: 0 12px; }
 
 /* The composer: where the message box sits in a chat client. */
 .classic.slk.slk .slk-composer {
@@ -525,6 +571,14 @@
 
 .classic.slk.slk .slk-msg.tools-open .slk-tools { display: flex; }
 .classic.slk.slk .slk-msg:focus { outline: none; }
+/* Its right-click menu open, a message stays lit as it is on hover. */
+.classic.slk.slk .slk-msg.menu-open { background: var(--slk-msg-hover); }
+/* A message picked with the keys, and the log itself when Tab lands on it:
+   a ring inside the row, so neighbours and the scroller do not clip it. A
+   click shows none — :focus-visible is the keyboard's. */
+.classic.slk.slk .slk-msg:focus-visible,
+.classic.slk.slk .slk-log:focus-visible,
+.classic.slk.slk .slk-thread-log:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -2px; }
 .classic.slk.slk .slk-tool.emoji { font-size: 15px; padding: 3px 6px; }
 .classic.slk.slk .slk-tool.on { background: rgba(232, 145, 45, .15); }
 .classic.slk.slk .slk-tool-menu-wrap { position: relative; display: inline-flex; }
@@ -544,28 +598,66 @@
 .classic.slk.slk .slk-menu kbd { font: inherit; font-size: 11px; opacity: .6; }
 .classic.slk.slk .slk-menu-sep { height: 1px; background: var(--slk-line); margin: 5px 2px; }
 
+/* The delete question's look at the message it is about: who, when, and
+   how it starts — in the dialog's own tokens, so both themes follow it. */
+.classic.slk.slk .cl-delete-preview {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  max-height: 200px; overflow-y: auto;
+  padding: 10px 12px; border: 1px solid var(--dlg-line); border-radius: 10px; background: var(--dlg-field);
+}
+.classic.slk.slk .cl-delete-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; font-size: 13.5px; color: var(--dlg-ink); }
+.classic.slk.slk .cl-delete-meta b { min-width: 0; overflow-wrap: anywhere; }
+.classic.slk.slk .cl-delete-meta time { font-size: 12px; color: var(--dlg-faint); }
+.classic.slk.slk .cl-delete-text { font-size: 14px; line-height: 1.5; color: var(--dlg-ink); }
+.classic.slk.slk .cl-delete-files { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--dlg-dim); overflow-wrap: anywhere; }
+
 .classic.slk.slk .slk-picker {
   position: absolute; z-index: 31; top: calc(100% + 4px); right: 0; width: 300px; max-height: 320px; overflow-y: auto;
-  background: var(--slk-bg); border: 1px solid var(--slk-line); border-radius: 12px; padding: 8px 10px;
+  background: var(--slk-bg); border: 1px solid var(--slk-line); border-radius: 12px; padding: 0 10px 8px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  /* An emoji the arrows reach scrolls out from under the search box. */
+  scroll-padding-top: 48px;
 }
 .classic.slk.slk .slk-picker-anchor { position: relative; height: 0; }
 .classic.slk.slk .slk-picker-anchor .slk-picker { left: 0; right: auto; top: 4px; }
+/* Opened from a message's right-click menu: on its own where the menu was,
+   fixed to the window and over everything, as the menu is. */
+.classic.slk.slk .slk-picker-at { position: fixed; z-index: 1000; }
+.classic.slk.slk .slk-picker-at .slk-picker { position: static; }
 .classic.slk.slk .slk-picker-label { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--slk-dim); margin: 6px 2px 4px; }
 .classic.slk.slk .slk-picker-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
 .classic.slk.slk .slk-picker-emoji { border: none; background: none; font-size: 20px; line-height: 1; padding: 5px 0; border-radius: 6px; cursor: pointer; }
 .classic.slk.slk .slk-picker-emoji:hover { background: var(--slk-hover); }
+.classic.slk.slk .slk-picker-emoji:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -2px; background: var(--slk-hover); }
+/* The search box stays on top while the grids scroll under it; the
+   picker's top padding is the box's, so nothing shows above it. */
+.classic.slk.slk .slk-picker-head { position: sticky; top: 0; z-index: 1; margin: 0 -10px; padding: 8px 10px 4px; background: var(--slk-bg); }
+.classic.slk.slk .slk-picker-search {
+  width: 100%; box-sizing: border-box; height: 32px; padding: 0 10px;
+  border: 1px solid var(--slk-line); border-radius: 8px; background: var(--slk-field);
+  font: inherit; font-size: 13.5px; color: var(--slk-ink);
+}
+/* Where there is no hover the + under a message opens this picker too, and
+   under 16px iOS zooms the page in on focus. */
+@media (hover: none) { .classic.slk.slk .slk-picker-search { font-size: 16px; } }
+.classic.slk.slk .slk-picker-search::placeholder { color: var(--slk-faint); }
+.classic.slk.slk .slk-picker-search:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -1px; }
+.classic.slk.slk .slk-picker-empty { margin: 14px 2px 8px; font-size: 13px; color: var(--slk-dim); text-align: center; }
 
 /* The workspace's own emoji: a picture the height of a line of text, as an
    emoji character is; larger when a line is nothing else. */
 .slk-custom-emoji { width: 1.35em; height: 1.35em; vertical-align: -0.3em; object-fit: contain; display: inline-block; margin: 0 1px; }
 .slk-custom-emoji.big { width: 32px; height: 32px; vertical-align: middle; }
+/* The characters on such a line, the same size as the pictures. */
+.slk-emoji.big { font-size: 32px; line-height: 1.25; vertical-align: middle; }
 .slk-reaction-emoji .slk-custom-emoji { width: 16px; height: 16px; vertical-align: -3px; margin: 0; }
 .slk-picker-emoji.custom { display: flex; align-items: center; justify-content: center; }
 .slk-picker-emoji.custom img { width: 24px; height: 24px; object-fit: contain; }
 .slk-picker-label:has(.slk-picker-add) { display: flex; align-items: center; justify-content: space-between; }
 .slk-picker-add { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; letter-spacing: 0; color: var(--slk-accent, #1d9bd1); text-decoration: none; }
 .slk-picker-add:hover { text-decoration: underline; }
+/* "Try again", in the line that says the list did not load. */
+.slk-picker-retry { border: none; background: none; padding: 0; font: inherit; color: var(--slk-accent, #1d9bd1); text-decoration: underline; cursor: pointer; }
 
 .classic.slk.slk .slk-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .classic.slk.slk .slk-reaction {
@@ -598,20 +690,59 @@
 
 .classic.slk.slk .slk-edited { font-size: 12px; color: var(--slk-faint); }
 .classic.slk.slk .slk-deleted { color: var(--slk-faint); font-style: italic; }
-.classic.slk.slk .slk-msg.pinned { background: rgba(232, 145, 45, .08); }
+.classic.slk.slk .slk-msg.pinned { --slk-rest-bg: rgba(232, 145, 45, .08); background: var(--slk-rest-bg); }
 .classic.slk.slk .slk-pin-mark { font-size: 12px; color: var(--slk-dim); margin-bottom: 2px; }
+/* The message a link or a search took you to lights up, then fades to the
+   colour the row has of its own (--slk-rest-bg, a pinned one's amber) —
+   not to nothing and a jump back to it. Only the colour moves, so a
+   message that calls you keeps its bar and glow all through. */
 .classic.slk.slk .slk-msg.flash { animation: slk-flash 1.6s ease-out; }
-@keyframes slk-flash { 0%, 30% { background: rgba(232, 145, 45, .35); } 100% { background: transparent; } }
+@keyframes slk-flash { 0%, 30% { background-color: rgba(232, 145, 45, .35); } 100% { background-color: var(--slk-rest-bg, transparent); } }
 .classic.slk.slk .slk-msg.editing { background: rgba(232, 145, 45, .10); }
 .classic.slk.slk .slk-edit { margin-top: 4px; border: 1px solid var(--slk-dim); border-radius: 8px; background: var(--slk-bg); overflow: hidden; }
 .classic.slk.slk .slk-edit .slk-input { width: 100%; box-sizing: border-box; }
 .classic.slk.slk .slk-edit-bar { display: flex; align-items: center; gap: 8px; padding: 4px 6px 6px 12px; }
 .classic.slk.slk .slk-send.save { background: var(--slk-green); color: #fff; padding: 0 14px; font-weight: 700; }
 
+/* Yours, before the server has it: dimmed while it is on its way — at once,
+   no fade, so a quick send never flickers — and, when it did not go, a faint
+   red wash with the reason and what to do under the words. The red is mixed
+   toward the ink so the reason reads on both themes. */
+.classic.slk.slk .slk-msg.pending:not(.editing) .slk-body > :not(.slk-meta):not(.slk-unsent) { opacity: .55; }
+.classic.slk.slk .slk-msg.failed,
+.classic.slk.slk .slk-msg.failed:hover { background: color-mix(in srgb, var(--slk-red) 7%, transparent); }
+.classic.slk.slk .slk-unsent {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px;
+  font-size: 12.5px; color: color-mix(in srgb, var(--slk-red) 65%, var(--slk-ink));
+}
+/* Still on its way after longer than a send should take: not an error yet,
+   so in the quiet grey, with Delete beside it. */
+.classic.slk.slk .slk-unsent.late { color: var(--slk-dim); }
+.classic.slk.slk .slk-unsent-why { min-width: 0; margin-right: 2px; }
+.classic.slk.slk .slk-unsent-act {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; border-radius: 4px;
+  background: none; font: inherit; font-weight: 700; color: var(--slk-accent); cursor: pointer;
+}
+.classic.slk.slk .slk-unsent-act:hover { background: var(--slk-hover); }
+.classic.slk.slk .slk-unsent-act:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 1px; }
+@media (hover: none) { .classic.slk.slk .slk-unsent-act { padding: 6px 10px; } }
+
 /* Slack's formatting, read back. */
 .classic.slk.slk .slk-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; padding: 1px 4px; border-radius: 4px; background: var(--slk-field); color: #e01e5a; border: 1px solid var(--slk-line); }
 .classic.slk.slk .slk-pre { margin: 6px 0; padding: 8px 10px; border-radius: 6px; background: var(--slk-field); border: 1px solid var(--slk-line); overflow-x: auto; font-size: 12.5px; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
 .classic.slk.slk .slk-quote { margin: 2px 0; padding-left: 10px; border-left: 4px solid var(--slk-line); color: var(--slk-dim); }
+/* Discord's marks: ||spoiler||, headings and -# subtext. */
+.classic.slk.slk .slk-spoiler { border-radius: 4px; padding: 0 2px; background: var(--slk-dim); color: transparent; cursor: pointer; transition: background .15s, color .15s; }
+.classic.slk.slk .slk-spoiler > * { visibility: hidden; }
+.classic.slk.slk .slk-spoiler:hover { background: var(--slk-faint); }
+.classic.slk.slk .slk-spoiler:focus-visible { outline: 2px solid var(--slk-accent, #1264a3); outline-offset: 1px; }
+.classic.slk.slk .slk-spoiler.shown { background: var(--slk-field); color: inherit; cursor: text; }
+.classic.slk.slk .slk-h { font-weight: 800; line-height: 1.3; margin: 6px 0 2px; }
+.classic.slk.slk .slk-h1 { font-size: 1.5em; }
+.classic.slk.slk .slk-h2 { font-size: 1.25em; }
+.classic.slk.slk .slk-h3 { font-size: 1.1em; }
+.classic.slk.slk .slk-subtext { font-size: .8em; color: var(--slk-dim); }
+@media (prefers-reduced-motion: reduce) { .classic.slk.slk .slk-spoiler { transition: none; } }
 .classic.slk.slk .slk-ul { margin: 2px 0; padding-left: 22px; list-style: disc; }
 .classic.slk.slk .slk-ol { margin: 2px 0; padding-left: 26px; list-style: decimal; }
 .classic.slk.slk .slk-ul li, .classic.slk.slk .slk-ol li { display: list-item; }
@@ -645,9 +776,9 @@
 .classic.slk.slk .slk-pin-who { font-size: 12px; color: var(--slk-dim); }
 .classic.slk.slk .slk-pin-body { font-size: 13.5px; color: var(--slk-ink); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
-/* A thread, beside the conversation. */
+/* A thread, beside the conversation. Its log ends at the typing row. */
 .classic.slk.slk .slk-thread-pane { display: flex; flex-direction: column; }
-.classic.slk.slk .slk-thread-log { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0; }
+.classic.slk.slk .slk-thread-log { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0 0; }
 .classic.slk.slk .slk-thread-count { display: flex; align-items: center; gap: 10px; margin: 6px 16px; font-size: 12px; color: var(--slk-dim); }
 .classic.slk.slk .slk-thread-count::after { content: ''; flex: 1; height: 1px; background: var(--slk-line); }
 .classic.slk.slk .slk-composer.thread { margin: 0 12px 12px; }
@@ -657,6 +788,40 @@
 .classic.slk.slk .slk-new-line { display: flex; align-items: center; gap: 8px; margin: 6px 16px; color: var(--slk-red); font-size: 11.5px; font-weight: 700; }
 .classic.slk.slk .slk-new-line::before { content: ''; flex: 1; height: 1px; background: var(--slk-red); order: 0; }
 .classic.slk.slk .slk-new-line span { order: 1; }
+/* "Jump to present": held at the foot of the log while you read further up,
+   with how many new messages wait below. The holder takes no room, so the
+   log is as long with it as without. */
+.classic.slk.slk .slk-present { position: sticky; bottom: 0; z-index: 3; height: 0; }
+.classic.slk.slk .slk-present button {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 32px);
+  padding: 7px 12px 7px 14px; border: 1px solid var(--slk-line); border-radius: 9999px;
+  background: var(--slk-bg); color: var(--slk-ink); box-shadow: 0 6px 18px rgba(0, 0, 0, .14);
+  font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  animation: slk-present-in 160ms ease-out;
+}
+.classic.slk.slk .slk-present button:hover { background: var(--slk-hover); }
+.classic.slk.slk .slk-present button:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 2px; }
+.classic.slk.slk .slk-present b { color: var(--slk-red); font-weight: 700; }
+.classic.slk.slk .slk-present b + span { color: var(--slk-dim); }
+/* On a 360px phone, "150 neue Nachrichten · Zum Neuesten springen" is wider
+   than the log: the words give way, the count and the arrow stay. */
+.classic.slk.slk .slk-present button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.classic.slk.slk .slk-present b, .classic.slk.slk .slk-present svg { flex-shrink: 0; }
+/* Dark: on the log's own colour, with a shadow a dark page swallows, the
+   pill did not stand off the messages, and the badge red as text read at
+   3.6:1. It sits raised on the field colour with a border that shows, and
+   the count takes a lighter red (5.6:1 on the field, 5:1 hovered). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .classic.slk.slk .slk-present button { background: var(--slk-field); border-color: #3b3f45; box-shadow: 0 6px 20px rgba(0, 0, 0, .5); }
+  :root:not([data-theme="light"]) .classic.slk.slk .slk-present button:hover { background: var(--slk-on); }
+  :root:not([data-theme="light"]) .classic.slk.slk .slk-present b { color: #f47196; }
+}
+:root[data-theme="dark"] .classic.slk.slk .slk-present button { background: var(--slk-field); border-color: #3b3f45; box-shadow: 0 6px 20px rgba(0, 0, 0, .5); }
+:root[data-theme="dark"] .classic.slk.slk .slk-present button:hover { background: var(--slk-on); }
+:root[data-theme="dark"] .classic.slk.slk .slk-present b { color: #f47196; }
+@keyframes slk-present-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .classic.slk.slk .slk-present button { animation: none; } }
 .classic.slk.slk .slk-older { text-align: center; font-size: 12px; color: var(--slk-dim); padding: 10px 0; }
 .classic.slk.slk .slk-steps { align-items: flex-start; }
 .classic.slk.slk .slk-steps ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; }
@@ -761,7 +926,7 @@
 .classic.slk.slk .slk-head h1 .slk-author.link { font-weight: inherit; font-size: inherit; }
 .classic.slk.slk .slk-head-status, .classic.slk.slk .slk-head-away { font-size: 13px; font-weight: 400; color: var(--slk-dim); }
 .classic.slk.slk .slk-profile-body { padding: 24px 20px; overflow-y: auto; }
-.classic.slk.slk .slk-profile-avatar { width: 96px; height: 96px; border-radius: 16px; display: grid; place-items: center; font-size: 42px; font-weight: 800; background: var(--slk-on); color: var(--slk-ink); margin-bottom: 14px; }
+.classic.slk.slk .slk-profile-avatar { width: 96px; height: 96px; margin-bottom: 14px; }
 .classic.slk.slk .slk-profile-body h3 { margin: 0; font-size: 22px; color: var(--slk-ink); }
 .classic.slk.slk .slk-profile-body p { margin: 4px 0 0; font-size: 14px; color: var(--slk-dim); }
 .classic.slk.slk .slk-profile-status { color: var(--slk-ink) !important; }
@@ -770,6 +935,55 @@
 .classic.slk.slk .slk-profile-stats dt { font-size: 11px; color: var(--slk-dim); }
 .classic.slk.slk .slk-profile-stats dd { margin: 2px 0 0; font-size: 18px; font-weight: 800; color: var(--slk-ink); }
 .classic.slk.slk .slk-profile-actions { display: flex; gap: 8px; }
+
+/* A teammate's card, popped out beside a face, a name or an @mention: a
+   band of their colour, their photo with the presence dot cut out of the
+   card, then who they are and the two ways on. Placed by utils/people's
+   placeCard; the offset it opens from depends on which side it took. */
+.classic.slk.slk .slk-popout {
+  position: fixed; z-index: 80; width: 300px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px);
+  box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--slk-card); color: var(--slk-ink);
+  border: 1px solid var(--slk-line); border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .18), 0 2px 6px rgba(0, 0, 0, .08);
+  transform-origin: top left;
+  animation: slk-popout-in 140ms cubic-bezier(.2, .8, .2, 1);
+}
+.classic.slk.slk .slk-popout.left { transform-origin: top right; }
+.classic.slk.slk .slk-popout.up { transform-origin: bottom left; }
+.classic.slk.slk .slk-popout.left.up { transform-origin: bottom right; }
+.classic.slk.slk .slk-popout:focus { outline: none; }
+.classic.slk.slk .slk-popout:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 2px; }
+@keyframes slk-popout-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .classic.slk.slk .slk-popout { animation: none; } }
+.classic.slk.slk .slk-popout-banner { height: 56px; opacity: .85; }
+.classic.slk.slk .slk-popout-face {
+  position: relative; width: 72px; height: 72px; margin: -36px 0 0 16px;
+  border-radius: 16px; box-shadow: 0 0 0 4px var(--slk-card); background: var(--slk-card);
+}
+.classic.slk.slk .slk-popout-face .cl-presence {
+  width: 18px; height: 18px; right: -4px; bottom: -4px; border-width: 3px;
+  background: var(--slk-card); border-color: var(--slk-dim); box-shadow: 0 0 0 3px var(--slk-card);
+}
+.classic.slk.slk .slk-popout-face .cl-presence.on { background: var(--slk-green); border-color: var(--slk-green); }
+.classic.slk.slk .slk-popout-body { padding: 10px 16px 16px; }
+.classic.slk.slk .slk-popout-name { margin: 0; font-size: 19px; font-weight: 800; line-height: 1.25; color: var(--slk-ink); overflow-wrap: anywhere; }
+.classic.slk.slk .slk-popout-body p { margin: 3px 0 0; font-size: 13.5px; line-height: 1.4; color: var(--slk-dim); overflow-wrap: anywhere; }
+.classic.slk.slk .slk-popout-body .slk-popout-handle { color: var(--slk-ink); }
+.classic.slk.slk .slk-popout-body .slk-popout-status {
+  display: flex; align-items: baseline; gap: 6px; margin-top: 10px; padding: 8px 10px;
+  border-radius: 8px; background: var(--slk-field); color: var(--slk-ink);
+}
+.classic.slk.slk .slk-popout-emoji { flex: none; }
+.classic.slk.slk .slk-popout-body .slk-popout-away { color: var(--slk-amber); font-weight: 600; }
+.classic.slk.slk .slk-popout-body .slk-popout-local { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
+.classic.slk.slk .slk-popout-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--slk-line); }
+.classic.slk.slk .slk-popout-actions button { flex: 1 1 auto; height: 32px; }
+.classic.slk.slk .slk-popout-actions button:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .classic.slk.slk .slk-popout { box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .04); }
+}
+:root[data-theme="dark"] .classic.slk.slk .slk-popout { box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .04); }
 @media (min-width: 720px) {
   .classic.slk.slk.side-hidden .slk-side { display: none; }
 }
@@ -835,10 +1049,13 @@
 .classic.slk.slk .slk-jambar-people li .cl-lead { border: 2px solid #e3f6ee; }
 .classic.slk.slk .slk-jambar-people li.muted { opacity: .55; }
 @media (prefers-color-scheme: dark) {
-  .classic.slk.slk .slk-jambar { background: #16332a; color: #bfe9d6; }
-  .classic.slk.slk .slk-jambar-people li .cl-lead { border-color: #16332a; }
-  .classic.slk.slk .slk-jam-button.live { background: #16332a; border-color: #2a6b52; color: #7fdcb3; }
+  :where(:root:not([data-theme="light"])) .classic.slk.slk .slk-jambar { background: #16332a; color: #bfe9d6; }
+  :where(:root:not([data-theme="light"])) .classic.slk.slk .slk-jambar-people li .cl-lead { border-color: #16332a; }
+  :where(:root:not([data-theme="light"])) .classic.slk.slk .slk-jam-button.live { background: #16332a; border-color: #2a6b52; color: #7fdcb3; }
 }
+:where(:root[data-theme="dark"]) .classic.slk.slk .slk-jambar { background: #16332a; color: #bfe9d6; }
+:where(:root[data-theme="dark"]) .classic.slk.slk .slk-jambar-people li .cl-lead { border-color: #16332a; }
+:where(:root[data-theme="dark"]) .classic.slk.slk .slk-jam-button.live { background: #16332a; border-color: #2a6b52; color: #7fdcb3; }
 
 .classic.slk.slk .slk-jam-audio { display: block; width: min(360px, 100%); margin: 6px 0; }
 
@@ -900,6 +1117,12 @@
 }
 .classic.slk.slk .slk-member-row.static { cursor: default; }
 .classic.slk.slk button.slk-member-row:hover { background: var(--slk-hover); }
+.classic.slk.slk button.slk-member-row:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -2px; }
+/* Here or not, cut out of the pane — or out of the row under the pointer. */
+.classic.slk.slk .slk-details-list .cl-presence { width: 9px; height: 9px; border-width: 1.5px; background: var(--slk-bg); box-shadow: 0 0 0 2px var(--slk-bg); }
+.classic.slk.slk .slk-details-list .cl-presence.on { background: var(--slk-green); border-color: var(--slk-green); }
+.classic.slk.slk .slk-details-list .slk-member-row:hover .cl-presence { box-shadow: 0 0 0 2px var(--slk-hover); }
+.classic.slk.slk .slk-details-list .slk-member-row:hover .cl-presence:not(.on) { background: var(--slk-hover); }
 .classic.slk.slk .slk-member-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .classic.slk.slk .slk-member-name { font-size: 14px; font-weight: 700; color: var(--slk-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
 .classic.slk.slk a.slk-member-name { color: var(--slk-accent); font-weight: 600; }
@@ -1242,6 +1465,10 @@
 .classic.slk.slk .cl-section h2 .cl-section-remove { opacity: 0; }
 .classic.slk.slk .cl-section h2:hover .cl-section-remove, .classic.slk.slk .cl-section-remove:focus-visible { opacity: 1; }
 @media (hover: none) { .classic.slk.slk .cl-section h2 .cl-section-remove { opacity: 1; } }
+/* A folded section keeps what calls for you listed; its header says so
+   too, with the dot a row has when only something new was said. */
+.classic.slk.slk .cl-fold .cl-fresh { margin-left: 6px; }
+.classic.slk.slk .cl-fold:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -2px; border-radius: 6px; }
 .msheet-form { display: flex; flex-direction: column; gap: 8px; }
 /* The star and "move to a section" sit beside the name, as in Slack. */
 .classic.slk.slk .slk-head-text { display: grid; grid-template-columns: minmax(0, auto) auto 1fr; align-items: center; column-gap: 2px; }
@@ -1272,9 +1499,11 @@
 @media (hover: none) { .slk-bookmark-more { opacity: 1; } }
 @media (max-width: 600px) { .slk-bookmarks { padding: 6px 12px; flex-wrap: nowrap; overflow-x: auto; } .slk-bookmark-form input { width: 140px; } }
 @media (prefers-color-scheme: dark) {
-  .slk-bookmarks, .slk-bookmark-form input { border-color: #2a2a2a; }
-  .slk-bookmark:hover, .slk-bookmark-add:hover { background: #1f1f1f; }
+  :where(:root:not([data-theme="light"])) .slk-bookmarks, :where(:root:not([data-theme="light"])) .slk-bookmark-form input { border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .slk-bookmark:hover, :where(:root:not([data-theme="light"])) .slk-bookmark-add:hover { background: #1f1f1f; }
 }
+:where(:root[data-theme="dark"]) .slk-bookmarks, :where(:root[data-theme="dark"]) .slk-bookmark-form input { border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .slk-bookmark:hover, :where(:root[data-theme="dark"]) .slk-bookmark-add:hover { background: #1f1f1f; }
 
 /* The canvas: one shared document per conversation. */
 .classic.slk.slk .slk-canvas-body { display: block; overflow-y: auto; padding: 16px 20px 32px; }
@@ -1375,6 +1604,51 @@
 .classic.slk.slk .mention-hl.m-agent { color: var(--slk-agent); background: color-mix(in srgb, var(--slk-agent) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--slk-agent) 16%, transparent); }
 .classic.slk.slk .slk-mention.group { color: #0f7b6c; background: rgba(15, 123, 108, 0.12); }
 .classic.slk.slk .mention-hl.m-group { color: #0f7b6c; background: rgba(15, 123, 108, 0.14); box-shadow: 0 0 0 1px rgba(15, 123, 108, 0.14); }
+
+/* A message that calls you — your @name, a group you are in, @channel or
+   @here — gets a bar down its left edge and a warm glow fading out from
+   it, the way Discord marks one, so it is found in a busy channel. Warm to
+   read apart from the blue of links and other people's names; faint, so a
+   channel that calls you often is not a wall of it. The bar is a border on
+   a layer of its own: nothing shifts, and it stays when forced colours
+   take the tint away.
+   It is the one mark @channel, @here and a group get (only your own @name
+   has a chip), so it holds 3:1 against every row it sits on, hovered or
+   pinned: a darker gold in light, where a bright one fades into white. */
+.classic.slk.slk {
+  --slk-me-bg: rgba(242, 176, 20, .12); --slk-me-bg-hover: rgba(242, 176, 20, .18);
+  --slk-me-bar: #b07800; --slk-me-ink: #7a4f00; --slk-me-chip: rgba(242, 176, 20, .26);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .classic.slk.slk {
+    --slk-me-bg: rgba(240, 178, 50, .10); --slk-me-bg-hover: rgba(240, 178, 50, .15);
+    --slk-me-bar: #f0b232; --slk-me-ink: #f8d27a; --slk-me-chip: rgba(240, 178, 50, .22);
+  }
+}
+:root[data-theme="dark"] .classic.slk.slk {
+  --slk-me-bg: rgba(240, 178, 50, .10); --slk-me-bg-hover: rgba(240, 178, 50, .15);
+  --slk-me-bar: #f0b232; --slk-me-ink: #f8d27a; --slk-me-chip: rgba(240, 178, 50, .22);
+}
+/* Not to be taken for a pinned message: that one, and one you are
+   editing, is a flat amber wash over the whole row, a pinned one with its
+   "Pinned" line above the words. This is the bar and a glow that fades
+   from it, laid as a background image, so it goes over whatever colour the
+   row already has instead of taking its place. A pinned message that calls
+   you shows both: the pin's wash and its line, with the bar and the glow
+   on top. (Editing never meets it: you only edit your own, and your own
+   never calls you.) */
+.classic.slk.slk .slk-msg.mentions-me { background-image: linear-gradient(90deg, var(--slk-me-bg), transparent 75%); }
+.classic.slk.slk .slk-msg.mentions-me:hover { background-image: linear-gradient(90deg, var(--slk-me-bg-hover), transparent 75%); }
+.classic.slk.slk .slk-msg.mentions-me::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0;
+  border-left: 2px solid var(--slk-me-bar); pointer-events: none;
+}
+/* What a screen reader hears in place of all that. It is text in the
+   message, so selecting the message and copying it would bring "Mentions
+   you" along with the words: it cannot be selected. */
+.classic.slk.slk .slk-calls-me { -webkit-user-select: none; user-select: none; }
+/* Your own @name among the others: the same warmth, stronger. */
+.classic.slk.slk .slk-mention.me { color: var(--slk-me-ink); background: var(--slk-me-chip); font-weight: 700; }
 
 /* A message shown in the reader's language, and the way back to its own. */
 .classic.slk.slk .slk-translated { display: inline-block; margin-top: 2px; padding: 0; border: none; background: none; font: inherit; font-size: 11.5px; color: var(--slk-dim); cursor: pointer; }
@@ -1478,3 +1752,92 @@
 .classic.slk.slk .row-menu-more { flex: none; opacity: .7; display: inline-grid; }
 .classic.slk.slk .row-menu-sep { height: 1px; background: var(--slk-line); margin: 6px 0; }
 .classic.slk.slk .row-menu-head { padding: 4px 16px 4px 36px; font-size: 12.5px; color: var(--slk-dim); }
+
+/* ---- Inline replies: Discord's Reply, not a thread ---- */
+/* The line above a reply, where a pin's mark sits: an arrow, who, and how
+   it began, on one line and quieter than the message — the whole of it a
+   way to the original. */
+.classic.slk.slk .slk-reply-quote {
+  display: flex; align-items: center; gap: 6px; width: fit-content; max-width: 100%; min-width: 0;
+  margin: 0 0 2px; padding: 1px 6px 1px 2px; border: none; border-radius: 6px;
+  background: none; font: inherit; font-size: 13px; line-height: 1.4; color: var(--slk-dim);
+  text-align: left; cursor: pointer;
+}
+.classic.slk.slk .slk-reply-quote > svg { flex: none; color: var(--slk-faint); }
+.classic.slk.slk .slk-reply-quote:hover { background: var(--slk-hover); color: var(--slk-ink); }
+.classic.slk.slk .slk-reply-quote:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 1px; }
+.classic.slk.slk .slk-reply-who { flex: none; font-weight: 700; color: var(--slk-ink); }
+.classic.slk.slk .slk-reply-excerpt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.classic.slk.slk .slk-reply-quote.gone { cursor: default; font-style: italic; color: var(--slk-faint); }
+.classic.slk.slk .slk-reply-quote.gone:hover { background: none; color: var(--slk-faint); }
+/* A hidden spoiler: a bar, the same length whatever it hides. */
+.classic.slk.slk .slk-reply-spoiler {
+  display: inline-block; width: 3em; height: .9em; vertical-align: -1px;
+  border-radius: 3px; background: var(--slk-dim);
+}
+/* Over the composer while a reply is written: what it answers, and the ×. */
+.classic.slk.slk .slk-replying {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 6px 5px 12px; border-bottom: 1px solid var(--slk-line); border-radius: 9px 9px 0 0;
+  background: var(--slk-field); color: var(--slk-dim); font-size: 13px;
+}
+.classic.slk.slk .slk-replying > svg { flex: none; }
+.classic.slk.slk .slk-replying-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.classic.slk.slk .slk-replying-excerpt { color: var(--slk-faint); }
+.classic.slk.slk .slk-replying-cancel {
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px;
+  border: none; border-radius: 6px; background: none; color: var(--slk-dim); cursor: pointer;
+}
+.classic.slk.slk .slk-replying-cancel:hover { background: var(--slk-hover); color: var(--slk-ink); }
+.classic.slk.slk .slk-replying-cancel:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 1px; }
+@media (hover: none) {
+  /* A finger needs more than a mouse does. */
+  .classic.slk.slk .slk-replying-cancel { width: 36px; height: 36px; }
+}
+/* A message's right-click menu has its quick reactions in a row along the
+   top: square buttons side by side, lit on hover as a toolbar's are rather
+   than filled like the items under them, with a ring for the keyboard. */
+.classic.slk.slk .row-menu-strip > div { display: flex; gap: 2px; padding: 0 6px 2px; }
+.classic.slk.slk .row-menu-list .row-menu-strip button {
+  flex: none; width: 38px; height: 36px; padding: 0; justify-content: center;
+  border-radius: 6px; font-size: 19px; line-height: 1;
+}
+.classic.slk.slk .row-menu-list .row-menu-strip button:hover:not(:disabled) { background: var(--slk-hover); color: var(--slk-ink); }
+.classic.slk.slk .row-menu-list .row-menu-strip button:focus-visible { background: var(--slk-hover); color: var(--slk-ink); box-shadow: inset 0 0 0 2px var(--slk-accent); }
+
+/* ---- Compact ----
+   Message display: Compact, chosen on You (utils/appearance.ts). No faces:
+   the time and the name sit at the start of the line and the words run on
+   beside them, wrapping under the name. The time takes the column a joined
+   message's hover time already has, so a message joined to the one before
+   keeps its shape — words only, its time on hover — and everything under a
+   message lines up with the name. Last in the file: these share their
+   weight with the rules above and have to come after them. */
+.classic.slk.slk.compact { --slk-time-col: 56px; --slk-text-lh: calc(15px * 1.55); }
+.classic.slk.slk.compact .slk-msg { padding-top: 2px; padding-bottom: 2px; gap: 8px; }
+.classic.slk.slk.compact .slk-msg:not(.joined) { margin-top: 2px; }
+.classic.slk.slk.compact .slk-gutter { width: var(--slk-time-col); }
+.classic.slk.slk.compact .slk-msg:not(.joined) > .slk-gutter { display: none; }
+.classic.slk.slk.compact .slk-hover-time { padding-top: 0; font-size: 11px; line-height: var(--slk-text-lh); }
+/* A hanging indent: the body starts where the name does, and the time and
+   the name float back out over its padding. The line height is the words',
+   so the name sits on their first baseline. */
+.classic.slk.slk.compact .slk-msg:not(.joined) > .slk-body { padding-left: calc(var(--slk-time-col) + 8px); }
+.classic.slk.slk.compact .slk-msg:not(.joined) .slk-meta {
+  float: left; margin: 0 6px 0 calc(-1 * (var(--slk-time-col) + 8px));
+  line-height: var(--slk-text-lh);
+}
+/* The smaller type beside the name keeps to the name's line: at the line's
+   own height, a baseline-aligned 11px time hangs a pixel or two below it,
+   and the float grows just enough to push the words' second line in too. */
+.classic.slk.slk.compact .slk-msg:not(.joined) .slk-meta > :not(.slk-author) { line-height: 1; }
+.classic.slk.slk.compact .slk-meta .slk-time {
+  order: -1; flex: none; width: var(--slk-time-col); margin-right: 2px;
+  text-align: right; font-size: 11px; white-space: nowrap;
+}
+/* What is not words starts under the line, not beside it: a card, files,
+   an edit box, and a block that opens the message. */
+.classic.slk.slk.compact .slk-msg:not(.joined) .slk-body > :not(.slk-meta):not(.slk-text):not(.slk-pin-mark),
+.classic.slk.slk.compact .slk-text > :is(pre, ul, ol, blockquote) { clear: left; }
+.classic.slk.slk.compact .slk-pin-mark { display: flex; }
+.classic.slk.slk.compact .slk-reactions, .classic.slk.slk.compact .slk-card { margin-top: 4px; }

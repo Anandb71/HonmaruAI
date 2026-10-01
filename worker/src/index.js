@@ -60,7 +60,7 @@ import { handleWebhooks } from "./webhooks.js";
 import { handleAgentInvites } from "./agentInvites.js";
 import { handleUserAvatar } from "./userAvatar.js";
 import { serveFile } from "./files.js";
-import { addMembers, membersOf, isPrivate, mayRead, mayReadCard, accessFor, isGuest } from "./access.js";
+import { addMembers, membersOf, isPrivate, mayRead, mayReadCard, accessFor, isGuest, hasGuests } from "./access.js";
 import { runMinuteJobs } from "./later.js";
 import { recentBusinessTalk } from "./channels.js";
 import { relevantMemories } from "./memory.js";
@@ -1206,10 +1206,16 @@ async function handle(request, env, url, ctx) {
     // before. `orgId` is a query or body field rather than a path segment
     // because a personal org id is not "owner/repo".
     // The room is told only the public channels, and whether there are
-    // private ones — a member of one asks again for their own list.
-    const tellRoom = async (orgId) => announceEvents(env, orgId, [customEvent("businesses", {
-      businesses: await listBusinesses(env.DB, orgId), partial: await hasPrivateBusinesses(env.DB, orgId),
-    })]);
+    // private ones — a member of one asks again for their own list. With a
+    // guest in the workspace not even those: a guest reads only the public
+    // channels they were let into, so everyone asks for their own list.
+    const tellRoom = async (orgId) => {
+      const guests = await hasGuests(env.DB, orgId);
+      return announceEvents(env, orgId, [customEvent("businesses", {
+        businesses: guests ? [] : await listBusinesses(env.DB, orgId),
+        partial: guests || await hasPrivateBusinesses(env.DB, orgId),
+      })]);
+    };
     const viewerLogin = async () => {
       const s = await getSession(env.DB, request.headers.get("x-session-token"));
       return s ? (await getUserByGithubId(env.DB, s.github_id))?.login || null : null;

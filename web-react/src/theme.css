@@ -331,26 +331,55 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .screen { background: #0f0f0f; color: #f2f2f2; }
-  .screen-foot { background: #0f0f0f; border-top-color: #2a2a2a; }
-  .display { color: #f2f2f2; }
-  .lede, .row .row-value { color: #a3a3a3; }
-  .btn-primary { background: #f2f2f2; color: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .screen { background: #0f0f0f; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .screen-foot { background: #0f0f0f; border-top-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .display { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .lede, :where(:root:not([data-theme="light"])) .row .row-value { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .btn-primary { background: #f2f2f2; color: #1a1a1a; }
   /* The light theme's hover darkens the button; on a light button in the
      dark that put dark text on a dark fill. Here it brightens instead. */
-  .btn-primary:hover:not([disabled]) { background: #ffffff; color: #1a1a1a; }
-  .btn-primary[disabled] { background: #2a2a2a; color: #646464; }
-  .btn-ghost { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
-  .btn-quiet { color: #a3a3a3; }
-  .btn-quiet:hover { color: #f2f2f2; }
-  .rows, .field input, .field select, .field textarea, .screen-head .back {
+  :where(:root:not([data-theme="light"])) .btn-primary:hover:not([disabled]) { background: #ffffff; color: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .btn-primary[disabled] { background: #2a2a2a; color: #646464; }
+  :where(:root:not([data-theme="light"])) .btn-ghost { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .btn-quiet { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .btn-quiet:hover { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .rows,
+  :where(:root:not([data-theme="light"])) .field input,
+  :where(:root:not([data-theme="light"])) .field select,
+  :where(:root:not([data-theme="light"])) .field textarea,
+  :where(:root:not([data-theme="light"])) .screen-head .back {
     background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2;
   }
-  .row { color: #f2f2f2; border-bottom-color: #2a2a2a; }
-  .row:hover, .screen-head .back:hover, .btn-ghost:hover:not([disabled]) { background: #222222; }
-  .row .row-icon { background: #2a2a2a; }
-  .form-note { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .row { color: #f2f2f2; border-bottom-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .row:hover,
+  :where(:root:not([data-theme="light"])) .screen-head .back:hover,
+  :where(:root:not([data-theme="light"])) .btn-ghost:hover:not([disabled]) { background: #222222; }
+  :where(:root:not([data-theme="light"])) .row .row-icon { background: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .form-note { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
 }
+:where(:root[data-theme="dark"]) .screen { background: #0f0f0f; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .screen-foot { background: #0f0f0f; border-top-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .display { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .lede, :where(:root[data-theme="dark"]) .row .row-value { color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .btn-primary { background: #f2f2f2; color: #1a1a1a; }
+:where(:root[data-theme="dark"]) .btn-primary:hover:not([disabled]) { background: #ffffff; color: #1a1a1a; }
+:where(:root[data-theme="dark"]) .btn-primary[disabled] { background: #2a2a2a; color: #646464; }
+:where(:root[data-theme="dark"]) .btn-ghost { background: #1a1a1a; color: #f2f2f2; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .btn-quiet { color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .btn-quiet:hover { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .rows,
+:where(:root[data-theme="dark"]) .field input,
+:where(:root[data-theme="dark"]) .field select,
+:where(:root[data-theme="dark"]) .field textarea,
+:where(:root[data-theme="dark"]) .screen-head .back {
+  background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2;
+}
+:where(:root[data-theme="dark"]) .row { color: #f2f2f2; border-bottom-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .row:hover,
+:where(:root[data-theme="dark"]) .screen-head .back:hover,
+:where(:root[data-theme="dark"]) .btn-ghost:hover:not([disabled]) { background: #222222; }
+:where(:root[data-theme="dark"]) .row .row-icon { background: #2a2a2a; }
+:where(:root[data-theme="dark"]) .form-note { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
 
 /* ── Wider than a phone ───────────────────────────────────────────────────
    This is a phone app: one decision per screen, a bar of tabs under the
@@ -471,13 +500,20 @@
 }
 
 @media (min-width: 720px) and (prefers-color-scheme: dark) {
-  body { background: #0f0f0f; }
-  .feed, .screen { background: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) body { background: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .feed, :where(:root:not([data-theme="light"])) .screen { background: #0f0f0f; }
   /* The signed-out card's ground: the day-side rule above is more specific
      than the plain `.screen` night rule, so it has to be said again here. */
-  .screen:not(.shell .screen), .shell .screen { background: #0f0f0f; }
-  .screen:not(.shell .screen) .screen-body,
-  .screen:not(.shell .screen) .screen-foot { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
+  :where(:root:not([data-theme="light"])) .screen:not(.shell .screen), :where(:root:not([data-theme="light"])) .shell .screen { background: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .screen:not(.shell .screen) .screen-body,
+  :where(:root:not([data-theme="light"])) .screen:not(.shell .screen) .screen-foot { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
+}
+@media (min-width: 720px) {
+  :where(:root[data-theme="dark"]) body { background: #0f0f0f; }
+  :where(:root[data-theme="dark"]) .feed, :where(:root[data-theme="dark"]) .screen { background: #0f0f0f; }
+  :where(:root[data-theme="dark"]) .screen:not(.shell .screen), :where(:root[data-theme="dark"]) .shell .screen { background: #0f0f0f; }
+  :where(:root[data-theme="dark"]) .screen:not(.shell .screen) .screen-body,
+  :where(:root[data-theme="dark"]) .screen:not(.shell .screen) .screen-foot { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
 }
 
 /* Last on purpose: screens.css is imported at the top of this file, so a
@@ -487,18 +523,59 @@
    the dark scale. These were the ones the dark pass had missed — a title
    and a name in near-black on near-black, and a white slab of numbers. */
 @media (prefers-color-scheme: dark) {
-  .screen-head .head-title, .shell .screen-head .head-title, .profile-head b, .profile-stats b, .row-main, .team-name { color: #f2f2f2; }
-  .rows-title, .row-sub, .profile-head span, .hint { color: #a3a3a3; }
-  .profile-avatar { background: #f2f2f2; color: #1a1a1a; }
-  .profile-stats, .shell .profile-stats { background: #1a1a1a; border-color: #2a2a2a; }
-  .profile-stats div { border-right-color: #2a2a2a; }
-  .row-select, .alias-input, .key-input, .you-row input, .join-code, .context-input,
-  .role-input, .ai-key-input, .invite-email {
+  :where(:root:not([data-theme="light"])) .screen-head .head-title,
+  :where(:root:not([data-theme="light"])) .shell .screen-head .head-title,
+  :where(:root:not([data-theme="light"])) .profile-head b,
+  :where(:root:not([data-theme="light"])) .profile-stats b,
+  :where(:root:not([data-theme="light"])) .row-main,
+  :where(:root:not([data-theme="light"])) .team-name { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .rows-title,
+  :where(:root:not([data-theme="light"])) .row-sub,
+  :where(:root:not([data-theme="light"])) .profile-head span,
+  :where(:root:not([data-theme="light"])) .hint { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .profile-avatar { background: #f2f2f2; color: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .profile-stats, :where(:root:not([data-theme="light"])) .shell .profile-stats { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .profile-stats div { border-right-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .row-select,
+  :where(:root:not([data-theme="light"])) .alias-input,
+  :where(:root:not([data-theme="light"])) .key-input,
+  :where(:root:not([data-theme="light"])) .you-row input,
+  :where(:root:not([data-theme="light"])) .join-code,
+  :where(:root:not([data-theme="light"])) .context-input,
+  :where(:root:not([data-theme="light"])) .role-input,
+  :where(:root:not([data-theme="light"])) .ai-key-input,
+  :where(:root:not([data-theme="light"])) .invite-email {
     background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2;
   }
-  .role-input::placeholder, .ai-key-input::placeholder { color: #8a8a8a; }
-  .row-select option { background: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .role-input::placeholder, :where(:root:not([data-theme="light"])) .ai-key-input::placeholder { color: #8a8a8a; }
+  :where(:root:not([data-theme="light"])) .row-select option { background: #1a1a1a; }
 }
+:where(:root[data-theme="dark"]) .screen-head .head-title,
+:where(:root[data-theme="dark"]) .shell .screen-head .head-title,
+:where(:root[data-theme="dark"]) .profile-head b,
+:where(:root[data-theme="dark"]) .profile-stats b,
+:where(:root[data-theme="dark"]) .row-main,
+:where(:root[data-theme="dark"]) .team-name { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .rows-title,
+:where(:root[data-theme="dark"]) .row-sub,
+:where(:root[data-theme="dark"]) .profile-head span,
+:where(:root[data-theme="dark"]) .hint { color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .profile-avatar { background: #f2f2f2; color: #1a1a1a; }
+:where(:root[data-theme="dark"]) .profile-stats, :where(:root[data-theme="dark"]) .shell .profile-stats { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .profile-stats div { border-right-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .row-select,
+:where(:root[data-theme="dark"]) .alias-input,
+:where(:root[data-theme="dark"]) .key-input,
+:where(:root[data-theme="dark"]) .you-row input,
+:where(:root[data-theme="dark"]) .join-code,
+:where(:root[data-theme="dark"]) .context-input,
+:where(:root[data-theme="dark"]) .role-input,
+:where(:root[data-theme="dark"]) .ai-key-input,
+:where(:root[data-theme="dark"]) .invite-email {
+  background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2;
+}
+:where(:root[data-theme="dark"]) .role-input::placeholder, :where(:root[data-theme="dark"]) .ai-key-input::placeholder { color: #8a8a8a; }
+:where(:root[data-theme="dark"]) .row-select option { background: #1a1a1a; }
 
 /* Classic in the dark: the same chat-client scale, on Slack's aubergine-free
    dark neutral rather than ours, so the surface reads as one thing. */
@@ -561,18 +638,6 @@
 }
 :root[data-theme="dark"] .row-icon.brand-tile { background: #fff; border-color: #2a2a2a; }
 :root[data-theme="dark"] .cl-app:has(.brand) { background: #fff; }
-:root[data-theme="dark"] .role-input, :root[data-theme="dark"] .ai-key-input, :root[data-theme="dark"] .invite-email {
-  background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2;
-}
-
-/* The app's own dark toggle (data-theme) has to paint the same grounds the
-   system's dark mode does: the screens, the feed, the shell — not only the
-   rows, which left dark cards floating on a light page. */
-:root[data-theme="dark"] .feed, :root[data-theme="dark"] .screen,
-:root[data-theme="dark"] .screen:not(.shell .screen), :root[data-theme="dark"] .shell .screen { background: #0f0f0f; color: #f2f2f2; }
-:root[data-theme="dark"] .screen:not(.shell .screen) .screen-foot { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
-:root[data-theme="dark"] .shell .screen-foot { background: transparent; border-top: none; }
-:root[data-theme="dark"] body, :root[data-theme="dark"] .app { background: #0f0f0f; }
 
 /* The workspace switcher: the mark, the name and a menu of every workspace
    this person is in. On the rail it replaces the product's wordmark; in a
@@ -655,7 +720,8 @@
 }
 :root[data-theme="dark"] .ws-add-dialog { background: #1a1a1a; color: #f2f2f2; }
 :root[data-theme="dark"] .ws-add-choice, :root[data-theme="dark"] .ws-add-form input { border-color: #2e2e2e; }
-:root[data-theme="dark"] .ws-add-icon, :root[data-theme="dark"] .ws-add-plus { background: #2a2a2a; }
+:root[data-theme="dark"] .ws-add-choice:hover, :root[data-theme="dark"] .ws-add-form input:focus { border-color: #f2f2f2; }
+:root[data-theme="dark"] .ws-add-icon, :root[data-theme="dark"] .ws-add-plus, :root[data-theme="dark"] .ws-add-back:hover, :root[data-theme="dark"] .ws-add-close:hover { background: #2a2a2a; }
 :root[data-theme="dark"] .ws-item.on .ws-mark { box-shadow: 0 0 0 2px #1a1a1a, 0 0 0 4px #f2f2f2; }
 /* Phone: the rail is a bottom bar, so the switcher lives in the headers. */
 .ws-rail { display: none; }
@@ -700,7 +766,9 @@
   :root:not([data-theme="light"]) { --chrome-bg: #121016; --chrome-field: rgba(255, 255, 255, 0.09); --chrome-line: rgba(255, 255, 255, 0.12); }
 }
 :root[data-theme="dark"] { --chrome-bg: #121016; --chrome-field: rgba(255, 255, 255, 0.09); --chrome-line: rgba(255, 255, 255, 0.12); }
-.tab-avatar, .palette-label, .palette-kbd { display: none; }
+/* The search button's words, not the ⌘K rows' — which share the class name
+   and, on a phone, were hidden with them. */
+.tab-avatar, .palette-button .palette-label, .palette-kbd { display: none; }
 
 @media (min-width: 720px) {
   :root { --chrome: 44px; }
@@ -735,7 +803,7 @@
   }
   .shell .topbar-right .palette-button:hover { background: rgba(255, 255, 255, 0.22); }
   .shell .topbar-right .palette-button svg { width: 14px; height: 14px; flex: none; }
-  .shell .palette-label { display: block; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+  .shell .palette-button .palette-label { display: block; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
   .shell .palette-kbd { display: block; flex: none; font: inherit; font-size: 11px; opacity: 0.7; }
 
   /* The rail. */
@@ -948,7 +1016,7 @@
    the right. On a phone it is one column in the order it always was. */
 .profile-layout { display: flex; flex-direction: column; }
 .profile-side, .profile-main { display: contents; }
-.pf-head { order: 1; } .pf-stats { order: 2; } .pf-err { order: 3; } .pf-profile { order: 4; } .pf-status { order: 4; } .pf-ai { order: 5; }
+.pf-head { order: 1; } .pf-stats { order: 2; } .pf-err { order: 3; } .pf-profile { order: 4; } .pf-status { order: 4; } .pf-ai { order: 5; } .pf-look { order: 5; }
 .pf-where { order: 6; } .pf-ws { order: 7; } .pf-biz { order: 8; } .pf-acct { order: 9; }
 @media (min-width: 1024px) {
   .profile-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 32px; align-items: start; }
@@ -992,13 +1060,19 @@
 .status-actions { display: flex; align-items: center; gap: 12px; }
 /* ⌘/ — the shortcuts sheet. */
 .shortcuts-sheet { position: fixed; z-index: 41; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(92vw, 640px); max-height: 80vh; overflow-y: auto; background: var(--signal-white); border-radius: 18px; padding: 18px 22px 22px; box-shadow: 0 24px 64px rgba(0,0,0,.2); }
+/* It takes focus when it opens (for its Escape); the ring belongs on its
+   close button, not around the whole sheet. */
+.shortcuts-sheet:focus { outline: none; }
 .shortcuts-sheet .sheet-title { display: flex; justify-content: space-between; align-items: center; }
 .shortcuts-group h3 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ash); margin: 14px 0 6px; }
 .shortcuts-group dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 18px; }
 .shortcuts-group dl div { display: flex; gap: 10px; align-items: baseline; }
-.shortcuts-group dt { flex: none; min-width: 90px; }
+/* One column for the keys, so what they do lines up; a pair too long for it
+   ("Alt+Shift+↑ / Alt+Shift+↓" off a Mac) stacks its two caps instead of
+   squeezing the words beside it into a sliver. */
+.shortcuts-group dt { flex: none; width: 120px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 5px; }
 .shortcuts-group dd { margin: 0; font-size: 13.5px; color: var(--ink-black); }
-.shortcuts-group kbd { font: inherit; font-size: 12px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--bone); background: var(--mist, #f4f4f4); }
+.shortcuts-group kbd { font: inherit; font-size: 12px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--bone); background: var(--mist, #f4f4f4); white-space: nowrap; }
 .toast.rule-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: min(92vw, 640px); }
 .undo-button.quiet { background: transparent; color: inherit; border: 1px solid currentColor; opacity: .8; }
 @media (prefers-color-scheme: dark) {
@@ -1008,6 +1082,7 @@
 }
 :root[data-theme="dark"] .shortcuts-sheet { background: #1a1a1a; }
 :root[data-theme="dark"] .shortcuts-group dd { color: #f2f2f2; }
+:root[data-theme="dark"] .shortcuts-group kbd { background: #2a2a2a; border-color: #3a3a3a; }
 
 /* The workspace's mark in a phone's top bar (the rail has it on a laptop). */
 .topbar-ws { display: none; }
@@ -1040,3 +1115,4 @@
   :root:not([data-theme="light"]) .quiet-pill button { background: #1a1a1a; }
 }
 :root[data-theme="dark"] .quiet-day.on { background: #f2f2f2; border-color: #f2f2f2; color: #0f0f0f; }
+:root[data-theme="dark"] .quiet-pill button { background: #1a1a1a; }
