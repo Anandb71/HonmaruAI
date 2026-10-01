@@ -19,6 +19,7 @@ import './Dashboard.css'
 import { useT } from '../utils/i18n'
 import { getLocale } from '../utils/locale'
 import { displayName } from '../utils/names'
+import { bringForward } from '../utils/desktop'
 import { useRoute, useDesktop, useMinWidth, hashForCard, hashForMode, hashForScreen, hashForView } from '../utils/route'
 import { loadCardCache, saveCardCache } from '../utils/cardCache'
 import { reconnectWatch, wakeWatch } from '../utils/resync'
@@ -429,6 +430,8 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
     const onMessage = (event: MessageEvent) => {
+      // In the desktop app the window may be in the tray: out it comes.
+      if (event.data?.type === 'open-card' || event.data?.type === 'open-message') bringForward()
       if (event.data?.type === 'open-card' && event.data.cardId) { setPanel(null); navigate(hashForCard(event.data.cardId, typeof event.data.orgId === 'string' ? event.data.orgId : null)) }
       // The worker sends the message's address with its workspace, so one
       // from another workspace switches to it rather than finding nothing.

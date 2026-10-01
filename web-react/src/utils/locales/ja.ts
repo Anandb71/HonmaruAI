@@ -953,6 +953,7 @@ const table: Record<string, string> = {
   'Your AI could not route that.': 'AIがうまく振り分けられませんでした。',
   'Routing failed': '振り分けに失敗しました',
   'This browser cannot receive push notifications here.': 'このブラウザではプッシュ通知を受け取れません。',
+  'The desktop app tells you while it runs, even from the tray.': 'デスクトップアプリは起動している間、トレイにしまっていてもお知らせします。',
   'This browser cannot receive them.': 'このブラウザでは受け取れません。',
   'Could not turn notifications on. Try again in a moment.': '通知をオンにできませんでした。しばらくして試してください。',
   'Notifications are still off. You can turn them on whenever you like.': '通知はまだオフです。いつでもオンにできます。',

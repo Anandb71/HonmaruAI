@@ -13,8 +13,11 @@
 // fetched ahead of time or alongside it — never before it.
 
 import { getLocale } from './locale'
+import { desktopApp } from './desktop'
 
-export type PushSupport = 'ready' | 'needs-install' | 'unsupported' | 'denied'
+/// `desktop`: inside the desktop app, which has no push service and keeps
+/// the socket open from the tray instead (utils/desktop.ts).
+export type PushSupport = 'ready' | 'needs-install' | 'unsupported' | 'denied' | 'desktop'
 /// `dismissed`: the prompt was closed without an answer — ask again later.
 /// `denied`: blocked for this site; only the browser's settings undo it.
 export type EnableResult = 'on' | 'denied' | 'dismissed' | 'unavailable'
@@ -31,6 +34,7 @@ function isStandalone(): boolean {
 
 export function pushSupport(): PushSupport {
   if (typeof window === 'undefined') return 'unsupported'
+  if (desktopApp()) return 'desktop'
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     // Safari on iOS only exposes PushManager to an installed web app.
     return isIOS() && !isStandalone() ? 'needs-install' : 'unsupported'

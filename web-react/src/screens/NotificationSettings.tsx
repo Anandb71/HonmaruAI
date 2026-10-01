@@ -97,6 +97,8 @@ export const NotificationSettings: React.FC<Props> = ({ httpBase, sessionToken, 
               <span className="row-sub">
                 {support === 'needs-install'
                   ? t('On iPhone, add this to your home screen first — Safari only allows notifications for an installed web app.')
+                  : support === 'desktop'
+                    ? t('The desktop app tells you while it runs, even from the tray.')
                   : support === 'unsupported'
                     ? t('This browser cannot receive them.')
                     : support === 'denied'

@@ -468,6 +468,36 @@ APNs の鍵（`APNS_PRIVATE_KEY`）とは別物。1 本の鍵に APNs と Sign i
 鍵を入れる前のサインインでトークンを持っていない（その人がもう一度 Apple でサインインすれば
 保存される。本人は iPhone の設定 → Apple アカウント → Sign in with Apple からいつでも外せる）。
 
+## 4.8 デスクトップアプリ：署名して配布する（任意・30 分）
+
+Windows / Mac / Linux 版のインストーラは、署名なしでは作らない（OS の警告が出て、
+自動アップデートも安全にできないため）。GitHub の **Settings → Secrets and variables →
+Actions** に次の 7 つを入れてから、**Actions → Desktop release → Run workflow** を押す。
+
+| Secret | 中身 | 取り方 |
+|--------|------|--------|
+| `MAC_CSC_LINK` | Developer ID Application 証明書の `.p12` を base64 にしたもの | Apple Developer → Certificates → ＋ → **Developer ID Application** → Mac のキーチェーンに入れて `.p12` で書き出し → `base64 -i cert.p12 \| pbcopy` |
+| `MAC_CSC_KEY_PASSWORD` | その `.p12` のパスワード | 書き出すときに決めたもの |
+| `APPLE_API_KEY_P8` | App Store Connect API キー（`.p8`）の中身そのまま | App Store Connect → ユーザとアクセス → 統合 → App Store Connect API → ＋（役割は Developer で足りる） |
+| `APPLE_API_KEY_ID` | その鍵の Key ID | 同じ画面 |
+| `APPLE_API_ISSUER` | Issuer ID（UUID） | 同じ画面の上 |
+| `WIN_CSC_LINK` | Windows コード署名証明書の `.pfx` を base64 にしたもの | 証明書の販売元（DigiCert、Sectigo など。OV で可）から。`base64 -w0 cert.pfx` |
+| `WIN_CSC_KEY_PASSWORD` | その `.pfx` のパスワード | |
+
+流れ：
+
+1. `apps/desktop/package.json` の `version` を上げて main にマージ
+2. Actions → **Desktop release** → Run workflow。足りない Secret があれば、何も作らずに名前を出して止まる
+3. Mac・Windows・Linux の 3 台で作られ、`v<version>` の **下書き（draft）リリース**に入る
+4. Releases で中身を確認して **Publish**。これで、入っている全員のアプリに更新が届く
+
+初回だけ、署名済みの Mac 版で Jam に入って確認する：macOS がマイク・カメラの許可を聞いてきて、
+音と映像が通れば OK（`apps/desktop/resources/entitlements.mac.plist`）。
+
+自動アップデートはこのリポジトリの「最新の公開リリース」を見るので、デスクトップ以外の
+リリースをここで公開するときは、デスクトップの配布を別リポジトリに移す（`electron-builder.yml`
+の `publish`）。
+
 ## 5. 確認
 
 ```bash

@@ -97,6 +97,19 @@ Torutesu/HonmaruAI). It uploads the installers and the update feed
 (`latest*.yml`) to a draft release; publishing the draft is what offers the
 update.
 
+**From CI.** Bump `version` in `package.json`, then run *Actions → Desktop
+release → Run workflow* (`.github/workflows/desktop-release.yml`). It checks
+that every signing secret is set (`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`,
+`APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `WIN_CSC_LINK`,
+`WIN_CSC_KEY_PASSWORD`) before building anything, makes the draft release
+`v<version>` once, and builds on macOS, Windows and Linux runners into it.
+
+**Microphone and camera (Jam) on a Mac.** The hardened runtime needs the app
+to claim them: `resources/entitlements.mac.plist`, with the usage descriptions
+in `electron-builder.yml` (`mac.extendInfo`). The first signed build should be
+checked once by joining a Jam call: macOS asks, and the call has sound and
+video.
+
 **Updates.** An app built by `dist` or `release` (and only those: they mark
 its `package.json` with `honmaruUpdates`) checks the repository's GitHub
 releases with `electron-updater` at start and every six hours, downloads a
@@ -109,11 +122,5 @@ there, or move to a repository of their own.
 
 ## Not yet
 
-- Signing in CI: the workflow that runs `npm run release` on macOS and
-  Windows runners with the certificates as secrets.
-- macOS entitlements for the microphone and camera under the hardened
-  runtime (Jam), with their usage descriptions, to verify on a signed build.
-- The web app does not yet know it is running in the desktop app. Once it
-  reads `window.honmaruDesktop`, it will hide the Web Push bell (there is no
-  push service inside Electron, and the tray keeps the socket open instead)
-  and use `honmaruDesktop.show()` when a notification is clicked.
+- Azure Trusted Signing for Windows (`win.azureSignOptions`) instead of a
+  .pfx certificate.

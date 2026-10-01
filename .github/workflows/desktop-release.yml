@@ -1,0 +1,112 @@
+# Signed desktop installers, built on each platform's own runner and uploaded
+# — with the update feed (latest*.yml) — to a draft GitHub release named after
+# apps/desktop/package.json's version. Publishing that draft is what offers the
+# update to every installed app (apps/desktop/src/updates.js).
+#
+# Run it by hand (Actions → Desktop release → Run workflow) after bumping the
+# version. Repository secrets it needs:
+#   MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD   Developer ID Application .p12 (base64) and its password
+#   APPLE_API_KEY_P8                     App Store Connect API key (.p8 contents), to notarize
+#   APPLE_API_KEY_ID, APPLE_API_ISSUER   that key's id and issuer id
+#   WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD   Windows code-signing .pfx (base64) and its password
+# Nothing is built unless all of them are set: half a release would offer an
+# update to one platform and not the others.
+name: Desktop release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    name: Secrets and the draft release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every certificate is here
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          missing=()
+          for name in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_API_KEY_P8 APPLE_API_KEY_ID APPLE_API_ISSUER WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]} — see apps/desktop/README.md (Releasing)."
+            exit 1
+          fi
+      - name: The version
+        id: version
+        run: echo "tag=v$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_OUTPUT"
+      # Made once, here: three runners creating it at the same moment would
+      # make three drafts. electron-builder uploads into the one it finds.
+      - name: The draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          state=$(gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null || echo none)
+          if [ "$state" = "false" ]; then
+            echo "::error::$TAG is already published. Bump the version in apps/desktop/package.json first."
+            exit 1
+          fi
+          if [ "$state" = "none" ]; then
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "Honmaru AI desktop $TAG" --notes "Desktop app $TAG."
+          fi
+
+  build:
+    name: ${{ matrix.os }}
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      # notarytool reads the key from a file.
+      - name: The App Store Connect key, as a file
+        if: runner.os == 'macOS'
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$APPLE_API_KEY_P8" > "$key"
+          echo "APPLE_API_KEY=$key" >> "$GITHUB_ENV"
+      - name: Build, sign and upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY_ID: ${{ runner.os == 'macOS' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ runner.os == 'macOS' && secrets.APPLE_API_ISSUER || '' }}
+        run: npm run release
+      - name: The key file goes
+        if: always() && runner.os == 'macOS'
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"

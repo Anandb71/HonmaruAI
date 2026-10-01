@@ -1072,6 +1072,7 @@ const table: Record<string, string> = {
   'Routing failed': 'Falló el enrutado',
   'This browser cannot receive push notifications here.':
     'Este navegador no puede recibir notificaciones push aquí.',
+  'The desktop app tells you while it runs, even from the tray.': 'La app de escritorio te avisa mientras está abierta, incluso desde la bandeja.',
   'This browser cannot receive them.': 'Este navegador no puede recibirlas.',
   'Could not turn notifications on. Try again in a moment.':
     'No se pudieron activar las notificaciones. Inténtalo en un momento.',

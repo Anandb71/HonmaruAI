@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  What the app may do under the hardened runtime (electron-builder.yml, mac).
+  Electron's V8 needs the first two. The microphone and the camera are for
+  Jam calls; without them macOS refuses getUserMedia silently on a signed,
+  notarized build, and the usage descriptions in electron-builder.yml are
+  what the system's prompt says.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+</dict>
+</plist>
