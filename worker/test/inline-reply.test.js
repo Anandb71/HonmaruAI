@@ -193,3 +193,18 @@ test("a muted conversation's replies stay quiet; one set to mentions still hears
   const heard = await say(kenji, "me too", { replyTo: m.id });
   expect((await env.DB.prepare("SELECT reason FROM push_queue WHERE message_id = ?1").bind(heard.id).first())?.reason).toBe("reply");
 });
+
+test("someone who left is told nothing of what is said after: not an answer to their old message, not its thread", async () => {
+  const m = await say(mika, "Supplier list is in the drive");
+  await say(toru, "which folder?", { parentId: m.id });
+  // Mika leaves the workspace; what she wrote stays.
+  expect((await del("/members", mika, { orgId: ORG, ref: refs.Mika })).status).toBe(200);
+  const queuedFor = async (id) => (await env.DB.prepare("SELECT login, reason FROM push_queue WHERE message_id = ?1 ORDER BY login").bind(id).all()).results;
+  // Answered inline: still quoted by name, and nobody's phone is told.
+  const r = await say(toru, "Found it, thanks", { replyTo: m.id });
+  expect(r.replyTo).toMatchObject({ id: m.id, authorName: "Mika", excerpt: "Supplier list is in the drive", deleted: false });
+  expect(await queuedFor(r.id)).toEqual([]);
+  // Her thread carried on: Toru, who is in it and still here, hears; she does not.
+  const t = await say(kenji, "the shared one", { parentId: m.id });
+  expect(await queuedFor(t.id)).toEqual([{ login: "toru", reason: "thread" }]);
+});

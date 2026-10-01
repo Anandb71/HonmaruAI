@@ -279,6 +279,19 @@ test("with no FCM secret an Android phone is skipped silently, and never handed 
   expect(await deviceRow(ANDROID)).toEqual({ login: "mika", platform: "android" });
 });
 
+test("someone out of the workspace before a queued push is due is not sent it", async () => {
+  const { registerDevice } = await import("../src/db.js");
+  await registerDevice(env.DB, { deviceToken: ANDROID, githubId: "9902", login: "mika", platform: "android" });
+  await call("/channels/messages", toru, { method: "POST", body: { orgId: ORG, channel: "b:cafe", body: "@Mika the order?" } });
+  expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM push_queue WHERE login = 'mika'").first()).n).toBe(1);
+  // Gone within the minute; the phone is still registered to her login.
+  await env.DB.prepare("DELETE FROM memberships WHERE org_id = ?1 AND user_github_id = '9902'").bind(ORG).run();
+  const seen = outbound();
+  expect(await sendDuePushes(fcmEnv(), Date.now() + PUSH_DELAY_MS + 1000)).toEqual({ sent: 0, skipped: 1 });
+  seen.stop();
+  expect(seen.urls).toEqual([]);
+});
+
 test("an uninstalled app's token is deleted after FCM says so", async () => {
   const { registerDevice } = await import("../src/db.js");
   await registerDevice(env.DB, { deviceToken: ANDROID, githubId: "9902", login: "mika", platform: "android" });
