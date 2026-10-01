@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { renderRich, prefixLines, continueBlock } from './MessageParts'
@@ -20,6 +20,15 @@ describe('renderRich', () => {
 
   it('reads quoted lines one after another as one quote', () => {
     expect(html('> one\n> two\nafter')).toBe('<blockquote class="slk-quote">one<br/>two</blockquote>after')
+  })
+
+  it('draws a line of nothing but emoji large, and emoji among words as they are', () => {
+    expect(html('🎉')).toBe('<span class="slk-emoji big">🎉</span>')
+    expect(html('👍 🙏\nthanks 🙏')).toBe('<span class="slk-emoji big">👍 🙏</span><br/>thanks 🙏')
+    expect(html('- 🚀')).toBe('<ul class="slk-ul"><li><span class="slk-emoji big">🚀</span></li></ul>')
+    expect(html('*🎉* shipped')).toBe('<b>🎉</b> shipped')
+    expect(html('*🎉*')).toBe('<b>🎉</b>')
+    expect(html('`🎉`')).toBe('<code class="slk-code">🎉</code>')
   })
 
   it('draws a numbered list, keeping its numbers, apart from bullets', () => {
@@ -116,6 +125,46 @@ describe('the links a message unfurls', () => {
     expect(unfurlable('see https://a.example/x, and https://b.example/y! https://c.example/z')).toEqual(['https://a.example/x', 'https://b.example/y'])
     expect(unfurlable('https://h.example/channels/jam/audio/0f8fad5b-d9cb-469f-a165-70867728950e')).toEqual([])
     expect(unfurlable('no links')).toEqual([])
+  })
+})
+
+describe('the emoji picker', () => {
+  it('opens on a search box, the usual emoji, and every group once the list is here', async () => {
+    const { EmojiPicker } = await import('./MessageParts')
+    const { loadEmojiData } = await import('../utils/emojiSearch')
+    const draw = () => renderToStaticMarkup(<EmojiPicker onPick={() => {}} onClose={() => {}} />)
+    const before = draw()
+    expect(before).toContain('<input class="slk-picker-search" type="search" placeholder="Search emoji" aria-label="Search emoji"')
+    expect(before).toContain('Frequently used')
+    expect(before).not.toContain('Smileys &amp; people')
+    // It says the rest is on its way, rather than look complete.
+    expect(before).toContain('data-emoji-list="loading">Loading…</p>')
+    await loadEmojiData()
+    const after = draw()
+    expect(after).toContain('Smileys &amp; people')
+    expect(after).not.toContain('data-emoji-list')
+    expect(after).toContain('aria-label="👍" title=":+1:"')
+    // One stop for Tab; the arrows do the rest.
+    expect(after.match(/tabindex="0"/g)).toHaveLength(1)
+    expect(after.match(/data-cell="/g)!.length).toBeGreaterThan(380)
+  })
+})
+
+describe('the hover bar’s reactions', () => {
+  it('are the usual three, then the ones you reacted with last, each staying where it is', async () => {
+    const { QuickReactions } = await import('./MessageParts')
+    const { rememberEmoji } = await import('../utils/emojiSearch')
+    const bar = () => [...renderToStaticMarkup(<QuickReactions onReact={() => {}} />).matchAll(/aria-label="React with ([^"]+)"/g)].map((m) => m[1])
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} })
+    expect(bar()).toEqual(['✅', '👀', '🙌'])
+    rememberEmoji('🔥')
+    expect(bar()).toEqual(['✅', '👀', '🔥'])
+    // One already in the bar, clicked: it does not move from under the pointer.
+    rememberEmoji('👀')
+    expect(bar()).toEqual(['✅', '👀', '🔥'])
+    rememberEmoji('🎉')
+    expect(bar()).toEqual(['🎉', '👀', '🔥'])
+    vi.unstubAllGlobals()
   })
 })
 

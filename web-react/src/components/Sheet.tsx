@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom'
 import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon, type IconName } from './Icon'
-import { EmojiPicker } from './MessageParts'
+import { EmojiPicker, EmojiGlyph } from './MessageParts'
 import { Avatar } from './Avatar'
 import type { MenuEntry } from './RowMenu'
 import { messageMenuEntries, type MessageMenuActions } from '../utils/messageMenu'
+import { useQuickReactions } from '../utils/emojiSearch'
 import './Sheet.css'
 
 // A sheet that comes up from the bottom of a phone: what a long press on a
@@ -14,18 +15,34 @@ import './Sheet.css'
 // the bar of tools a laptop shows over a message has nowhere to be; this is
 // where they go, as every phone chat app puts them.
 
+/// Whether `from` is in something inside the sheet that scrolls by itself:
+/// between it and the sheet, a box with more in it than it shows and a
+/// scrollbar to reach it.
+export function inScroller(from: Element | null, sheet: Element | null, overflowOf: (el: Element) => string = (el) => getComputedStyle(el).overflowY): boolean {
+  for (let el = from; el && el !== sheet; el = el.parentElement) {
+    if (el.scrollHeight > el.clientHeight && /auto|scroll/.test(overflowOf(el))) return true
+  }
+  return false
+}
+
 /// The frame: a scrim, a handle, the rows. Escape, the scrim and a swipe
 /// down close it.
 export const Sheet: React.FC<{ label: string; onClose: () => void; children: React.ReactNode; className?: string }> = ({ label, onClose, children, className }) => {
   const box = useRef<HTMLDivElement>(null)
   const startY = useRef<number | null>(null)
+  // Whoever opens a sheet hands it a new onClose with every render of its
+  // own. Kept here, so the effect below runs once and not with each of them.
+  const close = useRef(onClose)
+  close.current = onClose
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current() }
     document.addEventListener('keydown', key)
-    // The first control, so a keyboard or a screen reader lands in it.
-    requestAnimationFrame(() => box.current?.querySelector<HTMLElement>('button, input')?.focus({ preventScroll: true }))
-    return () => document.removeEventListener('keydown', key)
-  }, [onClose])
+    // The first control, so a keyboard or a screen reader lands in it — once,
+    // as the sheet opens. Placed again on a later render, it took the caret
+    // out of a search box somebody was typing in.
+    const frame = requestAnimationFrame(() => box.current?.querySelector<HTMLElement>('button, input')?.focus({ preventScroll: true }))
+    return () => { document.removeEventListener('keydown', key); cancelAnimationFrame(frame) }
+  }, [])
   return createPortal(
     <div className="msheet-scrim" onClick={onClose}>
       <div
@@ -35,7 +52,11 @@ export const Sheet: React.FC<{ label: string; onClose: () => void; children: Rea
         aria-modal="true"
         aria-label={label}
         onClick={(e) => e.stopPropagation()}
-        onTouchStart={(e) => { startY.current = e.touches[0]?.clientY ?? null }}
+        onTouchStart={(e) => {
+          // A drag that starts in a list of its own (the emoji picker) is
+          // that list being scrolled, not the sheet being pulled down.
+          startY.current = inScroller(e.target as Element, box.current) ? null : e.touches[0]?.clientY ?? null
+        }}
         onTouchEnd={(e) => {
           const from = startY.current
           startY.current = null
@@ -59,6 +80,10 @@ export const SheetRow: React.FC<{ icon: IconName; label: string; onClick: () => 
   </button>
 )
 
+/// The phone's row of reactions before you have used any: room for six,
+/// where a laptop's hover bar has three.
+const SHEET_REACTIONS = ['👍', '✅', '👀', '🙌', '🎉', '🙏']
+
 /// What a long press on a message offers: a row of reactions, then what
 /// you can do to it. Everything a laptop has on hover and behind ⋯, from
 /// the same list, drawn as rows with no lines between them.
@@ -69,13 +94,14 @@ export const MessageSheet: React.FC<MessageMenuActions & {
 }> = ({ message, onClose, onReact, ...actions }) => {
   const t = useT()
   const [picker, setPicker] = React.useState(false)
-  const QUICK = ['👍', '✅', '👀', '🙌', '🎉', '🙏']
+  // The ones you reacted with last first, as on the laptop's bar.
+  const quick = useQuickReactions(SHEET_REACTIONS, 6)
   const rows = messageMenuEntries(message, { ...actions, t }).filter((e): e is Extract<MenuEntry, { kind: 'item' }> => e.kind === 'item')
   return (
     <Sheet label={t('Message actions')} onClose={onClose}>
       <div className="msheet-reactions" role="group" aria-label={t('Add reaction')}>
-        {QUICK.map((e) => (
-          <button key={e} type="button" onClick={() => { onReact(e); onClose() }} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
+        {quick.map((e) => (
+          <button key={e} type="button" onClick={() => { onReact(e); onClose() }} aria-label={t('React with {emoji}', { emoji: e })}><EmojiGlyph emoji={e} size={24} /></button>
         ))}
         <button type="button" className="more" onClick={() => setPicker((p) => !p)} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={20} /></button>
       </div>

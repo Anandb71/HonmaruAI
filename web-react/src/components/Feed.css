@@ -406,6 +406,7 @@
 .mention-tag { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; background: rgba(124, 58, 237, .12); color: #7c3aed; flex: none; }
 .mention-option.on .mention-tag { background: rgba(255,255,255,.25); color: #fff; }
 .mention-emoji { width: 22px; height: 22px; object-fit: contain; flex: none; }
+.mention-emoji.uni { display: inline-grid; place-items: center; font-size: 18px; line-height: 1; }
 .mention-menu:not(.emoji) { min-width: 300px; max-width: min(460px, calc(100vw - 32px)); }
 .mention-face { position: relative; width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
 .mention-face img { width: 24px; height: 24px; border-radius: 6px; object-fit: cover; display: block; }

@@ -10,6 +10,7 @@ import { PickRepository } from './screens/PickRepository'
 import { githubWebConfig, beginGitHubSignIn, readCallback, finishGitHubSignIn } from './utils/githubAuth'
 import type { GitHubWebConfig } from './utils/githubAuth'
 import { clearCardCache, clearAccountData } from './utils/cardCache'
+import { resetEmojiAccount } from './utils/emojiSearch'
 import { parseRoute } from './utils/route'
 import { onboardingKey, needsOnboarding, completeOnboarding } from './utils/onboardingProgress'
 import { t, adoptAccountLocale } from './utils/i18n'
@@ -365,6 +366,8 @@ function App() {
     // stay readable on this machine otherwise.
     if (stillOurs) clearAccountData()
     else if (userId) forgetOwnOutbox(localStorage, userId)
+    // Recently used emoji, kept and in memory, are this person's too.
+    resetEmojiAccount()
   }
 
   // A workspace's login rules ended this sign-in (utils/authGuard): out,

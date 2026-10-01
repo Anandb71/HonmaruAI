@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getLocale } from '../utils/locale'
 import { useT } from '../utils/i18n'
@@ -10,62 +10,150 @@ import type { Announced } from '../utils/typing'
 import { excerptParts } from '../utils/replies'
 import { messageMenuEntries, type MessageMenuActions } from '../utils/messageMenu'
 import { keepOnScreen, focusGoesBack } from './RowMenu'
+import { emojiDataState, gridStep, isEmojiOnly, loadEmojiData, pickerSections, rememberEmoji, useEmojiData, useEmojiDataState, useQuickReactions, useRecentEmoji } from '../utils/emojiSearch'
 
 // The pieces of a message a chat client has and a plain log does not:
 // formatting, reactions, the emoji picker, and the bar of things you can do
 // to a message on hover. ClassicList puts them together.
 
-/// The reactions most people reach for, first in the bar as in Slack.
-export const QUICK_REACTIONS = ['✅', '👀', '🙌']
+/// Cells to a row in the picker's grids, as ClassicList.css lays them out.
+const PICKER_COLS = 8
+const PICKER_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'])
 
-/// A small, fixed set rather than the whole Unicode table: enough to answer
-/// with, and it opens instantly.
-const EMOJI_SETS: Array<{ label: string; list: string[] }> = [
-  { label: 'Frequently used', list: ['👍', '✅', '👀', '🙌', '🎉', '🙏', '❤️', '😂', '🔥', '💯', '👏', '🚀'] },
-  { label: 'Work', list: ['📌', '📎', '📅', '⏰', '💡', '❓', '❗', '⚠️', '🛑', '✍️', '📈', '💰', '🧾', '📦', '🤝', '🗳️'] },
-  { label: 'Feelings', list: ['😀', '😊', '😅', '🤔', '😮', '😢', '😬', '🙃', '😎', '🥳', '😴', '🤯'] },
-  { label: 'Answers', list: ['⭕', '❌', '🆗', '🆖', '👌', '👎', '🤞', '💪', '☕', '🍣', '🍺', '🌱'] },
-]
-
+/// Every emoji to react with: a search box on top, this workspace's own
+/// first, the ones you used lately, then the list by group. Typing turns it
+/// into one grid of what matches, and Enter takes the first. The arrows move
+/// through the grids, and Tab leaves them in one step. Until the list is
+/// here it says so, and offers to fetch it again if it did not come.
 export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: () => void }> = ({ onPick, onClose }) => {
   const t = useT()
   const box = useRef<HTMLDivElement>(null)
+  const search = useRef<HTMLInputElement>(null)
   const custom = useCustomEmoji()
+  const recent = useRecentEmoji()
+  const data = useEmojiData()
+  const listState = useEmojiDataState()
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const id = useId()
+  // Closed by a key or a pick, focus goes back to what opened the picker; a
+  // click somewhere else leaves it where the click put it.
+  const giveBack = useRef(false)
+  const sections = useMemo(() => pickerSections(query, custom, recent, data), [query, custom, recent, data])
+  const sizes = sections.map((s) => s.cells.length)
+  const starts = sizes.map((_, i) => sizes.slice(0, i).reduce((a, b) => a + b, 0))
+  const total = sizes.reduce((a, b) => a + b, 0)
+  const current = Math.min(active, Math.max(0, total - 1))
+  const searching = Boolean(query.trim())
   useEffect(() => {
     const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
-    // Marked as taken, so an open thread under the picker stays open.
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }
+    // Marked as taken, so an open thread under the picker stays open; not
+    // while an input method is composing, where Escape cancels that instead.
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); onClose() } }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
   }, [onClose])
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    // Not on a phone, whose keyboard would come up over the picker.
+    if (!window.matchMedia?.('(pointer: coarse)').matches) search.current?.focus({ preventScroll: true })
+    return () => { if (giveBack.current && opener?.isConnected) opener.focus({ preventScroll: true }) }
+  }, [])
+  useEffect(() => { setActive(0); if (box.current) box.current.scrollTop = 0 }, [query])
+  // A list that did not come — offline, or a deploy replaced its chunk — is
+  // asked for again as the search changes, not only when the picker reopens.
+  useEffect(() => { if (emojiDataState() === 'failed') void loadEmojiData() }, [query])
+  const pick = (emoji: string) => {
+    rememberEmoji(emoji)
+    giveBack.current = true
+    onPick(emoji)
+    onClose()
+  }
+  const focusCell = (i: number) => box.current?.querySelector<HTMLElement>(`[data-cell="${i}"]`)?.focus()
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    // Keys that are choosing a word in an input method are its own.
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'Escape') {
+      // The picker's, not the pane's behind it: a search clears first.
+      e.stopPropagation()
+      if (query) { setQuery(''); search.current?.focus() } else { giveBack.current = true; onClose() }
+      return
+    }
+    if (e.target === search.current) {
+      if (e.key === 'ArrowDown' && total) { e.preventDefault(); focusCell(current) }
+      if (e.key === 'Enter' && searching) {
+        e.preventDefault()
+        const first = sections[0]?.cells[0]
+        if (first) pick(first.emoji)
+      }
+      return
+    }
+    const at = Number((e.target as HTMLElement).dataset.cell)
+    // ⌥↑ and the like are still the chat's (between conversations).
+    if (!Number.isInteger(at) || !PICKER_KEYS.has(e.key) || e.altKey || e.metaKey || e.ctrlKey) return
+    // An arrow that moved in the grid does not also move the list behind it.
+    e.preventDefault()
+    e.stopPropagation()
+    const next = gridStep(sizes, at, e.key, PICKER_COLS)
+    if (next < 0) search.current?.focus()
+    else focusCell(next)
+  }
   return (
-    <div className="slk-picker" ref={box} role="dialog" aria-label={t('Add reaction')}>
-      <div className="slk-picker-set workspace">
-        <div className="slk-picker-label">
-          {t('This workspace')}
-          <a className="slk-picker-add" href="#/tools/emoji" onClick={() => onClose()} data-add-emoji="1"><Icon name="plus" size={12} /> {t('Add emoji')}</a>
-        </div>
-        {custom.length > 0 && (
-          <div className="slk-picker-grid">
-            {custom.map((e) => (
-              <button key={e.name} type="button" className="slk-picker-emoji custom" onClick={() => { onPick(`:${e.name}:`); onClose() }} aria-label={`:${e.name}:`} title={`:${e.name}:`} data-custom-emoji={e.name}>
-                <img src={e.url} alt={`:${e.name}:`} loading="lazy" draggable={false} />
-              </button>
-            ))}
-          </div>
-        )}
+    <div className="slk-picker" ref={box} role="dialog" aria-label={t('Add reaction')} onKeyDown={onKeyDown}>
+      <div className="slk-picker-head">
+        <input
+          ref={search}
+          className="slk-picker-search"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('Search emoji')}
+          aria-label={t('Search emoji')}
+          autoComplete="off"
+          spellCheck={false}
+          data-emoji-search
+        />
       </div>
-      {EMOJI_SETS.map((set) => (
-        <div key={set.label} className="slk-picker-set">
-          <div className="slk-picker-label">{t(set.label)}</div>
-          <div className="slk-picker-grid">
-            {set.list.map((e) => (
-              <button key={e} type="button" className="slk-picker-emoji" onClick={() => { onPick(e); onClose() }} aria-label={e}>{e}</button>
-            ))}
+      {sections.map((s, si) => (s.cells.length > 0 || s.workspace) && (
+        <div key={s.label} className={`slk-picker-set${s.workspace ? ' workspace' : ''}`} role="group" aria-labelledby={`${id}-${si}`}>
+          <div className="slk-picker-label">
+            <span id={`${id}-${si}`}>{t(s.label)}</span>
+            {s.workspace && <a className="slk-picker-add" href="#/tools/emoji" onClick={() => onClose()} data-add-emoji="1"><Icon name="plus" size={12} /> {t('Add emoji')}</a>}
           </div>
+          {s.cells.length > 0 && (
+            <div className="slk-picker-grid">
+              {s.cells.map((c, ci) => {
+                const i = starts[si] + ci
+                return (
+                  <button
+                    key={c.emoji}
+                    type="button"
+                    className={`slk-picker-emoji${c.url ? ' custom' : ''}`}
+                    onClick={() => pick(c.emoji)}
+                    onFocus={() => setActive(i)}
+                    tabIndex={i === current ? 0 : -1}
+                    aria-label={c.emoji}
+                    title={c.name ? `:${c.name}:` : undefined}
+                    data-cell={i}
+                    data-custom-emoji={c.url ? c.name : undefined}
+                  >
+                    {c.url ? <img src={c.url} alt={c.emoji} loading="lazy" draggable={false} /> : c.emoji}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       ))}
+      {/* Nothing matches only once there is a list to match against. */}
+      {listState === 'ready' && searching && !total && <p className="slk-picker-empty" role="status">{t('Nothing matches that.')}</p>}
+      {listState === 'loading' && <p className="slk-picker-empty" role="status" data-emoji-list="loading">{t('Loading…')}</p>}
+      {listState === 'failed' && (
+        <p className="slk-picker-empty" role="alert" data-emoji-list="failed">
+          {t('The emoji list did not load.')} <button type="button" className="slk-picker-retry" onClick={() => void loadEmojiData()}>{t('Try again')}</button>
+        </p>
+      )}
     </div>
   )
 }
@@ -182,6 +270,22 @@ export const Reactions: React.FC<{
   )
 }
 
+/// First in the hover bar, as in Slack: the three emoji you reacted with
+/// last, or the usual three until you have.
+export const QuickReactions: React.FC<{ onReact: (emoji: string) => void }> = ({ onReact }) => {
+  const t = useT()
+  const quick = useQuickReactions()
+  return (
+    <>
+      {quick.map((e) => (
+        <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>
+          <EmojiGlyph emoji={e} size={18} />
+        </button>
+      ))}
+    </>
+  )
+}
+
 /// Everything you can do to one message, on hover — reactions, a reply, a
 /// thread, a pin, and behind ⋯ the rest: edit, delete, copy, make it a
 /// decision. What is behind ⋯ is the one list the right-click menu and a
@@ -207,9 +311,7 @@ export const MessageActions: React.FC<MessageMenuActions & {
   }, [menu])
   return (
     <>
-      {QUICK_REACTIONS.map((e) => (
-        <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
-      ))}
+      <QuickReactions onReact={onReact} />
       <button type="button" className="slk-tool" onClick={() => setPicker((p) => !p)} title={t('Add reaction')} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={16} /></button>
       {onQuote && (
         <button type="button" className="slk-tool" onClick={onQuote} title={t('Reply')} aria-label={t('Reply')} data-tool="quote"><Icon name="reply" size={16} /></button>
@@ -262,9 +364,7 @@ export const CardActions: React.FC<{
   }, [menu])
   return (
     <>
-      {QUICK_REACTIONS.map((e) => (
-        <button key={e} type="button" className="slk-tool emoji" onClick={() => onReact(e)} title={t('React with {emoji}', { emoji: e })} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
-      ))}
+      <QuickReactions onReact={onReact} />
       <button type="button" className="slk-tool" onClick={() => setPicker((p) => !p)} title={t('Add reaction')} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={16} /></button>
       <div className="slk-tool-menu-wrap" ref={menuBox}>
         <button type="button" className="slk-tool" onClick={() => setMenu((m) => !m)} aria-label={t('More actions')} aria-expanded={menu} aria-haspopup="menu" data-card-more="1"><Icon name="more" size={16} /></button>
@@ -576,12 +676,15 @@ const Spoiler: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const JAM_AUDIO = /^https?:\/\/[^\s]+\/channels\/jam\/audio\/[0-9a-f-]{36}$/
 
-function inline(line: string, mentionClass: (name: string) => string): React.ReactNode[] {
+/// `nested`: the words inside a *bold* or an _italic_, which are never a
+/// line of their own however few emoji they are.
+function inline(line: string, mentionClass: (name: string) => string, nested = false): React.ReactNode[] {
   // Doubled marks (Discord's ||spoiler||, __underline__, ~~strike~~) come
   // before their single forms so "__a__" is not read as "_" + "_a_" + "_".
   const tokens = line.split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」|]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;|]+|\|\|[^|\n]+\|\||\*\*[^*\n]+\*\*|\*[^*\n]+\*|__[^_\n]+__|_[^_\n]+_|~~[^~\n]+~~|~[^~\n]+~)/g)
-  // A line that is nothing but this workspace's emoji draws them large.
-  const onlyEmoji = tokens.every((p) => !p || !p.trim() || (CUSTOM_EMOJI.test(p) && Boolean(customEmojiUrl(p))))
+  // A line that is nothing but emoji — characters, or this workspace's own
+  // — draws them large.
+  const onlyEmoji = !nested && isEmojiOnly(line, (token) => Boolean(customEmojiUrl(token)))
   return tokens.map((part, i) => {
     if (!part) return null
     if (/^`[^`]+`$/.test(part)) return <code key={i} className="slk-code">{part.slice(1, -1)}</code>
@@ -594,13 +697,14 @@ function inline(line: string, mentionClass: (name: string) => string): React.Rea
     if (JAM_AUDIO.test(part)) return <audio key={i} className="slk-jam-audio" controls preload="none" src={part} />
     if (/^https?:\/\//.test(part)) return <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a>
     if (/^[@＠]/.test(part)) return <span key={i} className={mentionClass(part)}>{part}</span>
-    if (/^\|\|[^|]+\|\|$/.test(part)) return <Spoiler key={i}>{inline(part.slice(2, -2), mentionClass)}</Spoiler>
-    if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass)}</b>
-    if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{inline(part.slice(1, -1), mentionClass)}</b>
-    if (/^__[^_]+__$/.test(part)) return <u key={i}>{inline(part.slice(2, -2), mentionClass)}</u>
-    if (/^_[^_]+_$/.test(part)) return <i key={i}>{inline(part.slice(1, -1), mentionClass)}</i>
-    if (/^~~[^~]+~~$/.test(part)) return <s key={i}>{inline(part.slice(2, -2), mentionClass)}</s>
-    if (/^~[^~]+~$/.test(part)) return <s key={i}>{inline(part.slice(1, -1), mentionClass)}</s>
+    if (/^\|\|[^|]+\|\|$/.test(part)) return <Spoiler key={i}>{inline(part.slice(2, -2), mentionClass, true)}</Spoiler>
+    if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass, true)}</b>
+    if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{inline(part.slice(1, -1), mentionClass, true)}</b>
+    if (/^__[^_]+__$/.test(part)) return <u key={i}>{inline(part.slice(2, -2), mentionClass, true)}</u>
+    if (/^_[^_]+_$/.test(part)) return <i key={i}>{inline(part.slice(1, -1), mentionClass, true)}</i>
+    if (/^~~[^~]+~~$/.test(part)) return <s key={i}>{inline(part.slice(2, -2), mentionClass, true)}</s>
+    if (/^~[^~]+~$/.test(part)) return <s key={i}>{inline(part.slice(1, -1), mentionClass, true)}</s>
+    if (onlyEmoji && part.trim()) return <span key={i} className="slk-emoji big">{part}</span>
     return <React.Fragment key={i}>{part}</React.Fragment>
   })
 }

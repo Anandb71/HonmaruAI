@@ -28,8 +28,9 @@ import { meReader } from '../utils/mentionsMe'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
 import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/customEmoji'
 import { messageContextEntries, messageMenuTriggers, type MessageMenuActions } from '../utils/messageMenu'
+import { rememberEmoji, useQuickReactions } from '../utils/emojiSearch'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, QUICK_REACTIONS, TypingLine, ReplyQuoteLine, ReplyingBar, UnsentNote } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, TypingLine, ReplyQuoteLine, ReplyingBar, UnsentNote } from './MessageParts'
 import { heard as heardTyping, said, expire, nextExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
 import type { Typist, TypingEvent, Outgoing as TypingOut, Place, Signal } from '../utils/typing'
 import { quoteOf, refreshQuotes } from '../utils/replies'
@@ -2214,7 +2215,11 @@ export const ClassicList: React.FC<Props> = ({
       return null
     }
   }
-  const react = (channel: string, m: ChannelMessage, emoji: string) => void act('POST', '/channels/reactions', channel, { messageId: m.id, emoji })
+  const react = (channel: string, m: ChannelMessage, emoji: string) => {
+    // Adding one (not taking yours back) makes it a recent one.
+    if (!m.reactions?.some((r) => r.emoji === emoji && r.mine)) rememberEmoji(emoji)
+    void act('POST', '/channels/reactions', channel, { messageId: m.id, emoji })
+  }
   const saveEdit = async (channel: string) => {
     if (!editing) return
     const text = editing.text.trim()
@@ -2766,6 +2771,8 @@ export const ClassicList: React.FC<Props> = ({
   // the composer — so each answer is kept until the team or its groups
   // change.
   const readsMe = useMemo(() => meReader({ people: mentionable, groups: userGroups }), [mentionable, userGroups])
+  // A right-click's row of reactions: the ones you used last, as on the bar.
+  const quickReactions = useQuickReactions()
 
   // The newest message in view when a conversation opens, as in any chat —
   // and kept in view while what is above it settles: the conversation drawn
@@ -3580,6 +3587,7 @@ export const ClassicList: React.FC<Props> = ({
   /// A card in a conversation: react to it, open it, take it back.
   const [cardReacted, setCardReacted] = useState<Record<string, Array<{ emoji: string; count: number; mine?: boolean }>>>({})
   const reactCard = async (c: DecisionCard, emoji: string) => {
+    if (!cardReacted[c.id]?.some((r) => r.emoji === emoji && r.mine)) rememberEmoji(emoji)
     const res = await fetch(`${api.httpBase}/cards/${encodeURIComponent(c.id)}/reactions`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({ orgId: api.orgId, emoji }),
@@ -4493,7 +4501,7 @@ export const ClassicList: React.FC<Props> = ({
         return (
           <RowMenu at={{ x, y }} label={t('Message actions')} onClose={closeMsgMenu} entries={messageContextEntries(m, {
             ...actionsFor(channel, m, inThread), t,
-            reactions: QUICK_REACTIONS, onReact: (e) => react(channel, m, e), onMoreReactions: () => setReactAt({ channel, m, x, y, anchor }),
+            reactions: quickReactions, onReact: (e) => react(channel, m, e), onMoreReactions: () => setReactAt({ channel, m, x, y, anchor }),
           })} />
         )
       })()}

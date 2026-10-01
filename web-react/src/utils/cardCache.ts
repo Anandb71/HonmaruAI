@@ -41,7 +41,7 @@ export function clearCardCache(): void {
 /// did not go (outbox:, the old per-workspace key as well), its own AI key.
 /// The next person at this machine starts from nothing of it. The device's
 /// own choices — the relay, the language, the theme — stay.
-const ACCOUNT_KEYS = ['senderContext', 'aiKey', 'orgId', 'draft:', 'daily-draft:', 'onboard.tools:', 'sidebar.folded:', 'outbox:']
+const ACCOUNT_KEYS = ['senderContext', 'aiKey', 'orgId', 'draft:', 'daily-draft:', 'onboard.tools:', 'sidebar.folded:', 'outbox:', 'emoji.recent']
 export function clearAccountData(storage: Storage = localStorage): void {
   clearCardCache()
   try {
