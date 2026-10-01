@@ -4,6 +4,7 @@ import { getLocale } from '../utils/locale'
 import { displayName } from '../utils/names'
 import { useT } from '../utils/i18n'
 import type { Screen } from '../utils/route'
+import { composing, enterKey } from '../utils/keys'
 
 export type PaletteAction =
   | { kind: 'card'; cardId: string }
@@ -155,8 +156,8 @@ export const Palette: React.FC<Props> = ({ httpBase, orgId, sessionToken, cards,
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(c + 1, Math.max(items.length - 1, 0))) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)) }
-    else if (e.key === 'Enter') { e.preventDefault(); const it = items[cursor]; if (it) onPick(it.action) }
-    else if (e.key === 'Escape') { e.preventDefault(); onClose() }
+    else if (enterKey(e)) { e.preventDefault(); const it = items[cursor]; if (it) onPick(it.action) }
+    else if (e.key === 'Escape' && !composing(e)) { e.preventDefault(); onClose() }
   }
 
   const GROUP_WORD: Record<Item['group'], string> = { actions: t('Go to'), cards: t('Cards'), past: t('Decided before'), messages: t('Messages') }

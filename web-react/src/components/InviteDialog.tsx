@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useT } from '../utils/i18n'
 import { Dialog } from './Dialog'
 import { Icon } from './Icon'
+import { enterKey } from '../utils/keys'
 
 interface Props {
   httpBase: string
@@ -186,7 +187,7 @@ export const InviteDialog: React.FC<Props> = ({ httpBase, orgId, sessionToken, o
             className="dlg-input invite-emails"
             value={emails}
             onChange={(e) => setEmails(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void sendInvites() } }}
+            onKeyDown={(e) => { if (enterKey(e)) { e.preventDefault(); void sendInvites() } }}
             placeholder="name@company.com, …"
             inputMode="email"
             autoComplete="off"

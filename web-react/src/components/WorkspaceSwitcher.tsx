@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useT } from '../utils/i18n'
 import { Icon } from './Icon'
+import { composing } from '../utils/keys'
 
 export interface Workspace {
   id: string
@@ -84,7 +85,7 @@ export const WorkspaceSwitcher: React.FC<Props> = ({ workspaces, currentId, onSw
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) setOpen(false) }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
@@ -187,7 +188,7 @@ const AddWorkspace: React.FC<{
   const input = useRef<HTMLInputElement>(null)
   useEffect(() => { if (mode !== 'choose') requestAnimationFrame(() => input.current?.focus()) }, [mode])
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])

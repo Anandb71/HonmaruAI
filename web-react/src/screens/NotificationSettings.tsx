@@ -4,6 +4,7 @@ import { useT } from '../utils/i18n'
 import { Icon } from '../components/Icon'
 import { setQuietState, DEFAULT_SCHEDULE, tomorrowAt, type NotifySchedule } from '../utils/quiet'
 import { playSound, loadSoundSettings, saveSoundSettings, type SoundKind, type SoundSettings } from '../utils/sound'
+import { enterKey } from '../utils/keys'
 
 interface Props {
   httpBase: string
@@ -321,7 +322,7 @@ const KeywordRows: React.FC<{ me: Me | null; patch: (body: Record<string, unknow
               ))}
             </span>
             <span className="keyword-add">
-              <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void add() } }}
+              <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (enterKey(e)) { e.preventDefault(); void add() } }}
                 placeholder={t('e.g. invoice, 見積, Acme')} aria-label={t('Add a keyword')} disabled={!me} data-keyword-input="1" />
               <button type="button" className="pill-btn" disabled={!me || !draft.trim()} onClick={() => void add()} data-keyword-add="1">{t('Add')}</button>
             </span>

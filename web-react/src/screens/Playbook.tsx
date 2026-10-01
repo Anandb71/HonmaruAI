@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useT } from '../utils/i18n'
 import { getLocale } from '../utils/locale'
 import { hashForCard } from '../utils/route'
+import { enterKey } from '../utils/keys'
 
 interface Props {
   httpBase: string
@@ -133,7 +134,7 @@ export const Playbook: React.FC<Props> = ({ httpBase, orgId, sessionToken, onClo
                 value={draft}
                 maxLength={MAX_RULE}
                 onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); add() } }}
+                onKeyDown={(e) => { if (enterKey(e) && (e.metaKey || e.ctrlKey)) { e.preventDefault(); add() } }}
                 placeholder={t('e.g. Anything over $1,000 goes to Kenji first.')}
                 aria-label={t('Tell it a rule')}
               />

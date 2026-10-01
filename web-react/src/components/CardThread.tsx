@@ -5,6 +5,7 @@ import { getLocale } from '../utils/locale'
 import { splitMentions, mentionSegments, useMembers, type Mentionable } from '../utils/mentions'
 import { useMentionMenu } from './MentionMenu'
 import { Icon } from './Icon'
+import { enterKey } from '../utils/keys'
 
 interface Props {
   httpBase: string
@@ -302,7 +303,7 @@ export const CardThread: React.FC<Props> = ({ httpBase, orgId, sessionToken, car
           onClick={mention.track}
           onKeyDown={(e) => {
             if (mention.onKeyDown(e)) return
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() }
+            if (enterKey(e) && !e.shiftKey) { e.preventDefault(); void send() }
           }}
         />
         {mention.menu}

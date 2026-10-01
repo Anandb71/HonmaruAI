@@ -5,6 +5,7 @@ import { Avatar } from './Avatar'
 import { JAM_REACTIONS, audioDevices, canShareScreen, canTranscribe, type JamCall, type JamParticipant } from '../utils/jam'
 import type { ChannelMessage } from '../types/card'
 import './JamPanel.css'
+import { composing } from '../utils/keys'
 
 interface Props {
   call: JamCall
@@ -58,7 +59,7 @@ export const JamPanel: React.FC<Props> = ({ call, where, api, faceOf, me, onLeav
     if (!menu) return
     void audioDevices().then(setDevices)
     const away = (e: MouseEvent) => { if (!(e.target as HTMLElement)?.closest?.('.jam-menu-wrap')) setMenu(null) }
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !composing(e)) setMenu(null) }
     document.addEventListener('mousedown', away)
     document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
