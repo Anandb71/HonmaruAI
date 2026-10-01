@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import React from 'react'
+import { flushSync } from 'react-dom'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MessageFiles } from './Attachments'
 import type { FileRef } from '../types/card'
@@ -64,5 +66,95 @@ describe('MessageFiles', () => {
 
   it('draws nothing for a message with no files', () => {
     expect(html([])).toBe('')
+  })
+})
+
+/// As much of a page as React asks of one to draw on: elements that keep
+/// their attributes, their children and who is listening to them. Nothing
+/// here loads or plays; a test says what the browser would have.
+type Listener = (e: unknown) => void
+class El {
+  nodeType = 1
+  namespaceURI = 'http://www.w3.org/1999/xhtml'
+  parentNode: El | null = null
+  childNodes: El[] = []
+  nodeValue: string | null = null
+  attrs: Record<string, string> = {}
+  style: Record<string, string> = {}
+  listeners: Record<string, Listener[]> = {}
+  onclick: unknown = null
+  constructor(public tagName: string, public ownerDocument: Page) {}
+  get nodeName() { return this.tagName }
+  get firstChild() { return this.childNodes[0] ?? null }
+  get lastChild() { return this.childNodes[this.childNodes.length - 1] ?? null }
+  set textContent(text: string) {
+    for (const c of this.childNodes) c.parentNode = null
+    this.childNodes = text ? [this.ownerDocument.createTextNode(text)] : []
+  }
+  appendChild(c: El) { c.parentNode?.removeChild(c); c.parentNode = this; this.childNodes.push(c); return c }
+  insertBefore(c: El, before: El) { c.parentNode?.removeChild(c); c.parentNode = this; this.childNodes.splice(this.childNodes.indexOf(before), 0, c); return c }
+  removeChild(c: El) { this.childNodes = this.childNodes.filter((n) => n !== c); c.parentNode = null; return c }
+  setAttribute(name: string, value: string) { this.attrs[name] = String(value) }
+  removeAttribute(name: string) { delete this.attrs[name] }
+  addEventListener(type: string, fn: Listener) { (this.listeners[type] ??= []).push(fn) }
+  removeEventListener(type: string, fn: Listener) { this.listeners[type] = (this.listeners[type] ?? []).filter((f) => f !== fn) }
+  /// Every element of a tag inside this one, in the order drawn.
+  all(tag: string): El[] { return this.childNodes.flatMap((c) => [...(c.tagName === tag ? [c] : []), ...c.all(tag)]) }
+}
+class Page {
+  nodeType = 9
+  createElement(tag: string) { return new El(tag, this) }
+  createElementNS(ns: string, tag: string) { const e = new El(tag, this); e.namespaceURI = ns; return e }
+  createTextNode(text: string) { const e = new El('#text', this); e.nodeType = 3; e.nodeValue = text; return e }
+  addEventListener() {}
+  removeEventListener() {}
+}
+
+/// A message's files drawn on such a page, and drawn again when the
+/// message is read again.
+function drawn(files: FileRef[]) {
+  const box = new Page().createElement('div')
+  const root = createRoot(box as unknown as Element)
+  const show = (next: FileRef[]) => flushSync(() => root.render(<MessageFiles files={next} base={BASE} />))
+  show(files)
+  return { box, show, close: () => flushSync(() => root.unmount()) }
+}
+
+/// The same file a day later: the same id, under a new signed address.
+const later = (f: FileRef): FileRef => ({ ...f, url: `/files/${f.id}?e=2&s=xyz` })
+
+// A message's files once they are on the page, as the message under them
+// changes.
+describe('MessageFiles, read again', () => {
+  beforeAll(() => { vi.stubGlobal('window', { HTMLIFrameElement: class {} }) })
+  afterAll(() => { vi.unstubAllGlobals() })
+
+  it('goes on playing a video from the address it started at', () => {
+    const clip = file('f_v', 'clip.mp4', 'video/mp4')
+    const { box, show, close } = drawn([clip])
+    const video = box.all('video')[0]
+    expect(video.attrs.src).toBe(`${BASE}/files/f_v?e=1&s=abc`)
+    show([later(clip)])
+    expect(box.all('video')).toEqual([video])
+    expect(video.attrs.src).toBe(`${BASE}/files/f_v?e=1&s=abc`)
+    close()
+  })
+
+  it('goes on playing a song from the address it started at', () => {
+    const memo = file('f_a', 'memo.m4a', 'audio/x-m4a')
+    const { box, show, close } = drawn([memo])
+    const audio = box.all('audio')[0]
+    show([later(memo)])
+    expect(box.all('audio')).toEqual([audio])
+    expect(audio.attrs.src).toBe(`${BASE}/files/f_a?e=1&s=abc`)
+    close()
+  })
+
+  it('saves from the newest address all the same', () => {
+    const clip = file('f_v', 'clip.mp4', 'video/mp4')
+    const { box, show, close } = drawn([clip])
+    show([later(clip)])
+    expect(box.all('a').map((a) => a.attrs.href)).toEqual([`${BASE}/files/f_v?e=2&s=xyz&download=1`])
+    close()
   })
 })
