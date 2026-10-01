@@ -1557,7 +1557,7 @@ const table: Record<string, string> = {
   'How we do things': '進め方・手順',
   'someone': '誰か',
   'canvas.empty': 'この会話のための共有メモです。手順、決まったこと、担当、未完了の作業などを皆で書き足せます。AIに会話から下書きさせることもできます。',
-  'canvas.syntax': '## 見出し · - 箇条書き · - [ ] やること · **太字** · ⌘Enterで保存',
+  'canvas.syntax': '## 見出し · - 箇条書き · - [ ] やること · **太字** · {key}で保存',
   'Owner': 'オーナー',
   'Holds the workspace: security, keys, owners': 'ワークスペースを持つ人。セキュリティ、キー、オーナーを決める',
   '{name} would like you to become an owner of this workspace.': '{name}さんが、あなたにこのワークスペースのオーナーになってほしいと言っています。',

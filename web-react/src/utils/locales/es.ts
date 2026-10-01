@@ -1490,7 +1490,7 @@ const table: Record<string, string> = {
   'How we do things': 'Cómo hacemos las cosas',
   'someone': 'alguien',
   'canvas.empty': 'Un documento compartido para esta conversación: procedimientos, decisiones, responsables y lo que queda pendiente. Todos pueden editarlo, y tu IA puede redactarlo a partir de la conversación.',
-  'canvas.syntax': '## Título · - lista · - [ ] tarea · **negrita** · ⌘Enter para guardar',
+  'canvas.syntax': '## Título · - lista · - [ ] tarea · **negrita** · {key} para guardar',
   'Owner': 'Propietario',
   'Holds the workspace: security, keys, owners': 'Es dueño del espacio: seguridad, claves y propietarios',
   '{name} would like you to become an owner of this workspace.': '{name} quiere que seas propietario de este espacio.',

@@ -1493,7 +1493,7 @@ const table: Record<string, string> = {
   'How we do things': 'Wie wir vorgehen',
   'someone': 'jemand',
   'canvas.empty': 'Ein gemeinsames Dokument für dieses Gespräch: Abläufe, Entscheidungen, Zuständigkeiten und Offenes. Alle können es bearbeiten, und deine KI kann es aus dem Gespräch entwerfen.',
-  'canvas.syntax': '## Überschrift · - Liste · - [ ] Aufgabe · **fett** · ⌘Enter zum Speichern',
+  'canvas.syntax': '## Überschrift · - Liste · - [ ] Aufgabe · **fett** · {key} zum Speichern',
   'Owner': 'Inhaber',
   'Holds the workspace: security, keys, owners': 'Hält den Workspace: Sicherheit, Schlüssel, Inhaber',
   '{name} would like you to become an owner of this workspace.': '{name} möchte, dass du Inhaber dieses Workspace wirst.',
