@@ -127,10 +127,21 @@ test("the quote hides a spoiler, even one the cut would have halved", async () =
 
 test("an excerpt: one line, cut with an ellipsis, spoilers masked but code's bars left alone", () => {
   expect(replyExcerpt("one\n\ntwo   three")).toBe("one two three");
-  expect(replyExcerpt("a ||b|| c ||d\ne|| f")).toBe(`a ${SPOILER_MASK} c ${SPOILER_MASK} f`);
+  expect(replyExcerpt("a ||b|| c ||d|| f")).toBe(`a ${SPOILER_MASK} c ${SPOILER_MASK} f`);
+  // A spoiler is what the renderer hides: within one line, never across
+  // two. Bars on two lines hide nothing there, so they hide nothing here —
+  // and must not pair up and leave the real one after them showing.
+  expect(replyExcerpt("a ||b\nc|| d")).toBe("a ||b c|| d");
+  expect(replyExcerpt("a || b\n||the secret|| c")).toBe(`a || b ${SPOILER_MASK} c`);
   // `x || y` is code: it opens no spoiler, and the real one after it is still hidden.
   expect(replyExcerpt("run `a || b` then ||c||")).toBe(`run \`a || b\` then ${SPOILER_MASK}`);
   expect(replyExcerpt("```if (a || b) {}``` ok")).toBe("```if (a || b) {}``` ok");
+  expect(replyExcerpt("```\nif (a || b) {}\nx || y\n``` ok")).toBe("``` if (a || b) {} x || y ``` ok");
+  // Code is read before the lines are joined: two stray backticks on
+  // different lines are not code, and protect nothing between them.
+  expect(replyExcerpt("use the ` key\n||the butler did it|| not the ` one")).toBe(`use the \` key ${SPOILER_MASK} not the \` one`);
+  // A backtick inside a link opens no code either.
+  expect(replyExcerpt("see https://x.test/`a ||b|| c`")).toBe(`see https://x.test/\`a ${SPOILER_MASK} c\``);
   // Unmatched bars are just bars.
   expect(replyExcerpt("a || b")).toBe("a || b");
   const cut = replyExcerpt("x".repeat(200));
