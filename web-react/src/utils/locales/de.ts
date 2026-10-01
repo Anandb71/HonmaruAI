@@ -1905,6 +1905,10 @@ const table: Record<string, string> = {
   "{name} is typing…": "{name} tippt…",
   "{a} and {b} are typing…": "{a} und {b} tippen…",
   "Several people are typing…": "Mehrere Personen tippen…",
+  "How Codex is reached": "Wie Codex erreicht wird",
+  "Codex has no API to hand work to, so HonmaruAI asks it on GitHub: each request opens a draft pull request in the first repository below and writes @codex there, and Codex’s replies come back to the thread. Connect that repository to Codex in ChatGPT and turn on Codex for it first; Codex runs on your ChatGPT plan.": "Codex hat keine API, um ihm Arbeit zu geben, daher fragt HonmaruAI auf GitHub: Jede Anfrage öffnet einen Entwurfs-Pull-Request im ersten Repository unten und schreibt dort @codex, und die Antworten von Codex kommen zurück in den Thread. Verbinde das Repository zuerst in ChatGPT mit Codex und schalte Codex dafür ein; Codex läuft über euren ChatGPT-Plan.",
+  "The repository Codex works in (the first one listed), and a GitHub token that can push to it and open pull requests.": "Das Repository, in dem Codex arbeitet (das erste in der Liste), und ein GitHub-Token, das darauf pushen und Pull Requests öffnen kann.",
+  "Codex runs on your ChatGPT plan, so its limit here is a number of tasks: each request and follow-up is one.": "Codex läuft über euren ChatGPT-Plan, daher ist sein Limit hier eine Anzahl von Aufgaben: Jede Anfrage und jede Nachfrage zählt als eine.",
 }
 
 export default table

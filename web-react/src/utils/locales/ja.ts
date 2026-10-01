@@ -1969,6 +1969,10 @@ const table: Record<string, string> = {
   "{name} is typing…": "{name}さんが入力中…",
   "{a} and {b} are typing…": "{a}さんと{b}さんが入力中…",
   "Several people are typing…": "複数の人が入力中…",
+  "How Codex is reached": "Codexへのつなぎ方",
+  "Codex has no API to hand work to, so HonmaruAI asks it on GitHub: each request opens a draft pull request in the first repository below and writes @codex there, and Codex’s replies come back to the thread. Connect that repository to Codex in ChatGPT and turn on Codex for it first; Codex runs on your ChatGPT plan.": "Codexには仕事を渡すAPIがないため、HonmaruAIはGitHub上で依頼します。依頼ごとに下のリストの最初のリポジトリに下書きプルリクエストを作って @codex と書き込み、Codexの返信をスレッドに戻します。先にChatGPTでそのリポジトリをCodexに接続し、Codexを有効にしてください。Codexの利用はあなたのChatGPTプランで行われます。",
+  "The repository Codex works in (the first one listed), and a GitHub token that can push to it and open pull requests.": "Codexが作業するリポジトリ（リストの最初のもの）と、そこにプッシュしてプルリクエストを作れるGitHubトークン。",
+  "Codex runs on your ChatGPT plan, so its limit here is a number of tasks: each request and follow-up is one.": "CodexはChatGPTプランで動くため、ここでの上限はタスク数で決めます。依頼1件、追加の依頼1件がそれぞれ1タスクです。",
 }
 
 export default table
