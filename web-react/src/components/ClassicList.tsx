@@ -22,7 +22,7 @@ import { useBackStack } from '../utils/backStack'
 import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow, waitToSay } from '../utils/chatScroll'
 import { JumpToPresent, newBelowLabel } from './JumpToPresent'
 import { useT } from '../utils/i18n'
-import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
+import { useMembers, agentMentionables, agentsIn, mentionKind, mentionTarget } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
 import { meReader } from '../utils/mentionsMe'
 import { useMentionMenu, useMentionHighlight } from './MentionMenu'
@@ -31,7 +31,7 @@ import { messageContextEntries, messageMenuTriggers, type MessageMenuActions } f
 import { rememberEmoji, useQuickReactions } from '../utils/emojiSearch'
 import { DailyReportDraft } from './DailyReport'
 import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, TypingLine, ReplyQuoteLine, ReplyingBar, UnsentNote } from './MessageParts'
-import { heard as heardTyping, said, expire, nextExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
+import { heard as heardTyping, said, expire, nextExpiry as nextTypingExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
 import type { Typist, TypingEvent, Outgoing as TypingOut, Place, Signal } from '../utils/typing'
 import { quoteOf, refreshQuotes } from '../utils/replies'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
@@ -41,6 +41,8 @@ import { JamPanel } from './JamPanel'
 import type { JamMode, JamState } from '../utils/jam'
 import { InviteDialog } from './InviteDialog'
 import { Avatar } from './Avatar'
+import { ProfileCard } from './ProfileCard'
+import { isOnline, statusShown, awayShown, nextExpiry, localTime } from '../utils/people'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, rememberLevel, startRing, stopRing } from '../utils/sound'
@@ -164,6 +166,9 @@ interface Member {
   status?: { emoji: string | null; text: string | null; until: string | null } | null
   awayUntil?: string | null
 }
+/// A teammate's profile as GET /channels/member reads it: the pane shows all
+/// of it, the popout their clock.
+interface ProfileData { name: string; handle: string | null; title: string; timezone: string | null; status: Member['status']; awayUntil: string | null; joinedAt: string; mine: boolean; stats: { waiting: number; decided90d: number; medianMinutes: number | null } }
 /// `last`: the message the preview is, as it arrived live — for its preview
 /// to be put into the reader's language.
 interface Activity { channel: string; lastAt: string; preview: string; lastBy: string | null; last?: ChannelMessage }
@@ -439,6 +444,16 @@ export const ClassicList: React.FC<Props> = ({
     window.addEventListener('honmaru:channel-group', on)
     return () => window.removeEventListener('honmaru:channel-group', on)
   }, [])
+
+  // A status runs out on its own: the list is drawn again when the next one
+  // does, and statusShown leaves it out from then on.
+  const [statusTick, setStatusTick] = useState(0)
+  useEffect(() => {
+    const next = nextExpiry(members, Date.now())
+    if (next === null) return
+    const id = setTimeout(() => setStatusTick((n) => n + 1), Math.min(next - Date.now() + 250, 2_147_483_647))
+    return () => clearTimeout(id)
+  }, [members, statusTick])
 
   // Which login is which member, for the logins this browser already holds.
   const [hashes, setHashes] = useState<Map<string, string>>(new Map())
@@ -960,13 +975,49 @@ export const ClassicList: React.FC<Props> = ({
   }
 
   // A teammate's profile, beside the conversation.
-  const [profile, setProfile] = useState<null | { ref: string; data?: { name: string; handle: string | null; title: string; timezone: string | null; status: Member['status']; awayUntil: string | null; joinedAt: string; mine: boolean; stats: { waiting: number; decided90d: number; medianMinutes: number | null } } }>(null)
+  const [profile, setProfile] = useState<null | { ref: string; data?: ProfileData }>(null)
+  const readProfile = async (ref: string): Promise<ProfileData | null> => {
+    const res = await fetch(`${api.httpBase}/channels/member?orgId=${encodeURIComponent(api.orgId)}&ref=${encodeURIComponent(ref)}`, { headers: authHeaders }).catch(() => null)
+    const d = res?.ok ? await res.json().catch(() => null) : null
+    return d?.member || null
+  }
   const openProfile = async (ref: string) => {
     setDetailId(null); setThread(null)
     setProfile({ ref })
-    const res = await fetch(`${api.httpBase}/channels/member?orgId=${encodeURIComponent(api.orgId)}&ref=${encodeURIComponent(ref)}`, { headers: authHeaders }).catch(() => null)
-    const d = res?.ok ? await res.json().catch(() => null) : null
-    if (d?.member) setProfile((prev) => (prev && prev.ref === ref ? { ref, data: d.member } : prev))
+    const data = await readProfile(ref)
+    if (data) setProfile((prev) => (prev && prev.ref === ref ? { ref, data } : prev))
+  }
+  // Their card, popped out beside the face, name or @mention it was opened
+  // from: what the member list knows at once, their clock once the same read
+  // the pane makes is back. Over the conversation, so a thread open beside
+  // it stays open. The same face or name again closes it.
+  const [popout, setPopout] = useState<null | { ref: string; anchor: HTMLElement; name?: string; data?: ProfileData }>(null)
+  const openPopout = (ref: string, anchor: HTMLElement, name?: string) => {
+    if (popout && popout.ref === ref && popout.anchor === anchor) { setPopout(null); return }
+    setPopout({ ref, anchor, name })
+    void readProfile(ref).then((data) => { if (data) setPopout((prev) => (prev && prev.ref === ref && prev.anchor === anchor ? { ...prev, data } : prev)) })
+  }
+  /// Every @mention of a person presses like a button (MessageParts); this
+  /// one handler, on the whole list, opens the card for whichever was
+  /// pressed — in the conversation, a thread, Threads or Activity. It is
+  /// still a word of the message: dragging across it to select it is not
+  /// pressing it.
+  const onMentionClick = (e: React.MouseEvent) => {
+    const el = (e.target as Element).closest?.('[data-mention-ref]') as HTMLElement | null
+    if (!el?.dataset.mentionRef) return
+    const picked = window.getSelection()
+    if (picked && !picked.isCollapsed && picked.containsNode(el, true)) return
+    e.preventDefault()
+    openPopout(el.dataset.mentionRef, el, el.textContent?.trim())
+  }
+  /// The same from the keyboard: Enter or Space on a mention that holds
+  /// focus, as on any button. (Space would otherwise scroll the page.)
+  const onMentionKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    const el = e.target as HTMLElement
+    if (!el.dataset?.mentionRef) return
+    e.preventDefault()
+    if (!e.repeat) openPopout(el.dataset.mentionRef, el, el.textContent?.trim())
   }
 
   // Keys a chat client has: ⌥↑/⌥↓ between conversations, ⌘⇧A Activity,
@@ -1062,7 +1113,9 @@ export const ClassicList: React.FC<Props> = ({
           {thread.kind === 'person' && (() => {
             const m = members.find((x) => thread.view === `dm:${x.ref}`)
             if (!m) return null
-            return <>{m.status?.emoji && <span className="cl-status" title={m.status.text || ''}>{m.status.emoji}</span>}{m.awayUntil && <span className="cl-away" title={t('Away until {when}', { when: new Date(m.awayUntil).toLocaleDateString(locale) })}>{t('away')}</span>}</>
+            const status = statusShown(m.status, Date.now())
+            const away = awayShown(m.awayUntil, Date.now())
+            return <>{status?.emoji && <span className="cl-status" title={status.text || ''}>{status.emoji}</span>}{away && <span className="cl-away" title={t('Away until {when}', { when: new Date(away).toLocaleDateString(locale) })}>{t('away')}</span>}</>
           })()}
           {thread.view && prefs[thread.view] === 'mute' && <span className="cl-muted" role="img" aria-label={t('Muted')}><Icon name="bell-off" size={13} /></span>}
           {thread.view && (mentionsIn[thread.view] || 0) > 0 && thread.unread === 0 && <span className="cl-badge mention">@{mentionsIn[thread.view]}</span>}
@@ -2091,7 +2144,7 @@ export const ClassicList: React.FC<Props> = ({
     return () => { window.removeEventListener('honmaru:typing', on); window.removeEventListener('honmaru:channel-message', arrived) }
   }, [])
   useEffect(() => {
-    const at = nextExpiry(typists)
+    const at = nextTypingExpiry(typists)
     if (at === null) return
     const id = setTimeout(() => setTypists((prev) => expire(prev, Date.now())), Math.max(0, at - Date.now()) + 50)
     return () => clearTimeout(id)
@@ -2526,6 +2579,8 @@ export const ClassicList: React.FC<Props> = ({
   // sidebar's right-click menu): set before choosing, applied once it opens.
   const sideOnOpen = useRef<null | { kind: 'details'; tab: DetailsTab }>(null)
   useEffect(() => { setSide(sideOnOpen.current); sideOnOpen.current = null }, [current?.key])
+  // A card stands beside something in the conversation that was left.
+  useEffect(() => { setPopout(null) }, [current?.key])
   // Back closes what was opened last, not the list (utils/backStack): on a
   // phone the conversation itself, then whatever is open over it.
   useBackStack([
@@ -2535,6 +2590,8 @@ export const ClassicList: React.FC<Props> = ({
     [!!profile, () => setProfile(null)],
     [!!thread, () => setThread(null)],
     [!!detailId, () => setDetailId(null)],
+    // A teammate's card stands over all of these.
+    [!!popout, () => setPopout(null)],
   ])
   // How many automations run into each channel, for the header's count.
   const [automationCount, setAutomationCount] = useState<Record<string, number>>({})
@@ -2732,6 +2789,8 @@ export const ClassicList: React.FC<Props> = ({
     for (const [login, state] of Object.entries(presence)) if (state === 'online' && hashes.get(login)) on.add(hashes.get(login)!)
     return on
   }, [presence, hashes])
+  // The same people by ref, for a channel's member list.
+  const onlineRefs = useMemo(() => new Set(members.filter((m) => isOnline(m, onlineKeys)).map((m) => m.ref)), [members, onlineKeys])
   const withAI = useMemo(() => {
     const view = current?.view || ''
     // Who is in the conversation being written in: everyone, in a public
@@ -2997,7 +3056,9 @@ export const ClassicList: React.FC<Props> = ({
     : <span className="slk-avatar face"><Avatar name={face?.name || '?'} url={face?.url} size={36} /></span>
 
   /// One block of a conversation: a gutter, a name and a time — or, joined
-  /// to the one before, just the words — then what was said.
+  /// to the one before, just the words — then what was said. Somebody
+  /// else's face and name open their card, and their face says whether
+  /// they are here. (Yours says nothing: the relay never tells you of you.)
   /// One that calls you (`mentionsMe`) is tinted and barred, to be found in
   /// a busy channel, and says so to a screen reader, which sees no tint.
   /// `quote`: the line an inline reply shows above its author, as a pin's
@@ -3007,8 +3068,16 @@ export const ClassicList: React.FC<Props> = ({
     <article key={key} id={opts.msgId ? `msg-${opts.msgId}` : undefined} tabIndex={opts.msgId ? -1 : undefined}
       {...(!wide ? longPress(opts.onHold) : messageMenuTriggers(opts.onMenu))}
       className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && [msgMenu?.anchor, reactAt?.anchor].includes(`msg-${opts.msgId}`) ? ' menu-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.mentionsMe ? ' mentions-me' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}${opts.state ? ` ${opts.state}` : ''}`}>
-      <div className="slk-gutter" aria-hidden="true">
-        {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span> : avatarFor(opts.app, opts.face || { name: opts.name })}
+      <div className="slk-gutter" aria-hidden={opts.joined || !opts.authorRef ? 'true' : undefined}>
+        {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span>
+          : opts.authorRef ? (
+            <button type="button" className="slk-face-button" aria-label={t('Profile of {name}', { name: opts.name })} aria-haspopup="dialog"
+              onClick={(e) => openPopout(opts.authorRef!, e.currentTarget, opts.name)}>
+              {avatarFor(opts.app, opts.face || { name: opts.name })}
+              <span className={`cl-presence${isOnline(memberByRef(opts.authorRef), onlineKeys) ? ' on' : ''}`} aria-hidden="true" />
+            </button>
+          )
+          : avatarFor(opts.app, opts.face || { name: opts.name })}
       </div>
       <div className="slk-body">
         {opts.pinned && <div className="slk-pin-mark"><Icon name="pin" size={12} /> {t('Pinned')}</div>}
@@ -3016,7 +3085,7 @@ export const ClassicList: React.FC<Props> = ({
         {!opts.joined && (
           <div className="slk-meta">
             {opts.authorRef
-              ? <button type="button" className="slk-author link" onClick={() => void openProfile(opts.authorRef!)}>{opts.name}</button>
+              ? <button type="button" className="slk-author link" aria-haspopup="dialog" onClick={(e) => openPopout(opts.authorRef!, e.currentTarget, opts.name)}>{opts.name}</button>
               : <span className="slk-author">{opts.name}</span>}
             {opts.badge && <span className={`slk-app-badge${opts.face?.emoji ? ' agent' : ''}`}>{opts.badge}</span>}
             {opts.to && <span className="slk-to">→ {opts.to}</span>}
@@ -3035,6 +3104,7 @@ export const ClassicList: React.FC<Props> = ({
   const agentHandles = new Set(agents.map((a) => a.handle.normalize('NFKC').toLowerCase()))
   // Only an @name that reaches somebody is drawn as a mention; one that
   // names nobody stays a word, so a typo reads as one.
+  // A person's opens their card: the ref goes with it, for onMentionClick.
   const rich = (text: string) => renderRich(text, (part) => {
     const kind = mentionKind(part, withAI)
     if (!kind) return ''
@@ -3042,6 +3112,10 @@ export const ClassicList: React.FC<Props> = ({
     if (kind === 'agent' || agentHandles.has(part.replace(/^[@＠]/, '').replace(/[にへ]$/, '').normalize('NFKC').toLowerCase())) return 'slk-mention agent'
     // Your own name, stronger than anyone else's.
     if (kind === 'person' && readsMe.namesMe(part)) return 'slk-mention me'
+    // "@agents" and the like read as a person to mentionKind; only somebody
+    // on the team has a card.
+    const who = kind === 'person' ? memberByRef(mentionTarget(part, withAI)?.ref) : undefined
+    if (who) return { className: 'slk-mention', ref: who.ref }
     return `slk-mention${kind === 'group' ? ' group' : ''}`
   })
   /// Whether a message calls you (utils/mentionsMe.ts): read from what was
@@ -3526,6 +3600,7 @@ export const ClassicList: React.FC<Props> = ({
                   joined: false, at: m.createdAt, app: m.kind === 'ai' ? 'ai' : '', badge: m.kind === 'ai' ? t('AI') : m.kind === 'agent' ? t('Agent') : undefined,
                   name: whoSaid(m),
                   face: m.kind !== 'ai' ? faceOfMessage(m) : null,
+                  authorRef: m.mine ? null : m.authorRef,
                   msgId: i === 0 ? `thread-${m.id}` : m.id, mentionsMe: callsMe(m),
                   tools: toolsFor(thread.channel, m, true), onHold: holdFor(thread.channel, m, true), onMenu: menuFor(thread.channel, m, true), state: tempState(m),
                 }, (
@@ -3659,7 +3734,8 @@ export const ClassicList: React.FC<Props> = ({
         const who = author(c)
         const joined = prevWho === `card:${who.name}` && at - prevAt < 5 * 60000
         const to = c.senderUserID === userId && c.recipientUserID !== userId ? nameOfRecipient(c) : ''
-        out.push(block(c.id, { joined, at: c.createdAt, app: who.app, name: who.name, face: who.face, to, unread: isUnread(c), msgId: c.id, tools: cardTools(c) }, (
+        const from = !who.app && c.senderUserID !== userId ? memberOfLogin(c.senderUserID)?.ref : null
+        out.push(block(c.id, { joined, at: c.createdAt, app: who.app, name: who.name, face: who.face, to, unread: isUnread(c), msgId: c.id, authorRef: from, tools: cardTools(c) }, (
           <>
             {attachment(c)}
             {cardReactions(c)}
@@ -3731,8 +3807,8 @@ export const ClassicList: React.FC<Props> = ({
           <div className="slk-head-text" onClick={!wide && thread.kind === 'channel' && thread.view ? () => openSide({ kind: 'details', tab: 'members' }) : undefined}>
             {thread.kind === 'person' && thread.view
               ? <h1><button type="button" className="slk-author link" onClick={() => void openProfile(thread.view!.slice(3))}>{thread.name}</button>
-                  {(() => { const m = members.find((x) => thread.view === `dm:${x.ref}`); return m?.status ? <span className="slk-head-status"> {m.status.emoji} {m.status.text}</span> : null })()}
-                  {(() => { const m = members.find((x) => thread.view === `dm:${x.ref}`); return m?.awayUntil ? <span className="slk-head-away"> · {t('Away until {when}', { when: new Date(m.awayUntil).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</span> : null })()}
+                  {(() => { const s = statusShown(members.find((x) => thread.view === `dm:${x.ref}`)?.status, Date.now()); return s ? <span className="slk-head-status"> {s.emoji} {s.text}</span> : null })()}
+                  {(() => { const away = awayShown(members.find((x) => thread.view === `dm:${x.ref}`)?.awayUntil, Date.now()); return away ? <span className="slk-head-away"> · {t('Away until {when}', { when: new Date(away).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</span> : null })()}
                 </h1>
               : <h1>{thread.name}</h1>}
             {thread.view && (
@@ -4307,7 +4383,7 @@ export const ClassicList: React.FC<Props> = ({
   }
 
   return (
-    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}`}>
+    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}`} onClick={onMentionClick} onKeyDown={onMentionKey}>
       <aside className="slk-side" aria-label={t('Conversations')}>
         {!wide && phoneTab === 'dms' ? dmsView() : <>
         <header className="cl-top">
@@ -4614,16 +4690,17 @@ export const ClassicList: React.FC<Props> = ({
           </header>
           {!profile.data ? <p className="slk-empty">{t('Loading…')}</p> : (() => {
             const p = profile.data
-            let local = ''
-            try { if (p.timezone) local = new Date().toLocaleTimeString(locale, { timeZone: p.timezone, hour: 'numeric', minute: '2-digit' }) } catch { /* unknown zone */ }
+            const local = localTime(p.timezone, Date.now(), locale)
+            const status = statusShown(p.status, Date.now())
+            const away = awayShown(p.awayUntil, Date.now())
             return (
               <div className="slk-profile-body">
-                <div className="slk-profile-avatar" aria-hidden="true">{p.name.charAt(0).toUpperCase()}</div>
+                <div className="slk-profile-avatar" aria-hidden="true"><Avatar name={p.name} url={memberByRef(profile.ref)?.avatarUrl} size={96} /></div>
                 <h3>{p.name}</h3>
                 {p.handle && <p className="slk-profile-handle">@{p.handle}</p>}
                 <p className="slk-profile-title">{t(p.title.charAt(0).toUpperCase() + p.title.slice(1))}</p>
-                {p.status && <p className="slk-profile-status">{p.status.emoji} {p.status.text}</p>}
-                {p.awayUntil && <p className="slk-profile-away">{t('Away until {when}', { when: new Date(p.awayUntil).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</p>}
+                {status && <p className="slk-profile-status">{status.emoji} {status.text}</p>}
+                {away && <p className="slk-profile-away">{t('Away until {when}', { when: new Date(away).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) })}</p>}
                 {local && <p className="slk-profile-local"><Icon name="clock" size={13} /> {t('{time} local time', { time: local })}</p>}
                 <dl className="slk-profile-stats">
                   <div><dt>{t('Waiting on them')}</dt><dd>{p.stats.waiting}</dd></div>
@@ -4669,6 +4746,7 @@ export const ClassicList: React.FC<Props> = ({
               onSettings={current.kind === 'channel' && current.slug ? () => { setSettings(true); setRenaming(null) } : null}
               onInvite={() => (current.private ? setAddingTo(current.view!) : setInviting('people'))}
               onProfile={(ref) => void openProfile(ref)}
+              onlineRefs={onlineRefs}
               onJump={(id) => void goToCite(current.view!, { id, parentId: null, at: '' })}
               onCounts={(n) => setAutomationCount((prev) => ({ ...prev, [current.view!]: n.automations }))}
               onClose={() => setSide(null)}
@@ -4689,6 +4767,31 @@ export const ClassicList: React.FC<Props> = ({
       {inviting && (
         <InviteDialog httpBase={api.httpBase} orgId={api.orgId} sessionToken={api.sessionToken} orgName={orgName} initialTab={inviting} onClose={() => setInviting(null)} />
       )}
+      {popout && (() => {
+        const m = memberByRef(popout.ref)
+        const d = popout.data
+        const dm = everything.find((x) => x.view === `dm:${popout.ref}`)
+        const mine = d ? d.mine : Boolean(m?.mine)
+        return (
+          <ProfileCard
+            person={{
+              ref: popout.ref, name: d?.name || m?.name || popout.name || t('a teammate'), avatarUrl: m?.avatarUrl,
+              handle: d ? d.handle : m?.handle, title: d?.title || m?.title, status: d ? d.status : m?.status,
+              awayUntil: d ? d.awayUntil : m?.awayUntil, timezone: d?.timezone, mine,
+            }}
+            // You are here, though the relay never says so (byPresence).
+            online={mine || isOnline(m, onlineKeys)}
+            anchor={popout.anchor}
+            // Their conversation, with nothing left over it: when it is already
+            // the open one, choosing it again closes nothing, and a thread the
+            // card was opened from would stay on top of the composer (on a
+            // phone, of the whole conversation).
+            onMessage={!mine && dm ? () => { setPopout(null); setThread(null); setDetailId(null); setProfile(null); choose(dm.key); setTimeout(() => composer.current?.focus(), 50) } : undefined}
+            onFullProfile={() => { setPopout(null); void openProfile(popout.ref) }}
+            onClose={() => setPopout(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

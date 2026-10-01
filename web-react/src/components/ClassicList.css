@@ -211,6 +211,21 @@
 .classic.slk.slk .slk-avatar.app { background: var(--slk-field); color: var(--slk-dim); }
 .classic.slk.slk .slk-avatar.app:has(.brand) { background: #fff; }
 .classic.slk.slk .slk-avatar img { width: 100%; height: 100%; display: block; }
+/* Somebody else's face opens their card. */
+.classic.slk.slk .slk-face-button {
+  position: relative; display: block; width: 36px; height: 36px; padding: 0; margin: 0;
+  border: none; border-radius: 8px; background: none; cursor: pointer;
+}
+.classic.slk.slk .slk-face-button:hover .slk-avatar { filter: brightness(.94); }
+.classic.slk.slk .slk-face-button:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 2px; }
+/* Here or not, cut out of whatever the message sits on. */
+.classic.slk.slk .slk-face-button .cl-presence {
+  width: 11px; height: 11px; right: -3px; bottom: -3px; border-width: 2px;
+  background: var(--slk-bg); border-color: var(--slk-dim); box-shadow: 0 0 0 2px var(--slk-bg);
+}
+.classic.slk.slk .slk-face-button .cl-presence.on { background: var(--slk-green); border-color: var(--slk-green); }
+.classic.slk.slk .slk-msg:hover .slk-face-button .cl-presence { box-shadow: 0 0 0 2px var(--slk-msg-hover); }
+.classic.slk.slk .slk-msg:hover .slk-face-button .cl-presence:not(.on) { background: var(--slk-msg-hover); }
 .classic.slk.slk .slk-hover-time {
   display: block; padding-top: 3px; text-align: right;
   font-size: 10.5px; color: var(--slk-faint); visibility: hidden; font-variant-numeric: tabular-nums;
@@ -318,6 +333,11 @@
 .classic.slk.slk .slk-text a:hover { text-decoration: underline; }
 .classic.slk.slk .slk-mention { color: var(--slk-accent); background: rgba(29, 155, 209, 0.10); border-radius: 4px; padding: 0 2px; font-weight: 600; }
 .classic.slk.slk .slk-mention.ai { color: #7c3aed; background: rgba(124, 58, 237, 0.12); }
+/* A person's @name opens their card: it presses like a button and is still a
+   word of the message, selected and copied with the rest of it. */
+.classic.slk.slk .slk-mention.link { cursor: pointer; }
+.classic.slk.slk .slk-mention.link:hover { text-decoration: underline; }
+.classic.slk.slk .slk-mention.link:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 1px; }
 .classic.slk.slk .slk-app-badge {
   font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   padding: 1px 5px; border-radius: 4px; background: var(--slk-field); color: var(--slk-dim);
@@ -889,7 +909,7 @@
 .classic.slk.slk .slk-head h1 .slk-author.link { font-weight: inherit; font-size: inherit; }
 .classic.slk.slk .slk-head-status, .classic.slk.slk .slk-head-away { font-size: 13px; font-weight: 400; color: var(--slk-dim); }
 .classic.slk.slk .slk-profile-body { padding: 24px 20px; overflow-y: auto; }
-.classic.slk.slk .slk-profile-avatar { width: 96px; height: 96px; border-radius: 16px; display: grid; place-items: center; font-size: 42px; font-weight: 800; background: var(--slk-on); color: var(--slk-ink); margin-bottom: 14px; }
+.classic.slk.slk .slk-profile-avatar { width: 96px; height: 96px; margin-bottom: 14px; }
 .classic.slk.slk .slk-profile-body h3 { margin: 0; font-size: 22px; color: var(--slk-ink); }
 .classic.slk.slk .slk-profile-body p { margin: 4px 0 0; font-size: 14px; color: var(--slk-dim); }
 .classic.slk.slk .slk-profile-status { color: var(--slk-ink) !important; }
@@ -898,6 +918,55 @@
 .classic.slk.slk .slk-profile-stats dt { font-size: 11px; color: var(--slk-dim); }
 .classic.slk.slk .slk-profile-stats dd { margin: 2px 0 0; font-size: 18px; font-weight: 800; color: var(--slk-ink); }
 .classic.slk.slk .slk-profile-actions { display: flex; gap: 8px; }
+
+/* A teammate's card, popped out beside a face, a name or an @mention: a
+   band of their colour, their photo with the presence dot cut out of the
+   card, then who they are and the two ways on. Placed by utils/people's
+   placeCard; the offset it opens from depends on which side it took. */
+.classic.slk.slk .slk-popout {
+  position: fixed; z-index: 80; width: 300px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px);
+  box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--slk-card); color: var(--slk-ink);
+  border: 1px solid var(--slk-line); border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .18), 0 2px 6px rgba(0, 0, 0, .08);
+  transform-origin: top left;
+  animation: slk-popout-in 140ms cubic-bezier(.2, .8, .2, 1);
+}
+.classic.slk.slk .slk-popout.left { transform-origin: top right; }
+.classic.slk.slk .slk-popout.up { transform-origin: bottom left; }
+.classic.slk.slk .slk-popout.left.up { transform-origin: bottom right; }
+.classic.slk.slk .slk-popout:focus { outline: none; }
+.classic.slk.slk .slk-popout:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 2px; }
+@keyframes slk-popout-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .classic.slk.slk .slk-popout { animation: none; } }
+.classic.slk.slk .slk-popout-banner { height: 56px; opacity: .85; }
+.classic.slk.slk .slk-popout-face {
+  position: relative; width: 72px; height: 72px; margin: -36px 0 0 16px;
+  border-radius: 16px; box-shadow: 0 0 0 4px var(--slk-card); background: var(--slk-card);
+}
+.classic.slk.slk .slk-popout-face .cl-presence {
+  width: 18px; height: 18px; right: -4px; bottom: -4px; border-width: 3px;
+  background: var(--slk-card); border-color: var(--slk-dim); box-shadow: 0 0 0 3px var(--slk-card);
+}
+.classic.slk.slk .slk-popout-face .cl-presence.on { background: var(--slk-green); border-color: var(--slk-green); }
+.classic.slk.slk .slk-popout-body { padding: 10px 16px 16px; }
+.classic.slk.slk .slk-popout-name { margin: 0; font-size: 19px; font-weight: 800; line-height: 1.25; color: var(--slk-ink); overflow-wrap: anywhere; }
+.classic.slk.slk .slk-popout-body p { margin: 3px 0 0; font-size: 13.5px; line-height: 1.4; color: var(--slk-dim); overflow-wrap: anywhere; }
+.classic.slk.slk .slk-popout-body .slk-popout-handle { color: var(--slk-ink); }
+.classic.slk.slk .slk-popout-body .slk-popout-status {
+  display: flex; align-items: baseline; gap: 6px; margin-top: 10px; padding: 8px 10px;
+  border-radius: 8px; background: var(--slk-field); color: var(--slk-ink);
+}
+.classic.slk.slk .slk-popout-emoji { flex: none; }
+.classic.slk.slk .slk-popout-body .slk-popout-away { color: var(--slk-amber); font-weight: 600; }
+.classic.slk.slk .slk-popout-body .slk-popout-local { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
+.classic.slk.slk .slk-popout-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--slk-line); }
+.classic.slk.slk .slk-popout-actions button { flex: 1 1 auto; height: 32px; }
+.classic.slk.slk .slk-popout-actions button:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .classic.slk.slk .slk-popout { box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .04); }
+}
+:root[data-theme="dark"] .classic.slk.slk .slk-popout { box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .04); }
 @media (min-width: 720px) {
   .classic.slk.slk.side-hidden .slk-side { display: none; }
 }
@@ -1028,6 +1097,12 @@
 }
 .classic.slk.slk .slk-member-row.static { cursor: default; }
 .classic.slk.slk button.slk-member-row:hover { background: var(--slk-hover); }
+.classic.slk.slk button.slk-member-row:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -2px; }
+/* Here or not, cut out of the pane — or out of the row under the pointer. */
+.classic.slk.slk .slk-details-list .cl-presence { width: 9px; height: 9px; border-width: 1.5px; background: var(--slk-bg); box-shadow: 0 0 0 2px var(--slk-bg); }
+.classic.slk.slk .slk-details-list .cl-presence.on { background: var(--slk-green); border-color: var(--slk-green); }
+.classic.slk.slk .slk-details-list .slk-member-row:hover .cl-presence { box-shadow: 0 0 0 2px var(--slk-hover); }
+.classic.slk.slk .slk-details-list .slk-member-row:hover .cl-presence:not(.on) { background: var(--slk-hover); }
 .classic.slk.slk .slk-member-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .classic.slk.slk .slk-member-name { font-size: 14px; font-weight: 700; color: var(--slk-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
 .classic.slk.slk a.slk-member-name { color: var(--slk-accent); font-weight: 600; }

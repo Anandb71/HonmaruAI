@@ -2286,14 +2286,18 @@ await step('the channel header opens its context, its automations, its members, 
     if (paused !== 0) throw new Error(`the switch did not pause the automation: ${JSON.stringify(paused)}`)
     await d.screenshot({ path: `${SHOTS}/44-channel-automations.png` })
 
-    // 3. Members: people and agents, searchable, with a way to add more.
+    // 3. Members: people (who is here first) and agents, searchable, with a
+    // way to add more. You are here yourself, so "Online" is never empty.
     await d.click('.slk-members-button')
     await d.waitForSelector('.slk-details [data-tab="members"][aria-selected="true"]', { timeout: 10000 })
+    await d.waitForSelector('.slk-details [data-members="online"]', { timeout: 10000 })
+      .catch(() => { throw new Error('the members panel does not list who is online') })
     const panel = await d.$eval('.slk-details', (el) => el.innerText)
     if (!/#kitchen/i.test(panel)) throw new Error('the members panel does not say which channel')
-    for (const want of ['Created on', 'People (', 'Agents (', 'Your AI', 'Add members', 'Attachments', 'Automations']) {
+    for (const want of ['Created on', 'Online — ', 'Agents (', 'Your AI', 'Add members', 'Attachments', 'Automations']) {
       if (!panel.includes(want)) throw new Error(`the members panel has no "${want}": ${panel.slice(0, 300)}`)
     }
+    if (!(await d.$('.slk-details [data-members="online"] + .slk-details-list .slk-member-row .cl-presence.on'))) throw new Error('you are not listed as online in the channel you are in')
     if (/@example\.com|\bu:|\bemail:/.test(panel)) throw new Error('the members panel shows an account id')
     await d.fill('.slk-details-search', 'zzzz-nobody')
     if ((await d.$$('.slk-details .slk-member-row:not(.static)')).length !== 0) throw new Error('searching members does not narrow them')

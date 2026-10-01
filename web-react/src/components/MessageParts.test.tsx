@@ -111,6 +111,24 @@ describe('the quote and list buttons', () => {
   })
 })
 
+// An @name that is a person opens their profile; any other stays a word
+// in colour.
+describe('a mention', () => {
+  const look = (name: string) => (name === '@Mika' ? { className: 'slk-mention', ref: 'm1' } : name === '@sales' ? { className: 'slk-mention group' } : 'slk-mention')
+  const draw = (text: string) => renderToStaticMarkup(<>{renderRich(text, look)}</>)
+  it('presses like a button and carries the person’s ref, for one handler on the conversation to open', () => {
+    expect(draw('ask @Mika')).toBe('ask <span role="button" tabindex="0" class="slk-mention link" data-mention-ref="m1" aria-haspopup="dialog">@Mika</span>')
+    expect(draw('*@Mika*')).toContain('<b><span role="button" tabindex="0" class="slk-mention link" data-mention-ref="m1"')
+  })
+  it('is still a word of the message, so selecting and copying the message takes it too', () => {
+    // A <button>'s text is left out of a selection (Firefox: user-select: none).
+    expect(draw('ask @Mika about it')).not.toContain('<button')
+  })
+  it('stays a span for a group, or a class given alone', () => {
+    expect(draw('@sales and @AI')).toBe('<span class="slk-mention group">@sales</span> and <span class="slk-mention">@AI</span>')
+  })
+})
+
 describe('a Jam recording in a message', () => {
   it('plays where it was posted; any other link stays a link', () => {
     const url = 'https://api.example.com/channels/jam/audio/0f8b3c3e-1111-4222-8333-944455556666'

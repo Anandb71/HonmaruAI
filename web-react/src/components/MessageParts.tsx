@@ -584,9 +584,17 @@ export const FormatBar: React.FC<{ target: React.RefObject<HTMLTextAreaElement>;
   )
 }
 
+/// How an @name is drawn: its class — and, for a person, their ref, which
+/// makes it press like a button and open their card. It stays a word of the
+/// message all the same (a span with the button's role, not a <button>,
+/// whose text a browser leaves out of what is selected and copied). The
+/// conversation listens for every one at once (`data-mention-ref`) — a
+/// click, or Enter or Space on it — not with one handler each.
+export type MentionLook = string | { className: string; ref?: string | null }
+
 /// Slack's formatting, read back: *bold*, _italic_, ~strike~, `code`,
 /// ```blocks```, "> " quotes, "- " and "1. " lists — plus links and @names.
-export function renderRich(text: string, mentionClass: (name: string) => string): React.ReactNode {
+export function renderRich(text: string, mentionClass: (name: string) => MentionLook): React.ReactNode {
   const out: React.ReactNode[] = []
   const parts = text.split(/```/)
   parts.forEach((chunk, ci) => {
@@ -678,7 +686,7 @@ const JAM_AUDIO = /^https?:\/\/[^\s]+\/channels\/jam\/audio\/[0-9a-f-]{36}$/
 
 /// `nested`: the words inside a *bold* or an _italic_, which are never a
 /// line of their own however few emoji they are.
-function inline(line: string, mentionClass: (name: string) => string, nested = false): React.ReactNode[] {
+function inline(line: string, mentionClass: (name: string) => MentionLook, nested = false): React.ReactNode[] {
   // Doubled marks (Discord's ||spoiler||, __underline__, ~~strike~~) come
   // before their single forms so "__a__" is not read as "_" + "_a_" + "_".
   const tokens = line.split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」|]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;|]+|\|\|[^|\n]+\|\||\*\*[^*\n]+\*\*|\*[^*\n]+\*|__[^_\n]+__|_[^_\n]+_|~~[^~\n]+~~|~[^~\n]+~)/g)
@@ -696,7 +704,13 @@ function inline(line: string, mentionClass: (name: string) => string, nested = f
     // A Jam's recording plays where it was posted.
     if (JAM_AUDIO.test(part)) return <audio key={i} className="slk-jam-audio" controls preload="none" src={part} />
     if (/^https?:\/\//.test(part)) return <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a>
-    if (/^[@＠]/.test(part)) return <span key={i} className={mentionClass(part)}>{part}</span>
+    if (/^[@＠]/.test(part)) {
+      const look = mentionClass(part)
+      const { className, ref } = typeof look === 'string' ? { className: look, ref: null } : look
+      return ref
+        ? <span key={i} role="button" tabIndex={0} className={`${className} link`} data-mention-ref={ref} aria-haspopup="dialog">{part}</span>
+        : <span key={i} className={className}>{part}</span>
+    }
     if (/^\|\|[^|]+\|\|$/.test(part)) return <Spoiler key={i}>{inline(part.slice(2, -2), mentionClass, true)}</Spoiler>
     if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass, true)}</b>
     if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{inline(part.slice(1, -1), mentionClass, true)}</b>
