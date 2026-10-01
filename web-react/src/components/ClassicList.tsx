@@ -15,6 +15,8 @@ import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
 import { useBackStack } from '../utils/backStack'
+import { countNewBelow, isAtBottom, isLooking, isNewSince, leavesGap, mergeById, reachesPast, shouldFollow, waitToSay } from '../utils/chatScroll'
+import { JumpToPresent, newBelowLabel } from './JumpToPresent'
 import { useT } from '../utils/i18n'
 import { useMembers, agentMentionables, agentsIn, mentionKind } from '../utils/mentions'
 import type { AgentFace } from '../utils/mentions'
@@ -24,7 +26,7 @@ import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/custom
 import { messageContextEntries, messageMenuTriggers, type MessageMenuActions } from '../utils/messageMenu'
 import { DailyReportDraft } from './DailyReport'
 import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, QUICK_REACTIONS, TypingLine, ReplyQuoteLine, ReplyingBar } from './MessageParts'
-import { heard, said, expire, nextExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
+import { heard as heardTyping, said, expire, nextExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
 import type { Typist, TypingEvent, Outgoing, Place, Signal } from '../utils/typing'
 import { quoteOf, refreshQuotes } from '../utils/replies'
 import { ChannelJournal, ChannelDetails, JamButton, JamBar } from './ChannelPanes'
@@ -1170,14 +1172,21 @@ export const ClassicList: React.FC<Props> = ({
   // Worker's `more`, or, from one that does not say, a full page of PAGE.
   const [more, setMore] = useState<Record<string, boolean>>({})
   const PAGE = 150
+  /// The newest page, laid over what is loaded rather than in place of it:
+  /// it is read again on every answer from the AI and after a reconnect, and
+  /// replacing took away the older pages somebody had scrolled up to read.
+  /// Whether there is more above stays loadOlder's to say once those are
+  /// loaded; only a hole too big to join starts again from the page.
   const loadMessages = useCallback((channel: string) => {
     return fetch(`${api.httpBase}/channels/messages?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}`, { headers: authHeaders })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return
-        setMessages((prev) => ({ ...prev, [channel]: data.messages || [] }))
-        setMore((prev) => ({ ...prev, [channel]: hasOlder(data, PAGE) }))
-        maybeNewEmoji((data.messages || []).map((m: ChannelMessage) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
+        const page = (data.messages || []) as ChannelMessage[]
+        const had = messagesRef.current[channel]
+        setMessages((prev) => ({ ...prev, [channel]: leavesGap(prev[channel], page, PAGE) ? page : mergeById(prev[channel], page) }))
+        if (leavesGap(had, page, PAGE) || !reachesPast(had, page)) setMore((prev) => ({ ...prev, [channel]: hasOlder(data, PAGE) }))
+        maybeNewEmoji(page.map((m) => `${m.body || ''} ${(m.reactions || []).map((r) => r.emoji).join(' ')}`).join(' '))
       })
       .catch(() => { /* the decisions still show */ })
   }, [api.httpBase, api.orgId, authHeaders, maybeNewEmoji])
@@ -1193,7 +1202,12 @@ export const ClassicList: React.FC<Props> = ({
       const data = res.ok ? await res.json() : null
       if (!data) return
       const older = (data.messages || []) as ChannelMessage[]
-      keepScroll.current = logRef.current ? logRef.current.scrollHeight - logRef.current.scrollTop : null
+      // A place is kept only for a page that puts something above. One that
+      // adds nothing (the conversation had exactly a page) changes no length,
+      // and the place kept would be used by whatever arrived next — a jump
+      // back up to where the older page was asked for.
+      const had = new Set(list.map((m) => m.id))
+      if (older.some((m) => !had.has(m.id))) keepScroll.current = logRef.current ? logRef.current.scrollHeight - logRef.current.scrollTop : null
       setMessages((prev) => {
         const cur = prev[channel] || []
         const known = new Set(cur.map((m) => m.id))
@@ -1212,6 +1226,35 @@ export const ClassicList: React.FC<Props> = ({
     setNewSince({ view, at: readAt(view) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
+  // Where the reader is: at the bottom, reading along, or up in the history
+  // since the newest thing they had was said. Up there, what arrives waits
+  // below them — not read, and counted — until they come back down.
+  const [readingUp, setReadingUp] = useState<{ view: string; since: string } | null>(null)
+  const atBottom = !readingUp || readingUp.view !== view
+  /// The log scrolled: whether that left the bottom, or came back to it.
+  const noteWhere = (v: string, el: HTMLElement) => {
+    if (isAtBottom(el)) { if (readingUp) setReadingUp(null); return }
+    if (readingUp?.view === v) return
+    const list = messages[v] || []
+    setReadingUp({ view: v, since: list[list.length - 1]?.createdAt || '' })
+  }
+  // Whether anybody is looking at the page. What is open is read only
+  // then, and read again the moment they come back to it.
+  const [looking, setLooking] = useState(() => typeof document === 'undefined' || isLooking(document))
+  useEffect(() => {
+    const look = () => setLooking(isLooking(document))
+    // Focus going into a frame on the page blurs the window before the
+    // frame has it; asked a moment later, the page still has focus.
+    const blurred = () => { setTimeout(look, 0) }
+    document.addEventListener('visibilitychange', look)
+    window.addEventListener('focus', look)
+    window.addEventListener('blur', blurred)
+    return () => {
+      document.removeEventListener('visibilitychange', look)
+      window.removeEventListener('focus', look)
+      window.removeEventListener('blur', blurred)
+    }
+  }, [])
   // An app looked at is read: its count goes, here and on every device —
   // and again when something new arrives while it is open.
   // Only when there is something new to clear: every write counts against
@@ -1219,7 +1262,7 @@ export const ClassicList: React.FC<Props> = ({
   const appOpen = current?.kind === 'app' ? current.key : null
   const appNew = current?.kind === 'app' ? current.unread : 0
   useEffect(() => {
-    if (!appOpen || appNew === 0) return
+    if (!appOpen || appNew === 0 || !looking) return
     const now = new Date().toISOString()
     try { localStorage.setItem(seenKey(api.orgId, appOpen), now) } catch { /* the server remembers */ }
     setSeenTick((n) => n + 1)
@@ -1228,7 +1271,7 @@ export const ClassicList: React.FC<Props> = ({
       body: JSON.stringify({ orgId: api.orgId, channel: appOpen }),
     }).then(() => setServerReads((prev) => ({ ...prev, [appOpen]: now }))).catch(() => { /* this device still remembers */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appOpen, appNew, api.orgId])
+  }, [appOpen, appNew, api.orgId, looking])
   // Opened is read — here, and on the server for your other devices —
   // unless you just marked it unread and are still looking at it.
   const heldUnread = useRef<string | null>(null)
@@ -1239,7 +1282,7 @@ export const ClassicList: React.FC<Props> = ({
   const readOnServer = (v: string, now: string) => {
     fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel: v }),
+      body: JSON.stringify({ orgId: api.orgId, channel: v, at: now }),
     }).then(() => setServerReads((prev) => ({ ...prev, [v]: now }))).catch(() => { /* this device still remembers */ })
     closeNotifications(api.orgId, v)
     setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === v && !i.message.parentId && (i.at || i.message.createdAt) <= now ? { ...i, unread: false } : i)))
@@ -1263,13 +1306,33 @@ export const ClassicList: React.FC<Props> = ({
     if (activityNew) markAllActivityRead()
     setToast(views.length ? t('Marked {n} conversations as read', { n: views.length }) : t('Activity marked as read'))
   }
+  /// The server's half of a read, sent a moment after this device's. Once
+  /// this device has stored a conversation read, the server hears it too —
+  /// scrolling up in that moment, or more arriving, does not take it back
+  /// (more arriving moves it on to now). Another conversation, leaving, or
+  /// marking it unread meanwhile does.
+  const serverRead = useRef<{ view: string; now: string; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const dropServerRead = () => {
+    if (serverRead.current) clearTimeout(serverRead.current.timer)
+    serverRead.current = null
+  }
+  // Read as Discord reads it: on opening, and then as things arrive only
+  // while you are at the bottom to see them. Scrolled up in the history, it
+  // stays unread until you come back down.
   useEffect(() => {
-    if (!view || heldUnread.current === view) return
+    if (!view || heldUnread.current === view || !atBottom || !looking) return
     const now = readHere(view)
-    const id = setTimeout(() => readOnServer(view, now), 600)
-    return () => clearTimeout(id)
+    if (serverRead.current?.view === view) { serverRead.current.now = now; return }
+    dropServerRead()
+    const timer = setTimeout(() => {
+      const due = serverRead.current
+      serverRead.current = null
+      if (due && heldUnread.current !== due.view) readOnServer(due.view, due.now)
+    }, 600)
+    serverRead.current = { view, now, timer }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, api.orgId, messages[view || '']?.length])
+  }, [view, api.orgId, messages[view || '']?.length, atBottom, looking])
+  useEffect(() => dropServerRead, [view, api.orgId])
   // The composer grows with what is written, up to a point.
   useEffect(() => {
     const el = composer.current
@@ -1693,7 +1756,7 @@ export const ClassicList: React.FC<Props> = ({
   const threadNow = useRef(thread)
   threadNow.current = thread
   useEffect(() => {
-    const on = (e: Event) => setTypists((prev) => heard(prev, (e as CustomEvent<TypingEvent>).detail, Date.now()))
+    const on = (e: Event) => setTypists((prev) => heardTyping(prev, (e as CustomEvent<TypingEvent>).detail, Date.now()))
     const arrived = (e: Event) => {
       const m = (e as CustomEvent<ChannelMessage>).detail
       // Something new said, not an old message edited, reacted to, pinned
@@ -1930,6 +1993,37 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:reads-changed', on)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.orgId])
+  // Back from a dropped connection or a sleep (Dashboard says so): what was
+  // said meanwhile never came over the socket. The sidebar, the open
+  // conversation's newest page — merged, so older pages stay — the open
+  // thread, Activity and Threads are read again. Waking can bring both
+  // signals at once; a moment's wait makes them one.
+  const resyncNow = useRef<() => void>(() => {})
+  resyncNow.current = () => {
+    setChannelsTick((n) => n + 1)
+    if (view) void loadMessages(view)
+    if (thread) {
+      const { channel, parent } = thread
+      fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(parent.id)}`, { headers: authHeaders })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (data?.parent) setThread((prev) => (prev && prev.parent.id === parent.id ? { ...prev, parent: data.parent, replies: data.replies || [] } : prev)) })
+        .catch(() => { /* the thread stays as it was */ })
+    }
+    if (activityItems) void loadActivity()
+    if (threadItems) void loadThreads()
+  }
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const on = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => resyncNow.current(), 300)
+    }
+    window.addEventListener('honmaru:resync', on)
+    return () => {
+      window.removeEventListener('honmaru:resync', on)
+      if (timer) clearTimeout(timer)
+    }
+  }, [])
   const loadPins = async (channel: string) => {
     if (pins) { setPins(null); return }
     const res = await fetch(`${api.httpBase}/channels/pins?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}`, { headers: authHeaders }).catch(() => null)
@@ -2341,24 +2435,43 @@ export const ClassicList: React.FC<Props> = ({
   // again once it has loaded, pictures arriving, a translation taking the
   // place of the words, a link growing a preview. Scrolled to once, it was
   // pushed out of sight by all of that. Scrolling up yourself lets go; back
-  // at the bottom, it holds again.
+  // at the bottom, it holds again. Something new arriving follows the same
+  // rule: up in the history, a teammate's message waits below; your own
+  // takes you to it.
   const logRef = useRef<HTMLDivElement | null>(null)
   const [logEl, setLogEl] = useState<HTMLDivElement | null>(null)
   const logAt = useCallback((el: HTMLDivElement | null) => { logRef.current = el; setLogEl(el) }, [])
   const pinned = useRef(true)
-  useEffect(() => { pinned.current = true }, [current?.key])
+  useEffect(() => { pinned.current = true; setReadingUp(null) }, [current?.key])
+  // What the log was last drawn for: another log or another conversation is
+  // one just opened, and a newest message later than the newest then just
+  // arrived (not one left newest by a deletion).
+  const followed = useRef<{ el: HTMLDivElement | null; key?: string; newestAt: string }>({ el: null, newestAt: '' })
   useEffect(() => {
     const el = logRef.current
     if (!el) return
-    if (keepScroll.current !== null) { el.scrollTop = el.scrollHeight - keepScroll.current; keepScroll.current = null; return }
-    el.scrollTop = el.scrollHeight
-    pinned.current = true
+    const list = messages[current?.view || ''] || []
+    const newest = list[list.length - 1]
+    const last = followed.current
+    const opened = last.el !== el || last.key !== current?.key
+    const newestIsMine = Boolean(newest?.mine && newest.createdAt > last.newestAt)
+    followed.current = { el, key: current?.key, newestAt: newest?.createdAt || '' }
+    const restoring = keepScroll.current !== null
+    if (shouldFollow({ opened, atBottom: pinned.current, restoring, newestIsMine })) {
+      keepScroll.current = null
+      el.scrollTop = el.scrollHeight
+      pinned.current = true
+    } else if (restoring) {
+      el.scrollTop = el.scrollHeight - keepScroll.current!
+      keepScroll.current = null
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logEl, current?.key, current?.cards.length, messages[current?.view || '']?.length, thinking[current?.view || '']])
   useEffect(() => {
     const el = logEl
     if (!el) return
     const settle = () => { if (pinned.current && keepScroll.current === null) el.scrollTop = el.scrollHeight }
-    const onScroll = () => { pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48 }
+    const onScroll = () => { pinned.current = isAtBottom(el) }
     const changed = new MutationObserver(settle)
     changed.observe(el, { childList: true, subtree: true, characterData: true })
     const sized = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(settle) : null
@@ -2373,6 +2486,43 @@ export const ClassicList: React.FC<Props> = ({
       el.removeEventListener('load', settle, true)
     }
   }, [logEl])
+  /// "Jump to present": down to the newest, which reads it on arriving.
+  /// Smoothly, unless the reader asked for less motion. The focus goes on to
+  /// the composer when focusAfterJump says, since the pill goes away under it.
+  const goToPresent = (handOn: boolean) => {
+    const el = logRef.current
+    if (!el) return
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    el.scrollTo({ top: el.scrollHeight, behavior: still ? 'auto' : 'smooth' })
+    if (handOn) composer.current?.focus({ preventScroll: true })
+  }
+  // What waits below, told to a screen reader in the pill's own words: the
+  // pill is out of sight of one, and its count changes silently. Politely,
+  // and no more often than waitToSay allows.
+  const newBelow = readingUp && readingUp.view === view ? countNewBelow(messages[view] || [], readingUp.since) : 0
+  const [heard, setHeard] = useState(0)
+  const heardAt = useRef(0)
+  useEffect(() => {
+    if (newBelow === 0) { setHeard(0); return }
+    const id = setTimeout(() => { heardAt.current = Date.now(); setHeard(newBelow) }, waitToSay(heardAt.current, Date.now()))
+    return () => clearTimeout(id)
+  }, [newBelow])
+  // ⇧PageDown goes to the present from anywhere the keys are not writing —
+  // an empty composer included, where there is nothing for it to select.
+  // (Esc already closes what is open, and ⇧Esc reads everything.)
+  useEffect(() => {
+    if (atBottom) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'PageDown' || !e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return
+      const field = (e.target as HTMLElement | null)?.closest?.('textarea, input, select, [contenteditable="true"]')
+      if (field && !(field === composer.current && composer.current.value === '')) return
+      e.preventDefault()
+      goToPresent(Boolean(document.activeElement?.closest('.slk-present')))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atBottom])
 
   // ---- The conversation ----
 
@@ -3150,7 +3300,7 @@ export const ClassicList: React.FC<Props> = ({
         out.push(<div key={`day-${d}`} className="slk-day" role="separator"><span>{dayLabel(item.at)}</span></div>)
       }
       const at = Date.parse(item.at)
-      if (!lined && item.kind === 'msg' && !item.msg.mine && item.at > since) {
+      if (!lined && item.kind === 'msg' && isNewSince(item.msg, since)) {
         lined = true
         out.push(<div key="new-line" className="slk-new-line" role="separator"><span>{t('New')}</span></div>)
       }
@@ -3476,7 +3626,11 @@ export const ClassicList: React.FC<Props> = ({
             })}
           </div>
         ) : (
-        <div className={thread.view ? 'slk-log with-typing' : 'slk-log'} ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}>
+        <div className={thread.view ? 'slk-log with-typing' : 'slk-log'} ref={logAt} onScroll={(e) => {
+          if (!thread.view) return
+          noteWhere(thread.view, e.currentTarget)
+          if (e.currentTarget.scrollTop < 120) void loadOlder(thread.view)
+        }}>
           {thread.view && more[thread.view] && <div className="slk-older" role="status">{t('Loading earlier messages…')}</div>}
           {!(thread.view && more[thread.view]) && <div className="slk-start">
             {lead(thread, 'head')}
@@ -3518,7 +3672,14 @@ export const ClassicList: React.FC<Props> = ({
           ))}
           {thread.view && aiSteps(thinking[thread.view])}
           {thread.view && agentLines(thread.view, { except: threadOpenParent })}
+          {/* Up in the history: the way back down, and what waits there. */}
+          {readingUp && readingUp.view === thread.view && <JumpToPresent count={countNewBelow(said, readingUp.since)} onJump={goToPresent} />}
         </div>
+        )}
+        {thread.view && (
+          <div className="sr-only" role="status" aria-live="polite">
+            {heard === 0 ? '' : newBelowLabel(heard, t)}
+          </div>
         )}
         {thread.view && (() => {
           const here = scheduled.filter((x) => x.channel === thread.view)
