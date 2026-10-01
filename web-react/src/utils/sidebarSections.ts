@@ -60,6 +60,16 @@ export function visibleRows<T extends SectionRow>(sections: Array<{ id: string; 
   return sections.flatMap((s) => (folded[s.id] ? foldedRows(s.threads, context) : s.threads))
 }
 
+/// The row ⌥↓ (or ⌥↑) goes to from the one open now, round the ends. When
+/// the open one is not among them — Activity is up and its section is
+/// folded — ⌥↓ starts at the top and ⌥↑ at the bottom.
+export function stepRow<T extends { key: string }>(rows: T[], currentKey: string | null | undefined, down: boolean): T | undefined {
+  if (!rows.length) return undefined
+  const i = rows.findIndex((x) => x.key === currentKey)
+  if (i < 0) return down ? rows[0] : rows[rows.length - 1]
+  return rows[(i + (down ? 1 : -1) + rows.length) % rows.length]
+}
+
 const foldsKey = (orgId: string) => `sidebar.folded:${orgId}`
 
 /// The sections folded in this workspace, as this browser remembers them:

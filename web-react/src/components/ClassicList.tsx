@@ -31,7 +31,7 @@ import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
-import { foldedRows, sectionBadge, visibleRows, readFolds, writeFolds, withSectionFolds } from '../utils/sidebarSections'
+import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds } from '../utils/sidebarSections'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -951,12 +951,10 @@ export const ClassicList: React.FC<Props> = ({
       if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         // The rows as the sidebar shows them, in its order: never one a
         // folded section hides.
-        const list = visibleRows(sideLists, folded, foldContext())
-        if (!list.length) return
+        const next = stepRow(visibleRows(sideLists, folded, foldContext()), current?.key, e.key === 'ArrowDown')
+        if (!next) return
         e.preventDefault()
-        const i = list.findIndex((x) => x.key === current?.key)
-        const next = list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]
-        if (next) choose(next.key)
+        choose(next.key)
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault(); openActivity()
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {

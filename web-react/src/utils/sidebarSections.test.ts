@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { foldedRows, sectionBadge, visibleRows, readFolds, writeFolds, withSectionFolds } from './sidebarSections'
+import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds } from './sidebarSections'
 
 const row = (key: string, extra: { view?: string; unread?: number; fresh?: boolean } = {}) => ({ key, view: extra.view, unread: extra.unread || 0, fresh: extra.fresh })
 
@@ -76,6 +76,30 @@ describe('the rows the sidebar shows', () => {
       .toEqual(['channel:s', 'channel:b', 'channel:c', 'person:p'])
     expect(visibleRows(sections, { starred: true, people: true, channels: false }, context).map((th) => th.key))
       .toEqual(['channel:a', 'channel:b', 'channel:c'])
+  })
+})
+
+describe('⌥↑/⌥↓', () => {
+  const rows = [row('a'), row('b'), row('c')]
+
+  it('go to the row after or before the one open, round the ends', () => {
+    expect(stepRow(rows, 'a', true)?.key).toBe('b')
+    expect(stepRow(rows, 'c', true)?.key).toBe('a')
+    expect(stepRow(rows, 'b', false)?.key).toBe('a')
+    expect(stepRow(rows, 'a', false)?.key).toBe('c')
+  })
+
+  it('start at the top, or the bottom, when the one open is not shown', () => {
+    // Activity is up and the open row's section is folded: it is not listed.
+    expect(stepRow(rows, 'hidden', true)?.key).toBe('a')
+    expect(stepRow(rows, 'hidden', false)?.key).toBe('c')
+    expect(stepRow(rows, null, false)?.key).toBe('c')
+    expect(stepRow(rows, undefined, true)?.key).toBe('a')
+  })
+
+  it('go nowhere in an empty sidebar', () => {
+    expect(stepRow([], 'a', true)).toBeUndefined()
+    expect(stepRow([], null, false)).toBeUndefined()
   })
 })
 
