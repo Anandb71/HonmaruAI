@@ -2450,6 +2450,12 @@ export const ClassicList: React.FC<Props> = ({
   /// such message" of one that went as asked, and focus would be let go.
   const unsending = useRef(new Set<string>())
   const remove = (channel: string, m: ChannelMessage, skipConfirm = false) => {
+    // Picked by a key before the server answered the send: deleted once it
+    // has landed, under the id the server gave it — or, never landed, given up.
+    if (isTemp(m)) {
+      void landedId(m.id).then((id) => { if (id) remove(channel, { ...m, id }, skipConfirm); else discard(m) })
+      return
+    }
     if (unsending.current.has(m.id)) return
     if (!skipsDeleteConfirm(skipConfirm, m, myRef)) { setDeleting({ channel, m }); return }
     // Nobody was asked, so nobody said others' replies may go: the server
