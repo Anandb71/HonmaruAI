@@ -94,6 +94,57 @@ test("a deleted message takes its thread with it: nothing is left to see", async
   expect(await transcriptUpTo(env.DB, ORG, "b:cafe", new Date().toISOString())).toHaveLength(0);
 });
 
+test("an unsent message does not end the history early: a page says outright whether there is more", async () => {
+  // 152 messages a second apart, the newest last — more than a page of 150.
+  const at = (i) => new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString();
+  await env.DB.batch(Array.from({ length: 152 }, (_, i) => env.DB.prepare(
+    "INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, created_at) VALUES (?1, ?2, 'b:cafe', 'u:mika@example.com', 'message', ?3, ?4)"
+  ).bind(`h${i}`, ORG, `line ${i}`, at(i))));
+  // One of the newest 150 is unsent. Taken out after the page was cut, it
+  // left 149, and a short page read as the start of #cafe.
+  expect((await del("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", messageId: "h100" })).status).toBe(200);
+  const first = await (await get(`/channels/messages?${q({ orgId: ORG, channel: "b:cafe" })}`, toru)).json();
+  expect(first.more).toBe(true);
+  expect(first.messages).toHaveLength(150);
+  expect(first.messages.map((m) => m.id)).not.toContain("h100");
+  expect(first.messages[0].id).toBe("h1");
+  expect(first.messages[149].id).toBe("h151");
+  // The page before it is the true start: the one message left, and no more.
+  const start = await (await get(`/channels/messages?${q({ orgId: ORG, channel: "b:cafe", before: first.messages[0].createdAt })}`, toru)).json();
+  expect(start.messages.map((m) => m.id)).toEqual(["h0"]);
+  expect(start.more).toBe(false);
+});
+
+test("a whole page of unsent messages is skipped, not taken for the start", async () => {
+  const at = (i) => new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString();
+  // Two said long ago, then 160 unsent, then one said since. Cut to a
+  // page before the unsent were dropped, it was only the last one.
+  const kept = (i) => i < 2 || i === 162;
+  await env.DB.batch(Array.from({ length: 163 }, (_, i) => env.DB.prepare(
+    "INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, created_at, deleted_at) VALUES (?1, ?2, 'b:cafe', 'u:mika@example.com', 'message', ?3, ?4, ?5)"
+  ).bind(`h${i}`, ORG, kept(i) ? `line ${i}` : "", at(i), kept(i) ? null : at(200))));
+  const first = await (await get(`/channels/messages?${q({ orgId: ORG, channel: "b:cafe" })}`, toru)).json();
+  expect(first.messages.map((m) => m.id)).toEqual(["h0", "h1", "h162"]);
+  expect(first.more).toBe(false);
+});
+
+test("exactly a page of messages, unsent ones among them, is the whole history", async () => {
+  const at = (i) => new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString();
+  // 150 kept and four unsent, one of them the oldest of all. The row read
+  // past the page is what says there is more; with exactly 150 there is
+  // none to read, and the page is full but the start.
+  const unsent = new Set([0, 40, 100, 153]);
+  await env.DB.batch(Array.from({ length: 154 }, (_, i) => env.DB.prepare(
+    "INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, created_at, deleted_at) VALUES (?1, ?2, 'b:cafe', 'u:mika@example.com', 'message', ?3, ?4, ?5)"
+  ).bind(`h${i}`, ORG, unsent.has(i) ? "" : `line ${i}`, at(i), unsent.has(i) ? at(200) : null)));
+  const first = await (await get(`/channels/messages?${q({ orgId: ORG, channel: "b:cafe" })}`, toru)).json();
+  expect(first.messages).toHaveLength(150);
+  expect(first.messages.some((m) => unsent.has(Number(m.id.slice(1))))).toBe(false);
+  expect(first.messages[0].id).toBe("h1");
+  expect(first.messages[149].id).toBe("h152");
+  expect(first.more).toBe(false);
+});
+
 test("the author takes a message's link cards off; nobody else can", async () => {
   const m = await say(mika, "look https://blog.example.com/a");
   const post = (token, body) => worker.fetch(new Request("https://example.com/channels/previews", { method: "POST", headers: { "content-type": "application/json", "x-session-token": token }, body: JSON.stringify(body) }), env, { waitUntil: () => {} });

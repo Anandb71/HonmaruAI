@@ -559,8 +559,9 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   body          TEXT NOT NULL,
   card_id       TEXT,
   created_at    TEXT NOT NULL,
-  /* Slack's verbs on a message: edited in place, deleted (a tombstone
-     while it has replies), a reply in a thread under another, pinned. */
+  /* Slack's verbs on a message: edited in place, deleted (unsent: the row
+     stays with its words gone, its thread is deleted with it, and no page
+     of history shows it), a reply in a thread under another, pinned. */
   edited_at     TEXT,
   deleted_at    TEXT,
   parent_id     TEXT,

@@ -154,8 +154,10 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     id: row.id,
     channel: view,
     kind: row.kind,
-    // A deleted message keeps its place (its thread hangs off it) and
-    // loses its words.
+    // A deleted message loses its words. A page of history leaves it out;
+    // it comes only as the head of a thread opened by its link (listThread
+    // fetches it by id), and in what the unsend sends out to take it off
+    // the screens it is on.
     body: deleted ? "" : row.body,
     // The language it is written in, for a reader in another to ask for it
     // translated (translate.js). Null when there is nothing to translate.
@@ -238,21 +240,28 @@ export async function present(db, orgId, rows, viewerLogin, view, members) {
   }));
 }
 
+/// A page of a conversation: up to `PAGE` messages before `before`, oldest
+/// first, and `more` — whether there are older ones still.
+///
+/// A deleted message is simply gone. (Before its thread went with it, one
+/// could be left with replies under it; those are not shown either.) It is
+/// left out by the query, not after it: filtered from a page already cut to
+/// `PAGE`, one unsent message made the page short, and a short page read as
+/// the start of the conversation — the history above it could not be
+/// reached. One row past the page says outright whether there is more.
 export async function listMessages(db, orgId, resolved, viewerLogin, view, members, { before } = {}) {
   const { results } = await db
     .prepare(
       `SELECT m.*, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name FROM channel_messages m
          LEFT JOIN users u ON u.login = m.author_login
-        WHERE m.org_id = ?1 AND m.channel = ?2 AND m.parent_id IS NULL ${before ? "AND m.created_at < ?4" : ""}
+        WHERE m.org_id = ?1 AND m.channel = ?2 AND m.parent_id IS NULL AND m.deleted_at IS NULL ${before ? "AND m.created_at < ?4" : ""}
         ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?3`
     )
-    .bind(...[orgId, resolved.key, PAGE, ...(before ? [before] : [])])
+    .bind(...[orgId, resolved.key, PAGE + 1, ...(before ? [before] : [])])
     .all();
-  const rows = (results || []).reverse();
-  const shown = await present(db, orgId, rows, viewerLogin, view, members);
-  // A deleted message is simply gone. (Before its thread went with it, one
-  // could be left with replies under it; those are not shown either.)
-  return shown.filter((m) => !m.deleted);
+  const more = (results || []).length > PAGE;
+  const rows = (results || []).slice(0, PAGE).reverse();
+  return { messages: await present(db, orgId, rows, viewerLogin, view, members), more };
 }
 
 /// A thread: the message it hangs off, and every reply under it, oldest first.
