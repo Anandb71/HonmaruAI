@@ -2288,8 +2288,9 @@ export const ClassicList: React.FC<Props> = ({
     : q.authorRef && q.authorRef === myRef ? (myName || t('You'))
     : (q.authorName || t('a teammate')))
   /// Reply, pressed: the bar over the composer, and the caret in the box.
+  /// An edit open on another message stays open — its words live nowhere
+  /// else, and answering one message is no reason to lose them.
   const startReply = (channel: string, m: ChannelMessage) => {
-    setEditing(null)
     setReplyingTo({ view: channel, quote: quoteOf(m) })
     requestAnimationFrame(() => composer.current?.focus())
   }
