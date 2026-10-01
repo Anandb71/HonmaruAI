@@ -2012,6 +2012,8 @@ export const ClassicList: React.FC<Props> = ({
     [!!profile, () => setProfile(null)],
     [!!thread, () => setThread(null)],
     [!!detailId, () => setDetailId(null)],
+    // A teammate's card stands over all of these.
+    [!!popout, () => setPopout(null)],
   ])
   // How many automations run into each channel, for the header's count.
   const [automationCount, setAutomationCount] = useState<Record<string, number>>({})
