@@ -3,7 +3,7 @@ import { fetchMock } from "./helpers/fetch-mock.js";
 import { beforeEach, afterEach, expect, test } from "vitest";
 import schemaSql from "../schema.sql?raw";
 import worker from "../src/index.js";
-import { replyExcerpt, SPOILER_MASK } from "../src/channels.js";
+import { replyExcerpt, transcriptUpTo, SPOILER_MASK } from "../src/channels.js";
 
 // Discord's inline reply: a message that answers another one right in the
 // conversation, with a line quoting who said what — not a thread. Only a
@@ -218,4 +218,35 @@ test("someone who left is told nothing of what is said after: not an answer to t
   // Her thread carried on: Toru, who is in it and still here, hears; she does not.
   const t = await say(kenji, "the shared one", { parentId: m.id });
   expect(await queuedFor(t.id)).toEqual([{ login: "toru", reason: "thread" }]);
+});
+
+test("the AI is told what a reply answers, even one said long before what it reads", async () => {
+  const m = await say(mika, "Roaster wants +8% from Friday");
+  for (const n of [1, 2, 3]) await say(kenji, `unrelated ${n}`);
+  const r = await say(toru, "what does this mean for margins?", { replyTo: m.id });
+  // Three lines back does not reach the original; the asking line carries it.
+  const lines = await transcriptUpTo(env.DB, ORG, "b:cafe", r.createdAt, { limit: 3 });
+  expect(lines).toHaveLength(3);
+  expect(lines[2]).toMatch(/ Toru \(replying to Mika: "Roaster wants \+8% from Friday"\): what does this mean for margins\?$/);
+  expect(lines.slice(0, 2).join("\n")).not.toContain("Roaster");
+  // A line that answers nothing reads as it always did.
+  expect(lines[1]).toMatch(/ Kenji: unrelated 3$/);
+});
+
+test("the asking line carries its original whole; earlier replies the short quote; nothing unsent or left out", async () => {
+  const long = await say(mika, "y".repeat(300));
+  await say(kenji, "noted", { replyTo: long.id });
+  const ask = await say(toru, "and this?", { replyTo: long.id });
+  const lines = await transcriptUpTo(env.DB, ORG, "b:cafe", ask.createdAt);
+  expect(lines[1]).toContain(`Kenji (replying to Mika: "${"y".repeat(120)}…"): noted`);
+  expect(lines[2]).toContain(`Toru (replying to Mika: "${"y".repeat(300)}"): and this?`);
+  // What the caller leaves out of the lines is not brought back in a quote.
+  const without = await transcriptUpTo(env.DB, ORG, "b:cafe", ask.createdAt, { skip: (x) => /^y+$/.test(x.body) });
+  expect(without.join("\n")).not.toContain("yyy");
+  expect(without[1]).toMatch(/ Toru: and this\?$/);
+  // Unsent: gone from the lines and from every quote of it.
+  expect((await del("/channels/messages", mika, { orgId: ORG, channel: "b:cafe", messageId: long.id })).status).toBe(200);
+  const after = await transcriptUpTo(env.DB, ORG, "b:cafe", ask.createdAt);
+  expect(after).toHaveLength(2);
+  expect(after.join("\n")).not.toContain("replying to");
 });
