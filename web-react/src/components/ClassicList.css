@@ -566,6 +566,9 @@
   border: 1px solid var(--slk-line); border-radius: 8px; background: var(--slk-field);
   font: inherit; font-size: 13.5px; color: var(--slk-ink);
 }
+/* Where there is no hover the + under a message opens this picker too, and
+   under 16px iOS zooms the page in on focus. */
+@media (hover: none) { .classic.slk.slk .slk-picker-search { font-size: 16px; } }
 .classic.slk.slk .slk-picker-search::placeholder { color: var(--slk-faint); }
 .classic.slk.slk .slk-picker-search:focus-visible { outline: 2px solid var(--slk-accent); outline-offset: -1px; }
 .classic.slk.slk .slk-picker-empty { margin: 14px 2px 8px; font-size: 13px; color: var(--slk-dim); text-align: center; }
