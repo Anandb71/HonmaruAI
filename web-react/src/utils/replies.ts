@@ -10,16 +10,23 @@ import type { ChannelMessage, ReplyQuote } from '../types/card'
 export const SPOILER_MASK = '████'
 const QUOTE_CHARS = 120
 
+/// What the message renderer reads on a line before it reads a spoiler, in
+/// its own order (MessageParts inline()): `code`, a link, an :emoji:, an
+/// @name — each kept whole — and then ||a spoiler||, which never crosses a
+/// line and holds no bar. The Worker's QUOTE_TOKENS.
+const QUOTE_TOKENS = /(`[^`\n]+`|https?:\/\/[^\s<>"）」|]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;|]+)|\|\|[^|\n]+\|\|/g
+
 /// A message's first words, as a reply quotes them — the Worker's
-/// replyExcerpt, character for character: one line, each ||spoiler||
-/// hidden before anything is cut, bars inside `code` left as code, a file
-/// named when there are no words.
+/// replyExcerpt, character for character: each ||spoiler|| hidden before
+/// anything is cut, then one line. A spoiler is what the renderer would
+/// hide, read on the message's own lines: a ```block``` is code across
+/// lines, `code` only within one, and bars inside either open no spoiler.
+/// A file is named when there are no words.
 export function replyExcerpt(body: string | null | undefined, fileName: string | null = null, max = QUOTE_CHARS): string {
-  const flat = String(body || '').replace(/\u0000/g, '').replace(/\s+/g, ' ').trim()
-  const code: string[] = []
-  const held = flat.replace(/```[\s\S]*?```|`[^`]*`/g, (c) => `\u0000${code.push(c) - 1}\u0000`)
-  const text = held.replace(/\|\|[\s\S]+?\|\|/g, SPOILER_MASK).replace(/\u0000(\d+)\u0000/g, (_, i) => code[Number(i)])
-    || (fileName ? `📎 ${fileName}` : '')
+  const masked = String(body || '').split('```')
+    .map((piece, i) => (i % 2 ? piece : piece.replace(QUOTE_TOKENS, (_all, kept?: string) => kept || SPOILER_MASK)))
+    .join('```')
+  const text = masked.replace(/\s+/g, ' ').trim() || (fileName ? `📎 ${fileName}` : '')
   const chars = Array.from(text)
   return chars.length > max ? `${chars.slice(0, max - 1).join('').trimEnd()}…` : text
 }
