@@ -4043,6 +4043,7 @@ export const ClassicList: React.FC<Props> = ({
           <Dialog
             title={t('Delete message')}
             lede={t(deleteWarning(m, myRef, others))}
+            describedBy="cl-delete-preview"
             className="cl-delete-dialog"
             onClose={cancelDelete}
             footer={(
@@ -4054,7 +4055,7 @@ export const ClassicList: React.FC<Props> = ({
               </>
             )}
           >
-            <div className="cl-delete-preview" data-delete-preview>
+            <div id="cl-delete-preview" className="cl-delete-preview" data-delete-preview>
               <div className="cl-delete-meta">
                 <Avatar name={face.name} url={face.url} size={24} />
                 <b>{face.name}</b>
