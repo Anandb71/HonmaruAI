@@ -26,6 +26,7 @@ import type { Screen, Mode } from '../utils/route'
 import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound'
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
 import { isMacPlatform, formatCombo } from '../utils/keys'
+import { tabWithin, TAB_STOPS } from '../utils/focusTrap'
 import type { ChannelMessage } from '../types/card'
 
 // The screens a person opens now and then load when they are opened: the
@@ -521,8 +522,20 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
       if (palette) return
       // The shortcuts sheet is on top: Escape closes it, not what is under
-      // it, even with focus gone elsewhere; N waits too.
-      if (shortcuts) { if (e.key === 'Escape') setShortcuts(false); return }
+      // it, even with focus gone elsewhere; N waits too. Tab goes round
+      // inside it — the sheet is modal, and the list and the composer behind
+      // the scrim are not to be reached, or typed into, from the keyboard.
+      if (shortcuts) {
+        const sheet = shortcutsSheet.current
+        if (e.key === 'Escape') setShortcuts(false)
+        else if (e.key === 'Tab' && sheet && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault()
+          const stops = Array.from(sheet.querySelectorAll<HTMLElement>(TAB_STOPS))
+          const to = tabWithin(stops, document.activeElement as HTMLElement | null, e.shiftKey) ?? sheet
+          to.focus()
+        }
+        return
+      }
       if (e.key === 'Escape') { setPanel(null); if (screen) closeScreen() }
       else if (e.key === 'n' && !panel && !screen && !(e.target as HTMLElement)?.matches('input, textarea')) { e.preventDefault(); setPanel('compose') }
     }
