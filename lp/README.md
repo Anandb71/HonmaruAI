@@ -54,7 +54,7 @@ and Sometype Mono; #202020 pill buttons; brand violet for AI moments only.
 |--------|-------------|
 | iPhone | App Store: `apps.apple.com/jp/app/honmaruai/id6799302006` from the Japanese page, `apps.apple.com/app/id6799302006` from the others (Apple opens the visitor's own storefront) |
 | Web | `honmaru-web.pages.dev/?lang=<page language>`; the web app reads `?lang=` until someone picks a language in the app |
-| Mac | Signed and notarized v0.1.1 download |
+| Mac | Signed and notarized v0.1.2 download |
 | Windows | Unsigned x64 preview release with usage notes |
 | Android | Coming soon; not publicly released |
 
