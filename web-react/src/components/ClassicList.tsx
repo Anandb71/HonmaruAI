@@ -1714,7 +1714,12 @@ export const ClassicList: React.FC<Props> = ({
   /// outright, so that one is always asked. `others`: the server found
   /// replies from others that this page did not know of.
   const [deleting, setDeleting] = useState<null | { channel: string; m: ChannelMessage; others?: boolean; busy?: boolean }>(null)
+  /// Messages the server is deleting right now. A second press of the key
+  /// before it answers is not a second delete: the server would say "No
+  /// such message" of one that went as asked, and focus would be let go.
+  const unsending = useRef(new Set<string>())
   const remove = (channel: string, m: ChannelMessage, skipConfirm = false) => {
+    if (unsending.current.has(m.id)) return
     if (!skipsDeleteConfirm(skipConfirm, m, myRef)) { setDeleting({ channel, m }); return }
     // Nobody was asked, so nobody said others' replies may go: the server
     // is asked without them, and when it finds some the question is asked
@@ -1733,6 +1738,8 @@ export const ClassicList: React.FC<Props> = ({
   /// them. It is the server that knows who replied — replyRefs leaves out
   /// anyone who has since left, and is behind when a live event was missed.
   const unsend = async (channel: string, m: ChannelMessage, withThread: boolean): Promise<{ gone: boolean; others?: boolean; error?: string }> => {
+    if (unsending.current.has(m.id)) return { gone: false }
+    unsending.current.add(m.id)
     setProblem(null)
     let res: Response | null = null
     let data: { message?: unknown; code?: string } = {}
@@ -1746,6 +1753,7 @@ export const ClassicList: React.FC<Props> = ({
     } catch {
       res = null
     }
+    unsending.current.delete(m.id)
     if (res?.status === 409 && data.code === 'thread_has_replies') return { gone: false, others: true }
     setEditing((cur) => (cur?.id === m.id ? null : cur))
     if (!res?.ok) return { gone: false, error: (typeof data.message === 'string' && data.message) || t('That did not work. Try again.') }
