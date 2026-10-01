@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deepLinkToUrl, linkFromArgv, isSafeExternal, navigationDecision, windowTitle, SIGN_IN_MS } from '../src/links.js'
+import { deepLinkToHash, deepLinkToUrl, linkFromArgv, isSafeExternal, navigationDecision, windowTitle, SIGN_IN_MS } from '../src/links.js'
 
 const APP = 'https://app.honmaruai.com/'
 const API = 'https://tiktokforwork.torubj0904.workers.dev'
@@ -23,6 +23,23 @@ describe('honmaru:// links', () => {
 
   it('never carry a workspace onto an invitation', () => {
     expect(deepLinkToUrl('honmaru://join/abc?org=x', APP)).toBe('https://app.honmaruai.com/join/abc')
+  })
+
+  it('move an app that is already open by its hash route, the web\'s own (webHashFor)', () => {
+    expect(deepLinkToHash('honmaru://c/b%3Ageneral?org=team%3Aacme')).toBe('#/c/b%3Ageneral?org=team%3Aacme')
+    expect(deepLinkToHash('honmaru://c/dm:mika')).toBe('#/c/dm%3Amika')
+    expect(deepLinkToHash('honmaru://join/0123456789abcdef?org=x')).toBe('#/join/0123456789abcdef')
+    // Nothing to move to: the window is only shown.
+    expect(deepLinkToHash('honmaru://settings')).toBeNull()
+    expect(deepLinkToHash('honmaru://c/')).toBeNull()
+    expect(deepLinkToHash('https://app.honmaruai.com/c/b%3Ax')).toBeNull()
+    expect(deepLinkToHash('not a url')).toBeNull()
+  })
+
+  it('cannot break out of the hash they set', () => {
+    // Whatever the link carries is encoded into one hash segment.
+    expect(deepLinkToHash("honmaru://c/b%3Ax'%22;alert(1)//")).toBe("#/c/b%3Ax'%22%3Balert(1)%2F%2F")
+    expect(deepLinkToHash('honmaru://c/%E0%A4%A')).toBe('#/c/%25E0%25A4%25A')
   })
 
   it('are found among a second start\'s arguments', () => {

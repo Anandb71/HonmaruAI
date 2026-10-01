@@ -5,11 +5,12 @@ window on Windows, macOS and Linux. It adds what a browser tab can't do:
 
 | | |
 |---|---|
-| **Stays running** | Closing the window hides it to the tray (Windows, Linux) or the dock (macOS), as Discord does, so notifications keep arriving. Quit from the tray or the menu (Ctrl+Q). |
+| **Stays running** | Closing the window hides it to the tray (Windows, Linux) or the dock (macOS), as Discord does, so notifications keep arriving. Quit from the tray or the menu (Ctrl+Q). Logging off, shutting down or an update still closes it. |
 | **Unread count** | The count in the page title (`(3) Honmaru AI`) appears as a red dot on the Windows taskbar, as the dock or launcher badge on macOS and Linux, and in the tray tooltip. When it goes up while the window is in the background, the taskbar flashes or the dock bounces once. |
 | **Notifications** | Native, through the web app's own notifications. Windows needs the app identity `com.honmaru.ai`, which is set. |
-| **`honmaru://` links** | `honmaru://c/<channel>?org=<orgId>` opens a conversation and `honmaru://join/<code>` an invitation. These are the same paths as the web links (`packages/core/src/links.ts`). A second launch hands its link to the running app. |
+| **`honmaru://` links** | `honmaru://c/<channel>?org=<orgId>` opens a conversation and `honmaru://join/<code>` an invitation. These are the same paths as the web links (`packages/core/src/links.ts`). A second launch hands its link to the running app, which moves to it inside the page (by its hash route) without reloading, so a half-written message stays. |
 | **Remembers its place** | Size, position and maximized state. If that screen is gone, the window opens on the main one. |
+| **Recovers** | A page that crashes is reloaded. One that crashes three times in a minute is not reloaded again: the app says so and offers to try again or quit. |
 | **Always current** | It loads the deployed web app, so a web deploy updates it. Only the shell itself needs an installer. |
 
 ## Run it
@@ -19,7 +20,7 @@ cd apps/desktop
 npm install
 npm start                 # against https://app.honmaruai.com
 npm run dev               # against the web dev server on http://localhost:3000
-npm test                  # the rules: links, navigation, the count, window placement
+npm test                  # the rules: links, navigation, the CSP, the count, window placement, crashes
 npm run dist              # installers in dist/ (unsigned for now)
 ```
 
@@ -71,11 +72,11 @@ Following the baseline in `docs/architecture/discord-model-platform-plan.md` §1
   in the browser and will not complete in the app.
 - A page that opens a blank window to point it at a tool's sign-in (Tools,
   Smithery apps) gets a hidden window whose first navigation goes to the
-  browser.
+  browser. One that is still blank after 30 seconds is closed.
 
 The rules live in pure modules (`src/links.js`, `src/config.js`,
-`src/badge.js`, `src/windowState.js`) with tests. `src/main.js` only wires
-them to Electron.
+`src/csp.js`, `src/badge.js`, `src/windowState.js`, `src/crashes.js`), each
+with its tests in `test/`. `src/main.js` only wires them to Electron.
 
 ## Not yet
 

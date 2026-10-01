@@ -28,6 +28,27 @@ export function deepLinkToUrl(link, appUrl) {
   return target.toString()
 }
 
+const decode = (part) => {
+  try { return decodeURIComponent(part) } catch { return part }
+}
+
+/// A honmaru:// link as the web app's hash route, for a window that already
+/// has the app open: setting the hash moves the app there without a reload,
+/// so nothing typed but unsent is lost. The same routes as the web's own
+/// (packages/core/src/links.ts webHashFor): `#/c/<channel>?org=<orgId>` and
+/// `#/join/<code>`. Null for any other link, which then only shows the window.
+export function deepLinkToHash(link) {
+  let url
+  try { url = new URL(String(link || '')) } catch { return null }
+  if (url.protocol !== `${PROTOCOL}:`) return null
+  const head = url.host
+  const rest = decode(url.pathname.replace(/^\/+/, ''))
+  if (!LINK_HEADS.has(head) || !rest || rest.includes('..')) return null
+  if (head === 'join') return `#/join/${encodeURIComponent(rest)}`
+  const org = url.searchParams.get('org')
+  return `#/c/${encodeURIComponent(rest)}${org ? `?org=${encodeURIComponent(org)}` : ''}`
+}
+
 /// The first honmaru:// link among a process's arguments (Windows and Linux
 /// hand a link to the app as an argument), or null.
 export function linkFromArgv(argv) {

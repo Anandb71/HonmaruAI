@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { countFromTitle, trayTooltip, shouldAttract } from '../src/badge.js'
-import { fitBounds, DEFAULT_SIZE, MIN_SIZE } from '../src/windowState.js'
 
 describe('the count', () => {
   it('is read off the title the web app writes', () => {
@@ -19,23 +18,5 @@ describe('the count', () => {
     expect(shouldAttract(2, 2, false)).toBe(false)
     expect(shouldAttract(2, 1, false)).toBe(false)
     expect(shouldAttract(1, 2, true)).toBe(false)
-  })
-})
-
-describe('where the window opens', () => {
-  const screens = [{ x: 0, y: 0, width: 1920, height: 1040 }]
-
-  it('opens where it was, on a screen that is still there', () => {
-    expect(fitBounds({ x: 100, y: 80, width: 1200, height: 800 }, screens)).toEqual({ x: 100, y: 80, width: 1200, height: 800 })
-  })
-
-  it('opens on the main screen when its screen is gone, keeping its size', () => {
-    expect(fitBounds({ x: 2400, y: 80, width: 1200, height: 800 }, screens)).toEqual({ width: 1200, height: 800 })
-  })
-
-  it('never opens smaller than it can be used, and falls back to the default', () => {
-    expect(fitBounds({ x: 10, y: 10, width: 50, height: 50 }, screens)).toEqual({ x: 10, y: 10, width: MIN_SIZE.width, height: MIN_SIZE.height })
-    expect(fitBounds(null, screens)).toEqual(DEFAULT_SIZE)
-    expect(fitBounds({ width: 'big' }, screens)).toEqual(DEFAULT_SIZE)
   })
 })

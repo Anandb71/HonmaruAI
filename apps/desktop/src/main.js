@@ -9,14 +9,15 @@
 // app's pages, navigation kept to the app, the API and sign-in, and every
 // other link sent to the browser.
 
-import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, powerMonitor, screen, session, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { allowedOrigins, apiOriginsFrom, appUrlFrom } from './config.js'
 import { buildCsp, withCsp } from './csp.js'
-import { PROTOCOL, deepLinkToUrl, isSafeExternal, linkFromArgv, navigationDecision, windowTitle } from './links.js'
+import { PROTOCOL, deepLinkToHash, deepLinkToUrl, isSafeExternal, linkFromArgv, navigationDecision, windowTitle } from './links.js'
 import { countFromTitle, shouldAttract, trayTooltip } from './badge.js'
 import { fitBounds, loadWindowState, saveWindowState, MIN_SIZE } from './windowState.js'
+import { crashVerdict } from './crashes.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const asset = (name) => path.join(here, '..', 'assets', name)
@@ -38,12 +39,18 @@ const CSP = buildCsp({ apiOrigins: API_ORIGINS, dev: !PACKAGED && APP_URL.starts
 /// What the app's own pages may ask for: notifications, a microphone and
 /// camera for Jam calls, full screen, and writing to the clipboard.
 const PERMISSIONS = new Set(['notifications', 'media', 'fullscreen', 'clipboard-sanitized-write'])
+/// How long a blank window a page opened may wait to be pointed somewhere
+/// before it is closed.
+const BLANK_CHILD_MS = 30 * 1000
 
 let win = null
 let tray = null
 let quitting = false
 let count = 0
 let pendingLink = linkFromArgv(process.argv)
+// Whether the window has the app loaded and running, so a link can move it
+// by its hash instead of loading it again.
+let appLoaded = false
 
 // Windows shows a notification only for an app with an identity, and groups
 // the taskbar under it.
@@ -70,7 +77,22 @@ function openLink(link) {
   if (!url) return
   if (!win) { pendingLink = link; return }
   showWindow()
+  // With the app already running, the link moves it by its hash route, as a
+  // click inside the app would: no reload, so a half-written message stays.
+  // Only a window that is not on the app (still loading, failed, mid
+  // sign-in) loads the link's address afresh.
+  if (appLoaded && onAppPage()) {
+    const hash = deepLinkToHash(link)
+    if (hash) {
+      win.webContents.executeJavaScript(`location.hash = ${JSON.stringify(hash)}`).catch(() => { void win?.loadURL(url) })
+    }
+    return
+  }
   void win.loadURL(url)
+}
+
+function onAppPage() {
+  try { return Boolean(win) && new URL(win.webContents.getURL()).origin === APP_ORIGIN } catch { return false }
 }
 
 // ---- The count: taskbar, dock, tray ----
@@ -127,7 +149,17 @@ function guard(contents, { child = false } = {}) {
     if (isSafeExternal(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  contents.on('did-create-window', (childWindow) => guard(childWindow.webContents, { child: true }))
+  contents.on('did-create-window', (childWindow) => {
+    guard(childWindow.webContents, { child: true })
+    // A blank window the page never pointed anywhere (the tool's address
+    // never came back) would otherwise stay open, hidden, for good.
+    const timer = setTimeout(() => {
+      if (childWindow.isDestroyed()) return
+      const url = childWindow.webContents.getURL()
+      if (!url || url === 'about:blank') childWindow.close()
+    }, BLANK_CHILD_MS)
+    childWindow.on('closed', () => clearTimeout(timer))
+  })
 }
 
 function webPreferences() {
@@ -187,19 +219,45 @@ function createWindow() {
   guard(win.webContents)
   // On the app the title is the page's, and carries the count. Anywhere else
   // (a sign-in) it names the site instead, as the window has no address bar.
-  const onApp = () => {
-    try { return new URL(win.webContents.getURL()).origin === APP_ORIGIN } catch { return false }
-  }
   win.webContents.on('page-title-updated', (event, title) => {
-    if (onApp()) { setCount(countFromTitle(title)); return }
+    if (onAppPage()) { setCount(countFromTitle(title)); return }
     event.preventDefault()
     win?.setTitle(windowTitle({ url: win.webContents.getURL(), appOrigin: APP_ORIGIN, pageTitle: title, appName: APP_NAME }))
   })
   win.webContents.on('did-navigate', (_event, url) => {
-    if (!onApp()) win?.setTitle(windowTitle({ url, appOrigin: APP_ORIGIN, appName: APP_NAME }))
+    if (!onAppPage()) win?.setTitle(windowTitle({ url, appOrigin: APP_ORIGIN, appName: APP_NAME }))
   })
+  win.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) appLoaded = false
+  })
+  win.webContents.on('did-finish-load', () => { appLoaded = onAppPage() })
+  win.webContents.on('did-fail-load', (_event, _code, _description, _url, isMainFrame) => {
+    if (isMainFrame) appLoaded = false
+  })
+
+  // A renderer that dies is reloaded — unless it keeps dying (src/crashes.js),
+  // when reloading again would only loop: then the app says so and lets the
+  // person try again or quit.
+  let crashes = []
   win.webContents.on('render-process-gone', (_event, details) => {
-    if (details.reason !== 'clean-exit') win?.webContents.reload()
+    appLoaded = false
+    if (details.reason === 'clean-exit') return
+    const verdict = crashVerdict(crashes, Date.now())
+    crashes = verdict.history
+    if (verdict.reload) { win?.webContents.reload(); return }
+    showWindow()
+    void dialog.showMessageBox(win, {
+      type: 'error',
+      title: APP_NAME,
+      message: `${APP_NAME} keeps stopping`,
+      detail: `The page stopped ${crashes.length} times in a minute (${details.reason}), so it was not reloaded again. Try again, or quit and start ${APP_NAME} later.`,
+      buttons: ['Try again', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    }).then(({ response }) => {
+      if (response === 0) { crashes = []; win?.webContents.reload() } else { quitting = true; app.quit() }
+    })
   })
   win.on('focus', () => win?.flashFrame(false))
 
@@ -224,7 +282,11 @@ function createWindow() {
     event.preventDefault()
     win?.hide()
   })
-  win.on('closed', () => { win = null })
+  win.on('closed', () => { win = null; appLoaded = false })
+  // Windows logging off, restarting or shutting down: the window has to close
+  // rather than hide, or it holds up the session ending.
+  win.on('query-session-end', () => { quitting = true })
+  win.on('session-end', () => { quitting = true; app.quit() })
 
   const first = pendingLink ? deepLinkToUrl(pendingLink, APP_URL) : null
   pendingLink = null
@@ -298,6 +360,9 @@ if (!app.requestSingleInstanceLock()) {
     if (quitting) app.quit()
   })
   app.whenReady().then(() => {
+    // macOS and Linux shutting down: the same, through the power monitor
+    // (which can only be used once the app is ready).
+    powerMonitor.on('shutdown', () => { quitting = true; app.quit() })
     enforceCsp()
     lockPermissions()
     createMenu()
