@@ -2033,19 +2033,28 @@ await step('right-clicking a channel in the sidebar offers what a desktop chat a
     await d.waitForFunction(() => !document.querySelector('.slk-side .cl-fresh'), null, { timeout: 5000 })
       .catch(() => { throw new Error('⇧Esc left a conversation marked new') })
     // ⌥⇧↓ finds what is waiting even in a folded group, and opens the group:
-    // a folded heading still counts it. With every group folded no row is
-    // drawn, so a lit row means the jump unfolded the group it stopped in.
+    // a folded heading still counts it. With every group folded (and
+    // everything read) only the open conversation and those with a card
+    // stay drawn, so a lit row other than the open one means the jump
+    // reached what was waiting.
     const waiting = await d.$$eval('.slk-side .cl-section .cl-thread:not(.on)', (rows) => rows.filter((r) => r.querySelector('.cl-badge, .cl-fresh')).length)
+    const openBefore = await d.$eval('.slk-side .cl-section .cl-thread.on .cl-title', (el) => el.textContent.trim()).catch(() => null)
     for (const fold of await d.$$('.slk-side .cl-section .cl-fold[aria-expanded="true"]')) await fold.click()
-    await d.waitForSelector('.slk-side .cl-section .cl-thread', { state: 'detached', timeout: 3000 })
-      .catch(() => { throw new Error('folding every group left a conversation drawn') })
+    // A card waiting on you keeps its row, as a mention would: reading does
+    // not clear those. Nothing else stays.
+    await d.waitForFunction(() => [...document.querySelectorAll('.slk-side .cl-section .cl-thread')]
+      .every((r) => r.classList.contains('on') || r.querySelector('.cl-badge')), null, { timeout: 3000 })
+      .catch(() => { throw new Error('folding every group left a conversation drawn with nothing waiting in it') })
     await d.keyboard.press('Alt+Shift+ArrowDown')
+    const litElsewhere = () => d.waitForFunction((before) => {
+      const on = document.querySelector('.slk-side .cl-section .cl-thread.on .cl-title')
+      return Boolean(on && on.textContent.trim() !== before)
+    }, openBefore, { timeout: 5000 })
     if (waiting > 0) {
-      await d.waitForSelector('.slk-side .cl-section .cl-thread.on', { timeout: 5000 })
-        .catch(() => { throw new Error('⌥⇧↓ did not reach an unread conversation in a folded group') })
+      await litElsewhere().catch(() => { throw new Error('⌥⇧↓ did not reach an unread conversation in a folded group') })
     } else {
       // Nothing waiting: it says so (or stops on what arrived just now).
-      await d.waitForSelector('.cl-toast:has-text("unread"), .slk-side .cl-section .cl-thread.on', { timeout: 5000 })
+      await Promise.any([d.waitForSelector('.cl-toast:has-text("unread")', { timeout: 5000 }), litElsewhere()])
         .catch(() => { throw new Error('⌥⇧↓ with nothing unread said nothing') })
     }
     for (const fold of await d.$$('.slk-side .cl-section .cl-fold[aria-expanded="false"]')) await fold.click()

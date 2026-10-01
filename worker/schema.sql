@@ -577,7 +577,8 @@ CREATE TABLE IF NOT EXISTS channel_messages (
      already landed returns this row instead of writing another. */
   client_id     TEXT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_messages_client ON channel_messages(org_id, author_login, client_id) WHERE client_id IS NOT NULL;
+/* The index for `client_id` is in migrations.sql, after the ALTER that adds
+   it, for the same reason as `ref` above. */
 CREATE INDEX IF NOT EXISTS idx_channel_messages ON channel_messages(org_id, channel, created_at);
 
 /* One emoji from one person on one message. A browser is told who reacted
@@ -1482,7 +1483,6 @@ CREATE TABLE IF NOT EXISTS app_connection_tombstones (
 /* Lookups by person across workspaces, and the sweeps that run every
    minute, without reading whole tables as the data grows. */
 CREATE INDEX IF NOT EXISTS idx_sessions_github ON sessions(github_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_sso_connection ON sessions(sso_connection_id);
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_github_id);
 CREATE INDEX IF NOT EXISTS idx_cards_org_created ON cards(org_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_channel_messages_author ON channel_messages(org_id, author_login, created_at);
