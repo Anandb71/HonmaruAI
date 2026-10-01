@@ -9,7 +9,7 @@ import { RowMenu } from './RowMenu'
 import { Dialog } from './Dialog'
 import type { MenuEntry } from './RowMenu'
 import type { DecisionCard, Business, ChannelMessage, FileRef } from '../types/card'
-import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptAsYours, keptUnsent, markFailed, markPending, outboxKey, provenYours, readUnsent, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from '../utils/pendingSend'
+import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptAsYours, keptUnsent, landedCopy, markFailed, markPending, outboxKey, provenYours, readUnsent, reconcile, refusedOutright, SEND_TIMEOUT, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from '../utils/pendingSend'
 import type { Unsent } from '../utils/pendingSend'
 import { askingAboutData } from '../utils/authGuard'
 import { draftToClear, withoutDraft } from '../utils/drafts'
@@ -1431,9 +1431,12 @@ export const ClassicList: React.FC<Props> = ({
     for (const o of [...outbox.current.values()]) {
       const here = parentId ? o.parentId === parentId : !o.parentId && o.channel === channel
       if (!here || taken.has(o.tempId)) continue
-      if (o.restored) {
-        o.restored = false
-        if (!o.refused && wentAfterAll(o.said, fresh)) { outbox.current.delete(o.tempId); heldHere.current.add(o.tempId); settled = true; continue }
+      const fromBefore = o.restored
+      if (o.restored) o.restored = false
+      // Failed, and not on its way: a page that already has it means the
+      // send landed and the answer was lost. Sending it again would post it twice.
+      if (!o.going && !o.refused && (fromBefore || o.failed) && wentAfterAll(o.said, fresh)) {
+        outbox.current.delete(o.tempId); heldHere.current.add(o.tempId); settled = true; continue
       }
       back.push(o.failed ? unsentAgain(o, o.failed) : { ...o.said, pending: true, failed: undefined, refused: undefined })
     }
@@ -1538,7 +1541,7 @@ export const ClassicList: React.FC<Props> = ({
     const res = await fetch(`${api.httpBase}/channels/messages`, {
       method: 'POST',
       headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), ...(files.length ? { files: files.map((f) => f.id) } : {}) }),
+      body: JSON.stringify({ orgId: api.orgId, channel, body, decide, clientId: tempId, ...(parentId ? { parentId } : {}), ...(files.length ? { files: files.map((f) => f.id) } : {}) }),
       signal: ctrl.signal,
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
@@ -1627,6 +1630,16 @@ export const ClassicList: React.FC<Props> = ({
   /// Retry: the same words, files and thread, on their way again from
   /// where they are.
   const retry = (m: ChannelMessage) => {
+    const fresh = (m.parentId
+      ? (thread?.parent.id === m.parentId ? thread.replies : [])
+      : (messages[m.channel] || [])).filter((x) => !isTemp(x))
+    const real = landedCopy(m, fresh)
+    if (real && !m.refused) {
+      if (m.parentId) setThread((prev) => (prev && prev.parent.id === m.parentId ? { ...prev, replies: reconcile(prev.replies, m.id, real) } : prev))
+      else setMessages((prev) => (prev[m.channel] ? { ...prev, [m.channel]: reconcile(prev[m.channel], m.id, real) } : prev))
+      settle(m.id)
+      return
+    }
     const out: Outgoing = outbox.current.get(m.id) || { tempId: m.id, channel: m.channel, body: m.body, decide: false, parentId: m.parentId || undefined, files: m.files || [], said: m }
     if (out.going) return
     out.lateAt = Date.now() + SEND_TIMEOUT

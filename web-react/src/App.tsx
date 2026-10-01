@@ -15,6 +15,7 @@ import { onboardingKey, needsOnboarding, completeOnboarding } from './utils/onbo
 import { t, adoptAccountLocale } from './utils/i18n'
 import type { InvitePeek } from './screens/SignIn'
 import { disableWebPush } from './utils/push'
+import { forgetOwnOutbox } from './utils/pendingSend'
 import './theme.css'
 import './App.css'
 
@@ -363,6 +364,7 @@ function App() {
     // The workspace's cards, drafts, notes and unsent messages (outbox:*)
     // stay readable on this machine otherwise.
     if (stillOurs) clearAccountData()
+    else if (userId) forgetOwnOutbox(localStorage, userId)
   }
 
   // A workspace's login rules ended this sign-in (utils/authGuard): out,

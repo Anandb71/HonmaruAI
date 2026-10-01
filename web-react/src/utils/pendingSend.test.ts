@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { ChannelMessage } from '../types/card'
-import { arrive, drawUnder, echoOf, isDoubleSend, isTemp, keepTemps, keptAsYours, keptUnsent, markFailed, markPending, outboxKey, provenYours, readUnsent, reconcile, refusedOutright, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from './pendingSend'
+import { arrive, drawUnder, echoOf, forgetOwnOutbox, isDoubleSend, isTemp, keepTemps, keptAsYours, keptUnsent, markFailed, markPending, outboxKey, provenYours, readUnsent, reconcile, refusedOutright, sendDeadline, sendTime, sharedOutboxKey, tempMessage, tempState, unsentAgain, wentAfterAll, withHeld } from './pendingSend'
 
 const you = { name: 'Aiko', ref: 'm-aiko', avatar: null }
 const at = new Date('2026-09-30T09:00:00.000Z')
@@ -290,6 +290,21 @@ describe('what did not go, kept in this browser', () => {
     for (const org of ['team:x', 'personal:ab12', 'acme/hotel']) expect(outboxKey(org, 'aiko')).not.toBe(sharedOutboxKey(org))
     // Every one of them is what signing out clears.
     expect(outboxKey('team:x', 'aiko').startsWith('outbox:')).toBe(true)
+  })
+
+  it('sign-out drops this person\'s outbox and leaves the next person\'s', () => {
+    const data = new Map<string, string>([
+      [outboxKey('team:x', 'aiko'), '[]'],
+      [outboxKey('team:y', 'aiko'), '[]'],
+      [outboxKey('team:x', 'toru'), '[]'],
+    ])
+    const storage = {
+      get length() { return data.size },
+      key: (i: number) => [...data.keys()][i] ?? null,
+      removeItem: (k: string) => { data.delete(k) },
+    }
+    forgetOwnOutbox(storage, 'aiko')
+    expect([...data.keys()]).toEqual([outboxKey('team:x', 'toru')])
   })
 
   it('is never taken for yours when it names someone else as its author', () => {

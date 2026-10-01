@@ -232,11 +232,29 @@ export const keptUnsent = (stored: Unsent[], now: Unsent[], ours: Set<string>): 
 export const unsentAgain = (u: Unsent, why: string): ChannelMessage =>
   ({ ...u.said, pending: false, failed: u.failed || why, refused: u.refused || undefined })
 
+/// The server's copy of one still held here, when a fresh page has it.
+/// The same words, files and thread, written no more than `skew` before
+/// ours was (the two clocks differ). Kept tight, so an earlier "ok" is not
+/// taken for a later one that did not go.
+export function landedCopy(held: ChannelMessage, fresh: ChannelMessage[], skew = 5000): ChannelMessage | undefined {
+  const from = Date.parse(held.createdAt) - skew
+  return fresh.find((m) => m.mine && sameAs(held, m) && Date.parse(m.createdAt) >= from)
+}
+
 /// Whether one kept from before this page loaded got there after all: the
 /// server has one of yours with the same words, files and thread, written
 /// no more than `skew` before ours was (the two clocks differ). Kept tight,
 /// so an earlier "ok" is not taken for a later one that did not go.
 export function wentAfterAll(held: ChannelMessage, fresh: ChannelMessage[], skew = 5000): boolean {
-  const from = Date.parse(held.createdAt) - skew
-  return fresh.some((m) => m.mine && sameAs(held, m) && Date.parse(m.createdAt) >= from)
+  return Boolean(landedCopy(held, fresh, skew))
+}
+
+/// This person's unsent messages, and nobody else's. Sign-out drops them
+/// even when another tab has already switched the browser to someone else.
+export function forgetOwnOutbox(storage: { length: number; key(index: number): string | null; removeItem(key: string): void }, userId: string) {
+  const suffix = `:${encodeURIComponent(userId)}`
+  for (let i = storage.length - 1; i >= 0; i--) {
+    const key = storage.key(i)
+    if (key && key.startsWith('outbox:') && key.endsWith(suffix)) storage.removeItem(key)
+  }
 }

@@ -108,3 +108,6 @@ CREATE INDEX IF NOT EXISTS idx_workspace_activity_seen ON workspace_activity(org
 ALTER TABLE device_tokens ADD COLUMN platform TEXT NOT NULL DEFAULT 'ios';
 CREATE TABLE IF NOT EXISTS apple_identities (subject TEXT PRIMARY KEY, user_github_id TEXT NOT NULL, email TEXT, created_at TEXT NOT NULL, last_login_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_apple_identities_user ON apple_identities(user_github_id);
+/* A retried send names the message it already posted, and gets that one back. */
+ALTER TABLE channel_messages ADD COLUMN client_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_messages_client ON channel_messages(org_id, author_login, client_id) WHERE client_id IS NOT NULL;
