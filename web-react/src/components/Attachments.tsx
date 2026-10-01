@@ -211,9 +211,17 @@ const FileCard: React.FC<{ file: FileRef; href: string }> = ({ file, href }) => 
 /// shape it was measured at, so the list does not move when it loads; a
 /// song loads nothing until it is played. One this browser cannot play
 /// becomes the card that saves it.
+///
+/// It plays from the address it was first given. A file's signed address
+/// is a new one each day, and the message read again brings it; handed to
+/// the player, that would stop what is playing and take it back to the
+/// start, though the old address is good for a day yet. The new one is
+/// taken up only when the old one fails.
 const Player: React.FC<{ file: FileRef; kind: 'video' | 'audio'; src: string }> = ({ file, kind, src }) => {
   const t = useT()
   const [broken, setBroken] = useState(false)
+  const [from, setFrom] = useState(src)
+  const failed = () => { if (src !== from) setFrom(src); else setBroken(true) }
   if (broken) return <FileCard file={file} href={downloadUrl(src)} />
   const about = (
     <figcaption className="att-media-about">
@@ -229,7 +237,7 @@ const Player: React.FC<{ file: FileRef; kind: 'video' | 'audio'; src: string }> 
     const box = videoBox(file.width, file.height)
     return (
       <figure className="att-media video" style={{ width: `min(100%, ${box.width}px)` }} data-file={file.name}>
-        <video src={src} controls preload="metadata" playsInline aria-label={file.name} style={{ aspectRatio: String(box.ratio) }} onError={() => setBroken(true)} />
+        <video src={from} controls preload="metadata" playsInline aria-label={file.name} style={{ aspectRatio: String(box.ratio) }} onError={failed} />
         {about}
       </figure>
     )
@@ -237,7 +245,7 @@ const Player: React.FC<{ file: FileRef; kind: 'video' | 'audio'; src: string }> 
   return (
     <figure className="att-media audio" data-file={file.name}>
       {about}
-      <audio src={src} controls preload="none" aria-label={file.name} onError={() => setBroken(true)} />
+      <audio src={from} controls preload="none" aria-label={file.name} onError={failed} />
     </figure>
   )
 }
