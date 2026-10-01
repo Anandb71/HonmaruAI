@@ -178,17 +178,26 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
 export const SPOILER_MASK = "████";
 const QUOTE_CHARS = 120;
 
-/// The first words of a message, as a reply quotes them: on one line, each
-/// ||spoiler|| hidden before anything is cut (so half of one never shows),
-/// and bars inside `code` left as code — they open no spoiler. A file is
-/// named when there are no words. At most `max` characters, with an
-/// ellipsis when cut.
+/// What the message renderer reads on a line before it reads a spoiler, in
+/// its own order (the web's MessageParts inline()): `code`, a link, an
+/// :emoji:, an @name — each kept whole — and then ||a spoiler||, which
+/// never crosses a line and holds no bar. One pass, left to right, as the
+/// renderer makes: a spoiler here is exactly a spoiler there.
+const QUOTE_TOKENS = /(`[^`\n]+`|https?:\/\/[^\s<>"）」|]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;|]+)|\|\|[^|\n]+\|\|/g;
+
+/// The first words of a message, as a reply quotes them: each ||spoiler||
+/// hidden before anything is cut (so half of one never shows), then put on
+/// one line. What is a spoiler is decided as the renderer decides it, on
+/// the message's own lines: a ```block``` is code across lines (an unclosed
+/// one to the end), `code` only within a line — two stray backticks on
+/// different lines protect nothing between them — and bars inside either
+/// open no spoiler. A file is named when there are no words. At most `max`
+/// characters, with an ellipsis when cut.
 export function replyExcerpt(body, fileName = null, max = QUOTE_CHARS) {
-  const flat = String(body || "").replace(/\u0000/g, "").replace(/\s+/g, " ").trim();
-  const code = [];
-  const held = flat.replace(/```[\s\S]*?```|`[^`]*`/g, (c) => `\u0000${code.push(c) - 1}\u0000`);
-  const text = held.replace(/\|\|[\s\S]+?\|\|/g, SPOILER_MASK).replace(/\u0000(\d+)\u0000/g, (_, i) => code[Number(i)])
-    || (fileName ? `📎 ${fileName}` : "");
+  const masked = String(body || "").split("```")
+    .map((piece, i) => (i % 2 ? piece : piece.replace(QUOTE_TOKENS, (all, kept) => kept || SPOILER_MASK)))
+    .join("```");
+  const text = masked.replace(/\s+/g, " ").trim() || (fileName ? `📎 ${fileName}` : "");
   const chars = Array.from(text);
   return chars.length > max ? `${chars.slice(0, max - 1).join("").trimEnd()}…` : text;
 }
