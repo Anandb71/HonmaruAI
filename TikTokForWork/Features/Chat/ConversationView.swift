@@ -91,7 +91,7 @@ struct ConversationView: View {
                         .accessibilityLabel(Text("Only visible to you. \(n)"))
                     }
                     if let step = store.thinking[view] { ChatAISteps(step: step).padding(.vertical, 6) }
-                    if let typing = store.agentTyping[view], typing.parentId == nil || !isAgentConversation {
+                    ForEach((store.agentTyping[view] ?? []).filter { $0.parentId == nil || !isAgentConversation }, id: \.agent.id) { typing in
                         ChatAgentTypingRow(agent: typing.agent).padding(.vertical, 6)
                     }
                     Color.clear.frame(height: 1).id("bottom")

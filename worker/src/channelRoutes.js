@@ -456,9 +456,21 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
     }).catch(() => ({}))
     : {};
   let answered = 0;
+  // A metered day is one budget for the whole message. `remaining` was read
+  // once above; spending it here stops five parallel answers from running
+  // past the last call the person has left. Teammates bill their own
+  // service, so they do not take a slot.
+  let modelLeft = !allowance?.metered ? Infinity : Math.max(0, allowance.remaining ?? 0);
+  const spend = agents.map((agent) => {
+    if (agent.provider) return "teammate";
+    if (!allowance?.metered) return allowance?.allowed ? "model" : "quota";
+    if (modelLeft <= 0) return "quota";
+    modelLeft -= 1;
+    return "model";
+  });
   // Every agent called works at once, each answering as soon as it is done:
   // five agents take as long as the slowest, not the sum of all five.
-  const answerOne = async (agent) => {
+  const answerOne = async (agent, index) => {
     // An AI teammate works through its own service, not the workspace's
     // model: it starts, says so, and answers when it is done.
     if (agent.provider) {
@@ -473,7 +485,7 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
     let text;
     try {
       if (!provider) text = serverText(locale, "agent.noModel");
-      else if (!allowance.allowed) text = serverText(locale, "agent.quota");
+      else if (spend[index] !== "model") text = serverText(locale, "agent.quota");
       else {
         const result = await askAgent({
           provider, agent, request: requestFor(row.body, agent), transcript, playbook, where, research, links, tools, env,
@@ -503,7 +515,7 @@ export async function runAgents(env, { orgId, session, user, resolved, row, memb
     }
     await progress(agent, "done");
   };
-  await Promise.all(agents.map((agent) => answerOne(agent).catch((err) => console.error("agent turn failed", safe(err?.message)))));
+  await Promise.all(agents.map((agent, index) => answerOne(agent, index).catch((err) => console.error("agent turn failed", safe(err?.message)))));
   if (provider) await settleUsage(env.DB, provider, { orgId, githubId: session.github_id });
   return answered;
 }

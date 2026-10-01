@@ -23,7 +23,7 @@ struct ChatThreadSheet: View {
                         }.padding(.horizontal, 16).padding(.vertical, 8)
                         ForEach(t.replies) { row($0) }
                         if let step = store.thinking[t.parent.channel] { ChatAISteps(step: step).padding(.vertical, 6) }
-                        if let typing = store.agentTyping[t.parent.channel], typing.parentId == nil || typing.parentId == t.parent.id {
+                        ForEach((store.agentTyping[t.parent.channel] ?? []).filter { $0.parentId == nil || $0.parentId == t.parent.id }, id: \.agent.id) { typing in
                             ChatAgentTypingRow(agent: typing.agent).padding(.vertical, 6)
                         }
                     }

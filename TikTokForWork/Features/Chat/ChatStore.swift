@@ -89,8 +89,8 @@ final class ChatStore: ObservableObject {
     @Published var thinking: [String: String] = [:]
     /// "@hayao": the agents you can call here, the team's and your own.
     @Published private(set) var agents: [ChatAgent] = []
-    /// An agent writing its answer, by conversation, until it has.
-    @Published var agentTyping: [String: ChatAgentTyping] = [:]
+    /// Agents writing answers, by conversation, until each one has.
+    @Published var agentTyping: [String: [ChatAgentTyping]] = [:]
     @Published var thread: ChatThread?
     @Published var error: String?
 
@@ -755,7 +755,11 @@ final class ChatStore: ObservableObject {
         upsert(m)
         Task { await translate(m.channel, [m]) }
         if m.isAI { thinking[m.channel] = nil }
-        if m.isAgent { agentTyping[m.channel] = nil }
+        if m.isAgent, let id = m.agent?.id {
+            var list = agentTyping[m.channel] ?? []
+            list.removeAll { $0.agent.id == id }
+            agentTyping[m.channel] = list.isEmpty ? nil : list
+        }
         // Somebody started a group with you: it joins the list.
         if m.channel.hasPrefix("g:"), !groups.contains(where: { $0.view == m.channel }) { Task { await refresh() } }
         if !m.mine && (m.parentId != nil || m.body.contains("@") || m.body.contains("＠")) {
@@ -768,12 +772,13 @@ final class ChatStore: ObservableObject {
               let channel = json["channel"] as? String, let step = json["step"] as? String else { return }
         // One of the team's agents, not @AI: its own line, not the card steps.
         if let a = json["agent"] as? [String: Any], let id = a["id"] as? String {
-            if step == "done" || step == "failed" {
-                agentTyping[channel] = nil
-            } else {
+            var list = agentTyping[channel] ?? []
+            list.removeAll { $0.agent.id == id }
+            if step != "done" && step != "failed" {
                 let face = ChatAgentFace(id: id, handle: a["handle"] as? String ?? "", name: a["name"] as? String ?? "", emoji: a["emoji"] as? String)
-                agentTyping[channel] = ChatAgentTyping(agent: face, parentId: json["parentId"] as? String)
+                list.append(ChatAgentTyping(agent: face, parentId: json["parentId"] as? String))
             }
+            agentTyping[channel] = list.isEmpty ? nil : list
             return
         }
         thinking[channel] = (step == "done" || step == "failed") ? nil : step
