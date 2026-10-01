@@ -194,14 +194,21 @@ export function useQuickReactions(fallback = QUICK_REACTIONS, n = 3): string[] {
 
 // ---- A line of nothing but emoji ----
 
-// What an emoji is drawn from: a pictograph, a pair of regional letters (a
-// flag), or a keycap — and the joiners, selectors and skin tones between.
-const PICTURE = /\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\ufe0f?\u20e3/gu
+// One emoji, whole: a flag's pair of regional letters; a character drawn as
+// a picture — by default, or made one by the selector after it — with its
+// skin tone and whatever a joiner ties to it; or a keycap. A symbol that is
+// text until a selector says otherwise (★ ♪ ♡ ™ ✔, as common in a Japanese
+// line as letters) is not one, and stays the size of the text it is.
+const PICTURE = /\p{Regional_Indicator}{1,2}|(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\ufe0f)(?:\p{Emoji_Modifier}|\ufe0f|\u200d\p{Extended_Pictographic})*|[0-9#*]\ufe0f?\u20e3/gu
 const GLUE = /[\s\u200d\ufe0f\u20e3\p{Emoji_Modifier}\u{E0020}-\u{E007F}]/gu
+
+/// The most emoji a line is drawn large with. Past it, as in Slack, a line
+/// is a wall of them and reads better small.
+export const BIG_EMOJI_MAX = 24
 
 /// True when a line has emoji and nothing else but spaces: the characters,
 /// and `:name:` for the names `known` says this workspace draws. Such a line
-/// is drawn large, as Slack does.
+/// is drawn large, as Slack does — up to BIG_EMOJI_MAX of them.
 export function isEmojiOnly(line: string, known: (token: string) => boolean = () => false): boolean {
   let pictures = 0
   const rest = line.replace(/:[a-z0-9_+-]{1,30}:/g, (token) => {
@@ -210,7 +217,7 @@ export function isEmojiOnly(line: string, known: (token: string) => boolean = ()
     return ' '
   })
   const left = rest.replace(PICTURE, () => { pictures += 1; return '' }).replace(GLUE, '')
-  return !left && pictures > 0
+  return !left && pictures > 0 && pictures <= BIG_EMOJI_MAX
 }
 
 // ---- The picker ----

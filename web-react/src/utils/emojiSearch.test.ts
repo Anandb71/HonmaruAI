@@ -119,6 +119,27 @@ describe('a line of nothing but emoji', () => {
     expect(isEmojiOnly('  ❤️  ')).toBe(true)
     expect(isEmojiOnly('👨‍💻👍🏽')).toBe(true)
     expect(isEmojiOnly('🇯🇵 1️⃣')).toBe(true)
+    expect(isEmojiOnly('👨‍👩‍👧‍👦 🏳️‍🌈')).toBe(true)
+    // Everything the picker offers, alone on a line.
+    expect(EMOJI.filter((x) => !isEmojiOnly(x.e)).map((x) => x.e)).toEqual([])
+  })
+
+  it('is not a symbol that is text unless a selector makes it a picture', () => {
+    expect(isEmojiOnly('★★★')).toBe(false)
+    expect(isEmojiOnly('♪')).toBe(false)
+    expect(isEmojiOnly('♡ ♥')).toBe(false)
+    expect(isEmojiOnly('™')).toBe(false)
+    expect(isEmojiOnly('✔')).toBe(false)
+    expect(isEmojiOnly('👍★')).toBe(false)
+    expect(isEmojiOnly('♥️')).toBe(true)
+    expect(isEmojiOnly('✅ ⭐')).toBe(true)
+  })
+
+  it('is not a wall of them: a line stays large up to two dozen', () => {
+    expect(isEmojiOnly('🎉'.repeat(24))).toBe(true)
+    expect(isEmojiOnly('🎉'.repeat(25))).toBe(false)
+    expect(isEmojiOnly('👨‍💻 '.repeat(24))).toBe(true)
+    expect(isEmojiOnly(`${':party: '.repeat(20)}${'🎉'.repeat(5)}`, known)).toBe(false)
   })
 
   it('counts a workspace emoji only when this workspace draws it', () => {
