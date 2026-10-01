@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { statusShown, awayShown, nextExpiry, isOnline, byPresence, localTime, placeCard } from './people'
+import { statusShown, awayShown, nextExpiry, isOnline, byPresence, localTime, placeCard, tabLeaves } from './people'
 
 const at = (iso: string) => Date.parse(iso)
 
@@ -117,5 +117,28 @@ describe('placeCard', () => {
   it('never starts left of the gutter on a window narrower than the card', () => {
     const p = placeCard(box(10, 100), { width: 300, height: 700 }, { width: 320, height: 300 })
     expect(p.left).toBe(16)
+  })
+})
+
+// Tab inside the card: on to its next control, or out of it.
+describe('tabLeaves', () => {
+  const stops = ['message', 'full']
+  it('stays in the card between its controls', () => {
+    expect(tabLeaves(stops, 'card', 'card', false)).toBe(false)
+    expect(tabLeaves(stops, 'card', 'message', false)).toBe(false)
+    expect(tabLeaves(stops, 'card', 'full', true)).toBe(false)
+  })
+  it('leaves forward from the last control', () => {
+    expect(tabLeaves(stops, 'card', 'full', false)).toBe(true)
+  })
+  it('leaves backward from the first control, and from the card itself', () => {
+    expect(tabLeaves(stops, 'card', 'message', true)).toBe(true)
+    expect(tabLeaves(stops, 'card', 'card', true)).toBe(true)
+  })
+  it('leaves either way from a card with one control, or none', () => {
+    expect(tabLeaves(['full'], 'card', 'full', false)).toBe(true)
+    expect(tabLeaves(['full'], 'card', 'full', true)).toBe(true)
+    expect(tabLeaves([], 'card', 'card', false)).toBe(true)
+    expect(tabLeaves([], 'card', 'card', true)).toBe(true)
   })
 })

@@ -83,3 +83,12 @@ export function placeCard(anchor: Rect, viewport: { width: number; height: numbe
   const up = anchor.bottom + GAP > maxTop && anchor.top - GAP - size.height >= GUTTER
   return { left: clamp(anchor.left, maxLeft), top: clamp(up ? anchor.top - GAP - size.height : anchor.bottom + GAP, maxTop), side: 'below', up }
 }
+
+/// Whether Tab pressed here walks out of the card rather than on to another
+/// of its controls: forward from the last of them, back from the first — or
+/// back from the card itself, which is what holds focus when it opens. A
+/// card with nothing to stop at is left either way.
+export function tabLeaves<T>(stops: readonly T[], box: T, active: T | null, back: boolean): boolean {
+  if (!stops.length) return true
+  return back ? active === box || active === stops[0] : active === stops[stops.length - 1]
+}
