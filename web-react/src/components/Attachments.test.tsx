@@ -83,6 +83,10 @@ class El {
   style: Record<string, string> = {}
   listeners: Record<string, Listener[]> = {}
   onclick: unknown = null
+  /// What a test says the browser found in a player: what went wrong, by
+  /// MediaError's number, and how far it had played.
+  error: { code: number } | null = null
+  currentTime = 0
   constructor(public tagName: string, public ownerDocument: Page) {}
   get nodeName() { return this.tagName }
   get firstChild() { return this.childNodes[0] ?? null }
@@ -110,6 +114,12 @@ class Page {
   removeEventListener() {}
 }
 
+/// The window React looks to, before it draws, for what has the focus.
+function onPage() {
+  beforeAll(() => { vi.stubGlobal('window', { HTMLIFrameElement: class {} }) })
+  afterAll(() => { vi.unstubAllGlobals() })
+}
+
 /// A message's files drawn on such a page, and drawn again when the
 /// message is read again.
 function drawn(files: FileRef[]) {
@@ -120,14 +130,22 @@ function drawn(files: FileRef[]) {
   return { box, show, close: () => flushSync(() => root.unmount()) }
 }
 
+/// What the browser would tell React of an element, and what it found.
+function tell(el: El, type: string, found: { code?: number; at?: number } = {}) {
+  if (found.code) el.error = { code: found.code }
+  if (found.at !== undefined) el.currentTime = found.at
+  flushSync(() => { for (const fn of el.listeners[type] ?? []) fn({ type, target: el }) })
+}
+/// MediaError's numbers.
+const DROPPED = 2, UNREADABLE = 3, UNPLAYABLE = 4
+
 /// The same file a day later: the same id, under a new signed address.
 const later = (f: FileRef): FileRef => ({ ...f, url: `/files/${f.id}?e=2&s=xyz` })
 
 // A message's files once they are on the page, as the message under them
 // changes.
 describe('MessageFiles, read again', () => {
-  beforeAll(() => { vi.stubGlobal('window', { HTMLIFrameElement: class {} }) })
-  afterAll(() => { vi.unstubAllGlobals() })
+  onPage()
 
   it('goes on playing a video from the address it started at', () => {
     const clip = file('f_v', 'clip.mp4', 'video/mp4')
@@ -155,6 +173,102 @@ describe('MessageFiles, read again', () => {
     const { box, show, close } = drawn([clip])
     show([later(clip)])
     expect(box.all('a').map((a) => a.attrs.href)).toEqual([`${BASE}/files/f_v?e=2&s=xyz&download=1`])
+    close()
+  })
+
+  it('takes the new address when the old one fails, where it had got to', () => {
+    const clip = file('f_v', 'clip.mp4', 'video/mp4')
+    const { box, show, close } = drawn([clip])
+    const video = box.all('video')[0]
+    show([later(clip)])
+    tell(video, 'error', { code: UNPLAYABLE, at: 12.5 })
+    expect(box.all('video')).toEqual([video])
+    expect(video.attrs.src).toBe(`${BASE}/files/f_v?e=2&s=xyz`)
+    tell(video, 'loadedmetadata', { at: 0 })
+    expect(video.currentTime).toBe(12.5)
+    close()
+  })
+
+  it('makes a card of one this browser cannot play, at any address', () => {
+    const clip = file('f_v', 'clip.mp4', 'video/mp4')
+    const { box, show, close } = drawn([clip])
+    show([later(clip)])
+    tell(box.all('video')[0], 'error', { code: UNPLAYABLE })
+    expect(box.all('video')).toHaveLength(1)
+    tell(box.all('video')[0], 'error', { code: UNPLAYABLE })
+    expect(box.all('video')).toHaveLength(0)
+    expect(box.all('a').map((a) => [a.attrs.class, a.attrs.href])).toEqual([['att-file', `${BASE}/files/f_v?e=2&s=xyz&download=1`]])
+    close()
+  })
+
+  it('makes a card of one whose bytes do not decode', () => {
+    const { box, close } = drawn([file('f_a', 'memo.m4a', 'audio/x-m4a')])
+    tell(box.all('audio')[0], 'error', { code: UNREADABLE })
+    expect(box.all('audio')).toHaveLength(0)
+    expect(box.all('a')[0].attrs.class).toBe('att-file')
+    close()
+  })
+})
+
+// A connection that goes while something is playing.
+describe('MessageFiles, when the connection drops', () => {
+  onPage()
+
+  it('keeps the player, as one that waits to be played again', () => {
+    const { box, close } = drawn([file('f_v', 'clip.mp4', 'video/mp4')])
+    const video = box.all('video')[0]
+    expect(video.attrs.preload).toBe('metadata')
+    tell(video, 'error', { code: DROPPED, at: 42 })
+    const [again] = box.all('video')
+    expect(again).not.toBe(video)
+    expect(again.attrs.preload).toBe('none')
+    expect(again.attrs.src).toBe(video.attrs.src)
+    expect(box.all('a').map((a) => a.attrs.class)).toEqual(['att-media-save'])
+    close()
+  })
+
+  it('goes on from where it had got to', () => {
+    const { box, close } = drawn([file('f_a', 'memo.m4a', 'audio/x-m4a')])
+    tell(box.all('audio')[0], 'error', { code: DROPPED, at: 42 })
+    const again = box.all('audio')[0]
+    expect(again.currentTime).toBe(0)
+    tell(again, 'loadedmetadata')
+    expect(again.currentTime).toBe(42)
+    // Only the once: a seek back to the start is not undone by a later load.
+    again.currentTime = 0
+    tell(again, 'loadedmetadata')
+    expect(again.currentTime).toBe(0)
+    close()
+  })
+
+  it('does not take being played with still no connection for a file it cannot play', () => {
+    const { box, close } = drawn([file('f_v', 'clip.mp4', 'video/mp4')])
+    tell(box.all('video')[0], 'error', { code: DROPPED, at: 42 })
+    const again = box.all('video')[0]
+    tell(again, 'error', { code: UNPLAYABLE })
+    const third = box.all('video')[0]
+    expect(third).not.toBe(again)
+    expect(third.attrs.preload).toBe('none')
+    tell(third, 'loadedmetadata')
+    expect(third.currentTime).toBe(42)
+    close()
+  })
+
+  it('takes up the newest address as it waits', () => {
+    const clip = file('f_v', 'clip.mp4', 'video/mp4')
+    const { box, show, close } = drawn([clip])
+    show([later(clip)])
+    tell(box.all('video')[0], 'error', { code: DROPPED, at: 42 })
+    expect(box.all('video')[0].attrs.src).toBe(`${BASE}/files/f_v?e=2&s=xyz`)
+    close()
+  })
+
+  it('still makes a card of bytes that stop decoding after it', () => {
+    const { box, close } = drawn([file('f_v', 'clip.mp4', 'video/mp4')])
+    tell(box.all('video')[0], 'error', { code: DROPPED, at: 42 })
+    tell(box.all('video')[0], 'error', { code: UNREADABLE })
+    expect(box.all('video')).toHaveLength(0)
+    expect(box.all('a')[0].attrs.class).toBe('att-file')
     close()
   })
 })
