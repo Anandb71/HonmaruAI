@@ -47,9 +47,10 @@ export const EmojiPicker: React.FC<{ onPick: (emoji: string) => void; onClose: (
   const searching = Boolean(query.trim())
   useEffect(() => {
     const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
-    // Marked as taken, so an open thread under the picker stays open; not
-    // while an input method is composing, where Escape cancels that instead.
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); onClose() } }
+    // Esc closes the picker and nothing under it: not the thread beside the
+    // message (the window's Esc), which a picker opened with + sits over —
+    // and not while an input method is composing, where Esc cancels that.
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); onClose() } }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
@@ -329,7 +330,7 @@ export const MessageActions: React.FC<MessageMenuActions & {
             {messageMenuEntries(message, { ...actions, t }).map((e, i) => (e.kind === 'sep'
               ? <div key={i} className="slk-menu-sep" />
               : e.kind === 'item' && (
-                <button key={i} type="button" role="menuitem" className={e.danger ? 'danger' : undefined} data-menu={e.data} onClick={() => { setMenu(false); e.onSelect?.() }}>
+                <button key={i} type="button" role="menuitem" className={e.danger ? 'danger' : undefined} data-menu={e.data} onClick={(ev) => { setMenu(false); if (e.data === 'delete') actions.onDelete?.(ev.shiftKey); else e.onSelect?.() }}>
                   {e.label}{e.hint && <kbd>{e.hint}</kbd>}
                 </button>
               )))}

@@ -1021,6 +1021,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
               [t('Everywhere'), [['⌘K', t('Search, or jump anywhere')], ['N', t('Tell your AI')], ['⌘/', t('This list')]]],
               [t('Cards'), [['A', t('Approve')], ['D', t('Decline')], ['J / K', t('Next / previous decision')], ['← →', t('Swipe the card')]]],
               [t('List'), [['⌥↑ / ⌥↓', t('Previous / next conversation')], ['⌘⇧A', t('Activity')], ['⌘⇧D', t('Show or hide the sidebar')], ['⇧Esc', t('Mark all as read')], ['Esc', t('Close the pane')]]],
+              [t('Messages'), [['↑ / ↓', t('Previous / next message')], ['E', t('Edit message')], ['T', t('Reply in thread')], ['P', t('Pin to channel')], ['+', t('Add reaction')], ['⌫', t('Delete message')], ['⇧⌫', t('Delete without asking')], ['Esc', t('Back to the message box')]]],
               [t('Writing'), [['Enter', t('Send')], ['⇧Enter', t('New line')], ['↑', t('Edit your last message')], ['⌘B / ⌘I', t('Bold / italic')], ['/', t('Commands')], ['@', t('Mention someone, or @AI')]]],
             ] as Array<[string, string[][]]>).map(([group, rows]) => (
               <section key={group} className="shortcuts-group">

@@ -1723,16 +1723,61 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
     await d.click('.slk-pins-button')
     await d.waitForSelector('.slk-pins .slk-pin-row:has-text("Check-in")', { timeout: 10000 }).catch(() => { throw new Error('the pin list does not hold it') })
     await d.click('.slk-pins .slk-pane-close')
-    // Unsent: a second message, gone for good after a confirm.
+    // Unsent: a second message, gone for good after the app's own question —
+    // never the browser's box, which would show in the browser's language.
+    let nativeAsked = false
+    const onNative = (dl) => { nativeAsked = true; void dl.dismiss() }
+    d.on('dialog', onNative)
     await d.fill('.slk-input', 'oops, wrong channel')
     await d.keyboard.press('Enter')
     const oops = '.slk-msg:has-text("oops, wrong channel")'
     await d.waitForSelector(oops, { timeout: 10000 })
     await d.hover(oops)
     await d.click(`${oops} [aria-label="More actions"]`)
-    d.once('dialog', (dl) => dl.accept())
     await d.click(`${oops} .slk-menu button.danger`)
+    await d.waitForSelector('.cl-delete-dialog [data-delete-preview]:has-text("oops, wrong channel")', { timeout: 5000 })
+      .catch(() => { throw new Error('deleting a message did not ask which one, in the app') })
+    await d.click('[data-delete-confirm]')
     await d.waitForSelector(oops, { state: 'detached', timeout: 10000 }).catch(() => { throw new Error('a deleted message is still there') })
+    // ⇧ on Delete skips the question, as in Discord.
+    await d.fill('.slk-input', 'typo, never mind')
+    await d.keyboard.press('Enter')
+    const typo = '.slk-msg:has-text("typo, never mind")'
+    await d.waitForSelector(typo, { timeout: 10000 })
+    await d.hover(typo)
+    await d.click(`${typo} [aria-label="More actions"]`)
+    await d.click(`${typo} .slk-menu button.danger`, { modifiers: ['Shift'] })
+    await d.waitForSelector(typo, { state: 'detached', timeout: 10000 }).catch(() => { throw new Error('⇧ Delete did not delete the message') })
+    if (await d.$('.cl-delete-dialog')) throw new Error('⇧ Delete still asked')
+    // The letters the ⋯ menu shows: ↑ on the log picks the last message, E
+    // edits it and Esc hands focus back to it, ⌫ asks, ⇧⌫ does not.
+    await d.fill('.slk-input', 'said with the keys')
+    await d.keyboard.press('Enter')
+    const keyed = '.slk-main .slk-msg:has-text("said with the keys")'
+    await d.waitForSelector(keyed, { timeout: 10000 })
+    const onKeyed = () => d.waitForFunction(() => {
+      const el = document.activeElement
+      return Boolean(el && el.matches('article.slk-msg') && /said with the keys/.test(el.textContent || ''))
+    }, null, { timeout: 5000 })
+    await d.focus('.slk-main .slk-log')
+    await d.keyboard.press('ArrowUp')
+    await onKeyed().catch(() => { throw new Error('↑ on the log did not pick its last message') })
+    await d.keyboard.press('e')
+    const editBox = '.slk-main .slk-msg.editing .slk-edit textarea'
+    await d.waitForSelector(editBox, { timeout: 5000 }).catch(() => { throw new Error('E did not edit the picked message') })
+    if (await d.inputValue(editBox) !== 'said with the keys') throw new Error('E opened another message for editing')
+    await d.keyboard.press('Escape')
+    await onKeyed().catch(() => { throw new Error('focus did not come back to the message after its edit') })
+    await d.keyboard.press('Backspace')
+    await d.waitForSelector('[data-delete-confirm]', { timeout: 5000 }).catch(() => { throw new Error('⌫ did not ask before deleting') })
+    await d.keyboard.press('Escape')
+    await d.waitForSelector('[data-delete-confirm]', { state: 'detached', timeout: 5000 })
+    if (!(await d.$(keyed))) throw new Error('cancelling the question deleted the message')
+    await onKeyed().catch(() => { throw new Error('focus did not come back to the message after the question') })
+    await d.keyboard.press('Shift+Backspace')
+    await d.waitForSelector(keyed, { state: 'detached', timeout: 10000 }).catch(() => { throw new Error('⇧⌫ did not delete the picked message') })
+    d.off('dialog', onNative)
+    if (nativeAsked) throw new Error('deleting a message opened the browser’s own box')
     // And all of it survives a reload.
     await d.reload({ waitUntil: 'load' })
     await d.click('.cl-thread:has-text("Front desk") .cl-open')

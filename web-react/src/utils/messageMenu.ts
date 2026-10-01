@@ -21,7 +21,9 @@ export interface MessageMenuActions {
   onReply?: () => void
   onPin?: () => void
   onEdit?: () => void
-  onDelete?: () => void
+  /// `skipConfirm`: ⇧ was held on Delete — delete without asking, as in
+  /// Discord. The caller still asks when others' replies would go too.
+  onDelete?: (skipConfirm?: boolean) => void
   onDecide?: () => void
   /// Save for later; with a time, come back as a card then.
   onLater?: (remindAt: string | null) => void
@@ -62,7 +64,7 @@ export function messageMenuEntries(message: Pick<ChannelMessage, 'body' | 'pinne
     item(t('Remind me tomorrow at 9:00'), 'calendar', 'remind-tomorrow', () => later(tomorrowAt(9))),
   ] : []
   const copying: Item[] = message.body ? [item(t('Copy text'), 'copy', 'copy', () => { void navigator.clipboard?.writeText(message.body) })] : []
-  const undoing: Item[] = c.onDelete ? [item(t('Delete message'), 'trash', 'delete', c.onDelete, { danger: true, hint: '⌫' })] : []
+  const undoing: Item[] = c.onDelete ? [item(t('Delete message'), 'trash', 'delete', () => c.onDelete?.(), { danger: true, hint: '⌫' })] : []
   const out: MenuEntry[] = []
   for (const group of [doing, coming, copying, undoing]) {
     if (!group.length) continue

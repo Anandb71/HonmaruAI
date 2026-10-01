@@ -15,6 +15,8 @@ import type { Unsent } from '../utils/pendingSend'
 import { askingAboutData } from '../utils/authGuard'
 import { draftToClear, withoutDraft } from '../utils/drafts'
 import { getLocale } from '../utils/locale'
+import { fullTime } from '../utils/ago'
+import { deleteWarning, messageIdOf, messageKeyAction, othersReplied, previewText, skipsDeleteConfirm } from '../utils/messageKeys'
 import { displayName, properName } from '../utils/names'
 import { Icon } from './Icon'
 import { BrandLogo, isBrand } from './BrandLogo'
@@ -2287,20 +2289,125 @@ export const ClassicList: React.FC<Props> = ({
   /// The message an edit is open on. Begun on one of yours still on its way,
   /// it stays open on the server's copy that took its place.
   const editingThis = (m: ChannelMessage) => Boolean(editing && (editing.id === m.id || editing.id === drawnAs.current.get(m.id)))
-  const remove = async (channel: string, m: ChannelMessage) => {
-    // Somebody else's words in the thread go only when you say so outright.
-    const others = !m.parentId && (m.replyRefs || []).some((r) => r !== myRef)
-    const ask = others ? t('Delete this message and its thread? Replies from others will be deleted too. This cannot be undone.')
-      : m.replyCount ? t('Delete this message and its thread? This cannot be undone.') : t('Delete this message? This cannot be undone.')
-    if (!window.confirm(ask)) return
-    const done = await act('DELETE', '/channels/messages', channel, { messageId: m.id, withThread: true })
-    if (editing?.id === m.id) setEditing(null)
+  /// Delete a message, after asking in the app — not the browser's own box,
+  /// unstyled and in the browser's language. ⇧ skips the question, as in
+  /// Discord; somebody else's words in the thread go only when you say so
+  /// outright, so that one is always asked. `others`: the server found
+  /// replies from others that this page did not know of.
+  const [deleting, setDeleting] = useState<null | { channel: string; m: ChannelMessage; others?: boolean; busy?: boolean; error?: string | null }>(null)
+  /// The question was answered and the server is deleting: it can no longer
+  /// be taken back. A ref, for Esc — the dialog keeps the onClose it opened
+  /// with — and for a second click before the button is drawn disabled.
+  const deleteBusy = useRef(false)
+  const deleteCancel = useRef<HTMLButtonElement>(null)
+  /// Messages the server is deleting right now. A second press of the key
+  /// before it answers is not a second delete: the server would say "No
+  /// such message" of one that went as asked, and focus would be let go.
+  const unsending = useRef(new Set<string>())
+  const remove = (channel: string, m: ChannelMessage, skipConfirm = false) => {
+    if (unsending.current.has(m.id)) return
+    if (!skipsDeleteConfirm(skipConfirm, m, myRef)) { setDeleting({ channel, m }); return }
+    // Nobody was asked, so nobody said others' replies may go: the server
+    // is asked without them, and when it finds some the question is asked
+    // after all — with the warning that names them.
+    void unsend(channel, m, false).then((r) => {
+      // (Never over a question already open about another message.)
+      if (r.others) { setDeleting((cur) => cur ?? { channel, m, others: true }); return }
+      if (r.gone) return
+      // Still here: focus stays on it rather than waiting for it to go.
+      dropKeyReturn('delete')
+      if (r.error) setProblem(r.error)
+    })
+  }
+  /// Ask the server to delete it. `withThread` lets other people's replies
+  /// go with it, and is only said once the question that names them was
+  /// answered: without it the server refuses (`others`) rather than take
+  /// them. It is the server that knows who replied — replyRefs leaves out
+  /// anyone who has since left, and is behind when a live event was missed.
+  const unsend = async (channel: string, m: ChannelMessage, withThread: boolean): Promise<{ gone: boolean; others?: boolean; error?: string }> => {
+    if (unsending.current.has(m.id)) return { gone: false }
+    unsending.current.add(m.id)
+    setProblem(null)
+    let res: Response | null = null
+    let data: { message?: unknown; code?: string } = {}
+    try {
+      res = await fetch(`${api.httpBase}/channels/messages`, {
+        method: 'DELETE',
+        headers: { ...authHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ orgId: api.orgId, channel, messageId: m.id, withThread }),
+      })
+      data = await res.json().catch(() => ({}))
+    } catch {
+      res = null
+    }
+    unsending.current.delete(m.id)
+    if (res?.status === 409 && data.code === 'thread_has_replies') return { gone: false, others: true }
+    setEditing((cur) => (cur?.id === m.id ? null : cur))
+    if (!res?.ok) return { gone: false, error: (typeof data.message === 'string' && data.message) || t('That did not work. Try again.') }
+    if (data.message && typeof data.message === 'object') replaceMessage(channel, data.message as ChannelMessage)
     // Gone here at once, and its thread with it.
-    if (done && !m.parentId) {
+    if (!m.parentId) {
       setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
       setThread((prev) => (prev && prev.parent.id === m.id ? null : prev))
     }
+    return { gone: true }
   }
+  const confirmDelete = async () => {
+    if (!deleting || deleteBusy.current) return
+    const { channel, m } = deleting
+    deleteBusy.current = true
+    setDeleting({ ...deleting, busy: true, error: null })
+    // Their replies go only when the question on show named them.
+    const r = await unsend(channel, m, Boolean(deleting.others) || othersReplied(m, myRef))
+    deleteBusy.current = false
+    // Only the question that was answered is closed, or told what went
+    // wrong — it stays open to say so, and to be answered again. Others
+    // replied and it had not said so: nothing went, and now it does.
+    setDeleting((cur) => {
+      if (cur?.m.id !== m.id) return cur
+      if (r.gone) return null
+      if (r.others) return { ...cur, busy: false, others: true, error: t('Others replied in this thread, so nothing was deleted. Delete again to delete their replies too.') }
+      return { ...cur, busy: false, error: r.error || t('That did not work. Try again.') }
+    })
+    // The buttons are live again, and focus left them when they were not:
+    // back to Cancel, where it was when the question opened.
+    if (!r.gone) requestAnimationFrame(() => deleteCancel.current?.focus())
+  }
+  /// Not while it is being deleted: the question would look withdrawn, and
+  /// the message would go all the same.
+  const cancelDelete = () => {
+    if (deleteBusy.current) return
+    dropKeyReturn('delete')
+    setDeleting(null)
+  }
+
+  /// A message a key acted on (see logKeys): focus goes back to it when the
+  /// edit box or the picker the key opened closes, and to the one beside it
+  /// once it is deleted — never taken from wherever you went meanwhile.
+  const keyReturn = useRef<{ kind: 'edit' | 'react' | 'delete'; row: HTMLElement; near: HTMLElement | null } | null>(null)
+  const dropKeyReturn = (kind: 'edit' | 'react' | 'delete') => { if (keyReturn.current?.kind === kind) keyReturn.current = null }
+  /// The message the arrow keys last picked: the one whose letters work.
+  const keyPicked = useRef<HTMLElement | null>(null)
+  // After every render: what closes it, or takes the message away, is any
+  // of several states (the edit, the picker, the list, the thread).
+  useEffect(() => {
+    const r = keyReturn.current
+    if (!r || deleting) return
+    const active = document.activeElement
+    const lost = !active || active === document.body || r.row.contains(active)
+    if (r.row.isConnected) {
+      if (r.kind === 'delete' || (r.kind === 'edit' ? editing : pickerFor)) return
+      keyReturn.current = null
+      if (lost) r.row.focus({ preventScroll: true })
+      return
+    }
+    keyReturn.current = null
+    if (lost && r.near?.isConnected) {
+      keyPicked.current = r.near
+      r.near.focus({ preventScroll: true })
+      r.near.scrollIntoView({ block: 'nearest' })
+    }
+  })
   const togglePin = (channel: string, m: ChannelMessage) => void act('POST', '/channels/pins', channel, { messageId: m.id, pinned: !m.pinned })
   const openThread = async (channel: string, m: ChannelMessage) => {
     setDetailId(null)
@@ -3069,7 +3176,7 @@ export const ClassicList: React.FC<Props> = ({
       {...(!wide ? longPress(opts.onHold) : messageMenuTriggers(opts.onMenu))}
       className={`slk-msg${opts.joined ? ' joined' : ''}${opts.unread ? ' unread' : ''}${opts.msgId && toolsOpen === opts.msgId ? ' tools-open' : ''}${opts.msgId && [msgMenu?.anchor, reactAt?.anchor].includes(`msg-${opts.msgId}`) ? ' menu-open' : ''}${opts.msgId && editing?.id === opts.msgId ? ' editing' : ''}${opts.pinned ? ' pinned' : ''}${opts.mentionsMe ? ' mentions-me' : ''}${opts.msgId && flash === opts.msgId ? ' flash' : ''}${opts.state ? ` ${opts.state}` : ''}`}>
       <div className="slk-gutter" aria-hidden={opts.joined || !opts.authorRef ? 'true' : undefined}>
-        {opts.joined ? <span className="slk-hover-time">{clock(opts.at)}</span>
+        {opts.joined ? <span className="slk-hover-time" title={fullTime(opts.at, locale)}>{clock(opts.at)}</span>
           : opts.authorRef ? (
             <button type="button" className="slk-face-button" aria-label={t('Profile of {name}', { name: opts.name })} aria-haspopup="dialog"
               onClick={(e) => openPopout(opts.authorRef!, e.currentTarget, opts.name)}>
@@ -3089,7 +3196,7 @@ export const ClassicList: React.FC<Props> = ({
               : <span className="slk-author">{opts.name}</span>}
             {opts.badge && <span className={`slk-app-badge${opts.face?.emoji ? ' agent' : ''}`}>{opts.badge}</span>}
             {opts.to && <span className="slk-to">→ {opts.to}</span>}
-            <time className="slk-time" dateTime={opts.at}>{clock(opts.at)}</time>
+            <time className="slk-time" dateTime={opts.at} title={fullTime(opts.at, locale)}>{clock(opts.at)}</time>
           </div>
         )}
         {opts.mentionsMe && <span className="sr-only slk-calls-me">{t('Mentions you')}</span>}
@@ -3210,7 +3317,7 @@ export const ClassicList: React.FC<Props> = ({
     onReply: () => void openThread(channel, m),
     onPin: () => togglePin(channel, m),
     onEdit: m.mine && m.kind === 'message' ? () => setEditing({ id: m.id, text: m.body }) : undefined,
-    onDelete: m.mine && m.kind === 'message' ? () => void remove(channel, m) : undefined,
+    onDelete: m.mine && m.kind === 'message' ? (skipConfirm?: boolean) => remove(channel, m, skipConfirm) : undefined,
     onDecide: !m.cardId && m.kind === 'message' && !inThread ? () => void decideMessage(channel, m) : undefined,
     onLater: (at) => void saveLater(channel, m, at),
     onClip: () => toggleClip(channel, m),
@@ -3234,9 +3341,106 @@ export const ClassicList: React.FC<Props> = ({
     ? undefined
     : () => setSheet({ channel, m, inThread })
   /// A right-click, on a laptop: the same things again, at the pointer.
-  const menuFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id)
+  const menuFor = (channel: string, m: ChannelMessage, inThread = false) => (m.deleted || editing?.id === m.id || isTemp(m))
     ? undefined
     : (at: { x: number; y: number }, anchor: string) => setMsgMenu({ channel, m, inThread, ...at, anchor })
+  /// Keys on a log, as in Discord. On the log itself ↑ picks its last
+  /// message; on a message, ↑ ↓ move to the one beside it, E T P + ⌫ do
+  /// what its ⋯ menu does (⇧⌫ without asking), and Esc goes back to the box
+  /// to write in. Only a message itself answers: a key typed in its edit
+  /// box, or pressed on one of its buttons, is that box's or button's.
+  /// A click focuses a message too, but its letters wait until an arrow
+  /// has picked it (keyPicked, which a press of the mouse in the log lets
+  /// go): what is typed after a click was meant for the composer, and a "p"
+  /// in it would pin the message for everyone. Esc waits the same way: on
+  /// what was only clicked it is still the app's, which closes the thread
+  /// or the decision beside the conversation, as it did before a message
+  /// had keys — and it closes a menu or a picker open on the message first.
+  const unpick = () => { keyPicked.current = null }
+  /// Tab onto a log picks the log, as an arrow picks a message: it shows
+  /// the ring, and Esc goes to the box to write in. A click on its blank
+  /// space focuses it too and picks nothing. Asked as focus arrives: once a
+  /// key is down a browser may show the ring on what the mouse focused.
+  const pickLog = (e: React.FocusEvent<HTMLElement>) => {
+    if (e.target !== e.currentTarget) return
+    try {
+      if (e.currentTarget.matches(':focus-visible')) keyPicked.current = e.currentTarget
+    } catch {
+      // A browser without :focus-visible shows no ring: nothing is picked.
+    }
+  }
+  /// A key that did something to a message, still held down: its repeats
+  /// are nobody's until it comes up, or another key goes down. Focus has
+  /// often moved by then — a held E would type "eee" into the edit box it
+  /// opened, a held T into the thread's box, and ⇧⌫ would reach the message
+  /// focus went to when this one was deleted.
+  const holdKey = () => {
+    const swallow = (ev: KeyboardEvent) => {
+      if (!ev.repeat) { release(); return }
+      ev.preventDefault()
+      ev.stopPropagation()
+    }
+    const release = () => {
+      window.removeEventListener('keydown', swallow, true)
+      window.removeEventListener('keyup', release, true)
+      window.removeEventListener('blur', release)
+    }
+    window.addEventListener('keydown', swallow, true)
+    window.addEventListener('keyup', release, true)
+    window.addEventListener('blur', release)
+  }
+  const logKeys = (channel: string, list: ChannelMessage[], box: React.RefObject<HTMLTextAreaElement>, inThread = false) => (e: React.KeyboardEvent<HTMLElement>) => {
+    const log = e.currentTarget
+    const target = e.target as HTMLElement
+    const rows = () => Array.from(log.querySelectorAll<HTMLElement>('article.slk-msg[id^="msg-"]'))
+    const show = (el: HTMLElement | undefined) => {
+      if (!el) return
+      keyPicked.current = el
+      el.focus({ preventScroll: true })
+      el.scrollIntoView({ block: 'nearest' })
+    }
+    if (target === log) {
+      const action = messageKeyAction(e.nativeEvent, null)
+      if (action === 'prev') { const all = rows(); if (all.length) { e.preventDefault(); show(all[all.length - 1]) } }
+      if (action === 'composer' && box.current && keyPicked.current === log) { e.preventDefault(); e.stopPropagation(); box.current.focus() }
+      return
+    }
+    if (target.closest('input, textarea, select, button, a, audio, video, iframe, [contenteditable], [role="button"]')) return
+    const row = target.closest<HTMLElement>('article.slk-msg[id^="msg-"]')
+    if (!row || !log.contains(row)) return
+    const id = messageIdOf(row.id)
+    const found = list.find((x) => x.id === id)
+    // A card, or a message with its edit box open, is only moved past.
+    const m = found && editing?.id !== found.id ? found : null
+    const action = messageKeyAction(e.nativeEvent, m, inThread)
+    if (!action) return
+    const moving = action === 'prev' || action === 'next'
+    if (!moving && keyPicked.current !== row) return
+    // Esc closes what is open over the messages before it leaves them: the
+    // ⋯ menu and the pickers listen on the document, further out than this.
+    if (action === 'composer' && (toolsOpen || pickerFor)) return
+    e.preventDefault()
+    // Esc on a picked message is not the window's too, which closes the thread.
+    e.stopPropagation()
+    const all = rows()
+    const at = all.indexOf(row)
+    if (action === 'prev') { show(all[at - 1]); return }
+    if (action === 'next') { show(all[at + 1]); return }
+    if (action === 'composer') { box.current?.focus(); return }
+    if (!m) return
+    holdKey()
+    if (action === 'edit') { keyReturn.current = { kind: 'edit', row, near: null }; setEditing({ id: m.id, text: m.body }) }
+    else if (action === 'thread') void openThread(channel, m)
+    else if (action === 'pin') togglePin(channel, m)
+    else if (action === 'react') {
+      keyReturn.current = { kind: 'react', row, near: null }
+      setPickerFor(m.id)
+      requestAnimationFrame(() => row.querySelector<HTMLElement>('.slk-picker .slk-picker-emoji')?.focus())
+    } else if (action === 'delete') {
+      keyReturn.current = { kind: 'delete', row, near: all[at + 1] || all[at - 1] || null }
+      remove(channel, m, e.shiftKey)
+    }
+  }
   /// A link to one message that opens it for anyone who can read it — the
   /// message's id, not the conversation's name, which differs per reader.
   const copyLink = (m: ChannelMessage) => {
@@ -3593,7 +3797,8 @@ export const ClassicList: React.FC<Props> = ({
   /// conversation, and in Activity when what you picked is part of one.
   const threadBody = (thread: { channel: string; parent: ChannelMessage; replies: ChannelMessage[] }) => (
     <>
-          <div className="slk-thread-log">
+          <div className="slk-thread-log" tabIndex={0} role="region" aria-label={t('Messages')}
+            onKeyDown={logKeys(thread.channel, [thread.parent, ...thread.replies], threadComposer, true)} onMouseDown={unpick} onFocus={pickLog}>
             {[thread.parent, ...thread.replies].map((m, i) => (
               <React.Fragment key={keyOf(m)}>
                 {block(keyOf(m), {
@@ -4056,7 +4261,9 @@ export const ClassicList: React.FC<Props> = ({
           if (!thread.view) return
           noteWhere(thread.view, e.currentTarget)
           if (e.currentTarget.scrollTop < 120) void loadOlder(thread.view)
-        }}>
+        }}
+          tabIndex={0} role="region" aria-label={t('Messages in {name}', { name: thread.kind === 'channel' ? `#${thread.name}` : thread.name })}
+          onKeyDown={thread.view ? logKeys(thread.view, said, composer) : undefined} onMouseDown={unpick} onFocus={pickLog}>
           {thread.view && more[thread.view] && <div className="slk-older" role="status">{t('Loading earlier messages…')}</div>}
           {!(thread.view && more[thread.view]) && <div className="slk-start">
             {lead(thread, 'head')}
@@ -4625,6 +4832,43 @@ export const ClassicList: React.FC<Props> = ({
           {archiveDialog.error && <p className="dlg-error" role="alert">{archiveDialog.error}</p>}
         </Dialog>
       )}
+      {deleting && (() => {
+        const { m, busy, error } = deleting
+        const others = Boolean(deleting.others) || othersReplied(m, myRef)
+        const face = faceOfMessage(m)
+        return (
+          <Dialog
+            title={t('Delete message')}
+            lede={t(deleteWarning(m, myRef, others))}
+            describedBy="cl-delete-preview"
+            className="cl-delete-dialog"
+            onClose={cancelDelete}
+            footer={(
+              <>
+                <button type="button" className="dlg-btn" ref={deleteCancel} disabled={busy} onClick={cancelDelete}>{t('Cancel')}</button>
+                <button type="button" className="dlg-btn danger" data-delete-confirm disabled={busy} onClick={() => void confirmDelete()}>
+                  {busy ? t('Deleting…') : t('Delete')}
+                </button>
+              </>
+            )}
+          >
+            <div id="cl-delete-preview" className="cl-delete-preview" data-delete-preview>
+              <div className="cl-delete-meta">
+                <Avatar name={face.name} url={face.url} size={24} />
+                <b>{face.name}</b>
+                <time dateTime={m.createdAt}>{fullTime(m.createdAt, locale)}</time>
+              </div>
+              {m.body && <div className="slk-text cl-delete-text">{rich(previewText(m.body))}</div>}
+              {(m.files || []).length > 0 && (
+                <div className="cl-delete-files"><Icon name="paperclip" size={12} /> {(m.files || []).map((f) => f.name).join(', ')}</div>
+              )}
+            </div>
+            {/* A phone has no ⇧ to hold. */}
+            {wide && !others && <p className="dlg-hint">{t('Tip: hold Shift when you delete to skip this question.')}</p>}
+            {error && <p className="dlg-error" role="alert">{error}</p>}
+          </Dialog>
+        )
+      })()}
       {moveSheet && (
         <Sheet label={t('Move to a section')} onClose={() => setMoveSheet(null)}>
           <p className="msheet-title">{t('Move to a section')}</p>
