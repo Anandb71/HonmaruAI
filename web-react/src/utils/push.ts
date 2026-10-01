@@ -13,6 +13,7 @@
 // fetched ahead of time or alongside it — never before it.
 
 import { getLocale } from './locale'
+import { desktop } from './desktop'
 
 export type PushSupport = 'ready' | 'needs-install' | 'unsupported' | 'denied'
 /// `dismissed`: the prompt was closed without an answer — ask again later.
@@ -31,6 +32,9 @@ function isStandalone(): boolean {
 
 export function pushSupport(): PushSupport {
   if (typeof window === 'undefined') return 'unsupported'
+  // The desktop app has no push service; it keeps running in the tray and
+  // the page's own notifications tell you instead (utils/desktop.ts).
+  if (desktop()) return 'unsupported'
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     // Safari on iOS only exposes PushManager to an installed web app.
     return isIOS() && !isStandalone() ? 'needs-install' : 'unsupported'
