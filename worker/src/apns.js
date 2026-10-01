@@ -27,7 +27,7 @@ function base64urlJSON(object) {
 // The .p8 Apple hands out is PKCS#8 PEM. Stored as a Worker secret it usually
 // arrives with literal "\n" rather than newlines, because that is what survives
 // a shell, so both spellings are accepted.
-function derFromPEM(pem) {
+export function derFromPEM(pem) {
   const body = String(pem)
     .replace(/\\n/g, "\n")
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
@@ -78,6 +78,27 @@ export function apnsHost(env) {
     : "https://api.sandbox.push.apple.com";
 }
 
+/// The apps this deployment may send to: the App Store app and the Expo
+/// build beside it (apps/mobile). APNS_APP_IDS widens it; APNS_TOPIC is
+/// always in it.
+export function allowedAppIds(env) {
+  const list = String(env.APNS_APP_IDS || "com.honmaru.ai,com.honmaru.ai.poc").split(",").map((s) => s.trim()).filter(Boolean);
+  if (env.APNS_TOPIC && !list.includes(env.APNS_TOPIC)) list.push(env.APNS_TOPIC);
+  return list;
+}
+
+/// Where one phone's notification goes. A device that said which app it is
+/// and which APNs environment its token is from (a development build's
+/// token is a sandbox token) is sent exactly there. One registered before
+/// devices said so — the App Store app — keeps the deployment's topic and
+/// environment, as it always had.
+export function targetFor(env, device) {
+  const app = device?.app_id && allowedAppIds(env).includes(device.app_id) ? device.app_id : null;
+  if (!app) return { topic: env.APNS_TOPIC, host: apnsHost(env) };
+  const host = device.environment === "sandbox" ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com";
+  return { topic: app, host };
+}
+
 /// An APNs device token is hexadecimal. Sixty-four characters is the usual
 /// length; some push types are longer, so the ceiling is generous and the
 /// alphabet is the part that matters.
@@ -101,12 +122,13 @@ export function isConfigured(env) {
 ///
 /// A 410, or a 400 saying BadDeviceToken, means the token is dead — the caller
 /// deletes it rather than retrying forever against an app that was uninstalled.
-export async function sendPush(env, { deviceToken, payload, collapseId, priority = 10, pushType = "alert" }) {
+export async function sendPush(env, { deviceToken, device = null, payload, collapseId, priority = 10, pushType = "alert" }) {
   try {
     const jwt = await providerToken(env);
+    const target = targetFor(env, device);
     const headers = {
       authorization: `bearer ${jwt}`,
-      "apns-topic": env.APNS_TOPIC,
+      "apns-topic": target.topic,
       "apns-push-type": pushType === "background" ? "background" : "alert",
       "apns-priority": String(priority),
       "content-type": "application/json",
@@ -122,7 +144,7 @@ export async function sendPush(env, { deviceToken, payload, collapseId, priority
     // Encoded even though the route now refuses anything but hex: a token that
     // predates that check is still in the table, and this is the line where a
     // path would be walked rather than sent.
-    const res = await fetch(`${apnsHost(env)}/3/device/${encodeURIComponent(deviceToken)}`, {
+    const res = await fetch(`${target.host}/3/device/${encodeURIComponent(deviceToken)}`, {
       method: "POST",
       headers,
       body: JSON.stringify(payload),

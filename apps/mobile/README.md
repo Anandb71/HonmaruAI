@@ -75,6 +75,19 @@ proved address, or a new one (`worker/src/apple.js`). The App ID needs the
 **Sign in with Apple** capability in the Apple Developer account (EAS Build adds
 it from `usesAppleSignIn`).
 
+The app also sends Apple's `authorizationCode` from the same sign-in. After
+the person is in, the Worker trades it at `appleid.apple.com/auth/token` for a
+refresh token and keeps it sealed on `apple_identities`; deleting the account
+(`DELETE /account`) revokes it at `appleid.apple.com/auth/revoke` first, which
+is what App Review guideline 5.1.1(v) asks of an app with Sign in with Apple.
+Both calls need the Worker's Sign in with Apple key — `APPLE_SIGNIN_KEY` (the
+`.p8`), `APPLE_SIGNIN_KEY_ID` and `APPLE_TEAM_ID`, see
+`docs/setup-secrets.md` §4.7. Without them, or when Apple refuses, sign-in and
+deletion still work; there is just nothing revoked. A sign-in made before this
+kept no token, so its account has nothing to revoke until the person signs in
+with Apple again; they can always remove the app themselves in their Apple
+Account's Sign in with Apple settings.
+
 ## Push
 
 `src/lib/push.ts`. On sign-in (and every launch after) the app asks for
@@ -97,10 +110,13 @@ push, and a simulator has no token):
   either up). The Worker needs the project's service account in the
   `FCM_SERVICE_ACCOUNT` secret (`docs/setup-secrets.md` §2b). Without the file
   the app builds and simply registers nothing.
-- **iPhone**: the Worker sends as `APNS_TOPIC` (`com.honmaru.ai`), so the PoC
-  bundle id receives nothing until it takes over that id, or until the Worker
-  is given the PoC's topic. A development build's token is a sandbox token and
-  only works while `APNS_ENVIRONMENT` is `sandbox`.
+- **iPhone**: the app registers its bundle id (`com.honmaru.ai.poc`) and the
+  APNs environment its build was signed for (a development build's token is a
+  sandbox token), and the Worker sends each phone under its own app's topic
+  and gateway (`worker/src/apns.js` `targetFor`; allowed apps in
+  `APNS_APP_IDS`, default both bundle ids). The App Store app, which sends no
+  bundle id, keeps `APNS_TOPIC` and `APNS_ENVIRONMENT`. The APNs key must be a
+  team key (it is, for token-based auth) — no per-app certificate.
 
 Not yet: clearing a notification when it is read elsewhere (the Worker's
 silent push goes to iPhones only, and the app does not handle it yet), and

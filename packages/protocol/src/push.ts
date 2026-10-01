@@ -12,6 +12,10 @@ export interface DeviceRegistration {
   /// Which APNs gateway issued an iPhone's token (a development build's is
   /// sandbox). Ignored for Android.
   environment?: 'sandbox' | 'production'
+  /// The iPhone app's bundle id: the APNs topic the Worker sends under
+  /// (com.honmaru.ai for the App Store app, com.honmaru.ai.poc for this
+  /// build). Ignored for Android.
+  appId?: string
 }
 
 /// The custom data of a message notification, on both platforms. APNs puts
