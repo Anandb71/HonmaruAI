@@ -369,8 +369,11 @@ export const FormatBar: React.FC<{ target: React.RefObject<HTMLTextAreaElement>;
 }
 
 /// How an @name is drawn: its class — and, for a person, their ref, which
-/// makes it a button that opens their profile. The conversation listens for
-/// every such button at once (`data-mention-ref`), not with one handler each.
+/// makes it press like a button and open their card. It stays a word of the
+/// message all the same (a span with the button's role, not a <button>,
+/// whose text a browser leaves out of what is selected and copied). The
+/// conversation listens for every one at once (`data-mention-ref`) — a
+/// click, or Enter or Space on it — not with one handler each.
 export type MentionLook = string | { className: string; ref?: string | null }
 
 /// Slack's formatting, read back: *bold*, _italic_, ~strike~, `code`,
@@ -457,7 +460,7 @@ function inline(line: string, mentionClass: (name: string) => MentionLook): Reac
       const look = mentionClass(part)
       const { className, ref } = typeof look === 'string' ? { className: look, ref: null } : look
       return ref
-        ? <button key={i} type="button" className={`${className} link`} data-mention-ref={ref} aria-haspopup="dialog">{part}</button>
+        ? <span key={i} role="button" tabIndex={0} className={`${className} link`} data-mention-ref={ref} aria-haspopup="dialog">{part}</span>
         : <span key={i} className={className}>{part}</span>
     }
     if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass)}</b>
