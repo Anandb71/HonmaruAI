@@ -39,10 +39,37 @@ export function emojiInsert(choice: EmojiChoice): string {
   return choice.kind === 'custom' ? `:${choice.name}:` : choice.e
 }
 
+/// ":fire:" just before the caret, after a space or at the start: a
+/// shortcode written out to its closing colon, where the menu's query ends.
+export function closedShortcode(text: string, caret: number): { start: number; name: string } | null {
+  const m = /(^|[\s(（「])(:([a-z0-9_+-]{1,30}):)$/.exec(text.slice(0, caret))
+  return m ? { start: caret - m[2].length, name: m[3] } : null
+}
+
+/// True when `text` is `prev` with one ':' typed just before the caret.
+export function typedColon(prev: string, text: string, caret: number): boolean {
+  return text.length === prev.length + 1 && text[caret - 1] === ':' && text.slice(0, caret - 1) + text.slice(caret) === prev
+}
+
+/// What the box holds once a shortcode written out in full is its character:
+/// `:joy:` before the caret becomes 😂, as taking it from the menu a letter
+/// earlier would have made it — sent as it stood, everyone read the text
+/// ":joy:". Null when there is nothing to change: no emoji goes by exactly
+/// that name, the workspace has its own by it (that one is drawn from its
+/// `:name:`), the list is not here, or it is inside `code`.
+export function completeShortcode(text: string, caret: number, custom: CustomEmoji[], data: EmojiEntry[] | null): { text: string; caret: number; e: string } | null {
+  const hit = closedShortcode(text, caret)
+  if (!hit || !data || custom.some((c) => c.name === hit.name)) return null
+  if ((text.slice(0, hit.start).split('`').length - 1) % 2) return null
+  const e = data.find((x) => x.n.includes(hit.name))?.e
+  return e ? { text: text.slice(0, hit.start) + e + text.slice(caret), caret: hit.start + e.length, e } : null
+}
+
 /// Type "@" in a box and the team's names appear under it; ":" and two
 /// letters, and the emoji by those names — the workspace's own first. Arrows
-/// pick, Enter or Tab takes one, Escape closes. One hook, so the composer
-/// and the thread offer them the same way.
+/// pick, Enter or Tab takes one, Escape closes; a name typed all the way to
+/// its second colon is taken too. One hook, so the composer and the thread
+/// offer them the same way.
 export function useMentionMenu(
   box: React.RefObject<HTMLTextAreaElement | HTMLInputElement | null>,
   text: string,
@@ -57,8 +84,9 @@ export function useMentionMenu(
   const people = useMemo(() => mentionQuery(text, caret), [text, caret])
   const peopleOptions = useMemo(() => (people ? matchMembers(members, people.query) : []), [members, people])
   const emoji = useMemo(() => (people ? null : emojiQuery(text, caret)), [people, text, caret])
+  const closed = useMemo(() => (people || emoji ? null : closedShortcode(text, caret)), [people, emoji, text, caret])
   // The list is fetched the first time a ':' query is typed, not before.
-  const unicode = useEmojiData(Boolean(emoji))
+  const unicode = useEmojiData(Boolean(emoji || closed))
   const emojiOptions = useMemo(() => (emoji ? emojiChoices(custom, unicode, emoji.query) : []), [custom, unicode, emoji])
   const query = people || emoji
   const count = people ? peopleOptions.length : emojiOptions.length
@@ -103,6 +131,27 @@ export function useMentionMenu(
     rememberEmoji(emojiInsert(choice))
   }
   const take = (i: number) => { if (people) pick(peopleOptions[i]); else pickEmoji(emojiOptions[i]) }
+
+  // A shortcode typed through to its closing colon becomes its character.
+  // Only as that colon is typed (or once the list arrives, if the box has
+  // not changed since): a draft put back in the box, or a caret set down
+  // after a ":name:" that was pasted, is left as it was written.
+  const before = useRef(text)
+  const colonAt = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = before.current
+    before.current = text
+    if (prev !== text) colonAt.current = typedColon(prev, text, caret) ? text : null
+    if (colonAt.current !== text) return
+    const done = completeShortcode(text, caret, custom, unicode)
+    if (!done) return
+    colonAt.current = null
+    pendingCaret.current = done.caret
+    setText(done.text)
+    rememberEmoji(done.e)
+  // setText is the caller's and new with every render of it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, caret, custom, unicode])
 
   /// Returns true when the key was the menu's to take.
   const onKeyDown = (e: React.KeyboardEvent): boolean => {
