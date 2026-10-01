@@ -2578,8 +2578,23 @@ export const ClassicList: React.FC<Props> = ({
   /// A click focuses a message too, but its letters wait until an arrow
   /// has picked it (keyPicked, which a press of the mouse in the log lets
   /// go): what is typed after a click was meant for the composer, and a "p"
-  /// in it would pin the message for everyone.
+  /// in it would pin the message for everyone. Esc waits the same way: on
+  /// what was only clicked it is still the app's, which closes the thread
+  /// or the decision beside the conversation, as it did before a message
+  /// had keys — and it closes a menu or a picker open on the message first.
   const unpick = () => { keyPicked.current = null }
+  /// Tab onto a log picks the log, as an arrow picks a message: it shows
+  /// the ring, and Esc goes to the box to write in. A click on its blank
+  /// space focuses it too and picks nothing. Asked as focus arrives: once a
+  /// key is down a browser may show the ring on what the mouse focused.
+  const pickLog = (e: React.FocusEvent<HTMLElement>) => {
+    if (e.target !== e.currentTarget) return
+    try {
+      if (e.currentTarget.matches(':focus-visible')) keyPicked.current = e.currentTarget
+    } catch {
+      // A browser without :focus-visible shows no ring: nothing is picked.
+    }
+  }
   /// A key that did something to a message, still held down: its repeats
   /// are nobody's until it comes up, or another key goes down. Focus has
   /// often moved by then — a held E would type "eee" into the edit box it
@@ -2613,7 +2628,7 @@ export const ClassicList: React.FC<Props> = ({
     if (target === log) {
       const action = messageKeyAction(e.nativeEvent, null)
       if (action === 'prev') { const all = rows(); if (all.length) { e.preventDefault(); show(all[all.length - 1]) } }
-      if (action === 'composer' && box.current) { e.preventDefault(); e.stopPropagation(); box.current.focus() }
+      if (action === 'composer' && box.current && keyPicked.current === log) { e.preventDefault(); e.stopPropagation(); box.current.focus() }
       return
     }
     if (target.closest('input, textarea, select, button, a, audio, video, iframe, [contenteditable]')) return
@@ -2625,10 +2640,13 @@ export const ClassicList: React.FC<Props> = ({
     const m = found && editing?.id !== found.id ? found : null
     const action = messageKeyAction(e.nativeEvent, m, inThread)
     if (!action) return
-    const moving = action === 'prev' || action === 'next' || action === 'composer'
+    const moving = action === 'prev' || action === 'next'
     if (!moving && keyPicked.current !== row) return
+    // Esc closes what is open over the messages before it leaves them: the
+    // ⋯ menu and the pickers listen on the document, further out than this.
+    if (action === 'composer' && (toolsOpen || pickerFor)) return
     e.preventDefault()
-    // Esc on a message is not the window's too, which closes the thread.
+    // Esc on a picked message is not the window's too, which closes the thread.
     e.stopPropagation()
     const all = rows()
     const at = all.indexOf(row)
@@ -3005,7 +3023,7 @@ export const ClassicList: React.FC<Props> = ({
   const threadBody = (thread: { channel: string; parent: ChannelMessage; replies: ChannelMessage[] }) => (
     <>
           <div className="slk-thread-log" tabIndex={0} role="region" aria-label={t('Messages')}
-            onKeyDown={logKeys(thread.channel, [thread.parent, ...thread.replies], threadComposer, true)} onMouseDown={unpick}>
+            onKeyDown={logKeys(thread.channel, [thread.parent, ...thread.replies], threadComposer, true)} onMouseDown={unpick} onFocus={pickLog}>
             {[thread.parent, ...thread.replies].map((m, i) => (
               <React.Fragment key={m.id}>
                 {block(m.id, {
@@ -3457,7 +3475,7 @@ export const ClassicList: React.FC<Props> = ({
         ) : (
         <div className="slk-log" ref={logAt} onScroll={(e) => { if (thread.view && e.currentTarget.scrollTop < 120) void loadOlder(thread.view) }}
           tabIndex={0} role="region" aria-label={t('Messages in {name}', { name: thread.kind === 'channel' ? `#${thread.name}` : thread.name })}
-          onKeyDown={thread.view ? logKeys(thread.view, said, composer) : undefined} onMouseDown={unpick}>
+          onKeyDown={thread.view ? logKeys(thread.view, said, composer) : undefined} onMouseDown={unpick} onFocus={pickLog}>
           {thread.view && more[thread.view] && <div className="slk-older" role="status">{t('Loading earlier messages…')}</div>}
           {!(thread.view && more[thread.view]) && <div className="slk-start">
             {lead(thread, 'head')}
