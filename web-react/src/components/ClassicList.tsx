@@ -2650,7 +2650,7 @@ export const ClassicList: React.FC<Props> = ({
       if (action === 'composer' && box.current && keyPicked.current === log) { e.preventDefault(); e.stopPropagation(); box.current.focus() }
       return
     }
-    if (target.closest('input, textarea, select, button, a, audio, video, iframe, [contenteditable]')) return
+    if (target.closest('input, textarea, select, button, a, audio, video, iframe, [contenteditable], [role="button"]')) return
     const row = target.closest<HTMLElement>('article.slk-msg[id^="msg-"]')
     if (!row || !log.contains(row)) return
     const id = messageIdOf(row.id)
