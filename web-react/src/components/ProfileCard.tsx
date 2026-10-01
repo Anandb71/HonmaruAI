@@ -30,7 +30,7 @@ export interface ProfilePerson {
 interface Props {
   person: ProfilePerson
   online: boolean
-  /// What it opened from: it stands beside it, and Escape goes back to it.
+  /// What it opened from: it stands beside it, and focus goes back to it.
   anchor: HTMLElement | null
   /// Their conversation — absent for you, or for someone with none to open.
   onMessage?: () => void
@@ -80,12 +80,25 @@ export const ProfileCard: React.FC<Props> = ({ person, online, anchor, onMessage
   }, [measure])
 
   // Focus comes into the card once it is placed (hidden, it cannot take
-  // it), so a screen reader says whose it is and Tab reaches its buttons;
-  // Escape takes it back to what opened it. A click elsewhere closes it and
-  // leaves focus where that click put it. Escape is caught on the way down,
-  // before the conversation's own Escape (which closes the thread) hears it.
+  // it), so a screen reader says whose it is and Tab reaches its buttons.
+  // However the card goes while it holds focus (Escape, View full profile),
+  // focus goes back to what opened it rather than to nothing; a click
+  // elsewhere then moves it on to wherever that click put it. Escape is
+  // caught on the way down, before the conversation's own Escape (which
+  // closes the thread) hears it.
   const placed = place !== null
   useEffect(() => { if (placed) box.current?.focus({ preventScroll: true }) }, [placed])
+  const anchorRef = useRef(anchor)
+  anchorRef.current = anchor
+  // A layout cleanup: it runs while the card is still in the page, so what
+  // holds focus can still be asked.
+  useLayoutEffect(() => {
+    const el = box.current
+    return () => {
+      const back = anchorRef.current
+      if (el?.contains(document.activeElement) && back?.isConnected) back.focus({ preventScroll: true })
+    }
+  }, [])
   useEffect(() => {
     const away = (e: PointerEvent) => {
       const target = e.target as Node
@@ -96,7 +109,6 @@ export const ProfileCard: React.FC<Props> = ({ person, online, anchor, onMessage
       if (e.key !== 'Escape') return
       e.preventDefault(); e.stopPropagation()
       closeRef.current()
-      if (anchor?.isConnected) anchor.focus({ preventScroll: true })
     }
     document.addEventListener('pointerdown', away, true)
     document.addEventListener('keydown', key, true)
