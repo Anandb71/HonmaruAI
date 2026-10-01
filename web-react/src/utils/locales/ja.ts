@@ -1305,6 +1305,7 @@ const table: Record<string, string> = {
   'A scheduled message cannot carry files yet.': '予約送信にはまだファイルを添付できません。',
   'Attach files': 'ファイルを添付',
   'Download': 'ダウンロード',
+  'Download {name}': '{name}をダウンロード',
   'Open {name}': '{name}を開く',
   'Up to {n} files in one message.': '1つのメッセージに添付できるのは{n}件までです。',
   'Wait for the files to finish uploading.': 'ファイルのアップロードが終わるまでお待ちください。',

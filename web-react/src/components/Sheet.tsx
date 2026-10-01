@@ -115,8 +115,9 @@ export function longPress(fn: (() => void) | undefined): React.HTMLAttributes<HT
   return {
     onTouchStart: (e) => {
       const target = e.target as HTMLElement
-      // Not over something that is its own control.
-      if (target.closest('button, a, input, textarea, [contenteditable="true"]')) return
+      // Not over something that is its own control: a player's bar is
+      // inside its video or audio, and a held scrubber is not a held message.
+      if (target.closest('button, a, input, textarea, video, audio, [contenteditable="true"]')) return
       x = e.touches[0]?.clientX ?? 0
       y = e.touches[0]?.clientY ?? 0
       stop()
@@ -131,7 +132,8 @@ export function longPress(fn: (() => void) | undefined): React.HTMLAttributes<HT
     // Android's long press, and a right click where there is no hover.
     onContextMenu: (e) => {
       const target = e.target as HTMLElement
-      if (target.closest('a, input, textarea')) return
+      // A link, a field or a player keeps the menu the browser gives it.
+      if (target.closest('a, input, textarea, video, audio')) return
       e.preventDefault()
       stop()
       fn()
