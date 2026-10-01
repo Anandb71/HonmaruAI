@@ -233,8 +233,10 @@ function createWindow() {
     if (details.isMainFrame && !details.isSameDocument) appLoaded = false
   })
   win.webContents.on('did-finish-load', () => { appLoaded = onAppPage() })
-  win.webContents.on('did-fail-load', (_event, _code, _description, _url, isMainFrame) => {
-    if (isMainFrame) appLoaded = false
+  // A navigation the guard stopped reports as aborted (-3) while the app is
+  // still there; anything else means it did not load.
+  win.webContents.on('did-fail-load', (_event, code, _description, _url, isMainFrame) => {
+    if (isMainFrame && code !== -3) appLoaded = false
   })
 
   // A renderer that dies is reloaded — unless it keeps dying (src/crashes.js),
