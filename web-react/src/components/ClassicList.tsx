@@ -53,6 +53,7 @@ import { hasOlder } from '../utils/historyPage'
 import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold, unplacedAgents } from '../utils/sidebarSections'
 import { placesFrom } from '../utils/places'
 import type { Place as Conversation } from '../utils/places'
+import { useAppearance } from '../utils/appearance'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -258,6 +259,8 @@ export const ClassicList: React.FC<Props> = ({
   onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, onPlaces,
 }) => {
   const t = useT()
+  // Cozy or compact, as chosen on You: the stylesheet does the rest.
+  const { density } = useAppearance()
   const locale = getLocale()
   const titleOf = (c: DecisionCard) => c.localized?.[locale]?.title || c.title
   /// The summary, unless it only repeats the title — which it does for a
@@ -4636,7 +4639,7 @@ export const ClassicList: React.FC<Props> = ({
   }
 
   return (
-    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}`} onClick={onMentionClick} onKeyDown={onMentionKey}>
+    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}${density === 'compact' ? ' compact' : ''}`} onClick={onMentionClick} onKeyDown={onMentionKey}>
       <aside className="slk-side" aria-label={t('Conversations')}>
         {!wide && phoneTab === 'dms' ? dmsView() : <>
         <header className="cl-top">

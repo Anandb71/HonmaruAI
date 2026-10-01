@@ -267,14 +267,27 @@
   .audit-export { margin-left: 0; }
 }
 @media (prefers-color-scheme: dark) {
-  .audit-list, .audit-row + .audit-row, .audit-filters select, .audit-filters input { border-color: #2a2a2a; }
-  .audit-row-head:hover { background: #1c1c1c; }
-  .audit-detail pre { background: #141414; }
-  .audit-sev { background: #2a2a2a; color: #b3b3b3; }
-  .audit-sev.sev-notice { background: #16263f; color: #8db8ff; }
-  .audit-sev.sev-warning { background: #3a2a0c; color: #f5c46b; }
-  .audit-sev.sev-critical, .audit-outcome { background: #3d1420; color: #ff8fab; }
+  :where(:root:not([data-theme="light"])) .audit-list,
+  :where(:root:not([data-theme="light"])) .audit-row + .audit-row,
+  :where(:root:not([data-theme="light"])) .audit-filters select,
+  :where(:root:not([data-theme="light"])) .audit-filters input { border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .audit-row-head:hover { background: #1c1c1c; }
+  :where(:root:not([data-theme="light"])) .audit-detail pre { background: #141414; }
+  :where(:root:not([data-theme="light"])) .audit-sev { background: #2a2a2a; color: #b3b3b3; }
+  :where(:root:not([data-theme="light"])) .audit-sev.sev-notice { background: #16263f; color: #8db8ff; }
+  :where(:root:not([data-theme="light"])) .audit-sev.sev-warning { background: #3a2a0c; color: #f5c46b; }
+  :where(:root:not([data-theme="light"])) .audit-sev.sev-critical, :where(:root:not([data-theme="light"])) .audit-outcome { background: #3d1420; color: #ff8fab; }
 }
+:where(:root[data-theme="dark"]) .audit-list,
+:where(:root[data-theme="dark"]) .audit-row + .audit-row,
+:where(:root[data-theme="dark"]) .audit-filters select,
+:where(:root[data-theme="dark"]) .audit-filters input { border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .audit-row-head:hover { background: #1c1c1c; }
+:where(:root[data-theme="dark"]) .audit-detail pre { background: #141414; }
+:where(:root[data-theme="dark"]) .audit-sev { background: #2a2a2a; color: #b3b3b3; }
+:where(:root[data-theme="dark"]) .audit-sev.sev-notice { background: #16263f; color: #8db8ff; }
+:where(:root[data-theme="dark"]) .audit-sev.sev-warning { background: #3a2a0c; color: #f5c46b; }
+:where(:root[data-theme="dark"]) .audit-sev.sev-critical, :where(:root[data-theme="dark"]) .audit-outcome { background: #3d1420; color: #ff8fab; }
 
 /* Login rules: presets, then one row per rule. */
 .login-rules .rules-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }

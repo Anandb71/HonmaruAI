@@ -268,20 +268,49 @@
 @media (min-width: 720px) and (max-width: 1023px) { .page-indicator { display: block; } }
 
 @media (prefers-color-scheme: dark) {
-  .feed { background: #0f0f0f; }
-  .card { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
-  .card-title, .ctx-detail, .rb-who strong, .empty-mark, .page-empty h2 { color: #f2f2f2; }
-  .card-summary, .rb-quote, .rec-reason, .rec-head { color: #a3a3a3; }
-  .source-chip, .card-context li, .ask-bar { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
-  .ask-bar input { color: #f2f2f2; }
-  .decide.decline { background: #1a1a1a; border-color: #333333; color: #f2f2f2; }
-  .decide.approve { background: #f2f2f2; color: #0f0f0f; }
-  .ask-send { background: #f2f2f2; color: #0f0f0f; }
-  .ask-plus { background: #2a2a2a; color: #f2f2f2; }
-  .recommendation { background: #17142a; border-color: #2f2a52; }
-  .empty-mark { background: #1a1a1a; border-color: #2a2a2a; }
-  .legend.on { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .feed { background: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .card { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
+  :where(:root:not([data-theme="light"])) .card-title,
+  :where(:root:not([data-theme="light"])) .ctx-detail,
+  :where(:root:not([data-theme="light"])) .rb-who strong,
+  :where(:root:not([data-theme="light"])) .empty-mark,
+  :where(:root:not([data-theme="light"])) .page-empty h2 { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .card-summary,
+  :where(:root:not([data-theme="light"])) .rb-quote,
+  :where(:root:not([data-theme="light"])) .rec-reason,
+  :where(:root:not([data-theme="light"])) .rec-head { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .source-chip,
+  :where(:root:not([data-theme="light"])) .card-context li,
+  :where(:root:not([data-theme="light"])) .ask-bar { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .ask-bar input { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .decide.decline { background: #1a1a1a; border-color: #333333; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .decide.approve { background: #f2f2f2; color: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .ask-send { background: #f2f2f2; color: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .ask-plus { background: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .recommendation { background: #17142a; border-color: #2f2a52; }
+  :where(:root:not([data-theme="light"])) .empty-mark { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .legend.on { color: #f2f2f2; }
 }
+:where(:root[data-theme="dark"]) .feed { background: #0f0f0f; }
+:where(:root[data-theme="dark"]) .card { background: #1a1a1a; border-color: #2a2a2a; box-shadow: none; }
+:where(:root[data-theme="dark"]) .card-title,
+:where(:root[data-theme="dark"]) .ctx-detail,
+:where(:root[data-theme="dark"]) .rb-who strong,
+:where(:root[data-theme="dark"]) .empty-mark,
+:where(:root[data-theme="dark"]) .page-empty h2 { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .card-summary,
+:where(:root[data-theme="dark"]) .rb-quote,
+:where(:root[data-theme="dark"]) .rec-reason,
+:where(:root[data-theme="dark"]) .rec-head { color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .source-chip, :where(:root[data-theme="dark"]) .card-context li, :where(:root[data-theme="dark"]) .ask-bar { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .ask-bar input { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .decide.decline { background: #1a1a1a; border-color: #333333; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .decide.approve { background: #f2f2f2; color: #0f0f0f; }
+:where(:root[data-theme="dark"]) .ask-send { background: #f2f2f2; color: #0f0f0f; }
+:where(:root[data-theme="dark"]) .ask-plus { background: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .recommendation { background: #17142a; border-color: #2f2a52; }
+:where(:root[data-theme="dark"]) .empty-mark { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .legend.on { color: #f2f2f2; }
 
 /* "Is this card wrong?" — quiet, under everything, one tap to say why. */
 .card-flag { margin-top: 12px; min-height: 22px; text-align: center; font-size: 12.5px; color: #838383; }
@@ -295,9 +324,11 @@
 .flag-chip:hover { border-color: #202020; color: #202020; }
 .flag-thanks { color: #646464; }
 @media (prefers-color-scheme: dark) {
-  .flag-chip { background: #1a1a1a; border-color: #333333; color: #f2f2f2; }
-  .flag-link:hover { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .flag-chip { background: #1a1a1a; border-color: #333333; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .flag-link:hover { color: #f2f2f2; }
 }
+:where(:root[data-theme="dark"]) .flag-chip { background: #1a1a1a; border-color: #333333; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .flag-link:hover { color: #f2f2f2; }
 
 /* What your AI answered, under the ask bar. Grounded in the card and the
    team's past decisions; the ones it drew on are listed under it. */
@@ -315,10 +346,13 @@
 .answer-related li { display: flex; gap: 8px; padding: 2px 0; }
 .answer-when { color: #838383; font-variant-numeric: tabular-nums; flex: none; }
 @media (prefers-color-scheme: dark) {
-  .answer { background: #1a1a1a; border-color: #2a2a2a; }
-  .answer-a { color: #f2f2f2; }
-  .answer-related { border-top-color: #2a2a2a; color: #c4c4c4; }
+  :where(:root:not([data-theme="light"])) .answer { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .answer-a { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .answer-related { border-top-color: #2a2a2a; color: #c4c4c4; }
 }
+:where(:root[data-theme="dark"]) .answer { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .answer-a { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .answer-related { border-top-color: #2a2a2a; color: #c4c4c4; }
 
 /* A decided card: the decision where the buttons were, the way back, and the
    reply that follows it. */
@@ -342,10 +376,15 @@
 .thread-note { color: #646464; white-space: pre-wrap; word-break: break-word; }
 .thread-toggle { margin-top: 12px; background: none; border: none; padding: 0; font: inherit; font-size: 13px; color: #6647f0; cursor: pointer; }
 @media (prefers-color-scheme: dark) {
-  .thread { background: #1a1a1a; border-color: #2a2a2a; }
-  .thread-head { color: #f2f2f2; }
-  .decided-when, .thread-note, .thread-who { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .thread { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .thread-head { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .decided-when,
+  :where(:root:not([data-theme="light"])) .thread-note,
+  :where(:root:not([data-theme="light"])) .thread-who { color: #a3a3a3; }
 }
+:where(:root[data-theme="dark"]) .thread { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .thread-head { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .decided-when, :where(:root[data-theme="dark"]) .thread-note, :where(:root[data-theme="dark"]) .thread-who { color: #a3a3a3; }
 
 .answer-sources { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .answer-sources a { color: #6647f0; text-decoration: none; }
@@ -420,24 +459,41 @@
 .mention-side { margin-left: auto; padding-left: 12px; font-size: 12px; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .create-decision { position: relative; }
 @media (prefers-color-scheme: dark) {
-  .thread-comment { color: #f2f2f2; }
-  .t-comment.mentions-you { background: #2a2410; }
-  .mention { background: #163b4f; color: #8ed1f5; }
-  .thread-box { background: #0f0f0f; border-color: #2a2a2a; color: #f2f2f2; }
-  .thread-send { background: #f2f2f2; color: #0f0f0f; }
-  .reaction { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
-  .reaction.mine { background: #163b4f; border-color: #4fb9fa; color: #8ed1f5; }
-  .reaction-add-btn { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
-  .reaction-add-btn:hover, .reaction-add-btn[aria-expanded="true"] { color: #f2f2f2; border-color: #3a3a3a; }
-  .reaction-choices, .mention-menu { background: #1a1a1a; border-color: #2a2a2a; }
-  .reaction-choices button:hover { background: #2a2a2a; }
-  .mention-option { color: #f2f2f2; }
-  .mention-avatar { background: #2a2a2a; color: #f2f2f2; }
-  .mention-avatar.agent { background: #2b2340; }
-  .mention-tag { background: rgba(167, 139, 250, .18); color: #c4b5fd; }
-  .mention-dot { background: #1a1a1a; border-color: #7b8087; }
-  .mention-dot.on { background: #2bac76; border-color: #1a1a1a; }
+  :where(:root:not([data-theme="light"])) .thread-comment { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .t-comment.mentions-you { background: #2a2410; }
+  :where(:root:not([data-theme="light"])) .mention { background: #163b4f; color: #8ed1f5; }
+  :where(:root:not([data-theme="light"])) .thread-box { background: #0f0f0f; border-color: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .thread-send { background: #f2f2f2; color: #0f0f0f; }
+  :where(:root:not([data-theme="light"])) .reaction { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .reaction.mine { background: #163b4f; border-color: #4fb9fa; color: #8ed1f5; }
+  :where(:root:not([data-theme="light"])) .reaction-add-btn { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .reaction-add-btn:hover, :where(:root:not([data-theme="light"])) .reaction-add-btn[aria-expanded="true"] { color: #f2f2f2; border-color: #3a3a3a; }
+  :where(:root:not([data-theme="light"])) .reaction-choices, :where(:root:not([data-theme="light"])) .mention-menu { background: #1a1a1a; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .reaction-choices button:hover { background: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .mention-option { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .mention-avatar { background: #2a2a2a; color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .mention-avatar.agent { background: #2b2340; }
+  :where(:root:not([data-theme="light"])) .mention-tag { background: rgba(167, 139, 250, .18); color: #c4b5fd; }
+  :where(:root:not([data-theme="light"])) .mention-dot { background: #1a1a1a; border-color: #7b8087; }
+  :where(:root:not([data-theme="light"])) .mention-dot.on { background: #2bac76; border-color: #1a1a1a; }
 }
+:where(:root[data-theme="dark"]) .thread-comment { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .t-comment.mentions-you { background: #2a2410; }
+:where(:root[data-theme="dark"]) .mention { background: #163b4f; color: #8ed1f5; }
+:where(:root[data-theme="dark"]) .thread-box { background: #0f0f0f; border-color: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .thread-send { background: #f2f2f2; color: #0f0f0f; }
+:where(:root[data-theme="dark"]) .reaction { background: #1a1a1a; border-color: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .reaction.mine { background: #163b4f; border-color: #4fb9fa; color: #8ed1f5; }
+:where(:root[data-theme="dark"]) .reaction-add-btn { background: #1a1a1a; border-color: #2a2a2a; color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .reaction-add-btn:hover, :where(:root[data-theme="dark"]) .reaction-add-btn[aria-expanded="true"] { color: #f2f2f2; border-color: #3a3a3a; }
+:where(:root[data-theme="dark"]) .reaction-choices, :where(:root[data-theme="dark"]) .mention-menu { background: #1a1a1a; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .reaction-choices button:hover { background: #2a2a2a; }
+:where(:root[data-theme="dark"]) .mention-option { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .mention-avatar { background: #2a2a2a; color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .mention-avatar.agent { background: #2b2340; }
+:where(:root[data-theme="dark"]) .mention-tag { background: rgba(167, 139, 250, .18); color: #c4b5fd; }
+:where(:root[data-theme="dark"]) .mention-dot { background: #1a1a1a; border-color: #7b8087; }
+:where(:root[data-theme="dark"]) .mention-dot.on { background: #2bac76; border-color: #1a1a1a; }
 
 /* A routine's report: a document inside the card. Its words can be selected
    and copied — the card around it is swiped, the report is read. */
@@ -483,14 +539,23 @@
 .proposal-note { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: #838383; }
 
 @media (prefers-color-scheme: dark) {
-  .report-doc, .report-sources { border-top-color: #2a2a2a; }
-  .report-body, .report-body h2, .report-body h3 { color: #f2f2f2; }
-  .report-body li::marker { color: #646464; }
-  .report-body code { background: #2a2a2a; }
-  .report-body a, .proposal-evidence a { color: #a996ff; }
-  .source-chip.proposal-chip { background: #17142a; border-color: #2f2a52; color: #a996ff; }
-  .proposal-note { color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .report-doc, :where(:root:not([data-theme="light"])) .report-sources { border-top-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .report-body,
+  :where(:root:not([data-theme="light"])) .report-body h2,
+  :where(:root:not([data-theme="light"])) .report-body h3 { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .report-body li::marker { color: #646464; }
+  :where(:root:not([data-theme="light"])) .report-body code { background: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .report-body a, :where(:root:not([data-theme="light"])) .proposal-evidence a { color: #a996ff; }
+  :where(:root:not([data-theme="light"])) .source-chip.proposal-chip { background: #17142a; border-color: #2f2a52; color: #a996ff; }
+  :where(:root:not([data-theme="light"])) .proposal-note { color: #a3a3a3; }
 }
+:where(:root[data-theme="dark"]) .report-doc, :where(:root[data-theme="dark"]) .report-sources { border-top-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .report-body, :where(:root[data-theme="dark"]) .report-body h2, :where(:root[data-theme="dark"]) .report-body h3 { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .report-body li::marker { color: #646464; }
+:where(:root[data-theme="dark"]) .report-body code { background: #2a2a2a; }
+:where(:root[data-theme="dark"]) .report-body a, :where(:root[data-theme="dark"]) .proposal-evidence a { color: #a996ff; }
+:where(:root[data-theme="dark"]) .source-chip.proposal-chip { background: #17142a; border-color: #2f2a52; color: #a996ff; }
+:where(:root[data-theme="dark"]) .proposal-note { color: #a3a3a3; }
 
 /* Print / Save as PDF: a copy of the report in a root of its own (see
    components/Report.tsx), and nothing else on the page. */
@@ -553,11 +618,15 @@
 .daily-count.over { color: #c0392b; }
 .daily-posted { white-space: pre-wrap; font-size: 14.5px; line-height: 1.6; color: #202020; user-select: text; -webkit-user-select: text; }
 @media (prefers-color-scheme: dark) {
-  .daily-text { background: #121212; color: #f2f2f2; border-color: #2a2a2a; }
-  .daily-text:focus { border-color: #f2f2f2; }
-  .daily-posted { color: #f2f2f2; }
-  .daily-count { color: #8a8a8a; }
+  :where(:root:not([data-theme="light"])) .daily-text { background: #121212; color: #f2f2f2; border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .daily-text:focus { border-color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .daily-posted { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .daily-count { color: #8a8a8a; }
 }
+:where(:root[data-theme="dark"]) .daily-text { background: #121212; color: #f2f2f2; border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .daily-text:focus { border-color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .daily-posted { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .daily-count { color: #8a8a8a; }
 
 /* Asking the AI to change the draft: what you asked, what it did, and a box. */
 .daily-ai { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -586,16 +655,23 @@
 .daily-in-channel.folded .daily-fold { flex: 1; min-width: 0; }
 .daily-discard { border: none; background: none; cursor: pointer; color: #838383; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; flex: none; }
 .daily-discard:hover { background: rgba(0, 0, 0, 0.06); color: #202020; }
-@media (prefers-color-scheme: dark) { .daily-discard:hover { background: rgba(255, 255, 255, 0.08); color: #f2f2f2; } }
+@media (prefers-color-scheme: dark) { :where(:root:not([data-theme="light"])) .daily-discard:hover { background: rgba(255, 255, 255, 0.08); color: #f2f2f2; } }
+:where(:root[data-theme="dark"]) .daily-discard:hover { background: rgba(255, 255, 255, 0.08); color: #f2f2f2; }
 .cl-draft.daily { color: #e8912d; }
 @media (prefers-color-scheme: dark) {
-  .daily-ask { background: #f2f2f2; color: #121212; }
-  .daily-note { background: #2a2a2a; color: #e6e6e6; }
-  .daily-chip, .daily-ask-form { border-color: #2a2a2a; color: #a3a3a3; }
-  .daily-ask-form input { color: #f2f2f2; }
-  .daily-in-channel { background: #1e1b12; border-color: #4a4430; }
-  .daily-fold-open { color: #6cb4ee; }
+  :where(:root:not([data-theme="light"])) .daily-ask { background: #f2f2f2; color: #121212; }
+  :where(:root:not([data-theme="light"])) .daily-note { background: #2a2a2a; color: #e6e6e6; }
+  :where(:root:not([data-theme="light"])) .daily-chip, :where(:root:not([data-theme="light"])) .daily-ask-form { border-color: #2a2a2a; color: #a3a3a3; }
+  :where(:root:not([data-theme="light"])) .daily-ask-form input { color: #f2f2f2; }
+  :where(:root:not([data-theme="light"])) .daily-in-channel { background: #1e1b12; border-color: #4a4430; }
+  :where(:root:not([data-theme="light"])) .daily-fold-open { color: #6cb4ee; }
 }
+:where(:root[data-theme="dark"]) .daily-ask { background: #f2f2f2; color: #121212; }
+:where(:root[data-theme="dark"]) .daily-note { background: #2a2a2a; color: #e6e6e6; }
+:where(:root[data-theme="dark"]) .daily-chip, :where(:root[data-theme="dark"]) .daily-ask-form { border-color: #2a2a2a; color: #a3a3a3; }
+:where(:root[data-theme="dark"]) .daily-ask-form input { color: #f2f2f2; }
+:where(:root[data-theme="dark"]) .daily-in-channel { background: #1e1b12; border-color: #4a4430; }
+:where(:root[data-theme="dark"]) .daily-fold-open { color: #6cb4ee; }
 .daily-in-channel .report-meta { text-transform: none; font-family: inherit; letter-spacing: 0; font-size: 13px; color: inherit; margin-bottom: 8px; }
 .daily-in-channel .report-meta b { font-weight: 700; }
 .mention.m-ai { color: #7c3aed; background: rgba(124, 58, 237, 0.12); }

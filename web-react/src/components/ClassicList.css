@@ -1049,10 +1049,13 @@
 .classic.slk.slk .slk-jambar-people li .cl-lead { border: 2px solid #e3f6ee; }
 .classic.slk.slk .slk-jambar-people li.muted { opacity: .55; }
 @media (prefers-color-scheme: dark) {
-  .classic.slk.slk .slk-jambar { background: #16332a; color: #bfe9d6; }
-  .classic.slk.slk .slk-jambar-people li .cl-lead { border-color: #16332a; }
-  .classic.slk.slk .slk-jam-button.live { background: #16332a; border-color: #2a6b52; color: #7fdcb3; }
+  :where(:root:not([data-theme="light"])) .classic.slk.slk .slk-jambar { background: #16332a; color: #bfe9d6; }
+  :where(:root:not([data-theme="light"])) .classic.slk.slk .slk-jambar-people li .cl-lead { border-color: #16332a; }
+  :where(:root:not([data-theme="light"])) .classic.slk.slk .slk-jam-button.live { background: #16332a; border-color: #2a6b52; color: #7fdcb3; }
 }
+:where(:root[data-theme="dark"]) .classic.slk.slk .slk-jambar { background: #16332a; color: #bfe9d6; }
+:where(:root[data-theme="dark"]) .classic.slk.slk .slk-jambar-people li .cl-lead { border-color: #16332a; }
+:where(:root[data-theme="dark"]) .classic.slk.slk .slk-jam-button.live { background: #16332a; border-color: #2a6b52; color: #7fdcb3; }
 
 .classic.slk.slk .slk-jam-audio { display: block; width: min(360px, 100%); margin: 6px 0; }
 
@@ -1496,9 +1499,11 @@
 @media (hover: none) { .slk-bookmark-more { opacity: 1; } }
 @media (max-width: 600px) { .slk-bookmarks { padding: 6px 12px; flex-wrap: nowrap; overflow-x: auto; } .slk-bookmark-form input { width: 140px; } }
 @media (prefers-color-scheme: dark) {
-  .slk-bookmarks, .slk-bookmark-form input { border-color: #2a2a2a; }
-  .slk-bookmark:hover, .slk-bookmark-add:hover { background: #1f1f1f; }
+  :where(:root:not([data-theme="light"])) .slk-bookmarks, :where(:root:not([data-theme="light"])) .slk-bookmark-form input { border-color: #2a2a2a; }
+  :where(:root:not([data-theme="light"])) .slk-bookmark:hover, :where(:root:not([data-theme="light"])) .slk-bookmark-add:hover { background: #1f1f1f; }
 }
+:where(:root[data-theme="dark"]) .slk-bookmarks, :where(:root[data-theme="dark"]) .slk-bookmark-form input { border-color: #2a2a2a; }
+:where(:root[data-theme="dark"]) .slk-bookmark:hover, :where(:root[data-theme="dark"]) .slk-bookmark-add:hover { background: #1f1f1f; }
 
 /* The canvas: one shared document per conversation. */
 .classic.slk.slk .slk-canvas-body { display: block; overflow-y: auto; padding: 16px 20px 32px; }
@@ -1799,3 +1804,40 @@
 }
 .classic.slk.slk .row-menu-list .row-menu-strip button:hover:not(:disabled) { background: var(--slk-hover); color: var(--slk-ink); }
 .classic.slk.slk .row-menu-list .row-menu-strip button:focus-visible { background: var(--slk-hover); color: var(--slk-ink); box-shadow: inset 0 0 0 2px var(--slk-accent); }
+
+/* ---- Compact ----
+   Message display: Compact, chosen on You (utils/appearance.ts). No faces:
+   the time and the name sit at the start of the line and the words run on
+   beside them, wrapping under the name. The time takes the column a joined
+   message's hover time already has, so a message joined to the one before
+   keeps its shape — words only, its time on hover — and everything under a
+   message lines up with the name. Last in the file: these share their
+   weight with the rules above and have to come after them. */
+.classic.slk.slk.compact { --slk-time-col: 56px; --slk-text-lh: calc(15px * 1.55); }
+.classic.slk.slk.compact .slk-msg { padding-top: 2px; padding-bottom: 2px; gap: 8px; }
+.classic.slk.slk.compact .slk-msg:not(.joined) { margin-top: 2px; }
+.classic.slk.slk.compact .slk-gutter { width: var(--slk-time-col); }
+.classic.slk.slk.compact .slk-msg:not(.joined) > .slk-gutter { display: none; }
+.classic.slk.slk.compact .slk-hover-time { padding-top: 0; font-size: 11px; line-height: var(--slk-text-lh); }
+/* A hanging indent: the body starts where the name does, and the time and
+   the name float back out over its padding. The line height is the words',
+   so the name sits on their first baseline. */
+.classic.slk.slk.compact .slk-msg:not(.joined) > .slk-body { padding-left: calc(var(--slk-time-col) + 8px); }
+.classic.slk.slk.compact .slk-msg:not(.joined) .slk-meta {
+  float: left; margin: 0 6px 0 calc(-1 * (var(--slk-time-col) + 8px));
+  line-height: var(--slk-text-lh);
+}
+/* The smaller type beside the name keeps to the name's line: at the line's
+   own height, a baseline-aligned 11px time hangs a pixel or two below it,
+   and the float grows just enough to push the words' second line in too. */
+.classic.slk.slk.compact .slk-msg:not(.joined) .slk-meta > :not(.slk-author) { line-height: 1; }
+.classic.slk.slk.compact .slk-meta .slk-time {
+  order: -1; flex: none; width: var(--slk-time-col); margin-right: 2px;
+  text-align: right; font-size: 11px; white-space: nowrap;
+}
+/* What is not words starts under the line, not beside it: a card, files,
+   an edit box, and a block that opens the message. */
+.classic.slk.slk.compact .slk-msg:not(.joined) .slk-body > :not(.slk-meta):not(.slk-text):not(.slk-pin-mark),
+.classic.slk.slk.compact .slk-text > :is(pre, ul, ol, blockquote) { clear: left; }
+.classic.slk.slk.compact .slk-pin-mark { display: flex; }
+.classic.slk.slk.compact .slk-reactions, .classic.slk.slk.compact .slk-card { margin-top: 4px; }
