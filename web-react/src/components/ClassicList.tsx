@@ -1225,7 +1225,7 @@ export const ClassicList: React.FC<Props> = ({
   const readOnServer = (v: string, now: string) => {
     fetch(`${api.httpBase}/channels/read`, {
       method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel: v }),
+      body: JSON.stringify({ orgId: api.orgId, channel: v, at: now }),
     }).then(() => setServerReads((prev) => ({ ...prev, [v]: now }))).catch(() => { /* this device still remembers */ })
     closeNotifications(api.orgId, v)
     setActivityItems((prev) => prev && prev.map((i) => (i.unread && i.message.channel === v && !i.message.parentId && (i.at || i.message.createdAt) <= now ? { ...i, unread: false } : i)))

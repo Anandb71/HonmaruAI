@@ -493,7 +493,10 @@ export async function channelActivity(db, orgId, viewerLogin, members) {
 
 /// Read up to `at` (now, if not given). Never moves backwards.
 export async function markRead(db, orgId, login, key, at) {
-  const when = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : new Date().toISOString();
+  const parsed = at ? Date.parse(at) : NaN;
+  // A clock ahead of the server must not mark a message read that has not
+  // been written yet. A clock behind keeps the earlier moment the person saw.
+  const when = Number.isNaN(parsed) ? new Date().toISOString() : new Date(Math.min(parsed, Date.now())).toISOString();
   await db.prepare(
     `INSERT INTO channel_reads (org_id, login, channel, last_read_at) VALUES (?1, ?2, ?3, ?4)
      ON CONFLICT (org_id, login, channel) DO UPDATE SET last_read_at = MAX(last_read_at, excluded.last_read_at)`
