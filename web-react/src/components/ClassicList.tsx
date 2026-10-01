@@ -931,6 +931,15 @@ export const ClassicList: React.FC<Props> = ({
   // those: the jump opens the group — ⌘⇧A Activity, ⌘⇧D the sidebar. None
   // of them while the shell has something over the list.
   const [sideHidden, setSideHidden] = useState(false)
+  /// Set when a key, not a click, chose the conversation: its row can be past
+  /// the edge of a long sidebar, and is brought into view once it is drawn
+  /// (after the render that lights it, and unfolds its group).
+  const walked = useRef(false)
+  useLayoutEffect(() => {
+    if (!walked.current) return
+    walked.current = false
+    document.querySelector('.slk-sections .cl-section .cl-thread.on')?.scrollIntoView({ block: 'nearest' })
+  })
   useEffect(() => {
     if (!active) return
     const onKey = (e: KeyboardEvent) => {
@@ -951,6 +960,7 @@ export const ClassicList: React.FC<Props> = ({
         if (next.key === here) { if (e.shiftKey) setToast(t('Nothing else unread')); return }
         const home = foldedHome(sidebarGroups, folded, next.key)
         if (home) setFolded((p) => ({ ...p, [home]: false }))
+        walked.current = true
         choose(next.key)
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault(); openActivity()
