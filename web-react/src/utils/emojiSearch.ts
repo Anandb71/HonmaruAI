@@ -158,6 +158,7 @@ export function readRecent(): string[] {
 }
 
 let recent: string[] | null = null
+const places = new Map<string, string[]>()
 const recentListeners = new Set<() => void>()
 const emitRecent = () => { for (const l of recentListeners) l() }
 
@@ -168,6 +169,13 @@ export function rememberEmoji(e: string): void {
   const next = pushRecent(recentSnapshot(), e.trim())
   recent = next
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch { /* kept for this tab only */ }
+  emitRecent()
+}
+
+export function resetEmojiAccount(): void {
+  recent = []
+  places.clear()
+  try { localStorage.removeItem(RECENT_KEY) } catch { /* signing out clears the key too */ }
   emitRecent()
 }
 
@@ -210,7 +218,7 @@ export function keepPlaces(shown: string[] | undefined, wanted: string[]): strin
 
 // Each bar as it is drawn now — the hover bar's three, a sheet's six — so
 // every message's bar is in one order, and stays in it.
-const places = new Map<string, string[]>()
+// `places` lives with the recent list, and signing out clears both.
 
 /// The same, kept current: the bar's three, or as many as a phone's sheet
 /// has room for, topped up from its own usual ones (a constant, so it is

@@ -10,6 +10,7 @@ import { PickRepository } from './screens/PickRepository'
 import { githubWebConfig, beginGitHubSignIn, readCallback, finishGitHubSignIn } from './utils/githubAuth'
 import type { GitHubWebConfig } from './utils/githubAuth'
 import { clearCardCache, clearAccountData } from './utils/cardCache'
+import { resetEmojiAccount } from './utils/emojiSearch'
 import { parseRoute } from './utils/route'
 import { onboardingKey, needsOnboarding, completeOnboarding } from './utils/onboardingProgress'
 import { t, adoptAccountLocale } from './utils/i18n'
@@ -359,6 +360,7 @@ function App() {
     localStorage.removeItem('userId')
     // The workspace's cards, drafts and notes stay readable on this machine otherwise.
     clearAccountData()
+    resetEmojiAccount()
   }
 
   // A workspace's login rules ended this sign-in (utils/authGuard): out,
