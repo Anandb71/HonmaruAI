@@ -489,11 +489,13 @@ export async function linkCard(db, orgId, messageId, cardId) {
 }
 
 /// The conversation before (and including) a message, as the AI reads it:
-/// one line per message, names not logins, oldest first.
+/// one line per message, names not logins, oldest first. An inline reply
+/// says what it answers, as its reader sees over it — so the AI knows which
+/// message "this" is, and is shown one too old to be among these lines.
 export async function transcriptUpTo(db, orgId, key, createdAt, { limit = 24, skip = null } = {}) {
   const { results } = await db
     .prepare(
-      `SELECT m.kind, m.body, m.created_at, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name, m.author_login,
+      `SELECT m.kind, m.body, m.created_at, m.reply_to_id, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name, m.author_login,
               (SELECT group_concat(f.name, ', ') FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id) AS file_names
          FROM channel_messages m
          LEFT JOIN users u ON u.login = m.author_login
@@ -504,10 +506,22 @@ export async function transcriptUpTo(db, orgId, key, createdAt, { limit = 24, sk
     .all();
   // `skip`: rows left out — talk with the agents, for a decision.
   const kept = skip ? (results || []).filter((r) => !skip({ ...r, channel: key })).slice(0, limit) : (results || []);
-  return kept.reverse().map((r) => {
+  const originals = await originalsOf(db, orgId, kept);
+  const answers = (r, max) => {
+    const o = r.reply_to_id ? originals.get(r.reply_to_id) : null;
+    // Never one from another conversation, one unsent, or one `skip`
+    // leaves out of these lines.
+    if (!o || o.deleted_at || o.channel !== key || (skip && skip(o))) return "";
+    const said = String(o.body || "").replace(/\s+/g, " ").trim() || (o.file_name ? `[attached: ${o.file_name}]` : "");
+    return ` (replying to ${o.kind === "ai" ? "AI" : (o.author_name || "someone")}: "${said.length > max ? `${said.slice(0, max)}…` : said}")`;
+  };
+  return kept.reverse().map((r, i, all) => {
     const who = r.kind === "ai" ? "AI" : (r.author_name || "someone");
     const attached = r.file_names ? ` [attached: ${String(r.file_names).slice(0, 200)}]` : "";
-    return `${String(r.created_at).slice(5, 16).replace("T", " ")} ${who}: ${String(r.body).replace(/\s+/g, " ").slice(0, 500)}${attached}`;
+    // The newest line is the one that asks: what it answers comes as long
+    // as a line of its own would. The rest carry the short quote people see.
+    const answered = answers(r, i === all.length - 1 ? 500 : QUOTE_CHARS);
+    return `${String(r.created_at).slice(5, 16).replace("T", " ")} ${who}${answered}: ${String(r.body).replace(/\s+/g, " ").slice(0, 500)}${attached}`;
   });
 }
 
