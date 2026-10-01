@@ -34,7 +34,8 @@ import { InviteDialog } from './InviteDialog'
 import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
-import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
+import { playSound, setOpenView, rememberLevels, rememberLevel, startRing, stopRing } from '../utils/sound'
+import { closeMessageNotifications } from '../utils/notifications'
 import { hasOlder } from '../utils/historyPage'
 import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold, unplacedAgents } from '../utils/sidebarSections'
 import './ClassicList.css'
@@ -190,16 +191,6 @@ function closeNotifications(orgId: string, view: string) {
     .catch(() => { /* nothing shown, nothing to take down */ })
 }
 
-/// This browser's notifications for these messages, taken down: they were
-/// looked at in Activity, here or on another device.
-function closeMessageNotifications(ids: string[]) {
-  if (!ids.length || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
-  const wanted = new Set(ids)
-  navigator.serviceWorker.getRegistration()
-    .then((reg) => reg?.getNotifications())
-    .then((list) => { for (const n of list || []) if (wanted.has((n.data as { messageId?: string } | null)?.messageId || '')) n.close() })
-    .catch(() => { /* nothing shown, nothing to take down */ })
-}
 const messageIdsOf = (keys: string[]) => keys.filter((k) => k.startsWith('m:')).map((k) => k.slice(2))
 
 function seenAt(orgId: string, view: string): string {
@@ -271,8 +262,12 @@ export const ClassicList: React.FC<Props> = ({
   // How loud each conversation may be: all (the default), mentions, mute.
   const [prefs, setPrefs] = useState<Record<string, 'mentions' | 'mute'>>({})
   // The sound for a message is decided where the socket is; it needs to
-  // know what you muted and what you are looking at.
-  useEffect(() => { rememberLevels(api.orgId, prefs) }, [api.orgId, prefs])
+  // know what you muted and what you are looking at. Written down only once
+  // the server has said what they are for this workspace: until then the
+  // levels last written down stay in force, rather than an empty map that
+  // would let a muted conversation ring (and show its words) meanwhile.
+  const prefsFor = useRef<string | null>(null)
+  useEffect(() => { if (prefsFor.current === api.orgId) rememberLevels(api.orgId, prefs) }, [api.orgId, prefs])
   // This workspace's own emoji: fetched when it opens, and again when a
   // message — live or loaded — names one not yet in the list: somebody just
   // added it. A name asked about once is not asked about again for a minute,
@@ -419,6 +414,7 @@ export const ClassicList: React.FC<Props> = ({
         setGroups(data.groups || [])
         setActivity(Object.fromEntries((data.activity || []).map((a: Activity) => [a.channel, a])))
         setServerReads(data.reads || {})
+        prefsFor.current = api.orgId
         setPrefs(data.prefs || {})
         if (Array.isArray(data.agents)) setAgents(data.agents)
       })
@@ -836,6 +832,9 @@ export const ClassicList: React.FC<Props> = ({
   const setPref = async (v: string, level: 'all' | 'mentions' | 'mute') => {
     const res = await fetch(`${api.httpBase}/channels/prefs`, { method: 'PUT', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, channel: v, level }) }).catch(() => null)
     if (!res?.ok) { setProblem(t('That did not save.')); return }
+    // For the sound and the notification decided at the socket, at once —
+    // also when the list's own load has not come back (or failed).
+    rememberLevel(api.orgId, v, level)
     setPrefs((prev) => { const next = { ...prev }; if (level === 'all') delete next[v]; else next[v] = level; return next })
   }
   /// A routine that writes this channel up for you every evening.

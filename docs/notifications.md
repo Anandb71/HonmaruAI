@@ -90,6 +90,67 @@ screen first, because Safari only exposes push to an installed web app. The
 manifest and `apple-mobile-web-app-capable` meta in `index.html` are what
 make it installable.
 
+### Chrome, Firefox, Edge, Safari: what the web client does
+
+- **The prompt comes first.** Firefox and Safari only show a permission
+  prompt while the click that asked for it still counts as the person's. A
+  network wait before the prompt can use that up, and the prompt is then
+  swallowed: Firefox shows a crossed-out bell in the address bar instead. So
+  `enableWebPush` calls `requestPermission()` before any `await`. The VAPID
+  key is fetched ahead of time, when the bell or the settings screen
+  appears (`prefetchVapidKey`), or alongside the prompt, never before it.
+- **Closed is not blocked.** A prompt dismissed without an answer
+  (`default`) leaves the bell in place so the person can ask again. Only
+  `denied` says "blocked in your browser settings".
+- **Resubscribed on every open.** `resyncWebPush` hands the browser's
+  existing subscription to `POST /push/subscriptions` again (an upsert). It
+  makes a new one if the Worker's key changed, or if the browser dropped the
+  subscription while push was on here. While push is on, the page keeps the
+  Worker's key in the Cache API (`honmaru-push`), and turning push off
+  forgets it.
+- **Replaced by the browser.** `sw.js` handles `pushsubscriptionchange`. It
+  subscribes again with the old subscription's key. Firefox for Android and
+  Firefox before 137 don't say which subscription they dropped, so there it
+  uses the kept key. Then it asks any open tab to hand the new subscription
+  to the Worker. A failed resync shows the bell again only when the browser
+  really has no subscription left. Being offline doesn't count.
+- **Raster icons.** Notifications use `icon-192.png`, plus `badge-96.png`, a
+  white-on-transparent mark that is the only badge format Android draws.
+  Chrome does not reliably draw SVG notification icons.
+- **One notification per conversation, still heard.** Message pushes carry the
+  tag `<orgId>|<view>`, so a new message in the same conversation replaces the
+  last one, with `renotify` so it still makes a sound. A card's tag is its id.
+- **In-tab notifications.** A direct message, an @mention (a person's message
+  or an agent's answer, as the Worker would push) or a new decision is shown
+  at once through the service worker (`utils/notifications.ts`). This happens
+  only while nobody is looking at that workspace: tabs say whether they are
+  in front on a `BroadcastChannel`. One tab per workspace shows them, the one
+  holding the Web Lock `honmaru-notify:<orgId>`, so a tab on another
+  workspace never silences it. Quiet hours and muted conversations apply as
+  they do for sounds. The mute levels in effect are the last ones the server
+  sent, never an empty map.
+- **The push that follows.** The Worker's push for the same message arrives
+  about a minute later with the same tag and the message's server time
+  (`at`). `sw.js` replaces an in-tab notification of the same message
+  without a second sound. It never rolls a conversation back: if a later
+  message is already on screen, that one is shown again, quietly.
+- **Counts.** The tab title (`(3) Honmaru AI`), the tab's icon (a red count)
+  and an installed app's icon (`navigator.setAppBadge`) show decisions
+  waiting plus mentions that arrived while away. The mentions clear when the
+  tab is looked at again.
+- **Taken down when read, or unsent.** Opening a conversation closes its
+  notifications in this browser. So does unsending a message, since a message
+  taken back must not stay on the lock screen. A card that stops waiting on
+  you (decided anywhere) closes its notification too.
+- **Clicks go to the right place.** A click focuses the app window that is in
+  front or visible (never `privacy.html`) and opens the message in its own
+  workspace (`#/m/<id>/<orgId>`). With no window open, it opens a new one on
+  that address.
+- **Spoilers stay hidden.** In message pushes (`pushPreview` in
+  `worker/src/pushes.js`) and in-tab notifications, a `||spoiler||` within a
+  line becomes `▇▇▇`. If a translation lost the marks, the push uses the words
+  as written, masked (`pushWords`).
+
 ## Email — setup
 
 **Resend.** One API key: no domain, no DNS records, and a free tier that is a
@@ -163,6 +224,8 @@ did not throw.
 | The bell only shows a hint on an iPhone | the site is open in Safari, not from the home screen |
 | The bell says notifications are blocked | the browser's site permission is "Block"; only the browser settings can undo that |
 | A push arrives in the wrong language | check `GET /me` — the app toggle and the browser both write it; the last one wins |
-| A subscription stops delivering after a while | the push service answered 404/410 and the row was deleted; the client re-subscribes on the next visit |
+| A subscription stops delivering after a while | the push service answered 404/410 and the row was deleted; the client hands its subscription over again on the next visit (`resyncWebPush`) |
+| Firefox shows a crossed-out bell in the address bar and no prompt | the prompt was not tied to a click; `enableWebPush` must reach `requestPermission()` before any `await` |
+| Pushes stopped after the VAPID keys were rotated | the push service refuses sends signed with the new key for subscriptions made with the old one; the client compares `subscription.options.applicationServerKey` and resubscribes on the next visit |
 | Email arrives alongside a push | the push failed (not "was not registered"): APNs or the push service answered with an error |
 | No email at all | `RESEND_API_KEY` unset, the person has no `email`, or `notifyEmail` is off |

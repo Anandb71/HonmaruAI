@@ -1032,6 +1032,7 @@ const table: Record<string, string> = {
   'This browser cannot receive them.': 'Dieser Browser kann sie nicht empfangen.',
   'Could not turn notifications on. Try again in a moment.':
     'Mitteilungen ließen sich nicht aktivieren. Gleich noch einmal versuchen.',
+  'Notifications are still off. You can turn them on whenever you like.': 'Benachrichtigungen sind noch aus. Sie können sie jederzeit einschalten.',
   'That did not work. Try again in a moment.': 'Das hat nicht geklappt. Gleich noch einmal versuchen.',
   'We could not save that.': 'Das ließ sich nicht speichern.',
 

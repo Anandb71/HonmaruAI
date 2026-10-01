@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
 import schemaSql from "../schema.sql?raw";
 import worker from "../src/index.js";
-import { recipientsOf, queueMessagePushes, sendDuePushes, noteActivity, isActive, PUSH_DELAY_MS } from "../src/pushes.js";
+import { recipientsOf, queueMessagePushes, sendDuePushes, noteActivity, isActive, PUSH_DELAY_MS, pushPreview, pushWords } from "../src/pushes.js";
 import { listMembers } from "../src/team.js";
 
 // A message reaches a phone only when its person is not already at the
@@ -100,4 +100,34 @@ test("a muted conversation is nobody's push", async () => {
   await env.DB.prepare("INSERT INTO channel_prefs (org_id, login, channel, level) VALUES (?1, 'kenji', 'b:cafe', 'mute')").bind(ORG).run();
   expect(await recipientsOf(env.DB, ORG, { id: "x4", kind: "message", channel: "b:cafe", author_login: "toru", body: "@Kenji @Mika" }, members))
     .toEqual([{ login: "mika", reason: "mention" }]);
+});
+
+test("a lock screen never gives a spoiler away, and a push stays one short line", () => {
+  expect(pushPreview("the killer is ||the butler|| and ||his twin||")).toBe("the killer is ▇▇▇ and ▇▇▇");
+  expect(pushPreview("line one\n\nline two")).toBe("line one line two");
+  expect(pushPreview("a || b || c")).toBe("a ▇▇▇ c");
+  expect(pushPreview("x".repeat(400))).toHaveLength(180);
+  expect(pushPreview("")).toBe("");
+});
+
+test("the || of inline code never pairs with a real spoiler's bars", () => {
+  expect(pushPreview("use `a || b` to check; the answer is ||42||")).toBe("use `a || b` to check; the answer is ▇▇▇");
+  expect(pushPreview("||x `a || b` y||")).toBe("▇▇▇");
+  // A translation that moved the code in front of the spoiler keeps it hidden.
+  const written = "the answer is ||42|| — use `a || b` to check";
+  const moved = "`a || b` で確認して、答えは ||42|| です";
+  expect(pushPreview(pushWords(written, moved))).toBe("`a || b` で確認して、答えは ▇▇▇ です");
+});
+
+test("a translation that lost a spoiler's bars is not what a lock screen shows", () => {
+  const written = "the killer is ||the butler||";
+  // Kept the marks: the reader's language.
+  expect(pushWords(written, "犯人は||執事||")).toBe("犯人は||執事||");
+  // Dropped them, or wrote them full-width: the words as written, masked.
+  expect(pushWords(written, "犯人は執事")).toBe(written);
+  expect(pushWords(written, "犯人は｜｜執事｜｜")).toBe(written);
+  expect(pushPreview(pushWords(written, "犯人は執事"))).toBe("the killer is ▇▇▇");
+  // No spoiler, or nothing translated: as before.
+  expect(pushWords("lunch?", "お昼？")).toBe("お昼？");
+  expect(pushWords("lunch?", "")).toBe("lunch?");
 });
