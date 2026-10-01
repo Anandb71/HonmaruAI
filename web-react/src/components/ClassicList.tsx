@@ -930,14 +930,27 @@ export const ClassicList: React.FC<Props> = ({
     setPopout({ ref, anchor })
     void readProfile(ref).then((data) => { if (data) setPopout((prev) => (prev && prev.ref === ref && prev.anchor === anchor ? { ...prev, data } : prev)) })
   }
-  /// Every @mention of a person is a button (MessageParts); this one
-  /// handler, on the whole list, opens the card for whichever was pressed —
-  /// in the conversation, a thread, Threads or Activity.
+  /// Every @mention of a person presses like a button (MessageParts); this
+  /// one handler, on the whole list, opens the card for whichever was
+  /// pressed — in the conversation, a thread, Threads or Activity. It is
+  /// still a word of the message: dragging across it to select it is not
+  /// pressing it.
   const onMentionClick = (e: React.MouseEvent) => {
     const el = (e.target as Element).closest?.('[data-mention-ref]') as HTMLElement | null
     if (!el?.dataset.mentionRef) return
+    const picked = window.getSelection()
+    if (picked && !picked.isCollapsed && picked.containsNode(el, true)) return
     e.preventDefault()
     openPopout(el.dataset.mentionRef, el)
+  }
+  /// The same from the keyboard: Enter or Space on a mention that holds
+  /// focus, as on any button. (Space would otherwise scroll the page.)
+  const onMentionKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    const el = e.target as HTMLElement
+    if (!el.dataset?.mentionRef) return
+    e.preventDefault()
+    if (!e.repeat) openPopout(el.dataset.mentionRef, el)
   }
 
   // Keys a chat client has: ⌥↑/⌥↓ between conversations, ⌘⇧A Activity,
@@ -3662,7 +3675,7 @@ export const ClassicList: React.FC<Props> = ({
   }
 
   return (
-    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}`} onClick={onMentionClick}>
+    <div className={`classic slk${current || special ? ' in-thread' : ''}${phoneRoot ? ' phone-root' : ''}${detail || thread || profile ? ' with-pane' : ''}${sideHidden ? ' side-hidden' : ''}`} onClick={onMentionClick} onKeyDown={onMentionKey}>
       <aside className="slk-side" aria-label={t('Conversations')}>
         {!wide && phoneTab === 'dms' ? dmsView() : <>
         <header className="cl-top">
