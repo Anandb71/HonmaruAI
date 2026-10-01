@@ -1781,8 +1781,13 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
     // ⌘/ lists the keys.
     await d.keyboard.press(process.platform === 'darwin' ? 'Meta+/' : 'Control+/')
     await d.waitForSelector('.shortcuts-sheet', { timeout: 5000 }).catch(() => { throw new Error('⌘/ did not open the shortcuts') })
+    // Tab stays in it: the list behind the scrim is out of reach.
+    await d.keyboard.press('Tab')
+    await d.keyboard.press('Tab')
+    if (!(await d.evaluate(() => Boolean(document.activeElement?.closest('.shortcuts-sheet'))))) throw new Error('Tab left the shortcuts sheet for what is behind it')
+    // Escape closes it.
     await d.keyboard.press('Escape')
-    await d.click('.shortcuts-sheet .close').catch(() => {})
+    await d.waitForSelector('.shortcuts-sheet', { state: 'detached', timeout: 3000 }).catch(() => { throw new Error('Escape did not close the shortcuts') })
     // No status editor on You: it was taken out as clutter.
     await d.goto(`${WEB}/#/you`, { waitUntil: 'load' })
     await d.waitForSelector('.profile-stats', { timeout: 15000 })
