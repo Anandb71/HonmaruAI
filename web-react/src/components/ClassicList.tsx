@@ -32,7 +32,7 @@ import { Avatar } from './Avatar'
 import { Sheet, SheetRow, MessageSheet, PeoplePicker, ForwardSheet, longPress } from './Sheet'
 import { useUploads, PendingUploads, MessageFiles } from './Attachments'
 import { playSound, setOpenView, rememberLevels, startRing, stopRing } from '../utils/sound'
-import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold } from '../utils/sidebarSections'
+import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold, unplacedAgents } from '../utils/sidebarSections'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -309,6 +309,11 @@ export const ClassicList: React.FC<Props> = ({
     return () => { ignore = true }
   }, [api.httpBase, api.orgId, authHeaders])
   const saveLayout = (next: SidebarLayout) => {
+    // An agent nothing has been said to yet is listed only for being
+    // starred or in a section. Unstarred, or put back where it was, it
+    // stays listed among the agents: open, it must not vanish from under you.
+    const freed = unplacedAgents(layout, next)
+    if (freed.length) setStartedAgents((prev) => [...prev, ...freed.filter((id) => !prev.includes(id))])
     setLayout(next)
     void fetch(`${api.httpBase}/channels/sidebar`, {
       method: 'PUT', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ orgId: api.orgId, sidebar: next }),

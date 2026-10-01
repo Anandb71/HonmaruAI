@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold } from './sidebarSections'
+import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, withSectionFolds, withFold, unplacedAgents } from './sidebarSections'
 
 const row = (key: string, extra: { view?: string; unread?: number; fresh?: boolean } = {}) => ({ key, view: extra.view, unread: extra.unread || 0, fresh: extra.fresh })
 
@@ -159,5 +159,26 @@ describe('folds', () => {
     const here = { channels: true, apps: false, 'sec:s1': true, 'sec:gone': true }
     expect(withSectionFolds(here, [{ id: 's1', collapsed: false }, { id: 's2', collapsed: true }, { id: 's3' }]))
       .toEqual({ channels: true, 'sec:s2': true })
+  })
+})
+
+// An agent you have said nothing to yet is listed because you starred it or
+// put it in a section; taking it out again must not make it vanish.
+describe('agents taken out of the starred and your sections', () => {
+  const before = { starred: ['ag:hayao', 'b:cafe'], sections: [{ views: ['ag:mei', 'dm:mika'] }, { views: ['ag:sho'] }] }
+
+  it('are the ones no longer starred nor in any section', () => {
+    expect(unplacedAgents(before, { ...before, starred: ['b:cafe'] })).toEqual(['hayao'])
+    // "Back to where it was", and a section removed with an agent in it.
+    expect(unplacedAgents(before, { ...before, sections: [{ views: ['dm:mika'] }, { views: ['ag:sho'] }] })).toEqual(['mei'])
+    expect(unplacedAgents(before, { starred: [], sections: [before.sections[0]] }).sort()).toEqual(['hayao', 'sho'])
+  })
+
+  it('are none when it only moved, or was placed, or is not an agent', () => {
+    // From one section to another, and starred while still in its section.
+    expect(unplacedAgents(before, { starred: ['ag:hayao', 'b:cafe'], sections: [{ views: ['dm:mika'] }, { views: ['ag:sho', 'ag:mei'] }] })).toEqual([])
+    expect(unplacedAgents({ starred: ['ag:mei'], sections: [{ views: ['ag:mei'] }] }, { starred: [], sections: [{ views: ['ag:mei'] }] })).toEqual([])
+    expect(unplacedAgents({ starred: [], sections: [] }, before)).toEqual([])
+    expect(unplacedAgents(before, { ...before, starred: ['ag:hayao'], sections: [{ views: ['ag:mei'] }, { views: ['ag:sho'] }] })).toEqual([])
   })
 })

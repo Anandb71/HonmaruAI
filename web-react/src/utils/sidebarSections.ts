@@ -107,3 +107,16 @@ export function withSectionFolds(folded: Record<string, boolean>, sections: Arra
 export function withFold<T extends { id: string; collapsed?: boolean }>(sections: T[], id: string, collapsed: boolean): T[] {
   return sections.map((s) => (s.id === id ? { ...s, collapsed } : s))
 }
+
+/// What is starred and what your sections hold, as the sidebar keeps it.
+interface Placed { starred: string[]; sections: Array<{ views: string[] }> }
+
+/// The agents whose conversation was starred or in a section and, after a
+/// change to the sidebar, is in neither. One nothing has been said in yet
+/// was listed only for being placed: it is kept listed, back among the
+/// agents, rather than vanishing — from under you, if it is the one open.
+export function unplacedAgents(before: Placed, after: Placed): string[] {
+  const views = (l: Placed) => new Set([...l.starred, ...l.sections.flatMap((x) => x.views)])
+  const still = views(after)
+  return [...views(before)].filter((v) => v.startsWith('ag:') && !still.has(v)).map((v) => v.slice(3))
+}
