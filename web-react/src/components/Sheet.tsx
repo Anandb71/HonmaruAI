@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom'
 import { useT } from '../utils/i18n'
 import type { ChannelMessage } from '../types/card'
 import { Icon, type IconName } from './Icon'
-import { EmojiPicker } from './MessageParts'
+import { EmojiPicker, EmojiGlyph } from './MessageParts'
 import { Avatar } from './Avatar'
+import { useQuickReactions } from '../utils/emojiSearch'
 import './Sheet.css'
 
 // A sheet that comes up from the bottom of a phone: what a long press on a
@@ -57,6 +58,10 @@ export const SheetRow: React.FC<{ icon: IconName; label: string; onClick: () => 
   </button>
 )
 
+/// The phone's row of reactions before you have used any: room for six,
+/// where a laptop's hover bar has three.
+const SHEET_REACTIONS = ['👍', '✅', '👀', '🙌', '🎉', '🙏']
+
 /// What a long press on a message offers: a row of reactions, then what
 /// you can do to it. Everything a laptop has on hover and behind ⋯.
 export const MessageSheet: React.FC<{
@@ -77,12 +82,13 @@ export const MessageSheet: React.FC<{
   const t = useT()
   const [picker, setPicker] = React.useState(false)
   const run = (fn?: () => void) => () => { onClose(); fn?.() }
-  const QUICK = ['👍', '✅', '👀', '🙌', '🎉', '🙏']
+  // The ones you reacted with last first, as on the laptop's bar.
+  const quick = useQuickReactions(SHEET_REACTIONS, 6)
   return (
     <Sheet label={t('Message actions')} onClose={onClose}>
       <div className="msheet-reactions" role="group" aria-label={t('Add reaction')}>
-        {QUICK.map((e) => (
-          <button key={e} type="button" onClick={() => { onReact(e); onClose() }} aria-label={t('React with {emoji}', { emoji: e })}>{e}</button>
+        {quick.map((e) => (
+          <button key={e} type="button" onClick={() => { onReact(e); onClose() }} aria-label={t('React with {emoji}', { emoji: e })}><EmojiGlyph emoji={e} size={24} /></button>
         ))}
         <button type="button" className="more" onClick={() => setPicker((p) => !p)} aria-label={t('Add reaction')} aria-expanded={picker}><Icon name="smile" size={20} /></button>
       </div>

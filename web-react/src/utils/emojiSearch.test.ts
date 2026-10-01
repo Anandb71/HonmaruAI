@@ -80,6 +80,13 @@ describe('recently used', () => {
     expect(quickReactions([':elsewhere:', '🔥'], (e) => !e.startsWith(':'))).toEqual(['🔥', '✅', '👀'])
   })
 
+  it('fills a phone’s longer row the same way, from its own usual ones', () => {
+    const all = () => true
+    const sheet = ['👍', '✅', '👀', '🙌', '🎉', '🙏']
+    expect(quickReactions([], all, sheet, 6)).toEqual(sheet)
+    expect(quickReactions(['🔥', '👀'], all, sheet, 6)).toEqual(['🔥', '👀', '👍', '✅', '🙌', '🎉'])
+  })
+
   it('takes only what the Worker takes as a reaction', () => {
     expect(canReact('👍🏽')).toBe(true)
     expect(canReact('👨‍💻')).toBe(true)

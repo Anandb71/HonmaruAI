@@ -159,15 +159,17 @@ export function quickReactions(list: string[], drawable: (e: string) => boolean,
   return [...new Set([...list.filter(drawable), ...fallback])].slice(0, n)
 }
 
-/// The same, kept current. A workspace's own emoji counts only in the
-/// workspace that has it.
-export function useQuickReactions(): string[] {
+/// The same, kept current: the bar's three, or as many as a phone's sheet
+/// has room for, topped up from its own usual ones (a constant, so it is
+/// one value from render to render). A workspace's own emoji counts only in
+/// the workspace that has it.
+export function useQuickReactions(fallback = QUICK_REACTIONS, n = 3): string[] {
   const list = useRecentEmoji()
   const custom = useCustomEmoji()
   return useMemo(() => {
     const names = new Set(custom.map((c) => `:${c.name}:`))
-    return quickReactions(list, (e) => !CUSTOM_EMOJI.test(e) || names.has(e))
-  }, [list, custom])
+    return quickReactions(list, (e) => !CUSTOM_EMOJI.test(e) || names.has(e), fallback, n)
+  }, [list, custom, fallback, n])
 }
 
 // ---- A line of nothing but emoji ----
