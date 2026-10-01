@@ -60,6 +60,7 @@
 .msheet-picker .slk-picker-emoji:hover, .msheet-picker .slk-picker-emoji:focus-visible { background: var(--sh-hover); }
 .msheet-picker .slk-picker-emoji:focus-visible { outline: 2px solid var(--sh-accent); outline-offset: -2px; }
 .msheet-picker .slk-picker-empty { margin: 14px 2px 8px; font-size: 14px; color: var(--sh-dim); text-align: center; }
+.msheet-picker .slk-picker-retry { color: var(--sh-accent); }
 
 .msheet-rows { display: flex; flex-direction: column; padding-top: 6px; }
 .msheet-row {

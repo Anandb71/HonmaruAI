@@ -585,6 +585,8 @@
 .slk-picker-label:has(.slk-picker-add) { display: flex; align-items: center; justify-content: space-between; }
 .slk-picker-add { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; letter-spacing: 0; color: var(--slk-accent, #1d9bd1); text-decoration: none; }
 .slk-picker-add:hover { text-decoration: underline; }
+/* "Try again", in the line that says the list did not load. */
+.slk-picker-retry { border: none; background: none; padding: 0; font: inherit; color: var(--slk-accent, #1d9bd1); text-decoration: underline; cursor: pointer; }
 
 .classic.slk.slk .slk-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .classic.slk.slk .slk-reaction {
