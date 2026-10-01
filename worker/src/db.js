@@ -658,19 +658,20 @@ export async function rememberConnections(db, githubId, connectorIds, activeIds)
   }
 }
 
-export async function registerDevice(db, { deviceToken, githubId, login, environment, platform }) {
+export async function registerDevice(db, { deviceToken, githubId, login, environment, platform, appId = null }) {
   await db
     .prepare(
-      `INSERT INTO device_tokens (device_token, user_github_id, login, environment, updated_at, platform)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+      `INSERT INTO device_tokens (device_token, user_github_id, login, environment, updated_at, platform, app_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
        ON CONFLICT(device_token) DO UPDATE SET
          user_github_id = excluded.user_github_id,
          login = excluded.login,
          environment = excluded.environment,
          updated_at = excluded.updated_at,
-         platform = excluded.platform`
+         platform = excluded.platform,
+         app_id = excluded.app_id`
     )
-    .bind(deviceToken, String(githubId), login, environment || "production", new Date().toISOString(), platform === "android" ? "android" : "ios")
+    .bind(deviceToken, String(githubId), login, environment || "production", new Date().toISOString(), platform === "android" ? "android" : "ios", appId)
     .run();
 }
 
@@ -679,7 +680,7 @@ export async function registerDevice(db, { deviceToken, githubId, login, environ
 export async function devicesForLogin(db, login) {
   if (!login) return [];
   const { results } = await db
-    .prepare("SELECT device_token, environment, platform FROM device_tokens WHERE login = ?1")
+    .prepare("SELECT device_token, environment, platform, app_id FROM device_tokens WHERE login = ?1")
     .bind(login)
     .all();
   return results || [];

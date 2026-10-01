@@ -465,7 +465,8 @@ async function handle(request, env, url, ctx) {
         name: body.name,
         inviteCode: typeof body.inviteCode === "string" ? body.inviteCode : undefined,
         locale: body.locale || localeFromRequest(request),
-      });
+        authorizationCode: typeof body.authorizationCode === "string" ? body.authorizationCode : undefined,
+      }, { after: ctx && typeof ctx.waitUntil === "function" ? (work) => after(ctx, work) : undefined });
       if (result.error) return json({ message: result.error }, result.status || 400);
       await signedIn(env, request, result.token, result.userId, "apple");
       return json(result);
@@ -1661,6 +1662,19 @@ async function handle(request, env, url, ctx) {
       if (platform === "android" && !isFcmToken(body.deviceToken)) {
         return json({ message: "That is not an FCM registration token." }, 400);
       }
+      // Which app the token is for, and from which APNs environment: the
+      // Expo build is a different bundle id from the App Store app, and a
+      // development build's token only works against the sandbox. Only apps
+      // this deployment sends for; an iPhone that says nothing keeps the
+      // deployment's topic (apns.js targetFor).
+      const { allowedAppIds } = await import("./apns.js");
+      const appId = typeof body.appId === "string" && body.appId ? body.appId : null;
+      if (appId && platform === "ios" && !allowedAppIds(env).includes(appId)) {
+        return json({ message: "That app is not one this server sends to." }, 400);
+      }
+      if (body.environment !== undefined && body.environment !== null && !["production", "sandbox"].includes(body.environment)) {
+        return json({ message: "environment is production or sandbox." }, 400);
+      }
       const user = await getUserByGithubId(env.DB, session.github_id);
       if (!user?.login) return json({ message: "unknown user" }, 409);
       await registerDevice(env.DB, {
@@ -1669,6 +1683,7 @@ async function handle(request, env, url, ctx) {
         login: user.login,
         environment: body.environment,
         platform,
+        appId: platform === "ios" ? appId : null,
       });
       return json({ ok: true });
     }
@@ -1721,6 +1736,12 @@ async function handle(request, env, url, ctx) {
       // Their app connections, here and at Smithery, before the rows that
       // say whose they were are gone.
       await forgetAppConnections(env, { githubId: session.github_id }).catch((err) => console.error("app connections not ended", err?.message || err));
+      // Their Sign in with Apple authorization for the app, which Apple asks
+      // to end with the account (src/apple.js). Apple saying no, or not
+      // answering, is logged and does not keep the account alive.
+      await import("./apple.js")
+        .then(({ revokeAppleTokens }) => revokeAppleTokens(env, session.github_id))
+        .catch((err) => console.error("apple tokens not revoked", err?.message || err));
       await deleteAccount(env.DB, session.github_id, user?.login || null);
       // Their entries in every audit log become unreadable: the rows stay and
       // still verify, and who they were goes with the key.
