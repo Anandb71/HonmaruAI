@@ -1851,8 +1851,13 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
     // ⌘/ lists the keys.
     await d.keyboard.press(process.platform === 'darwin' ? 'Meta+/' : 'Control+/')
     await d.waitForSelector('.shortcuts-sheet', { timeout: 5000 }).catch(() => { throw new Error('⌘/ did not open the shortcuts') })
+    // Tab stays in it: the list behind the scrim is out of reach.
+    await d.keyboard.press('Tab')
+    await d.keyboard.press('Tab')
+    if (!(await d.evaluate(() => Boolean(document.activeElement?.closest('.shortcuts-sheet'))))) throw new Error('Tab left the shortcuts sheet for what is behind it')
+    // Escape closes it.
     await d.keyboard.press('Escape')
-    await d.click('.shortcuts-sheet .close').catch(() => {})
+    await d.waitForSelector('.shortcuts-sheet', { state: 'detached', timeout: 3000 }).catch(() => { throw new Error('Escape did not close the shortcuts') })
     // No status editor on You: it was taken out as clutter.
     await d.goto(`${WEB}/#/you`, { waitUntil: 'load' })
     await d.waitForSelector('.profile-stats', { timeout: 15000 })
@@ -2027,6 +2032,23 @@ await step('right-clicking a channel in the sidebar offers what a desktop chat a
     await d.keyboard.press('Shift+Escape')
     await d.waitForFunction(() => !document.querySelector('.slk-side .cl-fresh'), null, { timeout: 5000 })
       .catch(() => { throw new Error('⇧Esc left a conversation marked new') })
+    // ⌥⇧↓ finds what is waiting even in a folded group, and opens the group:
+    // a folded heading still counts it. With every group folded no row is
+    // drawn, so a lit row means the jump unfolded the group it stopped in.
+    const waiting = await d.$$eval('.slk-side .cl-section .cl-thread:not(.on)', (rows) => rows.filter((r) => r.querySelector('.cl-badge, .cl-fresh')).length)
+    for (const fold of await d.$$('.slk-side .cl-section .cl-fold[aria-expanded="true"]')) await fold.click()
+    await d.waitForSelector('.slk-side .cl-section .cl-thread', { state: 'detached', timeout: 3000 })
+      .catch(() => { throw new Error('folding every group left a conversation drawn') })
+    await d.keyboard.press('Alt+Shift+ArrowDown')
+    if (waiting > 0) {
+      await d.waitForSelector('.slk-side .cl-section .cl-thread.on', { timeout: 5000 })
+        .catch(() => { throw new Error('⌥⇧↓ did not reach an unread conversation in a folded group') })
+    } else {
+      // Nothing waiting: it says so (or stops on what arrived just now).
+      await d.waitForSelector('.cl-toast:has-text("unread"), .slk-side .cl-section .cl-thread.on', { timeout: 5000 })
+        .catch(() => { throw new Error('⌥⇧↓ with nothing unread said nothing') })
+    }
+    for (const fold of await d.$$('.slk-side .cl-section .cl-fold[aria-expanded="false"]')) await fold.click()
     // Archive a channel from the menu, then bring it back from You.
     await d.click('.cl-add')
     await d.fill('.cl-add-form input', 'Old launch')
@@ -3246,6 +3268,17 @@ await step('a star, a section of your own, and a user group one mention reaches'
     // Kept on the server: a reload keeps it.
     await desk.reload({ waitUntil: 'load' })
     await desk.waitForSelector('.slk-side .cl-section:has(h2:has-text("Shop floor")) .cl-thread[data-view="b:front-desk"]', { timeout: 20000 })
+
+    // ⌥↑/⌥↓ walk the sidebar as it is drawn — Starred, then your sections —
+    // not the team's own order: up from the section's channel is the starred
+    // one above it, and down comes back.
+    const lit = (view) => desk.waitForSelector(`.slk-side .cl-section .cl-thread.on[data-view="${view}"]`, { timeout: 5000 })
+    await desk.click('.slk-side .cl-thread[data-view="b:front-desk"] .cl-open')
+    await lit('b:front-desk')
+    await desk.keyboard.press('Alt+ArrowUp')
+    await lit('b:kitchen').catch(() => { throw new Error('⌥↑ did not go to the starred channel drawn above') })
+    await desk.keyboard.press('Alt+ArrowDown')
+    await lit('b:front-desk').catch(() => { throw new Error('⌥↓ did not come back down the sidebar as it is drawn') })
 
     // "@crew" in the composer: offered, written, and it reaches Kenji.
     await desk.click('.slk-composer .slk-input')

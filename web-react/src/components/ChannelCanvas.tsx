@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../utils/i18n'
+import { isMacPlatform, formatCombo } from '../utils/keys'
 import { aiHeaders } from '../utils/aiKey'
 import { Markdown } from '../utils/markdown'
 import { Icon } from './Icon'
@@ -15,6 +16,8 @@ import { Icon } from './Icon'
 interface Canvas { body: string; version: number; updatedBy: string | null; updatedAt: string | null }
 interface Revision { version: number; updatedBy: string | null; updatedAt: string; size: number }
 interface Api { httpBase: string; orgId: string; sessionToken: string }
+
+const isMac = isMacPlatform()
 
 const TASK = /^(\s*[-*]\s+)\[( |x|X)\](\s+.*)$/
 
@@ -220,7 +223,7 @@ export const ChannelCanvas: React.FC<{ api: Api; headers: Record<string, string>
               onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void save() } }}
               spellCheck
             />
-            <p className="slk-canvas-hint">{t('canvas.syntax')}</p>
+            <p className="slk-canvas-hint">{t('canvas.syntax', { key: formatCombo('Mod+Enter', isMac) })}</p>
             <div className="slk-canvas-actions">
               <button type="button" className="pill-btn" disabled={busy === 'save'} onClick={() => void save()} data-canvas-save="1">{busy === 'save' ? t('Saving…') : t('Save')}</button>
               <button type="button" className="btn-text" onClick={() => { setEditing(null); setConflict(null); setChangedBy(null); setNote(null); if (changedBy) void load() }}>{t('Cancel')}</button>

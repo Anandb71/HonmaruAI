@@ -29,7 +29,7 @@ export interface FoldContext {
 /// conversation shows only when it names you or a card waits on you there —
 /// muting it was asking not to hear what is said, not to lose a decision,
 /// whose row stays red when the section is open.
-export function foldedRows<T extends SectionRow>(threads: T[], { mentions, currentKey, prefs }: FoldContext): T[] {
+export function foldedRows<T extends SectionRow>(threads: readonly T[], { mentions, currentKey, prefs }: FoldContext): T[] {
   return threads.filter((th) => {
     if (currentKey && th.key === currentKey) return true
     const named = Boolean(th.view && (mentions[th.view] || 0) > 0)
@@ -42,7 +42,7 @@ export function foldedRows<T extends SectionRow>(threads: T[], { mentions, curre
 /// (red), the mentions (blue @N), and whether anything new was said — not
 /// in the one open now, whose row shows no dot either (you are reading it,
 /// or just marked it unread while still looking).
-export function sectionBadge(threads: SectionRow[], mentions: Record<string, number>, currentKey?: string | null): { cards: number; mentions: number; fresh: boolean } {
+export function sectionBadge(threads: readonly SectionRow[], mentions: Record<string, number>, currentKey?: string | null): { cards: number; mentions: number; fresh: boolean } {
   let cards = 0
   let named = 0
   let fresh = false

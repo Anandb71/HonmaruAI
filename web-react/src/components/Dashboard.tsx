@@ -29,6 +29,8 @@ import { playSound, soundForMessage, getOpenView, levelOf } from '../utils/sound
 import { loadMembers, mentionedRefs, mentionsEveryone } from '../utils/mentions'
 import { loadRecent, rememberRecent } from '../utils/places'
 import type { Place } from '../utils/places'
+import { isMacPlatform, formatCombo, hasPrimaryMod } from '../utils/keys'
+import { tabWithin, TAB_STOPS } from '../utils/focusTrap'
 import type { ChannelMessage } from '../types/card'
 
 // The screens a person opens now and then load when they are opened: the
@@ -63,6 +65,9 @@ type Panel = null | 'compose' | 'record'
 // the viewport while it is open. Which one is open, and which card the feed
 // is on, live in the URL (utils/route.ts): a reload, the back button and a
 // pasted link all mean what they say.
+
+// ⌘ on a Mac, Ctrl everywhere else, in every key the shell prints.
+const isMac = isMacPlatform()
 
 // What just happened, said back. English keys, translated where read.
 const DECIDED_WORD: Record<string, string> = {
@@ -578,18 +583,53 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.messageId, route.messageOrg, workspaces.length, orgId, navigate])
 
+  // ⌘/ — every key the app answers to, in one place.
+  const [shortcuts, setShortcuts] = useState(false)
+  // It takes focus when it opens, so its own Escape is heard, and hands it
+  // back when it closes — unless something else has taken it since.
+  const shortcutsSheet = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!shortcuts) return
+    const before = document.activeElement as HTMLElement | null
+    shortcutsSheet.current?.focus()
+    return () => {
+      const now = document.activeElement
+      if (!now || now === document.body || shortcutsSheet.current?.contains(now)) before?.focus?.()
+    }
+  }, [shortcuts])
+  useEffect(() => {
+    const on = () => setShortcuts(true)
+    window.addEventListener('honmaru:shortcuts', on)
+    return () => window.removeEventListener('honmaru:shortcuts', on)
+  }, [])
+
   // Escape closes whatever is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPalette((p) => !p); return }
-      if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
+      if (e.isComposing || e.keyCode === 229) return
+      const mod = hasPrimaryMod(e, isMac)
+      // The shortcuts sheet is on top. ⌘K must not open the palette over it.
+      if (shortcuts) {
+        const sheet = shortcutsSheet.current
+        if (mod && (e.key === 'k' || e.key === 'K' || e.key === '/')) { e.preventDefault(); setShortcuts(false); return }
+        if (e.key === 'Escape') setShortcuts(false)
+        else if (e.key === 'Tab' && sheet && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault()
+          const stops = Array.from(sheet.querySelectorAll<HTMLElement>(TAB_STOPS))
+          const to = tabWithin(stops, document.activeElement as HTMLElement | null, e.shiftKey) ?? sheet
+          to.focus()
+        }
+        return
+      }
+      if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPalette((p) => !p); return }
+      if (mod && e.key === '/') { e.preventDefault(); setShortcuts((o) => !o); return }
       if (palette) return
       if (e.key === 'Escape') { setPanel(null); if (screen) closeScreen() }
       else if (e.key === 'n' && !panel && !screen && !(e.target as HTMLElement)?.matches('input, textarea')) { e.preventDefault(); setPanel('compose') }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [panel, screen, setScreen, closeScreen, palette])
+  }, [panel, screen, setScreen, closeScreen, palette, shortcuts])
   const pickFromPalette = useCallback((action: PaletteAction) => {
     setPalette(false)
     setPanel(null)
@@ -683,13 +723,6 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       }
     }
   }, [addDebugLog, userId, orgId])
-  // ⌘/ — every key the app answers to, in one place.
-  const [shortcuts, setShortcuts] = useState(false)
-  useEffect(() => {
-    const on = () => setShortcuts(true)
-    window.addEventListener('honmaru:shortcuts', on)
-    return () => window.removeEventListener('honmaru:shortcuts', on)
-  }, [])
   const [suggestRule, setSuggestRule] = useState<{ cardId: string; sender: string; business: string | null } | null>(null)
   const acceptRule = useCallback(async () => {
     if (!suggestRule) return
@@ -820,7 +853,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     return () => { ignore = true }
   }, [focusCardId, cards, fetched, relayHttpUrl, orgId, sessionToken, t])
   useEffect(() => {
-    if (!workbench || panel || screen) return
+    if (!workbench || panel || screen || shortcuts) return
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target as HTMLElement | null
@@ -832,7 +865,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [workbench, panel, screen, inboxCards, selectedId, navigate])
+  }, [workbench, panel, screen, shortcuts, inboxCards, selectedId, navigate])
   const api = { httpBase: relayHttpUrl, orgId, sessionToken }
   const workspaceSwitcher = (variant: 'rail' | 'header') => (
     <WorkspaceSwitcher
@@ -871,7 +904,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
             businesses={businesses}
             focusCardId={null}
             ready={synced || cards.length > 0}
-            active={!panel && !screen}
+            active={!panel && !screen && !shortcuts}
             onDecide={handleDecision}
             onAsk={handleAsk}
             onFlag={handleFlag}
@@ -890,7 +923,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           businesses={businesses}
           focusCardId={focusCardId}
           ready={synced || cards.length > 0}
-          active={!panel && !screen}
+          active={!panel && !screen && !shortcuts}
           onDecide={handleDecision}
           onAsk={handleAsk}
           onFlag={handleFlag}
@@ -931,7 +964,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
               businesses={businesses}
               focusCardId={null}
               ready
-              active={!panel && !screen && !palette}
+              active={!panel && !screen && !palette && !shortcuts}
               onDecide={handleDecision}
               onAsk={handleAsk}
               onFlag={handleFlag}
@@ -946,6 +979,7 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
           onOpenScreen={(sc) => setScreen(sc)}
           onStatus={(tab) => { listYou.current = tab; setStatusFrom((f) => (f === 'tabs' ? null : 'tabs')) }}
           statusOpen={statusFrom === 'tabs'}
+          active={!panel && !screen && !palette && !shortcuts}
           workspaceMenu={workspaceSwitcher('header')}
           onCreateChannel={(name, opts) => channelCall('POST', { name, ...(opts?.private ? { private: true } : {}) })}
           onRenameChannel={(slug, name) => channelCall('PUT', { slug, name })}
@@ -993,12 +1027,12 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
               connection is said in words, just before this. The marker is
               for whoever needs to know without looking — a test, a script. */}
           <span className="conn-state" data-connected={isConnected ? '1' : '0'} hidden />
-          <button className="palette-button" onClick={() => setPalette(true)} aria-label={t('Search or jump to')} title="⌘K" aria-keyshortcuts="Meta+K Control+K">
+          <button className="palette-button" onClick={() => setPalette(true)} aria-label={t('Search or jump to')} title={formatCombo('Mod+K', isMac)} aria-keyshortcuts="Meta+K Control+K">
             <Icon name="search" size={18} />
             {/* The search field a chat client puts across its top: words on a
                 laptop, a magnifier on a phone. */}
             <span className="palette-label">{t('Search {name}', { name: workspaceLabel(workspaces.find((w) => w.id === orgId) || (orgName ? { id: orgId, name: orgName, role: 'member' } : undefined), t) })}</span>
-            <kbd className="palette-kbd">⌘K</kbd>
+            <kbd className="palette-kbd">{formatCombo('Mod+K', isMac)}</kbd>
           </button>
           <NotificationsButton httpBase={relayHttpUrl} sessionToken={sessionToken} />
           <button
@@ -1078,18 +1112,23 @@ export const Dashboard: React.FC<Props> = ({ userId, orgId, relayUrl, sessionTok
       {shortcuts && (
         <>
           <div className="scrim" onClick={() => setShortcuts(false)} />
-          <div className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape') setShortcuts(false) }}>
+          <div ref={shortcutsSheet} tabIndex={-1} className="sheet shortcuts-sheet" role="dialog" aria-modal="true" aria-label={t('Keyboard shortcuts')} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setShortcuts(false) } }}>
             <div className="sheet-title">{t('Keyboard shortcuts')}<button className="close" onClick={() => setShortcuts(false)} aria-label={t('Close')}>×</button></div>
+            {/* Each key written once, as code names it, and printed the way
+                this keyboard does: ⌘⇧A on a Mac, Ctrl+Shift+A elsewhere. */}
             {([
-              [t('Everywhere'), [['⌘K', t('Search, or jump anywhere')], ['N', t('Tell your AI')], ['⌘/', t('This list')]]],
+              [t('Everywhere'), [['Mod+K', t('Search, or jump anywhere')], ['N', t('Tell your AI')], ['Mod+/', t('This list')], ['Mod+1–9', t('Switch workspace')]]],
               [t('Cards'), [['A', t('Approve')], ['D', t('Decline')], ['J / K', t('Next / previous decision')], ['← →', t('Swipe the card')]]],
-              [t('List'), [['⌥↑ / ⌥↓', t('Previous / next conversation')], ['⌘⇧A', t('Activity')], ['⌘⇧D', t('Show or hide the sidebar')], ['⇧Esc', t('Mark all as read')], ['Esc', t('Close the pane')]]],
-              [t('Messages'), [['↑ / ↓', t('Previous / next message')], ['E', t('Edit message')], ['T', t('Reply in thread')], ['P', t('Pin to channel')], ['+', t('Add reaction')], ['⌫', t('Delete message')], ['⇧⌫', t('Delete without asking')], ['Esc', t('Back to the message box')]]],
-              [t('Writing'), [['Enter', t('Send')], ['⇧Enter', t('New line')], ['↑', t('Edit your last message')], ['⌘B / ⌘I', t('Bold / italic')], ['/', t('Commands')], ['@', t('Mention someone, or @AI')]]],
+              [t('List'), [['Alt+Up / Alt+Down', t('Previous / next conversation')], ['Alt+Shift+Up / Alt+Shift+Down', t('Previous / next unread conversation')], ['Mod+Shift+A', t('Activity')], ['Mod+Shift+D', t('Show or hide the sidebar')], ['Shift+Esc', t('Mark all as read')], ['Esc', t('Close the pane')]]],
+              [t('Messages'), [['Up / Down', t('Previous / next message')], ['E', t('Edit message')], ['T', t('Reply in thread')], ['P', t('Pin to channel')], ['+', t('Add reaction')], ['Backspace', t('Delete message')], ['Shift+Backspace', t('Delete without asking')], ['Esc', t('Back to the message box')]]],
+              [t('Writing'), [['Enter', t('Send')], ['Shift+Enter', t('New line')], ['Up', t('Edit your last message')], ['Mod+B / Mod+I', t('Bold / italic')], ['/', t('Commands')], ['@', t('Mention someone, or @AI')], ['Mod+Enter', t('Save the canvas')]]],
             ] as Array<[string, string[][]]>).map(([group, rows]) => (
               <section key={group} className="shortcuts-group">
                 <h3>{group}</h3>
-                <dl>{rows.map(([k, what]) => <div key={k}><dt><kbd>{k}</kbd></dt><dd>{what}</dd></div>)}</dl>
+                {/* A cap for each alternative, so a long pair ("Alt+Shift+↑ /
+                    Alt+Shift+↓") breaks between the two and leaves room
+                    for what it does. */}
+                <dl>{rows.map(([k, what]) => <div key={k}><dt>{formatCombo(k, isMac).split(' / ').map((one, i) => <React.Fragment key={one}>{i > 0 && '/'}<kbd>{one}</kbd></React.Fragment>)}</dt><dd>{what}</dd></div>)}</dl>
               </section>
             ))}
           </div>

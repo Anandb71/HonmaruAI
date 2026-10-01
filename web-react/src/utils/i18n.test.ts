@@ -23,3 +23,29 @@ describe('a language chosen before its table is here', () => {
     changeLocale('en')
   })
 })
+
+// A hint that names a key is given the key as this keyboard prints it; a ⌘
+// written into the sentence is a key most keyboards do not have.
+describe('the canvas hint', () => {
+  beforeEach(() => {
+    vi.stubGlobal('document', { documentElement: {} })
+    const store = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v) },
+      removeItem: (k: string) => { store.delete(k) },
+    })
+  })
+
+  it('prints the key it is handed, in every language, and none of its own', async () => {
+    for (const code of ['en', 'ja', 'fr', 'de', 'es']) {
+      changeLocale(code)
+      await localeReady()
+      const hint = t('canvas.syntax', { key: 'Ctrl+Enter' })
+      expect(hint, code).toContain('Ctrl+Enter')
+      expect(hint, code).not.toContain('⌘')
+      expect(hint, code).not.toContain('{key}')
+    }
+    changeLocale('en')
+  })
+})

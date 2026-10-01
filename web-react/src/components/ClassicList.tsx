@@ -54,6 +54,9 @@ import { foldedRows, sectionBadge, visibleRows, stepRow, readFolds, writeFolds, 
 import { placesFrom } from '../utils/places'
 import type { Place as Conversation } from '../utils/places'
 import { useAppearance } from '../utils/appearance'
+import { visibleOrder, step, foldedHome } from '../utils/sidebarOrder'
+import type { SidebarGroup } from '../utils/sidebarOrder'
+import { isMacPlatform, formatCombo, hasPrimaryMod } from '../utils/keys'
 import './ClassicList.css'
 
 /// What was done, as a word rather than the verb the API uses — the same
@@ -123,6 +126,10 @@ interface Props {
   onStatus?: (tab: HTMLButtonElement) => void
   /// That popover is open now, for the tab to say so.
   statusOpen?: boolean
+  /// False while something of the shell's is over the list — the palette,
+  /// a screen, a panel, the shortcuts sheet: the list's keys wait, so ⇧Esc
+  /// typed there does not mark everything read underneath.
+  active?: boolean
 }
 
 /// One conversation in the sidebar: a channel (a business), a person, or an app.
@@ -199,6 +206,19 @@ interface Face { name: string; url?: string | null; emoji?: string | null; pictu
 interface ThreadItem { parent: ChannelMessage; replies: ChannelMessage[]; replyCount: number; lastReplyAt: string; unread: boolean }
 /// Your sidebar's own arrangement.
 interface SidebarLayout { starred: string[]; sections: Array<{ id: string; name: string; views: string[]; collapsed?: boolean }>; order?: string[] }
+/// A group of the sidebar as it is drawn: its conversations, and what goes
+/// around them.
+interface SidebarSection extends SidebarGroup<Thread> {
+  label: string
+  /// Said when it holds nothing.
+  empty: string
+  /// Beside its heading: the "+" that adds to it, or the × that removes it.
+  action?: React.ReactNode
+  /// Under its rows: what that "+" opened.
+  below?: React.ReactNode
+  /// Its conversations, dragged into a new order.
+  reorder?: (views: string[]) => void
+}
 /// A user group: "@handle" names everyone in it.
 interface UserGroup { handle: string; name: string; refs: string[]; createdBy: string | null }
 interface ActivityItem { key?: string; type: 'mention' | 'reply' | 'reaction' | 'keyword'; message: ChannelMessage; unread: boolean; at?: string; emoji?: string; by?: string | null; byAvatar?: string | null; keyword?: string }
@@ -226,6 +246,9 @@ const messageIdsOf = (keys: string[]) => keys.filter((k) => k.startsWith('m:')).
 function seenAt(orgId: string, view: string): string {
   try { return localStorage.getItem(seenKey(orgId, view)) || '' } catch { return '' }
 }
+
+/// ⇧Esc on a Mac, Shift+Esc elsewhere, where the list prints a key.
+const isMac = isMacPlatform()
 
 const WIDE = '(min-width: 720px)'
 const isWide = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(WIDE).matches
@@ -263,7 +286,7 @@ function when(iso?: string): string {
 export const ClassicList: React.FC<Props> = ({
   userId, orgName, pending, sent, decided, businesses, presence,
   onOpen, onNudge, onDecide, api, onSearch, onCompose, onTellAI, onDeleteCard, onViewChange, onOpenRecord, onImmersive, renderCard, onWorkspace, workspaceMenu,
-  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, onPlaces, onStatus, statusOpen,
+  onCreateChannel, onRenameChannel, onDeleteChannel, onOpenScreen, onPlaces, onStatus, statusOpen, active = true,
 }) => {
   const t = useT()
   // Cozy or compact, as chosen on You: the stylesheet does the rest.
@@ -945,7 +968,7 @@ export const ClassicList: React.FC<Props> = ({
     if (th.fresh || (mentionsIn[v] || 0) > 0) {
       out.push({ kind: 'item', label: t('Mark as read'), icon: 'check', onSelect: () => markViewRead(v), data: 'mark-read' })
     }
-    if (others > 0) out.push({ kind: 'item', label: t('Mark all as read'), hint: '⇧Esc', onSelect: markEverythingRead, data: 'mark-all-read' })
+    if (others > 0) out.push({ kind: 'item', label: t('Mark all as read'), hint: formatCombo('Shift+Esc', isMac), onSelect: markEverythingRead, data: 'mark-all-read' })
     if (out.length) out.push({ kind: 'sep' })
     if (isChannel || th.kind === 'group') {
       out.push({ kind: 'item', label: isChannel ? t('Channel details') : t('Conversation details'), icon: 'users', data: 'details', submenu: [
@@ -1074,21 +1097,48 @@ export const ClassicList: React.FC<Props> = ({
     return () => window.removeEventListener('honmaru:members-changed', on)
   }, [profileRef, readProfile])
 
-  // Keys a chat client has: ⌥↑/⌥↓ between conversations, ⌘⇧A Activity,
-  // ⌘⇧D the sidebar.
+  // Keys a chat client has: ⌥↑/⌥↓ between conversations in the order the
+  // sidebar shows them (a folded group's are out of sight, and skipped),
+  // ⌥⇧↑/⌥⇧↓ between the ones with something new — a fold does not hide
+  // those: the jump opens the group — ⌘⇧A Activity, ⌘⇧D the sidebar. None
+  // of them while the shell has something over the list.
   const [sideHidden, setSideHidden] = useState(false)
+  /// Set when a key, not a click, chose the conversation: its row can be past
+  /// the edge of a long sidebar, and is brought into view once it is drawn
+  /// (after the render that lights it, and unfolds its group).
+  const walked = useRef(false)
+  useLayoutEffect(() => {
+    if (!walked.current) return
+    walked.current = false
+    document.querySelector('.slk-sections .cl-section .cl-thread.on')?.scrollIntoView({ block: 'nearest' })
+  })
   useEffect(() => {
+    if (!active) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        // The rows as the sidebar shows them, in its order: never one a
-        // folded section hides.
-        const next = stepRow(visibleRows(sideLists, folded, foldContext()), current?.key, e.key === 'ArrowDown')
-        if (!next) return
+      if (e.isComposing || e.keyCode === 229) return
+      const mod = hasPrimaryMod(e, isMac)
+      if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        // With no conversation at all the keys are not the list's to take.
+        const all = visibleOrder(sidebarGroups, {})
+        if (!all.length) return
         e.preventDefault()
+        // Under Activity or Later no row is lit: down starts at the top.
+        const here = special ? null : current?.key ?? null
+        // The unread jump looks inside folded groups too: a folded heading
+        // counts the cards waiting in it, and a dot or an @ in one shows
+        // nowhere else, so "Nothing unread" there would be untrue.
+        const list = e.shiftKey ? all : visibleOrder(sidebarGroups, folded)
+        const next = step(list, here, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey ? hasNews : undefined)
+        if (!next) { setToast(e.shiftKey ? t('Nothing unread') : t('Every section is folded')); return }
+        // The only one with something new is the one open.
+        if (next.key === here) { if (e.shiftKey) setToast(t('Nothing else unread')); return }
+        const home = foldedHome(sidebarGroups, folded, next.key)
+        if (home) setFolded((p) => ({ ...p, [home]: false }))
+        walked.current = true
         choose(next.key)
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+      } else if (mod && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault(); openActivity()
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+      } else if (mod && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault(); setSideHidden((h) => !h)
       } else if (e.shiftKey && e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault(); markEverythingRead()
@@ -1181,7 +1231,7 @@ export const ClassicList: React.FC<Props> = ({
     )
   }
 
-  const section = (id: string, label: string, threads: Thread[], empty: string, action?: React.ReactNode, below?: React.ReactNode, reorder?: (views: string[]) => void) => {
+  const section = (id: string, label: string, threads: readonly Thread[], empty: string, action?: React.ReactNode, below?: React.ReactNode, reorder?: (views: string[]) => void) => {
     const views = threads.map((th) => th.view).filter((v): v is string => Boolean(v))
     const place = reorder ? (to: { view: string; after: boolean }, from: string) => { if (views.includes(from)) reorder(moved(views, from, to)) } : undefined
     const shut = Boolean(folded[id])
@@ -1247,6 +1297,38 @@ export const ClassicList: React.FC<Props> = ({
       </label>
     </form>
   ) : null
+
+  /// The sidebar's groups, top to bottom as drawn: Starred, your sections,
+  /// Channels in your order, direct messages, Agents, Apps. The sidebar is
+  /// drawn from this and the keys walk it, so the two cannot disagree.
+  const starredThreads = layout.starred.map(byView).filter((x): x is Thread => Boolean(x))
+  const sidebarGroups: SidebarSection[] = [
+    // Starred first, then your sections; what they hold leaves the defaults.
+    ...(starredThreads.length > 0 ? [{ id: 'starred', label: t('Starred'), items: starredThreads, empty: '', reorder: (views: string[]) => saveLayout({ ...layout, starred: views }) }] : []),
+    ...layout.sections.map((x) => ({
+      id: `sec:${x.id}`,
+      label: x.name,
+      items: x.views.map(byView).filter((th): th is Thread => Boolean(th) && !isStarred(th!.view!)),
+      empty: t('Move a conversation here from its header.'),
+      action: (
+        <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
+          <Icon name="x" size={12} />
+        </button>
+      ),
+      reorder: (views: string[]) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) }),
+    })),
+    {
+      id: 'channels', label: t('Channels'), items: inYourOrder(channels.filter(unplaced)),
+      empty: t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'),
+      action: addChannel, below: addChannelForm,
+      // Drag to reorder: the channels shown here in their new order,
+      // then any placed elsewhere, as they were.
+      reorder: (views: string[]) => saveLayout({ ...layout, order: [...views, ...inYourOrder(channels).map((th) => th.view!).filter((v) => v && !views.includes(v))] }),
+    },
+    { id: 'people', label: t('Direct messages'), items: people.filter(unplaced), empty: t('Nobody has sent you a decision yet.') },
+    ...(agents.length > 0 ? [{ id: 'agents', label: t('Agents'), items: agentConvos.filter(unplaced), empty: t('Talk to one of your team’s agents: it answers you here.'), action: addAgent, below: agentPicker }] : []),
+    { id: 'apps', label: t('Apps'), items: apps, empty: t('Connect Gmail or Slack under Tools and their decisions land here.') },
+  ]
 
   // ---- What is said ----
 
@@ -1421,9 +1503,14 @@ export const ClassicList: React.FC<Props> = ({
   }
   /// "Mark as read" from the sidebar, without opening it.
   const markViewRead = (v: string) => { readOnServer(v, readHere(v)) }
+  /// A dot or an @ waiting in it.
+  const isFresh = (th: Thread) => Boolean(th.view && (th.fresh || (mentionsIn[th.view] || 0) > 0))
+  /// Where ⌥⇧↑/⌥⇧↓ stop: a dot or an @, or cards waiting on you, which
+  /// reading does not clear.
+  const hasNews = (th: Thread) => th.unread > 0 || isFresh(th)
   /// Everything new, read at once — ⇧Esc, as in Slack: every conversation
   /// with a dot or an @ waiting, and Activity with them.
-  const freshViews = () => everything.filter((th) => th.view && (th.fresh || (mentionsIn[th.view] || 0) > 0)).map((th) => th.view!)
+  const freshViews = () => everything.filter(isFresh).map((th) => th.view!)
   const markEverythingRead = () => {
     const views = freshViews()
     const activityNew = (activityItems || []).some((i) => i.unread)
@@ -2929,8 +3016,10 @@ export const ClassicList: React.FC<Props> = ({
     }
     setJamBusy(false)
   }
+  // Escape closes the pane — unless the shell has something over the list:
+  // that Escape is for the screen or panel on top, not the pane under it.
   useEffect(() => {
-    if (!detailId && !thread) return
+    if (!active || (!detailId && !thread)) return
     const onKey = (e: KeyboardEvent) => {
       // An Escape a menu has already taken (a right-click menu over a
       // reply) closes that menu, not the thread under it as well.
@@ -2938,7 +3027,7 @@ export const ClassicList: React.FC<Props> = ({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [detailId, thread])
+  }, [active, detailId, thread])
   // A phone gives a conversation, or a decision, the whole screen.
   // A conversation, a card or a thread takes the whole phone; Activity and
   // Later are tabs, with the tab bar under them.
@@ -4710,22 +4799,17 @@ export const ClassicList: React.FC<Props> = ({
               </button>
             </li>
           </ul>
-          {starredRows.length > 0 && section('starred', t('Starred'), starredRows, '', undefined, undefined, (views) => saveLayout({ ...layout, starred: views }))}
-          {ownSections.map((x) => section(`sec:${x.id}`, x.name, x.threads, t('Move a conversation here from its header.'), (
-            <button type="button" className="cl-add cl-section-remove" onClick={() => { if (window.confirm(t('Remove the section “{name}”? Its conversations go back where they were.', { name: x.name }))) saveLayout({ ...layout, sections: layout.sections.filter((y) => y.id !== x.id) }) }} aria-label={t('Remove section')} title={t('Remove section')}>
-              <Icon name="x" size={12} />
-            </button>
-          ), undefined, (views) => saveLayout({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, views: [...views, ...y.views.filter((v) => !views.includes(v))] } : y)) })))}
-          {section('channels', t('Channels'), channelRows, t('No channels yet. Make one, or let your AI file decisions under a business as they arrive.'), addChannel, addChannelForm,
-            // Drag to reorder: the channels shown here in their new order,
-            // then any placed elsewhere, as they were.
-            (views) => saveLayout({ ...layout, order: [...views, ...inYourOrder(channels).map((th) => th.view!).filter((v) => v && !views.includes(v))] }))}
-          {section('people', t('Direct messages'), peopleRows, t('Nobody has sent you a decision yet.'))}
-          {agents.length > 0 && section('agents', t('Agents'), agentRows, t('Talk to one of your team’s agents: it answers you here.'), addAgent, agentPicker)}
-          <button type="button" className="cl-add-section" onClick={() => { setSectionName(''); setAddingSection({}) }} data-add-section="1">
-            <Icon name="plus" size={13} /> {t('Add a section')}
-          </button>
-          {section('apps', t('Apps'), apps, t('Connect Gmail or Slack under Tools and their decisions land here.'))}
+          {sidebarGroups.map((g) => (
+            <React.Fragment key={g.id}>
+              {/* Sections of your own are added just above Apps, which stays last. */}
+              {g.id === 'apps' && (
+                <button type="button" className="cl-add-section" onClick={() => { setSectionName(''); setAddingSection({}) }} data-add-section="1">
+                  <Icon name="plus" size={13} /> {t('Add a section')}
+                </button>
+              )}
+              {section(g.id, g.label, g.items, g.empty, g.action, g.below, g.reorder)}
+            </React.Fragment>
+          ))}
         </nav>
         </>}
       </aside>
