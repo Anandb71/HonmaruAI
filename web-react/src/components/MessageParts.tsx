@@ -409,6 +409,18 @@ export function renderRich(text: string, mentionClass: (name: string) => string)
         return
       }
       flushQuote(key)
+      // Discord's headings ("# ", "## ", "### ") and subtext ("-# "): a line
+      // of their own, so they end whatever list was open.
+      const heading = /^(#{1,3})\s+(\S.*)$/.exec(line)
+      const subtext = /^-#\s+(\S.*)$/.exec(line)
+      if (heading || subtext) {
+        flushList(key)
+        out.push(heading
+          ? <div key={key} className={`slk-h slk-h${heading[1].length}`} role="heading" aria-level={heading[1].length + 2}>{inline(heading[2], mentionClass)}</div>
+          : <div key={key} className="slk-subtext">{inline(subtext![1], mentionClass)}</div>)
+        afterBlock = true
+        return
+      }
       const bullet = /^\s*[-•*]\s+(.*)$/.exec(line)
       const number = /^\s*(\d+)[.)]\s+(.*)$/.exec(line)
       if (bullet && !/^\*[^*]+\*/.test(line.trim())) {
@@ -433,10 +445,27 @@ export function renderRich(text: string, mentionClass: (name: string) => string)
   return out
 }
 
+/// Discord's ||spoiler||: hidden under a bar until clicked (or Enter/Space),
+/// then it stays shown. Screen readers are told it is hidden, not the text.
+const Spoiler: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const t = useT()
+  const [shown, setShown] = useState(false)
+  if (shown) return <span className="slk-spoiler shown">{children}</span>
+  const reveal = (e: React.SyntheticEvent) => { e.preventDefault(); e.stopPropagation(); setShown(true) }
+  return (
+    <span className="slk-spoiler" role="button" tabIndex={0} aria-label={t('Spoiler, press to reveal')}
+      onClick={reveal} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') reveal(e) }}>
+      <span aria-hidden="true">{children}</span>
+    </span>
+  )
+}
+
 const JAM_AUDIO = /^https?:\/\/[^\s]+\/channels\/jam\/audio\/[0-9a-f-]{36}$/
 
 function inline(line: string, mentionClass: (name: string) => string): React.ReactNode[] {
-  const tokens = line.split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;]+|\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g)
+  // Doubled marks (Discord's ||spoiler||, __underline__, ~~strike~~) come
+  // before their single forms so "__a__" is not read as "_" + "_a_" + "_".
+  const tokens = line.split(/(`[^`\n]+`|https?:\/\/[^\s<>"）」|]+|:[a-z0-9_+-]{1,30}:|[@＠][^\s@＠,，。、!?！？:;|]+|\|\|[^|\n]+\|\||\*\*[^*\n]+\*\*|\*[^*\n]+\*|__[^_\n]+__|_[^_\n]+_|~~[^~\n]+~~|~[^~\n]+~)/g)
   // A line that is nothing but this workspace's emoji draws them large.
   const onlyEmoji = tokens.every((p) => !p || !p.trim() || (CUSTOM_EMOJI.test(p) && Boolean(customEmojiUrl(p))))
   return tokens.map((part, i) => {
@@ -451,9 +480,12 @@ function inline(line: string, mentionClass: (name: string) => string): React.Rea
     if (JAM_AUDIO.test(part)) return <audio key={i} className="slk-jam-audio" controls preload="none" src={part} />
     if (/^https?:\/\//.test(part)) return <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a>
     if (/^[@＠]/.test(part)) return <span key={i} className={mentionClass(part)}>{part}</span>
+    if (/^\|\|[^|]+\|\|$/.test(part)) return <Spoiler key={i}>{inline(part.slice(2, -2), mentionClass)}</Spoiler>
     if (/^\*\*[^*]+\*\*$/.test(part)) return <b key={i}>{inline(part.slice(2, -2), mentionClass)}</b>
     if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{inline(part.slice(1, -1), mentionClass)}</b>
+    if (/^__[^_]+__$/.test(part)) return <u key={i}>{inline(part.slice(2, -2), mentionClass)}</u>
     if (/^_[^_]+_$/.test(part)) return <i key={i}>{inline(part.slice(1, -1), mentionClass)}</i>
+    if (/^~~[^~]+~~$/.test(part)) return <s key={i}>{inline(part.slice(2, -2), mentionClass)}</s>
     if (/^~[^~]+~$/.test(part)) return <s key={i}>{inline(part.slice(1, -1), mentionClass)}</s>
     return <React.Fragment key={i}>{part}</React.Fragment>
   })

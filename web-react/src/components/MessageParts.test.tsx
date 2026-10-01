@@ -27,6 +27,37 @@ describe('renderRich', () => {
   })
 })
 
+// Discord's marks, beside Slack's.
+describe('renderRich, the Discord way', () => {
+  it('hides a ||spoiler|| until it is revealed, and keeps the words out of the accessible name', () => {
+    const out = html('the end: ||he was a ghost||!')
+    expect(out).toBe('the end: <span class="slk-spoiler" role="button" tabindex="0" aria-label="Spoiler, press to reveal"><span aria-hidden="true">he was a ghost</span></span>!')
+  })
+
+  it('formats inside a spoiler, and a link inside it stops at the bars', () => {
+    expect(html('||*big*||')).toContain('<span aria-hidden="true"><b>big</b></span>')
+    expect(html('||https://x.test/a||')).toContain('<a href="https://x.test/a"')
+  })
+
+  it('reads __underline__ and ~~strike~~ as one mark, not two single ones', () => {
+    expect(html('__under__')).toBe('<u>under</u>')
+    expect(html('~~gone~~')).toBe('<s>gone</s>')
+    expect(html('_it_ ~s~')).toBe('<i>it</i> <s>s</s>')
+  })
+
+  it('draws #, ## and ### headings and -# subtext as lines of their own', () => {
+    expect(html('# Big\ntext')).toBe('<div class="slk-h slk-h1" role="heading" aria-level="3">Big</div>text')
+    expect(html('### Small')).toBe('<div class="slk-h slk-h3" role="heading" aria-level="5">Small</div>')
+    expect(html('-# fine print')).toBe('<div class="slk-subtext">fine print</div>')
+  })
+
+  it('leaves #channel, #hashtags and a lone # as they are', () => {
+    expect(html('#general')).toBe('#general')
+    expect(html('#### four')).toBe('#### four')
+    expect(html('- a\n- b')).toBe('<ul class="slk-ul"><li>a</li><li>b</li></ul>')
+  })
+})
+
 // A composer box, as far as the format buttons touch it.
 function box(value: string, start: number, end = start) {
   const state = { value, el: { selectionStart: start, selectionEnd: end, focus() {}, setSelectionRange(a: number, b: number) { this.selectionStart = a; this.selectionEnd = b } } }
