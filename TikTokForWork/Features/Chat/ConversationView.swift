@@ -30,6 +30,9 @@ struct ConversationView: View {
     @ObservedObject var store: ChatStore
 
     @State private var draft = ""
+    /// What was being written when an edit began: back in the box when the
+    /// edit is done or cancelled. An edit's words are never kept as a draft.
+    @State private var keptDraft: String?
     @FocusState private var focused: Bool
     @State private var editing: ChatMessage?
     @State private var confirmDelete: ChatMessage?
@@ -134,7 +137,7 @@ struct ConversationView: View {
             // A new line in a quote or a list carries its mark on; a new line
             // on an empty marked line ends it — as on the web.
             if let carried = ChatFormat.continued(old: old, new: text), carried != text { draft = carried; return }
-            store.setDraft(view, text)
+            if editing == nil { store.setDraft(view, text) }
         }
         .sheet(item: $reactingTo) { m in ChatEmojiPicker { e in Task { await store.react(m, e) } } }
         .sheet(isPresented: $showThread) { ChatThreadSheet(store: store, onOpenCard: open(card:)) }
@@ -248,7 +251,7 @@ struct ConversationView: View {
         }
         Button { Task { await store.openThread(m) }; showThread = true } label: { Label("Reply in thread", systemImage: "bubble.left.and.bubble.right") }
         if m.mine && m.kind == "message" {
-            Button { editing = m; draft = m.body; focused = true } label: { Label("Edit message", systemImage: "pencil") }
+            Button { beginEdit(m) } label: { Label("Edit message", systemImage: "pencil") }
         }
         Button { UIPasteboard.general.string = m.body } label: { Label("Copy text", systemImage: "doc.on.doc") }
         Button {
@@ -325,7 +328,7 @@ struct ConversationView: View {
                     Label("Editing", systemImage: "pencil").font(.caption.weight(.semibold)).foregroundStyle(.orange)
                     Text(editing.body).font(.caption).lineLimit(1).foregroundStyle(Theme.Colors.textSecondary)
                     Spacer()
-                    Button("Cancel") { self.editing = nil; draft = "" }.font(.caption)
+                    Button("Cancel") { endEdit() }.font(.caption)
                 }.padding(.horizontal, 14)
             }
             slashSuggestions
@@ -654,7 +657,7 @@ struct ConversationView: View {
         }
         if let editing {
             await store.edit(editing, to: text)
-            self.editing = nil; draft = ""
+            endEdit()
             return
         }
         // A command, not a message.
@@ -664,7 +667,7 @@ struct ConversationView: View {
             let rest = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
             if name == "decide" {
                 guard !rest.isEmpty else { notes.append(String(localized: "Write what needs deciding after /decide.")); return }
-                if await store.send(view, text: rest, decide: true) { draft = "" }
+                if await store.send(view, text: rest, decide: true) { clearSent(text) }
                 return
             }
             if name == "schedule" {
@@ -672,19 +675,38 @@ struct ConversationView: View {
                     notes.append(String(localized: "Try /schedule 30m …, /schedule 2h …, /schedule tomorrow … or /schedule monday …")); return
                 }
                 if await store.send(view, text: parsed.text, at: parsed.at) {
-                    draft = ""
+                    clearSent(text)
                     notes.append(String(localized: "Scheduled for \(parsed.at.formatted(date: .abbreviated, time: .shortened))."))
                 }
                 return
             }
-            if let note = await store.command(view, name: name, rest: rest) { notes.append(note); draft = "" }
+            if let note = await store.command(view, name: name, rest: rest) { notes.append(note); clearSent(text) }
             return
         }
         if await store.send(view, text: text, decide: decide, at: at, files: attached) {
-            draft = ""
+            clearSent(text)
             attached = []
             if let at { notes.append(String(localized: "Scheduled for \(at.formatted(date: .abbreviated, time: .shortened)).")) }
         }
+    }
+
+    /// Sent: the box empties — unless more was written while it went, which
+    /// stays, and stays kept.
+    private func clearSent(_ text: String) {
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines) == text { draft = "" }
+    }
+
+    private func beginEdit(_ m: ChatMessage) {
+        if editing == nil { keptDraft = draft }
+        editing = m
+        draft = m.body
+        focused = true
+    }
+
+    private func endEdit() {
+        editing = nil
+        draft = keptDraft ?? store.draft(view)
+        keptDraft = nil
     }
 
     private func open(card id: String) {

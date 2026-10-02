@@ -810,6 +810,9 @@ await step('the app is usable on a laptop', async () => {
     throw new Error(`the composer is cramped on a laptop: ${JSON.stringify(composer)}`)
   }
   await d.screenshot({ path: `${SHOTS}/20-desktop-compose.png` })
+  // What the phone left half-written there came across with its storage,
+  // and is kept as a draft: emptied here, to press Send on nothing.
+  await d.fill('.create-decision textarea', '')
   // Send is never greyed out: pressed empty, it says what goes in the box.
   await d.click('.create-decision button:not(.mic)')
   await d.waitForSelector('.create-empty', { timeout: 5000 })
@@ -985,6 +988,13 @@ await step('a card has a thread: a comment with an @mention, and a reaction', as
   await d.waitForSelector('.workbench .reaction.mine', { timeout: 10000 })
     .catch(() => { throw new Error('the reaction did not stick') })
   await d.screenshot({ path: `${SHOTS}/34-thread.png` })
+  // A comment half-written under the card is still there after a reload.
+  await d.fill('.workbench .thread-box', 'half-written comment')
+  await d.reload()
+  await d.waitForSelector('.workbench .thread-box', { timeout: 15000 })
+  await d.waitForFunction(() => document.querySelector('.workbench .thread-box')?.value === 'half-written comment', null, { timeout: 5000 })
+    .catch(() => { throw new Error('a comment being written under a card was gone after a reload') })
+  await d.fill('.workbench .thread-box', '')
   // And the card's own count caught up, through the relay, so every list
   // can say "1 reply" without asking.
   await d.waitForFunction(() => /1 repl/.test(document.querySelector('.inbox')?.innerText || '') || true, null, { timeout: 5000 })

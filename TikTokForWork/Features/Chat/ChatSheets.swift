@@ -51,7 +51,12 @@ struct ChatThreadSheet: View {
                             guard let t = store.thread else { return }
                             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                             let both = alsoChannel
-                            Task { if await store.send(t.parent.channel, text: text, parentId: t.parent.id, alsoChannel: both) { draft = ""; alsoChannel = false } }
+                            Task {
+                                if await store.send(t.parent.channel, text: text, parentId: t.parent.id, alsoChannel: both) {
+                                    if draft.trimmingCharacters(in: .whitespacesAndNewlines) == text { draft = "" }
+                                    alsoChannel = false
+                                }
+                            }
                         } label: {
                             Image(systemName: "arrow.up").font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
                                 .frame(width: 44, height: 44).glassCircle(tint: Theme.Colors.accent)
@@ -64,9 +69,15 @@ struct ChatThreadSheet: View {
             .navigationTitle("Thread").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             // Its message deleted, the thread went with it: nothing left to show.
-            .onChange(of: store.thread?.parent.id) { old, new in
+            .onChange(of: store.thread?.parent.id, initial: true) { old, new in
                 alsoChannel = false
+                // A reply half-written in a thread is kept, per thread, and
+                // is there again when the thread is opened again.
+                draft = new.map { store.draft("thread:\($0)") } ?? ""
                 if old != nil && new == nil { dismiss() }
+            }
+            .onChange(of: draft) { _, text in
+                if let id = store.thread?.parent.id { store.setDraft("thread:\(id)", text) }
             }
             .sheet(item: $reactingTo) { m in ChatEmojiPicker { e in Task { await store.react(m, e) } } }
         }

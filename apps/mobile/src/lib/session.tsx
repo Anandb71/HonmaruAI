@@ -14,6 +14,7 @@ import { AppState } from 'react-native'
 import { Api, sessionEnded } from '@honmaru/core'
 import type { Me } from '@honmaru/protocol'
 import { registerForPush, unregisterPush, watchPushToken } from './push'
+import { clearDrafts } from './drafts'
 
 const TOKEN_KEY = 'honmaru.session'
 const ORG_KEY = 'honmaru.org'
@@ -133,6 +134,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await unregisterPush(api)
       await SecureStore.deleteItemAsync(TOKEN_KEY)
       await SecureStore.deleteItemAsync(ORG_KEY)
+      await clearDrafts()
       tokenRef.current = null
       setToken(null); setMe(null); setOrgId(null)
     },
