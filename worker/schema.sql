@@ -575,7 +575,10 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   reply_to_id   TEXT,
   /* The sender's own id for this post (`tmp-…`). A retry of a send that
      already landed returns this row instead of writing another. */
-  client_id     TEXT
+  client_id     TEXT,
+  /* A thread reply sent to the conversation as well ("Also send to
+     #channel"): one message, read in its thread and in the conversation. */
+  also_channel  INTEGER NOT NULL DEFAULT 0
 );
 /* The index for `client_id` is in migrations.sql, after the ALTER that adds
    it, for the same reason as `ref` above. */
@@ -634,7 +637,8 @@ CREATE TABLE IF NOT EXISTS scheduled_messages (
   parent_id     TEXT,
   send_at       TEXT NOT NULL,
   created_at    TEXT NOT NULL,
-  sent_at       TEXT
+  sent_at       TEXT,
+  also_channel  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_due ON scheduled_messages(sent_at, send_at);
 

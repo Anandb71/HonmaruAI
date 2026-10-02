@@ -1724,6 +1724,31 @@ await step('a message is edited, reacted to, answered in a thread, pinned and un
     await d.click('.row-menu [data-row-menu="react:✅"]')
     await d.waitForSelector(`${reply} .slk-reaction.mine`, { timeout: 10000 })
       .catch(() => { throw new Error('a reaction from the right-click menu did not land') })
+    // A reply half-written in the thread is still there when it is opened again.
+    await d.fill('.slk-thread-pane textarea', 'half-written reply')
+    await d.click('.slk-thread-pane .slk-pane-close')
+    await d.hover(msg)
+    await d.click(`${msg} .slk-tools [aria-label="Reply in thread"]`)
+    await d.waitForFunction(() => document.querySelector('.slk-thread-pane textarea')?.value === 'half-written reply', null, { timeout: 5000 })
+      .catch(() => { throw new Error('a reply being written in a thread was gone when the thread was opened again') })
+    await d.fill('.slk-thread-pane textarea', '')
+    // "Also send to #channel": the reply is in the thread and in the
+    // channel, saying which thread it answers; the box is plain again after.
+    await d.check('.slk-thread-pane [data-also-channel] input')
+    await d.fill('.slk-thread-pane textarea', '2pm confirmed for everyone')
+    await d.keyboard.press('Enter')
+    await d.waitForSelector('.slk-thread-pane .slk-msg:has-text("2pm confirmed") [data-also-sent]', { timeout: 10000 })
+      .catch(() => { throw new Error('a reply sent to the channel too does not say so in its thread') })
+    const both = '.slk-main .slk-msg:has-text("2pm confirmed")'
+    await d.waitForSelector(`${both} [data-thread-reply]:has-text("Check-in")`, { timeout: 10000 })
+      .catch(() => { throw new Error('a reply sent to the channel too is not in the channel, under the thread it answers') })
+    if (await d.isChecked('.slk-thread-pane [data-also-channel] input')) throw new Error('"Also send to the channel" stayed on for the next reply')
+    await d.screenshot({ path: `${SHOTS}/39g-also-channel.png` })
+    await d.click('.slk-thread-pane .slk-pane-close')
+    // Its line opens the thread it is in.
+    await d.click(`${both} [data-thread-reply]`)
+    await d.waitForSelector('.slk-thread-pane .slk-msg:has-text("Housekeeping")', { timeout: 10000 })
+      .catch(() => { throw new Error('the thread line on a reply in the channel did not open its thread') })
     await d.click('.slk-thread-pane .slk-pane-close')
     // Pinned, and listed under the pin.
     await d.hover(msg)
@@ -2170,6 +2195,12 @@ await step('people talk in a channel, and @AI turns what was said into a decisio
     await d.click('.cl-thread:has(.cl-own-mark) .cl-open')
     await d.waitForSelector('.slk-head h1:has-text("Your AI")', { timeout: 10000 })
     const aiCount = await d.$$eval('.slk-msg', (els) => els.length)
+    // What is half-written to your AI waits for you, as in any conversation.
+    await d.fill('.slk-input', 'half-written ask for my AI')
+    await d.click('[data-activity="1"]')
+    await d.click('.cl-thread:has(.cl-own-mark) .cl-open')
+    await d.waitForFunction(() => document.querySelector('.slk-input')?.value === 'half-written ask for my AI', null, { timeout: 5000 })
+      .catch(() => { throw new Error('what was being written to Your AI was gone when it was opened again') })
     await d.fill('.slk-input', 'Approve the new aprons for the kitchen staff')
     await d.keyboard.press('Enter')
     await d.waitForFunction((n) => document.querySelectorAll('.slk-msg').length > n && !document.querySelector('.sheet-compose'), aiCount, { timeout: 25000 })

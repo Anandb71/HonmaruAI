@@ -33,7 +33,7 @@ import { useCustomEmoji, loadCustomEmoji, customEmojiUrl } from '../utils/custom
 import { messageContextEntries, messageMenuTriggers, type MessageMenuActions } from '../utils/messageMenu'
 import { rememberEmoji, useQuickReactions } from '../utils/emojiSearch'
 import { DailyReportDraft } from './DailyReport'
-import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, TypingLine, ReplyQuoteLine, ReplyingBar, UnsentNote } from './MessageParts'
+import { MessageActions, CardActions, Reactions, EmojiPicker, EmojiPickerAt, EmojiGlyph, FormatBar, continueBlock, renderRich, LinkCards, SlashMenu, SchedulePicker, parseScheduleCommand, TypingLine, ReplyQuoteLine, ThreadReplyLine, ReplyingBar, UnsentNote } from './MessageParts'
 import { heard as heardTyping, said, expire, nextExpiry as nextTypingExpiry, typistsIn, typedIn, stoppedIn, sendTyping } from '../utils/typing'
 import type { Typist, TypingEvent, Outgoing as TypingOut, Place, Signal } from '../utils/typing'
 import { quoteOf, refreshQuotes } from '../utils/replies'
@@ -1598,6 +1598,8 @@ export const ClassicList: React.FC<Props> = ({
           if (held?.failed) queueMicrotask(() => settle(held.id))
           return { ...prev, replies: arrive(prev.replies, msg) }
         })
+        // Sent to the conversation too: there as well.
+        if (m.alsoChannel) inConversationToo(m.channel, msg)
         if (m.kind === 'ai') setThinking((prev) => ({ ...prev, [m.channel]: false }))
         if (m.kind === 'agent') agentDone(m.channel, m.agent?.id)
         return
@@ -1833,12 +1835,12 @@ export const ClassicList: React.FC<Props> = ({
       const res = await fetch(`${api.httpBase}/channels/messages`, {
         method: 'POST',
         headers: { ...authHeaders, 'content-type': 'application/json' },
-        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId } : {}), sendAt }),
+        body: JSON.stringify({ orgId: api.orgId, channel, body, decide, ...(parentId ? { parentId, ...(threadAlso ? { alsoChannel: true } : {}) } : {}), sendAt }),
       }).catch(() => null)
       const data = res ? await res.json().catch(() => ({})) : {}
       scheduling.current.delete(key)
       if (!res?.ok || !data.scheduled) { setProblem(res && !res.ok ? refusal(data) : t('That did not send. Try again.')); return }
-      if (parentId) setThreadDraft(''); else clearDraftOf(channel)
+      if (parentId) { setThreadDraft(''); setThreadAlso(false) } else clearDraftOf(channel)
       setScheduled((prev) => [...prev, data.scheduled].sort((a, b) => a.sendAt.localeCompare(b.sendAt)))
       note(channel, t('Scheduled for {when}.', { when: new Date(data.scheduled.sendAt).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }))
       return
@@ -1848,12 +1850,13 @@ export const ClassicList: React.FC<Props> = ({
     // The conversation's own box answers the message it is replying to: the
     // quote rides on the copy shown at once, and on a retry or a reload.
     const quoting = !parentId && replyingTo?.view === channel ? replyingTo.quote : null
-    const temp = { ...tempMessage({ channel, body, parentId, files }, { name: myName || null, ref: myRef || null, avatar: myAvatar }, sendTime(parentId ? undefined : messagesRef.current[channel])), ...(quoting ? { replyTo: quoting } : {}) }
+    const temp = { ...tempMessage({ channel, body, parentId, files }, { name: myName || null, ref: myRef || null, avatar: myAvatar }, sendTime(parentId ? undefined : messagesRef.current[channel])), ...(quoting ? { replyTo: quoting } : {}), ...(parentId && threadAlso ? { alsoChannel: true } : {}) }
     if (quoting) setReplyingTo(null)
     // Sent: nobody is typing in this box any more.
     stoppedTyping({ channel, parentId: parentId || null })
     if (parentId) {
       setThreadDraft('')
+      setThreadAlso(false)
       setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: [...prev.replies, temp] } : prev))
     } else {
       clearDraftOf(channel)
@@ -1889,7 +1892,7 @@ export const ClassicList: React.FC<Props> = ({
     const res = await fetch(`${api.httpBase}/channels/messages`, {
       method: 'POST',
       headers: { ...authHeaders, 'content-type': 'application/json' },
-      body: JSON.stringify({ orgId: api.orgId, channel, body, decide, clientId: tempId, ...(parentId ? { parentId } : {}), ...(out.said.replyTo?.id ? { replyTo: out.said.replyTo.id } : {}), ...(files.length ? { files: files.map((f) => f.id) } : {}) }),
+      body: JSON.stringify({ orgId: api.orgId, channel, body, decide, clientId: tempId, ...(parentId ? { parentId, ...(out.said.alsoChannel ? { alsoChannel: true } : {}) } : {}), ...(out.said.replyTo?.id ? { replyTo: out.said.replyTo.id } : {}), ...(files.length ? { files: files.map((f) => f.id) } : {}) }),
       signal: ctrl.signal,
     }).catch(() => null)
     const data = res ? await res.json().catch(() => ({})) : {}
@@ -1925,6 +1928,7 @@ export const ClassicList: React.FC<Props> = ({
       setMessages((prev) => ({ ...prev, [channel]: (prev[channel] || []).map((x) => (x.id !== parentId ? x
         : parent ? { ...x, replyCount: Math.max(parent.replyCount || 0, x.replyCount || 0), lastReplyAt: parent.lastReplyAt || msg.createdAt, replyRefs: parent.replyRefs || x.replyRefs }
           : { ...x, replyCount: (x.replyCount || 0) + 1, lastReplyAt: msg.createdAt })) }))
+      if (msg.alsoChannel) inConversationToo(channel, msg)
       if (data.deciding) setThinking((prev) => ({ ...prev, [channel]: 'reading' }))
       return msg
     }
@@ -1987,7 +1991,8 @@ export const ClassicList: React.FC<Props> = ({
     const real = landedCopy(m, fresh)
     if (real && !m.refused) {
       if (m.parentId) setThread((prev) => (prev && prev.parent.id === m.parentId ? { ...prev, replies: reconcile(prev.replies, m.id, real) } : prev))
-      else setMessages((prev) => (prev[m.channel] ? { ...prev, [m.channel]: reconcile(prev[m.channel], m.id, real) } : prev))
+      if (m.parentId && real.alsoChannel) inConversationToo(m.channel, real)
+      else if (!m.parentId) setMessages((prev) => (prev[m.channel] ? { ...prev, [m.channel]: reconcile(prev[m.channel], m.id, real) } : prev))
       settle(m.id)
       return
     }
@@ -2015,6 +2020,7 @@ export const ClassicList: React.FC<Props> = ({
     outbox.current.delete(tempId)
     keepOutbox(tempId)
     if (parentId) setThread((prev) => (prev && prev.parent.id === parentId ? { ...prev, replies: prev.replies.filter((x) => x.id !== tempId) } : prev))
+    if (parentId) setMessages((prev) => (prev[channel]?.some((x) => x.id === tempId) ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== tempId) } : prev))
     else setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== tempId) } : prev))
   }
   /// Delete: it was only ever here, so it just goes — still on its way, it
@@ -2032,21 +2038,27 @@ export const ClassicList: React.FC<Props> = ({
     try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i) || ''; if (k.startsWith(`draft:${api.orgId}:`) && localStorage.getItem(k)) out[k.slice(`draft:${api.orgId}:`.length)] = true } } catch { /* none kept */ }
     return out
   })
-  const draftCount = Object.keys(drafts).filter((v) => drafts[v] && everything.some((x) => x.view === v)).length
+  // Where a draft is kept: the conversation's channel, or — for Your AI,
+  // which has a box but no channel — its row (`app:ai`). Without that, what
+  // was written to your AI was never kept, and went the moment you looked
+  // somewhere else.
+  const draftId = current?.view || (current?.app === 'ai' ? current.key : undefined)
+  const isDraftOf = (x: Thread, v: string) => x.view === v || (x.app === 'ai' && x.key === v)
+  const draftCount = Object.keys(drafts).filter((v) => drafts[v] && everything.some((x) => isDraftOf(x, v))).length
   const draftView = useRef<string | undefined>(undefined)
   // Before paint, so a conversation never shows an empty box first.
   useLayoutEffect(() => {
     // Leaving a conversation keeps what was being written there; arriving
     // brings back what was being written here.
-    draftView.current = view
+    draftView.current = draftId
     let kept = ''
-    try { kept = view ? localStorage.getItem(draftKey(view)) || '' : '' } catch {}
+    try { kept = draftId ? localStorage.getItem(draftKey(draftId)) || '' : '' } catch {}
     setDraft(kept)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view])
+  }, [draftId])
   useEffect(() => {
     const v = draftView.current
-    if (!v || v !== view) return
+    if (!v || v !== draftId) return
     try { if (draft) localStorage.setItem(draftKey(v), draft); else localStorage.removeItem(draftKey(v)) } catch {}
     setDrafts((prev) => (Boolean(prev[v]) === Boolean(draft) ? prev : { ...prev, [v]: Boolean(draft) }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2275,7 +2287,40 @@ export const ClassicList: React.FC<Props> = ({
   /// The thread open beside the conversation, whose agents write there.
   const threadOpenParent = thread?.parent.id || null
   const [threadDraft, setThreadDraft] = useState('')
+  /// "Also send to #channel" under the thread's box: for the next reply only.
+  const [threadAlso, setThreadAlso] = useState(false)
+  /// A thread reply sent to the conversation too, put there as well — or,
+  /// unsent, taken from there — when the conversation is loaded.
+  const inConversationToo = (channel: string, msg: ChannelMessage) => {
+    setMessages((prev) => {
+      const list = prev[channel]
+      if (!list) return prev
+      if (msg.deleted) return list.some((x) => x.id === msg.id) ? { ...prev, [channel]: list.filter((x) => x.id !== msg.id) } : prev
+      return { ...prev, [channel]: arrive(list, msg) }
+    })
+  }
   const threadComposer = useRef<HTMLTextAreaElement>(null)
+  // A reply being written in a thread is kept too, per thread: it used to
+  // start empty every time the thread was opened, so a half-written reply
+  // was gone the moment you looked at something else.
+  const threadDraftKey = (parentId: string) => draftKey(`thread:${parentId}`)
+  const threadDraftOf = useRef<string | null>(null)
+  const threadParentId = thread?.parent.id || null
+  useLayoutEffect(() => {
+    if (threadDraftOf.current === threadParentId) return
+    threadDraftOf.current = threadParentId
+    let kept = ''
+    try { kept = threadParentId ? localStorage.getItem(threadDraftKey(threadParentId)) || '' : '' } catch { /* none kept */ }
+    setThreadDraft(kept)
+    setThreadAlso(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadParentId])
+  useEffect(() => {
+    const id = threadDraftOf.current
+    if (!id || id !== threadParentId) return
+    try { if (threadDraft) localStorage.setItem(threadDraftKey(id), threadDraft); else localStorage.removeItem(threadDraftKey(id)) } catch { /* not kept */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadDraft])
   // A thread's box grows with what is written, as the channel's does: it stayed one line tall and scrolled from the
   // second line on.
   useEffect(() => {
@@ -2405,6 +2450,7 @@ export const ClassicList: React.FC<Props> = ({
       setThread((prev) => (prev && prev.parent.id === msg.parentId
         ? { ...prev, replies: msg.deleted ? prev.replies.filter((x) => x.id !== msg.id) : prev.replies.map((x) => (x.id === msg.id ? msg : x)) }
         : prev))
+      if (msg.alsoChannel) inConversationToo(channel, msg)
       return
     }
     setMessages((prev) => {
@@ -2515,6 +2561,7 @@ export const ClassicList: React.FC<Props> = ({
     if (!res?.ok) return { gone: false, error: (typeof data.message === 'string' && data.message) || t('That did not work. Try again.') }
     if (data.message && typeof data.message === 'object') replaceMessage(channel, data.message as ChannelMessage)
     // Gone here at once, and its thread with it.
+    if (m.alsoChannel) setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
     if (!m.parentId) {
       setMessages((prev) => (prev[channel] ? { ...prev, [channel]: prev[channel].filter((x) => x.id !== m.id) } : prev))
       setThread((prev) => (prev && prev.parent.id === m.id ? null : prev))
@@ -2578,11 +2625,15 @@ export const ClassicList: React.FC<Props> = ({
     }
   })
   const togglePin = (channel: string, m: ChannelMessage) => void act('POST', '/channels/pins', channel, { messageId: m.id, pinned: !m.pinned })
-  const openThread = async (channel: string, m: ChannelMessage) => {
+  const openThread = async (channel: string, m: ChannelMessage): Promise<void> => {
+    // A reply shown in the conversation opens the thread it is in.
+    if (m.parentId) {
+      const head = (messagesRef.current[channel] || []).find((x) => x.id === m.parentId)
+      return openThread(channel, head || { id: m.parentId, channel, kind: m.threadParent?.kind || 'message', body: m.threadParent?.excerpt || '', authorName: m.threadParent?.authorName || null, authorRef: m.threadParent?.authorRef || null, createdAt: m.createdAt } as ChannelMessage)
+    }
     setDetailId(null)
     setProfile(null)
     setThread((prev) => ({ channel, parent: m, replies: prev && prev.parent.id === m.id ? prev.replies.filter(isTemp) : [] }))
-    setThreadDraft('')
     const res = await fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(m.id)}`, { headers: authHeaders }).catch(() => null)
     const data = res?.ok ? await res.json().catch(() => null) : null
     // Replies of yours still on their way, or that did not go — sent while
@@ -2605,7 +2656,6 @@ export const ClassicList: React.FC<Props> = ({
     const data = res?.ok ? await res.json().catch(() => null) : null
     if (!data?.parent) { setThread(null); return }
     threadInActivity.current = true
-    setThreadDraft('')
     const back = heldFor(channel, parentId, data.replies || [])
     setThread((prev) => ({ channel, parent: data.parent, replies: withHeld(keepTemps(data.replies || [], prev && prev.parent.id === parentId ? prev.replies : undefined), back) }))
     markThreadRead(channel, parentId)
@@ -3770,14 +3820,14 @@ export const ClassicList: React.FC<Props> = ({
   /// Drafts & sent: what you started writing and left, each where it
   /// waits, and what you said, newest first — as a chat client keeps them.
   const draftList = () => Object.keys(drafts).filter((v) => drafts[v]).flatMap((v) => {
-    const th = everything.find((x) => x.view === v)
+    const th = everything.find((x) => isDraftOf(x, v))
     let text = ''
     try { text = localStorage.getItem(draftKey(v)) || '' } catch { /* none kept */ }
     return th && text ? [{ view: v, th, text }] : []
   })
   const discardDraft = (v: string) => {
     try { localStorage.removeItem(draftKey(v)) } catch { /* nothing kept */ }
-    if (current?.view === v) setDraft('')
+    if (draftId === v) setDraft('')
     setDrafts((prev) => { const next = { ...prev }; delete next[v]; return next })
   }
   const sentView = () => {
@@ -3995,6 +4045,7 @@ export const ClassicList: React.FC<Props> = ({
                 }, (
                   <>
                     {words(thread.channel, m)}
+                    {i > 0 && m.alsoChannel && <div className="slk-also-sent" data-also-sent={m.id}>{t('Also sent to the conversation')}</div>}
                     {m.cardId && cardsById.get(m.cardId) && attachment(cardsById.get(m.cardId)!)}
                     {underneath(thread.channel, m, true)}
                   </>
@@ -4037,6 +4088,13 @@ export const ClassicList: React.FC<Props> = ({
               <button type="button" className="slk-attach" onClick={() => threadAttachInput.current?.click()} aria-label={t('Attach files')} title={t('Attach files')}><Icon name="paperclip" size={17} /></button>
               <input ref={threadAttachInput} type="file" multiple hidden onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) threadUploads.add(files, thread.channel) }} />
               <FormatBar target={threadComposer} value={threadDraft} set={setThreadDraft} />
+              <label className="slk-also-channel" data-also-channel="1">
+                <input type="checkbox" checked={threadAlso} onChange={(e) => setThreadAlso(e.target.checked)} />
+                <span>{(() => {
+                  const where = everything.find((x) => x.view === thread.channel)
+                  return where?.kind === 'channel' ? t('Also send to {where}', { where: `#${where.name}` }) : t('Also send to the conversation')
+                })()}</span>
+              </label>
               <span className="slk-composer-hint" />
               <button type="submit" className="slk-send" disabled={threadUploads.busy || (!threadDraft.trim() && !threadUploads.ids.length)} aria-label={t('Send')}>
                 <Icon name="send" size={16} />
@@ -4162,10 +4220,13 @@ export const ClassicList: React.FC<Props> = ({
           const name = whoSaid(m)
           // A reply always shows whose it is, under the line it quotes.
           const quote = m.replyTo && !m.deleted ? m.replyTo : null
+          // A thread reply sent here too says which thread it answers.
+          const fromThread = !quote && m.parentId && m.alsoChannel && m.threadParent && !m.deleted ? m.threadParent : null
           out.push(block(keyOf(m), {
-            joined: joined && !m.pinned && !quote, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
+            joined: joined && !m.pinned && !quote && !fromThread, at: m.createdAt, app: '', name, face: faceOfMessage(m), badge: m.kind === 'agent' ? t('Agent') : undefined, msgId: m.id, pinned: m.pinned, authorRef: m.mine ? null : m.authorRef,
             mentionsMe: callsMe(m), tools: toolsFor(thread.view!, m), onHold: holdFor(thread.view!, m), onMenu: menuFor(thread.view!, m), state: tempState(m),
-            quote: quote && <ReplyQuoteLine quote={quote} name={quoteName(quote)} onJump={() => void goToQuoted(thread.view!, quote.id)} />,
+            quote: quote ? <ReplyQuoteLine quote={quote} name={quoteName(quote)} onJump={() => void goToQuoted(thread.view!, quote.id)} />
+              : fromThread ? <ThreadReplyLine quote={fromThread} onOpen={() => void openThread(thread.view!, m)} /> : undefined,
           }, (
             <>
               {words(thread.view!, m)}

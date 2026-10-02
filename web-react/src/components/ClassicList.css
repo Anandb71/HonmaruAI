@@ -435,6 +435,13 @@
 .classic.slk.slk .slk-input::placeholder { color: var(--slk-faint); }
 .classic.slk.slk .slk-composer-bar { display: flex; align-items: center; gap: 8px; padding: 4px 6px 6px 14px; }
 .classic.slk.slk .slk-composer-hint { flex: 1; min-width: 0; font-size: 11.5px; color: var(--slk-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.classic.slk.slk .slk-also-channel {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto;
+  font-size: 12.5px; color: var(--slk-muted, var(--slk-faint)); cursor: pointer; user-select: none;
+}
+.classic.slk.slk .slk-also-channel > input { margin: 0; flex: none; accent-color: #007a5a; }
+.classic.slk.slk .slk-also-channel > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.classic.slk.slk .slk-also-sent { margin-top: 2px; font-size: 12px; color: var(--slk-faint); }
 .classic.slk.slk .slk-send {
   flex: none; height: 30px; min-width: 34px; padding: 0 10px; border-radius: 6px; border: none; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

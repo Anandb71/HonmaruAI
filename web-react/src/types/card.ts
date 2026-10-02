@@ -210,6 +210,12 @@ export interface ChannelMessage {
   /// An inline reply (Discord's, not a thread): the message it answers, as
   /// that message is now.
   replyTo?: ReplyQuote | null
+  /// A thread reply sent to the conversation as well ("Also send to
+  /// #channel"): read in its thread and in the conversation.
+  alsoChannel?: boolean
+  /// With `alsoChannel`, in the conversation: the message the thread hangs
+  /// off, as it is now.
+  threadParent?: ReplyQuote | null
 }
 
 /// What a reply shows of the message it answers: who, and how it began —

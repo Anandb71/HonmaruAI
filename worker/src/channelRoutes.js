@@ -935,6 +935,9 @@ export async function handleChannels(request, env, url, { route, after }) {
     // An inline reply: the message it answers (postMessage checks it is here).
     const replyTo = typeof body.replyTo === "string" && body.replyTo ? body.replyTo : null;
     if (replyTo && body.sendAt) return json({ message: "A scheduled message cannot be a reply yet." }, 400);
+    // A thread reply can go to the conversation as well; anything else is
+    // in the conversation already.
+    const alsoChannel = Boolean(parentId) && body.alsoChannel === true;
     // The workspace's data rules read it before it is kept, sent now or later.
     const attached = Array.isArray(body.files) && body.files.length
       ? await attachedTexts(env, { orgId, key: resolved.key, login: who.user.login, ids: body.files, githubId: who.session.github_id }).catch(() => [])
@@ -943,7 +946,7 @@ export async function handleChannels(request, env, url, { route, after }) {
     if (stopped) return stopped;
     // Written now, sent later.
     if (body.sendAt) {
-      const sched = await scheduleMessage(env.DB, { orgId, key: resolved.key, authorLogin: who.user.login, body: body.body, parentId, sendAt: body.sendAt });
+      const sched = await scheduleMessage(env.DB, { orgId, key: resolved.key, authorLogin: who.user.login, body: body.body, parentId, sendAt: body.sendAt, alsoChannel });
       if (sched.error) return json({ message: sched.error }, 400);
       return json({ scheduled: { ...sched.scheduled, channel: view } }, 201);
     }
@@ -954,7 +957,7 @@ export async function handleChannels(request, env, url, { route, after }) {
       return json({ message: "That send cannot be tried again." }, 400);
     }
     const clientId = typeof body.clientId === "string" && body.clientId ? body.clientId : null;
-    const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: who.user.login, body: typeof body.body === "string" ? body.body : "", parentId, replyTo, withFiles, clientId });
+    const out = await postMessage(env.DB, { orgId, key: resolved.key, authorLogin: who.user.login, body: typeof body.body === "string" ? body.body : "", parentId, replyTo, withFiles, clientId, alsoChannel });
     if (out.error) return json({ message: out.error, ...(out.code ? { code: out.code } : {}) }, out.status || 400);
     if (out.replay) {
       const [message] = await present(env.DB, orgId, [out.row], who.user.login, view, members);
@@ -985,7 +988,7 @@ export async function handleChannels(request, env, url, { route, after }) {
       await answerAsAgents(env, { orgId, session: who.session, user: who.user, resolved, row: out.row, members, locale });
     });
     // What you said, you have read.
-    if (!parentId) await markRead(env.DB, orgId, who.user.login, resolved.key, out.row.created_at);
+    if (!parentId || alsoChannel) await markRead(env.DB, orgId, who.user.login, resolved.key, out.row.created_at);
     const [message] = await present(env.DB, orgId, [out.row], who.user.login, view, members);
     // A reply comes back with its parent as it now stands — its count said
     // outright, so a client never adds one to a number the live event may
