@@ -2032,21 +2032,27 @@ export const ClassicList: React.FC<Props> = ({
     try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i) || ''; if (k.startsWith(`draft:${api.orgId}:`) && localStorage.getItem(k)) out[k.slice(`draft:${api.orgId}:`.length)] = true } } catch { /* none kept */ }
     return out
   })
-  const draftCount = Object.keys(drafts).filter((v) => drafts[v] && everything.some((x) => x.view === v)).length
+  // Where a draft is kept: the conversation's channel, or — for Your AI,
+  // which has a box but no channel — its row (`app:ai`). Without that, what
+  // was written to your AI was never kept, and went the moment you looked
+  // somewhere else.
+  const draftId = current?.view || (current?.app === 'ai' ? current.key : undefined)
+  const isDraftOf = (x: Thread, v: string) => x.view === v || (x.app === 'ai' && x.key === v)
+  const draftCount = Object.keys(drafts).filter((v) => drafts[v] && everything.some((x) => isDraftOf(x, v))).length
   const draftView = useRef<string | undefined>(undefined)
   // Before paint, so a conversation never shows an empty box first.
   useLayoutEffect(() => {
     // Leaving a conversation keeps what was being written there; arriving
     // brings back what was being written here.
-    draftView.current = view
+    draftView.current = draftId
     let kept = ''
-    try { kept = view ? localStorage.getItem(draftKey(view)) || '' : '' } catch {}
+    try { kept = draftId ? localStorage.getItem(draftKey(draftId)) || '' : '' } catch {}
     setDraft(kept)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view])
+  }, [draftId])
   useEffect(() => {
     const v = draftView.current
-    if (!v || v !== view) return
+    if (!v || v !== draftId) return
     try { if (draft) localStorage.setItem(draftKey(v), draft); else localStorage.removeItem(draftKey(v)) } catch {}
     setDrafts((prev) => (Boolean(prev[v]) === Boolean(draft) ? prev : { ...prev, [v]: Boolean(draft) }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2276,6 +2282,26 @@ export const ClassicList: React.FC<Props> = ({
   const threadOpenParent = thread?.parent.id || null
   const [threadDraft, setThreadDraft] = useState('')
   const threadComposer = useRef<HTMLTextAreaElement>(null)
+  // A reply being written in a thread is kept too, per thread: it used to
+  // start empty every time the thread was opened, so a half-written reply
+  // was gone the moment you looked at something else.
+  const threadDraftKey = (parentId: string) => draftKey(`thread:${parentId}`)
+  const threadDraftOf = useRef<string | null>(null)
+  const threadParentId = thread?.parent.id || null
+  useLayoutEffect(() => {
+    if (threadDraftOf.current === threadParentId) return
+    threadDraftOf.current = threadParentId
+    let kept = ''
+    try { kept = threadParentId ? localStorage.getItem(threadDraftKey(threadParentId)) || '' : '' } catch { /* none kept */ }
+    setThreadDraft(kept)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadParentId])
+  useEffect(() => {
+    const id = threadDraftOf.current
+    if (!id || id !== threadParentId) return
+    try { if (threadDraft) localStorage.setItem(threadDraftKey(id), threadDraft); else localStorage.removeItem(threadDraftKey(id)) } catch { /* not kept */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadDraft])
   // A thread's box grows with what is written, as the channel's does: it stayed one line tall and scrolled from the
   // second line on.
   useEffect(() => {
@@ -2582,7 +2608,6 @@ export const ClassicList: React.FC<Props> = ({
     setDetailId(null)
     setProfile(null)
     setThread((prev) => ({ channel, parent: m, replies: prev && prev.parent.id === m.id ? prev.replies.filter(isTemp) : [] }))
-    setThreadDraft('')
     const res = await fetch(`${api.httpBase}/channels/thread?orgId=${encodeURIComponent(api.orgId)}&channel=${encodeURIComponent(channel)}&messageId=${encodeURIComponent(m.id)}`, { headers: authHeaders }).catch(() => null)
     const data = res?.ok ? await res.json().catch(() => null) : null
     // Replies of yours still on their way, or that did not go — sent while
@@ -2605,7 +2630,6 @@ export const ClassicList: React.FC<Props> = ({
     const data = res?.ok ? await res.json().catch(() => null) : null
     if (!data?.parent) { setThread(null); return }
     threadInActivity.current = true
-    setThreadDraft('')
     const back = heldFor(channel, parentId, data.replies || [])
     setThread((prev) => ({ channel, parent: data.parent, replies: withHeld(keepTemps(data.replies || [], prev && prev.parent.id === parentId ? prev.replies : undefined), back) }))
     markThreadRead(channel, parentId)
@@ -3770,14 +3794,14 @@ export const ClassicList: React.FC<Props> = ({
   /// Drafts & sent: what you started writing and left, each where it
   /// waits, and what you said, newest first — as a chat client keeps them.
   const draftList = () => Object.keys(drafts).filter((v) => drafts[v]).flatMap((v) => {
-    const th = everything.find((x) => x.view === v)
+    const th = everything.find((x) => isDraftOf(x, v))
     let text = ''
     try { text = localStorage.getItem(draftKey(v)) || '' } catch { /* none kept */ }
     return th && text ? [{ view: v, th, text }] : []
   })
   const discardDraft = (v: string) => {
     try { localStorage.removeItem(draftKey(v)) } catch { /* nothing kept */ }
-    if (current?.view === v) setDraft('')
+    if (draftId === v) setDraft('')
     setDrafts((prev) => { const next = { ...prev }; delete next[v]; return next })
   }
   const sentView = () => {
