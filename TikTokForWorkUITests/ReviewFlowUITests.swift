@@ -20,7 +20,7 @@ final class ReviewFlowUITests: XCTestCase {
         // Home as a list is Slack's sidebar: the cards along the top.
         let list = app.buttons["リスト"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 10))
-        list.tap()
+        list.tapWhereItIs(in: app)
         for title in ["スレッド", "後で"] {
             let card = app.buttons[title].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 5), title)
@@ -35,7 +35,7 @@ final class ReviewFlowUITests: XCTestCase {
         screenshot.name = "Japanese Slack-style home fits the phone"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        app.buttons["スレッド"].firstMatch.tap()
+        app.buttons["スレッド"].firstMatch.tapWhereItIs(in: app)
         XCTAssertTrue(app.navigationBars["スレッド"].waitForExistence(timeout: 5))
         app.terminate()
     }
@@ -127,8 +127,8 @@ final class ReviewFlowUITests: XCTestCase {
         home.name = "Integrated Figma home from the actual application"
         home.lifetime = .keepAlways
         add(home)
-        app.buttons["New request"].tap()
-        app.buttons["Write"].tap()
+        app.buttons["New request"].tapWhereItIs(in: app)
+        app.buttons["Write"].tapWhereItIs(in: app)
         let editor = app.textViews.firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
@@ -140,13 +140,13 @@ final class ReviewFlowUITests: XCTestCase {
         draftButton.tap()
         XCTAssertTrue(app.navigationBars["Review request"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Review the release checklist"].firstMatch.exists)
-        app.buttons["request.recipient"].tap()
-        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Mika Tanaka")).firstMatch.tap()
+        app.buttons["request.recipient"].tapWhereItIs(in: app)
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Mika Tanaka")).firstMatch.tapWhereItIs(in: app)
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = "Editable draft without microphone or AI permission"
         attachment.lifetime = .keepAlways
         add(attachment)
-        app.buttons["request.primary"].tap()
+        app.buttons["request.primary"].tapWhereItIs(in: app)
         XCTAssertTrue(app.alerts["Demo request created"].waitForExistence(timeout: 8))
         app.alerts.buttons["View history"].tap()
         XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
@@ -155,12 +155,12 @@ final class ReviewFlowUITests: XCTestCase {
         history.name = "Sent request is visible in actual History"
         history.lifetime = .keepAlways
         add(history)
-        app.navigationBars.buttons["Close"].tap()
-        app.buttons.matching(identifier: "You").firstMatch.tap()
+        app.navigationBars.buttons["Close"].tapWhereItIs(in: app)
+        app.buttons.matching(identifier: "You").firstMatch.tapWhereItIs(in: app)
         let plan = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Plan and usage")).firstMatch
         XCTAssertTrue(plan.waitForExistence(timeout: 5))
         app.swipeUp()
-        plan.tap()
+        plan.tapWhereItIs(in: app)
         let terms = app.buttons["Terms of Use"]
         XCTAssertTrue(terms.waitForExistence(timeout: 5) || app.links["Terms of Use"].exists)
         XCTAssertTrue(app.buttons["Privacy Policy"].exists || app.links["Privacy Policy"].exists)
@@ -168,5 +168,22 @@ final class ReviewFlowUITests: XCTestCase {
         legal.name = "Legal links remain available on the plan screen"
         legal.lifetime = .keepAlways
         add(legal)
+    }
+}
+
+extension XCUIElement {
+    /// A tap on the element where it is on screen. On the CI simulator since
+    /// 2026-10-01 a plain `tap()` on some buttons already on screen first asks
+    /// for them to be scrolled into view, and that fails
+    /// (kAXErrorCannotComplete). When the element is not hittable but its
+    /// centre is inside the app, the screen's tree is printed — so whatever
+    /// covers it, if anything, shows in the log — and the centre is tapped.
+    func tapWhereItIs(in app: XCUIApplication) {
+        if isHittable { tap(); return }
+        let box = frame
+        let centre = CGPoint(x: box.midX, y: box.midY)
+        guard !box.isEmpty, app.frame.contains(centre) else { tap(); return }
+        print("tapWhereItIs: not hittable, tapping its centre: \(self)\n\(app.debugDescription)")
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: centre.x, dy: centre.y)).tap()
     }
 }
