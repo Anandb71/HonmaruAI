@@ -420,6 +420,27 @@ export const ReplyQuoteLine: React.FC<{ quote: ReplyQuote; name: string; onJump:
   )
 }
 
+/// Above a thread reply that was sent to the conversation too: that it
+/// answers a thread, and how the thread began — pressed, the thread opens.
+export const ThreadReplyLine: React.FC<{ quote: ReplyQuote; onOpen: () => void }> = ({ quote, onOpen }) => {
+  const t = useT()
+  if (quote.deleted) {
+    return (
+      <div className="slk-reply-quote gone" data-thread-reply={quote.id}>
+        <Icon name="message" size={12} />
+        <span className="slk-reply-excerpt">{t('Replied to a thread that was deleted')}</span>
+      </div>
+    )
+  }
+  return (
+    <button type="button" className="slk-reply-quote" onClick={onOpen} title={t('View thread')} data-thread-reply={quote.id}>
+      <Icon name="message" size={12} />
+      <span className="slk-reply-who">{t('Replied to a thread:')}</span>
+      <span className="slk-reply-excerpt"><QuoteWords excerpt={quote.excerpt} /></span>
+    </button>
+  )
+}
+
 /// Over the composer while a reply is being written: what it answers, and
 /// the × (or Escape) that makes it a plain message again. `textId` names
 /// the words, for the composer to be described by them.

@@ -123,3 +123,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_messages_client ON channel_message
 ALTER TABLE push_queue ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE push_queue ADD COLUMN lease_until TEXT;
 ALTER TABLE push_queue ADD COLUMN last_error TEXT;
+/* A thread reply sent to the conversation as well (schema.sql says why). */
+ALTER TABLE channel_messages ADD COLUMN also_channel INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE scheduled_messages ADD COLUMN also_channel INTEGER NOT NULL DEFAULT 0;

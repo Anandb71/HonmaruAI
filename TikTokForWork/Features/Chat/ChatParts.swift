@@ -524,6 +524,24 @@ struct ChatMessageRow: View {
                 if message.pinned == true {
                     Label("Pinned", systemImage: "pin.fill").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
                 }
+                // A thread reply sent to the conversation too: which thread
+                // it answers, and pressed, that thread.
+                if !inThread, message.alsoChannel == true, let quote = message.threadParent, !message.isDeleted {
+                    Button(action: onOpenThread) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bubble.left.and.bubble.right").font(.caption2)
+                            if quote.deleted {
+                                Text("Replied to a thread that was deleted").font(.caption.italic())
+                            } else {
+                                Text("Replied to a thread:").font(.caption.weight(.semibold))
+                                Text(verbatim: quote.excerpt).font(.caption).lineLimit(1)
+                            }
+                        }
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                    .buttonStyle(.plain).disabled(quote.deleted)
+                    .accessibilityIdentifier("threadReplyLine")
+                }
                 if !joined {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(author).font(.subheadline.weight(.bold)).foregroundStyle(Theme.Colors.textPrimary)
@@ -559,6 +577,9 @@ struct ChatMessageRow: View {
                     if message.kind == "message", message.previewsHidden != true, let link = ChatLinkMetadata.firstLink(in: message.body) { ChatLinkPreview(url: link) }
                     if message.editedAt != nil {
                         Text("(edited)").font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    if inThread, message.alsoChannel == true {
+                        Text("Also sent to the conversation").font(.caption2).foregroundStyle(Theme.Colors.textTertiary)
                     }
                 }
                 if let card = message.cardId, !message.isDeleted {

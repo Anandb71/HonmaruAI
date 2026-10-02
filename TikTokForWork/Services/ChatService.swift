@@ -69,12 +69,29 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     var files: [ChatFile]?
     /// Set when one of the team's agents wrote it: its name and face.
     var agent: ChatAgentFace?
+    /// A thread reply sent to the conversation as well: read in its thread
+    /// and in the conversation.
+    var alsoChannel: Bool?
+    /// With `alsoChannel`, in the conversation: how the thread it answers
+    /// begins, as that message is now.
+    var threadParent: ChatQuote?
 
     var isAI: Bool { kind == "ai" }
     /// Written by an agent the team made ("@hayao"), not by a person.
     var isAgent: Bool { kind == "agent" }
     var isDeleted: Bool { deleted == true }
     var date: Date { ChatDates.parse(createdAt) ?? .distantPast }
+}
+
+/// What a message shows of another one it points at: who said it and how
+/// it began, or only that it is gone.
+struct ChatQuote: Codable, Hashable {
+    let id: String
+    let kind: String?
+    let authorName: String?
+    let authorRef: String?
+    let excerpt: String
+    let deleted: Bool
 }
 
 struct ChatMemberStatus: Codable, Hashable {
@@ -592,11 +609,15 @@ enum ChatService {
         let scheduled: ChatScheduled?
     }
 
-    static func send(orgId: String, channel: String, body: String, decide: Bool = false, parentId: String? = nil, sendAt: Date? = nil, files: [String] = [], acknowledged: Bool = false, base: URL) async throws -> Sent {
+    static func send(orgId: String, channel: String, body: String, decide: Bool = false, parentId: String? = nil, alsoChannel: Bool = false, sendAt: Date? = nil, files: [String] = [], acknowledged: Bool = false, base: URL) async throws -> Sent {
         var b: [String: Any] = ["orgId": orgId, "channel": channel, "body": body, "decide": decide]
         // Seen the data rule's warning, and sending anyway.
         if acknowledged { b["dlpAck"] = true }
-        if let parentId { b["parentId"] = parentId }
+        if let parentId {
+            b["parentId"] = parentId
+            // "Also send to the conversation": a thread reply read in both.
+            if alsoChannel { b["alsoChannel"] = true }
+        }
         if !files.isEmpty { b["files"] = files }
         if let sendAt { b["sendAt"] = ChatDates.string(sendAt) }
         return try await call("POST", "/channels/messages", base: base, body: b, as: Sent.self)

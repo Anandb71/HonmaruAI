@@ -7,6 +7,8 @@ struct ChatThreadSheet: View {
     let onOpenCard: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
+    /// "Also send to the conversation": for the next reply only.
+    @State private var alsoChannel = false
     @State private var reactingTo: ChatMessage?
     @FocusState private var focused: Bool
 
@@ -33,33 +35,54 @@ struct ChatThreadSheet: View {
             }
             .defaultScrollAnchor(.bottom)
             .safeAreaInset(edge: .bottom) {
-                HStack(alignment: .bottom, spacing: 8) {
-                    TextField("Reply… — @AI to ask the AI", text: $draft, axis: .vertical)
-                        .lineLimit(1...5).focused($focused)
-                        .padding(.horizontal, 16).padding(.vertical, 11)
-                        .glassPanel(cornerRadius: 22, interactive: true)
-                    Button {
-                        guard let t = store.thread else { return }
-                        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        Task { if await store.send(t.parent.channel, text: text, parentId: t.parent.id) { draft = "" } }
-                    } label: {
-                        Image(systemName: "arrow.up").font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
-                            .frame(width: 44, height: 44).glassCircle(tint: Theme.Colors.accent)
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle(isOn: $alsoChannel) {
+                        Text(alsoChannelLabel).font(.footnote).foregroundStyle(Theme.Colors.textSecondary)
                     }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityLabel("Send")
-                }.padding(.horizontal, 12).padding(.vertical, 8)
+                    .tint(Theme.Colors.accent).controlSize(.small)
+                    .padding(.horizontal, 16)
+                    .accessibilityIdentifier("alsoSendToChannel")
+                    HStack(alignment: .bottom, spacing: 8) {
+                        TextField("Reply… — @AI to ask the AI", text: $draft, axis: .vertical)
+                            .lineLimit(1...5).focused($focused)
+                            .padding(.horizontal, 16).padding(.vertical, 11)
+                            .glassPanel(cornerRadius: 22, interactive: true)
+                        Button {
+                            guard let t = store.thread else { return }
+                            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let both = alsoChannel
+                            Task { if await store.send(t.parent.channel, text: text, parentId: t.parent.id, alsoChannel: both) { draft = ""; alsoChannel = false } }
+                        } label: {
+                            Image(systemName: "arrow.up").font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
+                                .frame(width: 44, height: 44).glassCircle(tint: Theme.Colors.accent)
+                        }
+                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityLabel("Send")
+                    }.padding(.horizontal, 12)
+                }.padding(.vertical, 8)
             }
             .navigationTitle("Thread").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             // Its message deleted, the thread went with it: nothing left to show.
-            .onChange(of: store.thread?.parent.id) { old, new in if old != nil && new == nil { dismiss() } }
+            .onChange(of: store.thread?.parent.id) { old, new in
+                alsoChannel = false
+                if old != nil && new == nil { dismiss() }
+            }
             .sheet(item: $reactingTo) { m in ChatEmojiPicker { e in Task { await store.react(m, e) } } }
         }
         // Everyone's photos and the workspace's emoji, however the sheet was opened.
         .environment(\.chatAssets, store.assets)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    /// "Also send to #name" in a channel; elsewhere, to the conversation.
+    private var alsoChannelLabel: String {
+        guard let view = store.thread?.parent.channel else { return String(localized: "Also send to the conversation") }
+        if view.hasPrefix("b:"), let c = store.businesses.first(where: { "b:\($0.slug)" == view }) {
+            return String(localized: "Also send to #\(c.name)")
+        }
+        return String(localized: "Also send to the conversation")
     }
 
     private func row(_ m: ChatMessage) -> some View {

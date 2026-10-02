@@ -180,6 +180,9 @@ export function toMessage(row, viewerLogin, view, members, extra = {}) {
     files: deleted ? [] : (extra.files || []),
     // An inline reply carries the message it answers, as that is now.
     ...(!deleted && row.reply_to_id ? { replyTo: quoteOf(row, extra.original || null, members) } : {}),
+    // A thread reply sent to the conversation too: it says so, and what the
+    // thread it answers starts with.
+    ...(row.parent_id && row.also_channel ? { alsoChannel: true, ...(!deleted ? { threadParent: quoteOf({ ...row, reply_to_id: row.parent_id }, extra.threadParent || null, members) } : {}) } : {}),
     ...(agent ? { agent: { id: agent.id, handle: agent.handle, name: agent.name, emoji: agent.emoji || null, avatarUrl: agent.avatar_url || agent.avatarUrl || null } } : {}),
   };
 }
@@ -235,9 +238,10 @@ export function quoteOf(row, original, members) {
 
 /// The messages these rows reply to, as they are now, by id: one query for
 /// a page (in chunks D1's bound-parameter limit allows), none when nothing
-/// in it is a reply.
+/// in it is a reply. The thread a reply sent to the conversation too hangs
+/// off is looked up with them.
 async function originalsOf(db, orgId, rows) {
-  const ids = [...new Set(rows.map((r) => r.reply_to_id).filter(Boolean))];
+  const ids = [...new Set(rows.flatMap((r) => [r.reply_to_id, r.also_channel ? r.parent_id : null]).filter(Boolean))];
   const out = new Map();
   for (let i = 0; i < ids.length; i += 90) {
     const chunk = ids.slice(i, i + 90);
@@ -307,7 +311,7 @@ export async function present(db, orgId, rows, viewerLogin, view, members) {
     const x = extras.get(r.id) || {};
     const replyRefs = (x.replyLogins || []).map((l) => (l === "ai" || String(l).startsWith("agent:") ? l : members.find((m) => m.login === l)?.ref)).filter(Boolean).slice(0, 5);
     const own = await Promise.all((files.get(r.id) || []).map((f) => toFile(db, f, now)));
-    return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null, original: originals.get(r.reply_to_id) || null });
+    return toMessage(r, viewerLogin, view, members, { ...x, replyRefs, files: own, agent: agents.get(r.author_login) || null, original: originals.get(r.reply_to_id) || null, threadParent: r.also_channel ? originals.get(r.parent_id) || null : null });
   }));
 }
 
@@ -325,7 +329,7 @@ export async function listMessages(db, orgId, resolved, viewerLogin, view, membe
     .prepare(
       `SELECT m.*, COALESCE(u.name, (SELECT ca.name FROM custom_agents ca WHERE ca.org_id = m.org_id AND 'agent:' || ca.id = m.author_login)) AS author_name FROM channel_messages m
          LEFT JOIN users u ON u.login = m.author_login
-        WHERE m.org_id = ?1 AND m.channel = ?2 AND m.parent_id IS NULL AND m.deleted_at IS NULL ${before ? "AND m.created_at < ?4" : ""}
+        WHERE m.org_id = ?1 AND m.channel = ?2 AND (m.parent_id IS NULL OR m.also_channel = 1) AND m.deleted_at IS NULL ${before ? "AND m.created_at < ?4" : ""}
         ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?3`
     )
     .bind(...[orgId, resolved.key, PAGE + 1, ...(before ? [before] : [])])
@@ -478,7 +482,7 @@ async function messageByClientId(db, orgId, authorLogin, clientId) {
   return hit ? getMessage(db, orgId, hit.id) : null;
 }
 
-export async function postMessage(db, { orgId, key, authorLogin, body, kind = "message", cardId = null, parentId = null, replyTo = null, withFiles = false, clientId = null }) {
+export async function postMessage(db, { orgId, key, authorLogin, body, kind = "message", cardId = null, parentId = null, replyTo = null, withFiles = false, clientId = null, alsoChannel = false }) {
   const text = String(body || "").replace(/\r\n/g, "\n").trim();
   // A picture on its own is something said.
   if (!text && !withFiles) return { error: "Write something first." };
@@ -515,10 +519,10 @@ export async function postMessage(db, { orgId, key, authorLogin, body, kind = "m
   try {
     await db
       .prepare(
-        `INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, card_id, created_at, parent_id, reply_to_id, client_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
+        `INSERT INTO channel_messages (id, org_id, channel, author_login, kind, body, card_id, created_at, parent_id, reply_to_id, client_id, also_channel)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
       )
-      .bind(id, orgId, key, authorLogin, kind, text, cardId, now, parentId, replyTo || null, remembered)
+      .bind(id, orgId, key, authorLogin, kind, text, cardId, now, parentId, replyTo || null, remembered, parentId && alsoChannel ? 1 : 0)
       .run();
   } catch (err) {
     if (remembered && authorLogin) {
@@ -611,10 +615,10 @@ export async function channelActivity(db, orgId, viewerLogin, members) {
               (SELECT f.name FROM message_files f WHERE f.org_id = m.org_id AND f.message_id = m.id ORDER BY f.created_at LIMIT 1) AS file_name
          FROM channel_messages m
          JOIN (SELECT channel, MAX(created_at) AS at FROM channel_messages
-                WHERE org_id = ?1 AND deleted_at IS NULL AND parent_id IS NULL AND kind != 'joined' GROUP BY channel) latest
+                WHERE org_id = ?1 AND deleted_at IS NULL AND (parent_id IS NULL OR also_channel = 1) AND kind != 'joined' GROUP BY channel) latest
            ON latest.channel = m.channel AND latest.at = m.created_at
          LEFT JOIN users u ON u.login = m.author_login
-        WHERE m.org_id = ?1 AND m.deleted_at IS NULL AND m.parent_id IS NULL AND m.kind != 'joined'`
+        WHERE m.org_id = ?1 AND m.deleted_at IS NULL AND (m.parent_id IS NULL OR m.also_channel = 1) AND m.kind != 'joined'`
     )
     .bind(orgId)
     .all();
