@@ -283,8 +283,8 @@ exp = (floor(now / 600) + 2) * 600        // 10分窓。窓の中では同じURL
 
 | 段階 | 内容 | 完了条件 | 戻し方 |
 |---|---|---|---|
-| **0（すぐ実施）** | **a.** `GET /media/:uuid` の `Cache-Control` を `private, max-age=3600` にし、Range に対応する。<br>**b.** 新しいカード動画は `orgId` 必須でアップロードし、`org/<org>/media/…` に保存して署名URLで返す。カードを読むときに署名URLを入れる。<br>**c.** 旧 UUID とカードの org の対応表を、カードの `videoURL` から作る。カードを返す API は、対応の取れた動画を署名URLに置き換える。30日後に `GET /media/:uuid` を410にする。<br>**d.** アップロードを FixedLengthStream に変え、Content-Length を必須にする（411）。<br>**e.** 先頭バイトで種類を検証する。<br>**f.** 削除の失敗を `media_deletions`（D1、後で outbox に移す）に記録し、cron で再試行する | 未認証の取得が410。メモリがファイルサイズに比例しない。削除の失敗が残らない | 種類の検証だけフラグで止められる |
-| **1** | 配信用のドメインと Worker、新しいトークン（10分窓）、一覧と同時の URL 発行、`/media/urls`、クライアントの安定キーによるキャッシュ、CSP の更新、署名鍵の Secrets への移行 | §10 の配信試験に合格。退出の20分後に取得できない | フラグ `media_origin_v2` で旧 `/files/:id` の経路に戻せる |
+| **0（すぐ実施）** | **a.** `GET /media/:uuid` の `Cache-Control` を `private, max-age=3600` にし、Range・HEAD・ETag に対応する。<br>**b.** 新しいカード動画は、アプリが `orgId` を付けて送ればメンバーか確認し、`org/<org>/media/…` に保存する（アドレスに `?o=<org>`）。<br>**c.** アップロードを FixedLengthStream に変え、Content-Length を必須にする（411）。<br>**d.** 先頭バイトで種類を検証する。<br>**e.** 削除の失敗を `media_deletions`（D1、後で outbox に移す）に記録し、cron で再試行する | メモリがファイルサイズに比例しない。偽装ファイルが表示されない。削除の失敗が残らない | 種類の検証は `MEDIA_SNIFF=off` で止められる |
+| **1** | 配信用のドメインと Worker、新しいトークン（10分窓）、一覧と同時の URL 発行（カード動画は `videoURL` を読み出し時に署名URLへ置き換え、旧 UUID は `cards` の `videoURL` から org を対応付ける。新経路の展開から30日後に匿名の `GET /media/:uuid` を410にする）、`/media/urls`、クライアントの安定キーによるキャッシュ、CSP の更新、署名鍵の Secrets への移行 | §10 の配信試験に合格。退出の20分後に取得できない | フラグ `media_origin_v2` で旧 `/files/:id` の経路に戻せる |
 | **2** | `media_assets` と `media_refs` を `WorkspaceStore` の中に作る（D1 主＋DO ミラー）。参照の数による削除、`media_usage` の予約、旧 `message_files` からの読み取り互換 | `reconcile` で差分0。容量の予約が競合試験で負にならない | 旧テーブルを読む経路を残す |
 | **3** | 派生物（thumb・preview）を Images binding で作る。端末の縮小送信と HEVC→H.264 の書き出し | 一覧が原本を読まない。cold な画像の初回表示 p95 が2秒以下 | フラグ `image_variants` を止めれば原本を表示する |
 | **4（条件付き）** | 変換を WASM へ移す（§8 の判定条件）。Stream（非互換動画、組織が有効化した場合）。25 MiB を超える上限と分割転送 | §8 の判定条件、組織の予算、実機の再生品質 | 個別のフラグ |

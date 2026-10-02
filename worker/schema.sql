@@ -762,6 +762,19 @@ CREATE TABLE IF NOT EXISTS message_files (
 CREATE INDEX IF NOT EXISTS idx_message_files ON message_files(org_id, message_id);
 CREATE INDEX IF NOT EXISTS idx_message_files_unsent ON message_files(message_id, created_at);
 
+/* R2 keys whose delete failed, tried again by the cron with backoff until they
+   go (files.js deleteMediaKeys / retryMediaDeletions). Without this a refused
+   delete left the bytes in the bucket with nothing pointing at them. */
+CREATE TABLE IF NOT EXISTS media_deletions (
+  key         TEXT PRIMARY KEY,
+  org_id      TEXT,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  last_error  TEXT,
+  created_at  TEXT NOT NULL,
+  next_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_media_deletions_due ON media_deletions(next_at);
+
 /* Who is in a conversation with a closed door: a private channel
    (`b:<slug>`) or a group DM (`g:<id>`). A two-person DM needs no rows —
    its key names the two. */

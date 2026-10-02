@@ -127,7 +127,7 @@ final class FeedViewModel: ObservableObject {
                     guard let base = appState.backendBaseURL else { throw CardServiceError.notConnected }
                     let compressed = await MediaStore.compress(attachmentURL)
                     guard generation == operation, appState.activeSessionID == session, appState.currentUser == user else { throw CancellationError() }
-                    videoURL = try await MediaUploader.upload(compressed, to: base)
+                    videoURL = try await MediaUploader.upload(compressed, to: base, orgID: user.teamID)
                     guard generation == operation, appState.activeSessionID == session, appState.currentUser == user else { throw CancellationError() }
                 }
             }
