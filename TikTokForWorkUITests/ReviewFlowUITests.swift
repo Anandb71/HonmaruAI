@@ -5,7 +5,7 @@ final class ReviewFlowUITests: XCTestCase {
     func testJapaneseChatShortcutsRemainReadable() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP", "-appLanguage", "ja",
+        app.launchArguments = ["-disableUpdateCheck", "YES", "-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP", "-appLanguage", "ja",
                                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"]
         app.launch()
         let demo = app.buttons["デモを試す"]
@@ -20,7 +20,7 @@ final class ReviewFlowUITests: XCTestCase {
         // Home as a list is Slack's sidebar: the cards along the top.
         let list = app.buttons["リスト"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 10))
-        list.tap()
+        list.tapShowingTheScreen(in: app)
         for title in ["スレッド", "後で"] {
             let card = app.buttons[title].firstMatch
             XCTAssertTrue(card.waitForExistence(timeout: 5), title)
@@ -35,7 +35,7 @@ final class ReviewFlowUITests: XCTestCase {
         screenshot.name = "Japanese Slack-style home fits the phone"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        app.buttons["スレッド"].firstMatch.tap()
+        app.buttons["スレッド"].firstMatch.tapShowingTheScreen(in: app)
         XCTAssertTrue(app.navigationBars["スレッド"].waitForExistence(timeout: 5))
         app.terminate()
     }
@@ -65,7 +65,7 @@ final class ReviewFlowUITests: XCTestCase {
             XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, "Delete the disposable UI account")
         }
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-appLanguage", "en"]
+        app.launchArguments = ["-disableUpdateCheck", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-appLanguage", "en"]
         app.launch()
         XCTAssertTrue(app.buttons["Get started"].waitForExistence(timeout: 20))
         app.buttons["Get started"].tap()
@@ -111,7 +111,7 @@ final class ReviewFlowUITests: XCTestCase {
     func testFirstLaunchEmailAndTextDraftWithoutPermissions() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-appLanguage", "en"]
+        app.launchArguments = ["-disableUpdateCheck", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-appLanguage", "en"]
         app.launch()
         XCTAssertTrue(app.buttons["Get started"].waitForExistence(timeout: 20))
         app.buttons["Get started"].tap()
@@ -127,8 +127,8 @@ final class ReviewFlowUITests: XCTestCase {
         home.name = "Integrated Figma home from the actual application"
         home.lifetime = .keepAlways
         add(home)
-        app.buttons["New request"].tap()
-        app.buttons["Write"].tap()
+        app.buttons["New request"].tapShowingTheScreen(in: app)
+        app.buttons["Write"].tapShowingTheScreen(in: app)
         let editor = app.textViews.firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
@@ -140,13 +140,13 @@ final class ReviewFlowUITests: XCTestCase {
         draftButton.tap()
         XCTAssertTrue(app.navigationBars["Review request"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Review the release checklist"].firstMatch.exists)
-        app.buttons["request.recipient"].tap()
-        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Mika Tanaka")).firstMatch.tap()
+        app.buttons["request.recipient"].tapShowingTheScreen(in: app)
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Mika Tanaka")).firstMatch.tapShowingTheScreen(in: app)
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = "Editable draft without microphone or AI permission"
         attachment.lifetime = .keepAlways
         add(attachment)
-        app.buttons["request.primary"].tap()
+        app.buttons["request.primary"].tapShowingTheScreen(in: app)
         XCTAssertTrue(app.alerts["Demo request created"].waitForExistence(timeout: 8))
         app.alerts.buttons["View history"].tap()
         XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
@@ -155,12 +155,12 @@ final class ReviewFlowUITests: XCTestCase {
         history.name = "Sent request is visible in actual History"
         history.lifetime = .keepAlways
         add(history)
-        app.navigationBars.buttons["Close"].tap()
-        app.buttons.matching(identifier: "You").firstMatch.tap()
+        app.navigationBars.buttons["Close"].tapShowingTheScreen(in: app)
+        app.buttons.matching(identifier: "You").firstMatch.tapShowingTheScreen(in: app)
         let plan = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Plan and usage")).firstMatch
         XCTAssertTrue(plan.waitForExistence(timeout: 5))
         app.swipeUp()
-        plan.tap()
+        plan.tapShowingTheScreen(in: app)
         let terms = app.buttons["Terms of Use"]
         XCTAssertTrue(terms.waitForExistence(timeout: 5) || app.links["Terms of Use"].exists)
         XCTAssertTrue(app.buttons["Privacy Policy"].exists || app.links["Privacy Policy"].exists)
@@ -168,5 +168,16 @@ final class ReviewFlowUITests: XCTestCase {
         legal.name = "Legal links remain available on the plan screen"
         legal.lifetime = .keepAlways
         add(legal)
+    }
+}
+
+extension XCUIElement {
+    /// A tap that, when the element is not hittable, first prints the
+    /// screen's tree to the log — so whatever covers it shows in CI's "What
+    /// the UI tests saw" step. (It found the App Store's update sheet over
+    /// the home screen once 1.2.1 shipped.)
+    func tapShowingTheScreen(in app: XCUIApplication) {
+        if !isHittable { print("tapShowingTheScreen: not hittable: \(self)\n\(app.debugDescription)") }
+        tap()
     }
 }
