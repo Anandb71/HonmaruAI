@@ -1197,11 +1197,15 @@ async function handle(request, env, url, ctx) {
       if (!session) return json({ message: "invalid session" }, 401);
       const limited = await enforce(env, request, "media");
       if (limited) return limited;
-      return uploadMedia(request, env, url);
+      // A workspace named is one the caller belongs to; the video is then
+      // kept under it. An app that names none gets the bare id, as before.
+      const orgId = url.searchParams.get("orgId") || null;
+      if (orgId && !(await isMember(env.DB, orgId, session.github_id))) return json({ message: "not a member of this org" }, 403);
+      return uploadMedia(request, env, url, { orgId });
     }
     const mediaMatch = url.pathname.match(/^\/media\/([^/]+)$/);
-    if (mediaMatch && request.method === "GET") {
-      return serveMedia(mediaMatch[1], env);
+    if (mediaMatch && (request.method === "GET" || request.method === "HEAD")) {
+      return serveMedia(mediaMatch[1], env, request, url);
     }
     // The businesses an organization runs. Read by the feed for its filter
     // chips and by the router for its enum; written when someone names a new
