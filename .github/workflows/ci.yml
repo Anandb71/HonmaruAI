@@ -241,11 +241,11 @@ jobs:
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
             2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | xcbeautify
       # xcbeautify keeps only a failure's first line: what a UI test printed
-      # about the screen it saw (ReviewFlowUITests' tapWhereItIs) is in the
+      # about the screen it saw (ReviewFlowUITests' tapShowingTheScreen) is in the
       # raw log, and the screenshots are in the result bundle.
       - name: What the UI tests saw
         if: failure()
-        run: grep -n -A150 "tapWhereItIs:" "$RUNNER_TEMP/xcodebuild.log" | head -600 || echo "no UI test printed the screen"
+        run: grep -n -A150 "tapShowingTheScreen:" "$RUNNER_TEMP/xcodebuild.log" | head -600 || echo "no UI test printed the screen"
       - name: Test results
         if: failure()
         uses: actions/upload-artifact@v4
