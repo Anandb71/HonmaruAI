@@ -164,6 +164,15 @@ function guard(contents, { child = false } = {}) {
   })
 }
 
+/// The page keeps its sign-in in localStorage, which Chromium writes to disk
+/// lazily. An app that ended before the write — the computer restarting
+/// (Windows sends no before-quit then), an update relaunching it — lost the
+/// session, and asked for a sign-in on the next start. So it is written out
+/// on every way out, and whenever the window goes to the background.
+function flushStorage() {
+  try { session.defaultSession.flushStorageData() } catch { /* nothing to write, or already gone */ }
+}
+
 function webPreferences() {
   return {
     preload: path.join(here, 'preload.cjs'),
@@ -264,6 +273,7 @@ function createWindow() {
     })
   })
   win.on('focus', () => win?.flashFrame(false))
+  win.on('blur', flushStorage)
 
   let saveTimer = null
   const remember = () => {
@@ -282,6 +292,7 @@ function createWindow() {
   // arriving. Quit from the tray or the menu ends it.
   win.on('close', (event) => {
     if (win) saveWindowState(stateFile, { bounds: win.isMaximized() ? win.getNormalBounds() : win.getBounds(), maximized: win.isMaximized() })
+    flushStorage()
     if (quitting) return
     event.preventDefault()
     win?.hide()
@@ -289,8 +300,8 @@ function createWindow() {
   win.on('closed', () => { win = null; appLoaded = false })
   // Windows logging off, restarting or shutting down: the window has to close
   // rather than hide, or it holds up the session ending.
-  win.on('query-session-end', () => { quitting = true })
-  win.on('session-end', () => { quitting = true; app.quit() })
+  win.on('query-session-end', () => { quitting = true; flushStorage() })
+  win.on('session-end', () => { quitting = true; flushStorage(); app.quit() })
 
   const first = pendingLink ? deepLinkToUrl(pendingLink, APP_URL) : null
   pendingLink = null
@@ -304,7 +315,7 @@ function checkForUpdates() {
   let metadata = {}
   try { metadata = JSON.parse(readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8')) } catch { /* no marker, no updates */ }
   if (!updatesEnabled({ packaged: PACKAGED, metadata })) return
-  return startUpdates({ appName: APP_NAME, getWindow: () => win, beforeRestart: () => { quitting = true }, version: app.getVersion(), japanese: app.getLocale().startsWith('ja') })
+  return startUpdates({ appName: APP_NAME, getWindow: () => win, beforeRestart: () => { quitting = true; flushStorage() }, version: app.getVersion(), japanese: app.getLocale().startsWith('ja') })
     .catch((error) => console.warn('Updates are off:', error?.message || error))
 }
 
@@ -386,7 +397,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-attach-webview', (e) => e.preventDefault())
   })
-  app.on('before-quit', () => { quitting = true })
+  app.on('before-quit', () => { quitting = true; flushStorage() })
   app.on('activate', () => { if (win) showWindow(); else createWindow() })
   app.on('window-all-closed', () => {
     // Only when quitting: closing the window hides it.
@@ -395,7 +406,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     // macOS and Linux shutting down: the same, through the power monitor
     // (which can only be used once the app is ready).
-    powerMonitor.on('shutdown', () => { quitting = true; app.quit() })
+    powerMonitor.on('shutdown', () => { quitting = true; flushStorage(); app.quit() })
     enforceCsp()
     lockPermissions()
     createMenu()
