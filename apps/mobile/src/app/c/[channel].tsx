@@ -7,12 +7,13 @@
 
 import { FlashList } from '@shopify/flash-list'
 import { Stack, useLocalSearchParams } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ChannelSync, splitMentions, type ChannelState } from '@honmaru/core'
 import type { Message } from '@honmaru/protocol'
 import { useSession } from '../../lib/session'
+import { loadDraft, saveDraft } from '../../lib/drafts'
 
 export default function Channel() {
   const { channel, name, org } = useLocalSearchParams<{ channel: string; name?: string; org?: string }>()
@@ -29,6 +30,25 @@ export default function Channel() {
   const [state, setState] = useState<ChannelState>(sync.snapshot)
   const [draft, setDraft] = useState('')
   const insets = useSafeAreaInsets()
+  // What was half-written here is back in the box, and kept as it changes.
+  // Nothing is written until what was kept has been read.
+  const draftFor = useRef<string | null>(null)
+  useEffect(() => {
+    draftFor.current = null
+    if (!here) return
+    const at = `${here}|${channel}`
+    let live = true
+    void loadDraft(here, channel).then((kept) => {
+      if (!live) return
+      draftFor.current = at
+      setDraft(kept)
+    })
+    return () => { live = false }
+  }, [here, channel])
+  useEffect(() => {
+    if (!here || draftFor.current !== `${here}|${channel}`) return
+    void saveDraft(here, channel, draft)
+  }, [draft, here, channel])
 
   useEffect(() => {
     if (!here || foreign) return
